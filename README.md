@@ -27,6 +27,7 @@ Current likely direction:
 - Python-based backend, likely FastAPI
 - polished frontend later
 - local development on macOS in VS Code
+- project-local Python `.venv` at the repo root
 - branch / pull request workflow for AI-assisted changes
 
 These are working assumptions, not final commitments.
@@ -56,19 +57,17 @@ Right now, this repo is mainly:
 - documentation
 - workflow setup
 - guardrails for future AI-assisted implementation
+- minimal backend health check
 
-## Next steps
+## Current backend slice
 
-Likely next documentation/setup steps:
-- refine `AGENTS.md`
-- refine `.github/copilot-instructions.md`
-- define `project-map.md`
-- define initial build/test/dev commands
-- choose the first actual implementation slice
+Current confirmed backend details:
+- app entry point: `backend/main.py`
+- run command: `python -m uvicorn backend.main:app --reload`
+- health check: `GET /health`
+- local health URL: `http://127.0.0.1:8000/health`
 
-## Notes
+Expected response:
 
-This project is also partly a learning vehicle:
-- for building a usable app around game tracking
-- for working with Python and related tooling
-- for learning how to get better results from agentic AI in a real repository
+```json
+{"status":"ok"}
