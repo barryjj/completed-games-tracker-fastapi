@@ -59,6 +59,13 @@ If git actions are needed:
 2. describe the planned change
 3. wait for approval before creating commits or pushing
 
+## Python environment
+
+- For Python work, use the project-local `.venv` at the repository root.
+- Do not rely on globally installed packages when `.venv` is expected.
+- Install Python dependencies from documented project files.
+- Keep `.venv/` untracked.
+
 ## Ask first
 
 Ask before:

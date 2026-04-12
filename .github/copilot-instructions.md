@@ -61,6 +61,21 @@ If a protected file should change:
 - For non-trivial work, prefer a branch and pull request workflow.
 - Keep changes small enough for review.
 
+## Python environment
+
+- For Python work, use the project-local `.venv` at the repository root.
+- Do not assume globally installed packages are the correct environment.
+- Prefer commands that run inside the active `.venv`.
+- Install Python dependencies from `backend/requirements.txt` unless the repo is later changed to use a different dependency manager.
+
+## Current backend slice
+
+Current confirmed backend details:
+- app entry point: `backend/main.py`
+- run command: `python -m uvicorn backend.main:app --reload`
+- health check: `GET /health`
+- local health URL: `http://127.0.0.1:8000/health`
+
 ## Coding style
 
 - Prefer boring, maintainable solutions.
