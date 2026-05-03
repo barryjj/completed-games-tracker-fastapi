@@ -1,14 +1,14 @@
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, Depends, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict
-import datetime
+ 
 from sqlalchemy.orm import Session
 from typing import Iterator
 import os
 
 from . import models
+from . import users
 
 
 @asynccontextmanager
@@ -26,21 +26,6 @@ def health():
     return {"status": "ok"}
 
 
-class UserCreate(BaseModel):
-    name: str
-
-
-class UserResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    id: int
-    name: str
-    created_at: datetime.datetime
-
-
-class UserUpdate(BaseModel):
-    name: str | None = None
-
-
 def get_db() -> Iterator[Session]:
     db = models.SessionLocal()
     try:
@@ -49,42 +34,33 @@ def get_db() -> Iterator[Session]:
         db.close()
 
 
-@app.post("/users", response_model=UserResponse)
-def create_user(user: UserCreate, db: Session = Depends(get_db)) -> UserResponse:
-    db_user = models.User(name=user.name)
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return UserResponse.model_validate(db_user, from_attributes=True)
+@app.post("/users", response_model=users.UserResponse)
+def create_user(user: users.UserCreate, db: Session = Depends(get_db)) -> users.UserResponse:
+    db_user = users.create_user(db, user)
+    return users.UserResponse.model_validate(db_user, from_attributes=True)
 
 
-@app.get("/users/{id}", response_model=UserResponse)
-def get_user(id: int, db: Session = Depends(get_db)) -> UserResponse:
-    u = db.query(models.User).filter(models.User.id == id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="User not found")
-    return UserResponse.model_validate(u, from_attributes=True)
+@app.get("/users/{id}", response_model=users.UserResponse)
+def get_user(id: int, db: Session = Depends(get_db)) -> users.UserResponse:
+    u = users.get_user(db, id)
+    return users.UserResponse.model_validate(u, from_attributes=True)
 
 
-@app.patch("/users/{id}", response_model=UserResponse)
-def update_user(id: int, user: UserUpdate, db: Session = Depends(get_db)) -> UserResponse:
-    u = db.query(models.User).filter(models.User.id == id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.name is not None:
-        u.name = user.name
-    db.commit()
-    db.refresh(u)
-    return UserResponse.model_validate(u, from_attributes=True)
+@app.get("/users", response_model=list[users.UserResponse])
+def list_users(limit: int = 100, db: Session = Depends(get_db)) -> list[users.UserResponse]:
+    us = users.list_users(db, limit=limit)
+    return [users.UserResponse.model_validate(u, from_attributes=True) for u in us]
+
+
+@app.patch("/users/{id}", response_model=users.UserResponse)
+def update_user(id: int, user: users.UserUpdate, db: Session = Depends(get_db)) -> users.UserResponse:
+    u = users.update_user(db, id, user)
+    return users.UserResponse.model_validate(u, from_attributes=True)
 
 
 @app.delete("/users/{id}", status_code=204)
 def delete_user(id: int, db: Session = Depends(get_db)) -> Response:
-    u = db.query(models.User).filter(models.User.id == id).first()
-    if not u:
-        raise HTTPException(status_code=404, detail="User not found")
-    db.delete(u)
-    db.commit()
+    users.delete_user(db, id)
     return Response(status_code=204)
 
 

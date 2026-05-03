@@ -1,7 +1,7 @@
 import os
 
-# Use in-memory SQLite for tests; set before importing the app
-DB_PATH = os.path.join(os.path.dirname(__file__), "test_users.db")
+# Use a file-backed SQLite for tests; set before importing the app
+DB_PATH = os.path.join(os.path.dirname(__file__), "test.db")
 if os.path.exists(DB_PATH):
     try:
         os.remove(DB_PATH)
@@ -59,3 +59,14 @@ def test_update_and_delete_user():
     # fetch deleted -> 404
     r4 = client.get(f"/users/{uid}")
     assert r4.status_code == 404
+
+
+def test_list_users():
+    # ensure there is at least one user
+    r = client.post("/users", json={"name": "dave"})
+    assert r.status_code == 200
+    r2 = client.get("/users")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert isinstance(data, list)
+    assert any(u.get("name") == "dave" for u in data)

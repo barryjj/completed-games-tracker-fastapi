@@ -1,9 +1,9 @@
-from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine, Integer, String, DateTime
+from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column
 import datetime
 import os
 
-DB_URL = os.getenv("DATABASE_URL", "sqlite:///backend/users.db")
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///backend/app.db")
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
@@ -11,10 +11,10 @@ Base = declarative_base()
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     # Use timezone-aware UTC datetime to avoid deprecation warnings
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
 
 def init_db():
