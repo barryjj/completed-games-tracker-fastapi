@@ -13,6 +13,8 @@
   </form>
   <h2>Result</h2>
   <pre id="result">(no result yet)</pre>
+  <h2>Users</h2>
+  <div id="users">(loading...)</div>
 
   <script>
     document.getElementById('form').addEventListener('submit', async function (e) {
@@ -25,7 +27,47 @@
       });
       const data = await res.json();
       document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      // refresh list
+      await loadUsers();
     });
+
+    async function loadUsers() {
+      const r = await fetch('/users');
+      const list = await r.json();
+      const container = document.getElementById('users');
+      if (!Array.isArray(list) || list.length === 0) {
+        container.textContent = '(no users)';
+        return;
+      }
+      container.innerHTML = '';
+      const ul = document.createElement('ul');
+      for (const u of list) {
+        const li = document.createElement('li');
+        li.textContent = `${u.id}: ${u.name} (${u.created_at}) `;
+        const edit = document.createElement('button');
+        edit.textContent = 'Edit';
+        edit.onclick = async () => {
+          const newName = prompt('New name', u.name);
+          if (!newName) return;
+          await fetch(`/users/${u.id}`, {method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: newName})});
+          await loadUsers();
+        };
+        const del = document.createElement('button');
+        del.textContent = 'Delete';
+        del.onclick = async () => {
+          if (!confirm('Delete user?')) return;
+          await fetch(`/users/${u.id}`, {method: 'DELETE'});
+          await loadUsers();
+        };
+        li.appendChild(edit);
+        li.appendChild(del);
+        ul.appendChild(li);
+      }
+      container.appendChild(ul);
+    }
+
+    // initial load
+    loadUsers().catch(console.error);
   </script>
 </body>
 </html>
