@@ -1,8 +1,8 @@
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, Response, HTTPException
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import FileResponse
- 
+
 from sqlalchemy.orm import Session
 from typing import Iterator
 import os
@@ -16,7 +16,6 @@ security = HTTPBearer()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize DB tables on startup
     models.init_db()
     yield
 
@@ -45,15 +44,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     return user
 
 
-@app.post("/users", response_model=users.UserResponse)
-def create_user(user: users.UserCreate, db: Session = Depends(get_db)) -> users.UserResponse:
-    db_user = users.create_user(db, user)
-    return users.UserResponse.model_validate(db_user, from_attributes=True)
-
-
 @app.post("/signup", response_model=users.UserResponse)
 def signup(auth: users.AuthRequest, db: Session = Depends(get_db)) -> users.UserResponse:
-    # simple signup endpoint; returns created user with token included in `api_token`
     existing = db.query(models.User).filter(models.User.username == auth.username).first()
     if existing:
         raise HTTPException(status_code=400, detail="username already exists")
@@ -78,24 +70,6 @@ def me(current_user: models.User = Depends(get_current_user)):
 def get_user(id: int, db: Session = Depends(get_db)) -> users.UserResponse:
     u = users.get_user(db, id)
     return users.UserResponse.model_validate(u, from_attributes=True)
-
-
-@app.get("/users", response_model=list[users.UserResponse])
-def list_users(limit: int = 100, db: Session = Depends(get_db)) -> list[users.UserResponse]:
-    us = users.list_users(db, limit=limit)
-    return [users.UserResponse.model_validate(u, from_attributes=True) for u in us]
-
-
-@app.patch("/users/{id}", response_model=users.UserResponse)
-def update_user(id: int, user: users.UserUpdate, db: Session = Depends(get_db)) -> users.UserResponse:
-    u = users.update_user(db, id, user)
-    return users.UserResponse.model_validate(u, from_attributes=True)
-
-
-@app.delete("/users/{id}", status_code=204)
-def delete_user(id: int, db: Session = Depends(get_db)) -> Response:
-    users.delete_user(db, id)
-    return Response(status_code=204)
 
 
 @app.get("/", response_class=FileResponse)
