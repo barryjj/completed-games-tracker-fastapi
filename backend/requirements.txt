@@ -4,3 +4,4 @@ sqlalchemy>=2.0
 pytest>=8.0
 alembic>=1.11
 passlib[bcrypt]>=1.7
+httpx>=0.24
