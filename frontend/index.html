@@ -1,0 +1,73 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Completed Games Tracker — Users</title>
+  <style>body{font-family:system-ui,Arial,Helvetica,sans-serif;padding:20px}</style>
+</head>
+<body>
+  <h1>Create User</h1>
+  <form id="form">
+    <input id="name" placeholder="Name" required />
+    <button type="submit">Create</button>
+  </form>
+  <h2>Result</h2>
+  <pre id="result">(no result yet)</pre>
+  <h2>Users</h2>
+  <div id="users">(loading...)</div>
+
+  <script>
+    document.getElementById('form').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const name = document.getElementById('name').value;
+      const res = await fetch('/users', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ name })
+      });
+      const data = await res.json();
+      document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      // refresh list
+      await loadUsers();
+    });
+
+    async function loadUsers() {
+      const r = await fetch('/users');
+      const list = await r.json();
+      const container = document.getElementById('users');
+      if (!Array.isArray(list) || list.length === 0) {
+        container.textContent = '(no users)';
+        return;
+      }
+      container.innerHTML = '';
+      const ul = document.createElement('ul');
+      for (const u of list) {
+        const li = document.createElement('li');
+        li.textContent = `${u.id}: ${u.name} (${u.created_at}) `;
+        const edit = document.createElement('button');
+        edit.textContent = 'Edit';
+        edit.onclick = async () => {
+          const newName = prompt('New name', u.name);
+          if (!newName) return;
+          await fetch(`/users/${u.id}`, {method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({name: newName})});
+          await loadUsers();
+        };
+        const del = document.createElement('button');
+        del.textContent = 'Delete';
+        del.onclick = async () => {
+          if (!confirm('Delete user?')) return;
+          await fetch(`/users/${u.id}`, {method: 'DELETE'});
+          await loadUsers();
+        };
+        li.appendChild(edit);
+        li.appendChild(del);
+        ul.appendChild(li);
+      }
+      container.appendChild(ul);
+    }
+
+    // initial load
+    loadUsers().catch(console.error);
+  </script>
+</body>
+</html>

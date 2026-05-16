@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} — Completed Games Tracker</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+  <style>
+    nav a { margin-right: 1rem; }
+    .platform-badge { font-size: 0.8em; color: var(--pico-muted-color); }
+    .game-type-badge { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; color: var(--pico-muted-color); }
+    table { width: 100%; }
+    .htmx-indicator { opacity: 0; transition: opacity 200ms; }
+    .htmx-request .htmx-indicator { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header class="container">
+    <nav>
+      <ul>
+        <li><strong>🎮 Games Tracker</strong></li>
+      </ul>
+      <ul>
+        <li><a href="/library">Library</a></li>
+        <li><a href="/completions">Completions</a></li>
+        <li><a href="/logout">Logout ({{ current_user.name }})</a></li>
+      </ul>
+    </nav>
+  </header>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

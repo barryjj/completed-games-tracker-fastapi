@@ -1,0 +1,8 @@
+<tr id="completion-{{ completion.id }}">
+  <td>{{ loop.index if loop is defined else "" }}</td>
+  <td>{{ completion.library_entry.release.game.title }}</td>
+  <td><span class="platform-badge">{{ completion.library_entry.release.platform }}</span></td>
+  <td>{{ completion.completed_at.strftime("%Y-%m-%d") }}</td>
+  <td>{{ completion.playthroughs or "" }}</td>
+  <td>{{ completion.notes or "" }}</td>
+</tr>
