@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Account{% endblock %}
+
+{% block content %}
+<h1>Account Settings</h1>
+
+<div class="grid" style="grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start;">
+
+  <!-- Display Name -->
+  <article>
+    <header><strong>Display Name</strong></header>
+    <form
+      hx-post="/account/display-name"
+      hx-target="#flash-display-name"
+      hx-swap="innerHTML"
+    >
+      <label>
+        Name shown in the nav
+        <input type="text" name="name" value="{{ current_user.name }}" required>
+      </label>
+      <div id="flash-display-name"></div>
+      <button type="submit">Save</button>
+    </form>
+  </article>
+
+  <!-- Username -->
+  <article>
+    <header><strong>Username</strong></header>
+    <form
+      hx-post="/account/username"
+      hx-target="#flash-username"
+      hx-swap="innerHTML"
+    >
+      <label>
+        New username
+        <input type="text" name="new_username" value="{{ current_user.username }}" autocomplete="username" required>
+      </label>
+      <label>
+        Current password to confirm
+        <input type="password" name="current_password" autocomplete="current-password" required>
+      </label>
+      <div id="flash-username"></div>
+      <button type="submit">Save</button>
+    </form>
+  </article>
+
+  <!-- Password -->
+  <article>
+    <header><strong>Change Password</strong></header>
+    <form
+      hx-post="/account/password"
+      hx-target="#flash-password"
+      hx-swap="innerHTML"
+      hx-on::after-request="if(event.detail.successful) this.reset()"
+    >
+      <label>
+        Current password
+        <input type="password" name="current_password" autocomplete="current-password" required>
+      </label>
+      <label>
+        New password
+        <input type="password" name="new_password" autocomplete="new-password" required>
+      </label>
+      <label>
+        Confirm new password
+        <input type="password" name="new_password_confirm" autocomplete="new-password" required>
+      </label>
+      <div id="flash-password"></div>
+      <button type="submit">Change Password</button>
+    </form>
+  </article>
+
+</div>
+{% endblock %}

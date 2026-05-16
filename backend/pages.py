@@ -35,6 +35,39 @@ def login_page(request: Request):
     return templates.TemplateResponse(request=request, name="login.html")
 
 
+@router.get("/signup")
+def signup_page(request: Request):
+    return templates.TemplateResponse(request=request, name="signup.html")
+
+
+@router.post("/signup")
+def signup_submit(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...),
+    password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    if password != password_confirm:
+        return templates.TemplateResponse(
+            request=request,
+            name="signup.html",
+            context={"error": "Passwords do not match", "username": username},
+            status_code=422,
+        )
+    if not users.username_available(db, username.strip()):
+        return templates.TemplateResponse(
+            request=request,
+            name="signup.html",
+            context={"error": "That username is already taken", "username": username},
+            status_code=422,
+        )
+    u = users.signup_user(db, username.strip(), password)
+    response = RedirectResponse("/library", status_code=302)
+    response.set_cookie("session", u.api_token, httponly=True, samesite="lax")
+    return response
+
+
 @router.post("/login")
 def login_submit(
     request: Request,
@@ -60,6 +93,96 @@ def logout():
     response = RedirectResponse("/login", status_code=302)
     response.delete_cookie("session")
     return response
+
+
+# --- Account ---
+
+@router.get("/account")
+def account_page(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="account.html",
+        context={"current_user": current_user},
+    )
+
+
+@router.post("/account/display-name")
+def update_display_name(
+    request: Request,
+    name: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    users.update_display_name(db, current_user, name)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/account_flash.html",
+        context={"message": "Display name updated."},
+    )
+
+
+@router.post("/account/username")
+def update_username(
+    request: Request,
+    new_username: str = Form(...),
+    current_password: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    result = users.update_username(db, current_user, new_username, current_password)
+    if result == "incorrect_password":
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/account_flash.html",
+            context={"error": "Current password is incorrect."},
+            status_code=422,
+        )
+    if result == "username_taken":
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/account_flash.html",
+            context={"error": "That username is already taken."},
+            status_code=422,
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/account_flash.html",
+        context={"message": "Username updated."},
+    )
+
+
+@router.post("/account/password")
+def update_password(
+    request: Request,
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    new_password_confirm: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    if new_password != new_password_confirm:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/account_flash.html",
+            context={"error": "New passwords do not match."},
+            status_code=422,
+        )
+    result = users.update_password(db, current_user, current_password, new_password)
+    if result == "incorrect_password":
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/account_flash.html",
+            context={"error": "Current password is incorrect."},
+            status_code=422,
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/account_flash.html",
+        context={"message": "Password updated."},
+    )
 
 
 # --- Library ---
