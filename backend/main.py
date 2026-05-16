@@ -1,17 +1,21 @@
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from starlette.requests import Request
 
 from sqlalchemy.orm import Session
-from typing import Iterator
 import os
 
 from . import models
 from . import users
+from .models import get_db
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 security = HTTPBearer()
+
+TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "frontend", "templates"))
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 @asynccontextmanager
@@ -23,17 +27,24 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 
+# Redirect unauthenticated web visitors to login
+class RequiresLoginException(Exception):
+    pass
+
+
+@app.exception_handler(RequiresLoginException)
+async def requires_login_handler(request: Request, exc: RequiresLoginException):
+    return RedirectResponse("/login", status_code=302)
+
+
+# Import and register the pages router after app is created to avoid circular imports
+from . import pages  # noqa: E402
+app.include_router(pages.router)
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-
-def get_db() -> Iterator[Session]:
-    db = models.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security), db: Session = Depends(get_db)) -> models.User:
@@ -72,8 +83,6 @@ def get_user(id: int, db: Session = Depends(get_db)) -> users.UserResponse:
     return users.UserResponse.model_validate(u, from_attributes=True)
 
 
-@app.get("/", response_class=FileResponse)
+@app.get("/")
 def index():
-    index_path = os.path.join(os.path.dirname(__file__), "..", "frontend", "index.html")
-    index_path = os.path.normpath(index_path)
-    return FileResponse(index_path)
+    return RedirectResponse("/library", status_code=302)
