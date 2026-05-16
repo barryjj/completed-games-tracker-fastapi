@@ -4,19 +4,89 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign In — Completed Games Tracker</title>
+  <script>const t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t;</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    article { width: 100%; max-width: 400px; }
+    /* Catppuccin Mocha (dark) */
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ctp-base:     #1e1e2e;
+        --ctp-mantle:   #181825;
+        --ctp-crust:    #11111b;
+        --ctp-surface0: #313244;
+        --ctp-surface1: #45475a;
+        --ctp-text:     #cdd6f4;
+        --ctp-subtext:  #a6adc8;
+        --ctp-mauve:    #cba6f7;
+        --ctp-lavender: #b4befe;
+        --ctp-red:      #f38ba8;
+      }
+    }
+
+    /* Catppuccin Latte (light) */
+    @media (prefers-color-scheme: light) {
+      :root {
+        --ctp-base:     #eff1f5;
+        --ctp-mantle:   #e6e9ef;
+        --ctp-crust:    #dce0e8;
+        --ctp-surface0: #ccd0da;
+        --ctp-surface1: #bcc0cc;
+        --ctp-text:     #4c4f69;
+        --ctp-subtext:  #6c6f85;
+        --ctp-mauve:    #8839ef;
+        --ctp-lavender: #7287fd;
+        --ctp-red:      #d20f39;
+      }
+    }
+
+    :root {
+      --pico-background-color: var(--ctp-base);
+      --pico-card-background-color: var(--ctp-mantle);
+      --pico-color: var(--ctp-text);
+      --pico-muted-color: var(--ctp-subtext);
+      --pico-primary: var(--ctp-mauve);
+      --pico-primary-hover: var(--ctp-lavender);
+      --pico-primary-focus: rgba(203, 166, 247, 0.25);
+      --pico-primary-inverse: var(--ctp-crust);
+      --pico-border-color: var(--ctp-surface1);
+      --pico-form-element-background-color: var(--ctp-surface0);
+      --pico-form-element-border-color: var(--ctp-surface1);
+      --pico-form-element-color: var(--ctp-text);
+      --pico-form-element-active-border-color: var(--ctp-mauve);
+      --pico-del-color: var(--ctp-red);
+    }
+
+    body {
+      background-color: var(--ctp-base);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+
+    article {
+      width: 100%;
+      max-width: 400px;
+      background-color: var(--ctp-mantle);
+      border: 1px solid var(--ctp-surface1);
+    }
+
+    .app-name {
+      color: var(--ctp-mauve);
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+      margin-bottom: 0.25rem;
+    }
   </style>
 </head>
 <body>
   <main class="container">
     <article>
-      <h2>🎮 Games Tracker</h2>
+      <p class="app-name">Completed Games Tracker</p>
       <h3>Sign In</h3>
       {% if error %}
-      <p><small style="color: var(--pico-del-color)">{{ error }}</small></p>
+      <p><small style="color: var(--ctp-red)">{{ error }}</small></p>
       {% endif %}
       <form method="post" action="/login">
         <label>
