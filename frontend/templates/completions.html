@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Completions{% endblock %}
+
+{% block content %}
+<h1>Completions</h1>
+
+<details>
+  <summary role="button" class="outline">Log a Completion</summary>
+  <form
+    hx-post="/completions/log"
+    hx-target="#completions-tbody"
+    hx-swap="afterbegin"
+    hx-on::after-request="if(event.detail.successful) this.reset()"
+  >
+    <div class="grid">
+      <label>
+        Game
+        <select name="library_entry_id" required>
+          <option value="" disabled selected>Select a game…</option>
+          {% for entry in library_entries %}
+          <option value="{{ entry.id }}">{{ entry.release.game.title }} ({{ entry.release.platform }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Date Completed
+        <input type="date" name="completed_at" value="{{ today }}" required>
+      </label>
+      <label>
+        Playthroughs
+        <input type="text" name="playthroughs" value="1" placeholder="1, 1+, 2…">
+      </label>
+    </div>
+    <label>
+      Notes
+      <input type="text" name="notes" placeholder="Platinum, 100%, co-op with Tommy…">
+    </label>
+    <button type="submit">Log Completion</button>
+  </form>
+</details>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Game</th>
+      <th>Platform</th>
+      <th>Date</th>
+      <th>Playthroughs</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody id="completions-tbody">
+    {% for completion in completions %}
+    {% include "partials/completion_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if not completions %}
+<p><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
+{% endif %}
+{% endblock %}

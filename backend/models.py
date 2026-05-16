@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, Integer, String, DateTime, Date, Text, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
+from typing import Iterator
 import datetime
 import os
 
@@ -138,6 +139,14 @@ class Completion(Base):
 
     user: Mapped["User"] = relationship("User")
     library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="completions")
+
+
+def get_db() -> Iterator["Session"]:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
 
 
 def init_db():

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Library{% endblock %}
+
+{% block content %}
+<h1>Library</h1>
+
+<details>
+  <summary role="button" class="outline">Add Game Manually</summary>
+  <form
+    hx-post="/library/games"
+    hx-target="#library-tbody"
+    hx-swap="afterbegin"
+    hx-on::after-request="if(event.detail.successful) this.reset()"
+  >
+    <div class="grid">
+      <label>
+        Title
+        <input type="text" name="title" placeholder="e.g. Elden Ring" required>
+      </label>
+      <label>
+        Platform
+        <select name="platform">
+          {% for p in platforms %}
+          <option>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Type
+        <select name="game_type">
+          {% for t in game_types %}
+          <option value="{{ t }}">{{ t | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+    <button type="submit">Add to Library</button>
+  </form>
+</details>
+
+<table>
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Platform</th>
+      <th>Type</th>
+      <th>Added</th>
+    </tr>
+  </thead>
+  <tbody id="library-tbody">
+    {% for entry in entries %}
+    {% include "partials/library_row.html" %}
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if not entries %}
+<p><em>No games in your library yet. Add one above or import from Steam / PSN (coming soon).</em></p>
+{% endif %}
+{% endblock %}
