@@ -104,3 +104,40 @@ def delete_user(db: Session, id: int) -> None:
         raise HTTPException(status_code=404, detail="User not found")
     db.delete(u)
     db.commit()
+
+
+def update_display_name(db: Session, user: models.User, name: str) -> models.User:
+    user.name = name.strip()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_username(db: Session, user: models.User, new_username: str, current_password: str) -> models.User | str:
+    """Returns updated User or an error string."""
+    if not pbkdf2_sha256.verify(current_password, user.password_hash):
+        return "incorrect_password"
+    existing = db.query(models.User).filter(
+        models.User.username == new_username.strip(),
+        models.User.id != user.id,
+    ).first()
+    if existing:
+        return "username_taken"
+    user.username = new_username.strip()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def update_password(db: Session, user: models.User, current_password: str, new_password: str) -> models.User | str:
+    """Returns updated User or an error string."""
+    if not pbkdf2_sha256.verify(current_password, user.password_hash):
+        return "incorrect_password"
+    user.password_hash = pbkdf2_sha256.hash(new_password)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def username_available(db: Session, username: str) -> bool:
+    return db.query(models.User).filter(models.User.username == username).first() is None
