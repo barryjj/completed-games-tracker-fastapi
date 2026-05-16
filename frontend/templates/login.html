@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign In — Completed Games Tracker</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <style>
+    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+    article { width: 100%; max-width: 400px; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <article>
+      <h2>🎮 Games Tracker</h2>
+      <h3>Sign In</h3>
+      {% if error %}
+      <p><small style="color: var(--pico-del-color)">{{ error }}</small></p>
+      {% endif %}
+      <form method="post" action="/login">
+        <label>
+          Username
+          <input type="text" name="username" autocomplete="username" required autofocus>
+        </label>
+        <label>
+          Password
+          <input type="password" name="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="contrast">Sign In</button>
+      </form>
+      <small>No account? Use <a href="/docs#/default/signup_signup_post">/signup</a> via the API.</small>
+    </article>
+  </main>
+</body>
+</html>
