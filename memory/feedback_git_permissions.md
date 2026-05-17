@@ -1,11 +1,15 @@
 ---
 name: Git push permissions
-description: User has strict rules about pushing to main/develop and force pushing
+description: Push/PR on feature branches is fine; main is the only protected surface
 type: feedback
 ---
 
-Never push directly to main or develop, and never force push to any branch, without explicit user authorization for that specific action.
+Push feature branches and open PRs freely — that is normal expected workflow.
 
-**Why:** User has guardrails (agents.md, copilot-instructions.md) that restrict agents from working directly on protected branches. They want to control pushes and force pushes themselves.
+**The hard rules:**
+- Never push to `main` or force-push `main` without explicit per-action authorization
+- Always pass `--head <branch>` to `gh pr create` — without it, gh picks up the cwd's git context which may be a worktree on a different branch
 
-**How to apply:** When a fix requires pushing to main or force pushing, prepare the commands and explain what they do, then stop and let the user run them. Asking "should I go ahead?" and getting a "yes" for a rebase does NOT authorize the subsequent force push — those are separate actions requiring separate confirmation.
+**Why:** User got burned by agents pushing to main and by a bad PR that pointed at the wrong branch because `gh pr create` was run from a worktree directory.
+
+**How to apply:** After finishing work on a feature branch, push it and open the PR with `--head`. That's correct. Only stop and ask when the target is `main` itself.
