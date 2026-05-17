@@ -1,0 +1,202 @@
+/* Catppuccin Mocha — dark OS default */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ctp-base:     #1e1e2e;
+    --ctp-mantle:   #181825;
+    --ctp-crust:    #11111b;
+    --ctp-surface0: #313244;
+    --ctp-surface1: #45475a;
+    --ctp-surface2: #585b70;
+    --ctp-overlay0: #6c7086;
+    --ctp-text:     #cdd6f4;
+    --ctp-subtext:  #a6adc8;
+    --ctp-mauve:    #cba6f7;
+    --ctp-lavender: #b4befe;
+    --ctp-blue:     #89b4fa;
+    --ctp-green:    #a6e3a1;
+    --ctp-peach:    #fab387;
+    --ctp-red:      #f38ba8;
+    --ctp-yellow:   #f9e2af;
+    --badge-blue-bg:  rgba(137, 180, 250, 0.12);
+    --badge-peach-bg: rgba(250, 179, 135, 0.12);
+    --summary-hover:  rgba(203, 166, 247, 0.08);
+  }
+}
+
+/* Catppuccin Mocha — explicit override */
+html[data-theme="dark"] {
+  --ctp-base:     #1e1e2e;
+  --ctp-mantle:   #181825;
+  --ctp-crust:    #11111b;
+  --ctp-surface0: #313244;
+  --ctp-surface1: #45475a;
+  --ctp-surface2: #585b70;
+  --ctp-overlay0: #6c7086;
+  --ctp-text:     #cdd6f4;
+  --ctp-subtext:  #a6adc8;
+  --ctp-mauve:    #cba6f7;
+  --ctp-lavender: #b4befe;
+  --ctp-blue:     #89b4fa;
+  --ctp-green:    #a6e3a1;
+  --ctp-peach:    #fab387;
+  --ctp-red:      #f38ba8;
+  --ctp-yellow:   #f9e2af;
+  --badge-blue-bg:  rgba(137, 180, 250, 0.12);
+  --badge-peach-bg: rgba(250, 179, 135, 0.12);
+  --summary-hover:  rgba(203, 166, 247, 0.08);
+}
+
+/* Catppuccin Latte (darkened for contrast) — light OS default */
+@media (prefers-color-scheme: light) {
+  :root {
+    --ctp-base:     #dce0e8;
+    --ctp-mantle:   #ccd0da;
+    --ctp-crust:    #bcc0cc;
+    --ctp-surface0: #acb0be;
+    --ctp-surface1: #9ca0b0;
+    --ctp-surface2: #8c8fa1;
+    --ctp-overlay0: #7c7f93;
+    --ctp-text:     #4c4f69;
+    --ctp-subtext:  #5c5f77;
+    --ctp-mauve:    #8839ef;
+    --ctp-lavender: #7287fd;
+    --ctp-blue:     #1e66f5;
+    --ctp-green:    #40a02b;
+    --ctp-peach:    #fe640b;
+    --ctp-red:      #d20f39;
+    --ctp-yellow:   #df8e1d;
+    --badge-blue-bg:  rgba(30, 102, 245, 0.12);
+    --badge-peach-bg: rgba(254, 100, 11, 0.12);
+    --summary-hover:  rgba(136, 57, 239, 0.09);
+  }
+}
+
+/* Catppuccin Latte — explicit override */
+html[data-theme="light"] {
+  --ctp-base:     #dce0e8;
+  --ctp-mantle:   #ccd0da;
+  --ctp-crust:    #bcc0cc;
+  --ctp-surface0: #acb0be;
+  --ctp-surface1: #9ca0b0;
+  --ctp-surface2: #8c8fa1;
+  --ctp-overlay0: #7c7f93;
+  --ctp-text:     #4c4f69;
+  --ctp-subtext:  #5c5f77;
+  --ctp-mauve:    #8839ef;
+  --ctp-lavender: #7287fd;
+  --ctp-blue:     #1e66f5;
+  --ctp-green:    #40a02b;
+  --ctp-peach:    #fe640b;
+  --ctp-red:      #d20f39;
+  --ctp-yellow:   #df8e1d;
+  --badge-blue-bg:  rgba(30, 102, 245, 0.12);
+  --badge-peach-bg: rgba(254, 100, 11, 0.12);
+  --summary-hover:  rgba(136, 57, 239, 0.09);
+}
+
+/* Pico CSS overrides — applied after palette is resolved */
+:root {
+  --pico-background-color:                    var(--ctp-base);
+  --pico-card-background-color:               var(--ctp-mantle);
+  --pico-color:                               var(--ctp-text);
+  --pico-muted-color:                         var(--ctp-subtext);
+  --pico-muted-border-color:                  var(--ctp-surface1);
+  --pico-primary:                             var(--ctp-mauve);
+  --pico-primary-hover:                       var(--ctp-lavender);
+  --pico-primary-focus:                       rgba(203, 166, 247, 0.25);
+  --pico-primary-inverse:                     var(--ctp-crust);
+  --pico-secondary:                           var(--ctp-surface1);
+  --pico-secondary-hover:                     var(--ctp-surface2);
+  --pico-contrast:                            var(--ctp-text);
+  --pico-border-color:                        var(--ctp-surface1);
+  --pico-table-border-color:                  var(--ctp-surface0);
+  --pico-table-row-stripped-background-color: rgba(0, 0, 0, 0.04);
+  --pico-form-element-background-color:       var(--ctp-surface0);
+  --pico-form-element-border-color:           var(--ctp-surface1);
+  --pico-form-element-color:                  var(--ctp-text);
+  --pico-form-element-placeholder-color:      var(--ctp-overlay0);
+  --pico-form-element-active-border-color:    var(--ctp-mauve);
+  --pico-form-element-focus-color:            rgba(203, 166, 247, 0.25);
+  --pico-del-color:                           var(--ctp-red);
+  --pico-ins-color:                           var(--ctp-green);
+  --pico-mark-background-color:               var(--ctp-yellow);
+  --pico-mark-color:                          var(--ctp-crust);
+  --pico-code-background-color:               var(--ctp-mantle);
+  --pico-code-color:                          var(--ctp-green);
+}
+
+/* Base */
+body { background-color: var(--ctp-base); color: var(--ctp-text); }
+
+/* Nav */
+header {
+  background-color: var(--ctp-mantle);
+  border-bottom: 1px solid var(--ctp-surface0);
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+header nav strong { color: var(--ctp-mauve); font-size: 1.1rem; letter-spacing: 0.02em; }
+header nav a { color: var(--ctp-subtext); text-decoration: none; transition: color 150ms; }
+header nav a:hover { color: var(--ctp-lavender); }
+
+/* Badges */
+.platform-badge {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-blue);
+  background: var(--badge-blue-bg);
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+}
+.game-type-badge {
+  font-size: 0.7em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ctp-peach);
+  background: var(--badge-peach-bg);
+  padding: 0.15em 0.5em;
+  border-radius: 4px;
+}
+
+/* Tables */
+table { width: 100%; }
+table thead th {
+  color: var(--ctp-subtext);
+  font-size: 0.8em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  border-bottom-color: var(--ctp-surface1);
+}
+
+/* Details/summary */
+details summary[role="button"].outline { color: var(--ctp-mauve); border-color: var(--ctp-surface1); }
+details summary[role="button"].outline:hover { border-color: var(--ctp-mauve); background: var(--summary-hover); }
+
+/* HTMX */
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }
+
+/* Auth pages (login, signup) */
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+}
+.auth-card {
+  width: 100%;
+  max-width: 400px;
+  background-color: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface1);
+}
+.auth-card .app-name {
+  color: var(--ctp-mauve);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.25rem;
+}
