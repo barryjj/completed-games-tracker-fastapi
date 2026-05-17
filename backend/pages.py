@@ -185,6 +185,27 @@ def update_password(
     )
 
 
+@router.post("/account/delete")
+def delete_account(
+    request: Request,
+    confirm_username: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    if confirm_username.strip() != current_user.username:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/account_flash.html",
+            context={"error": "Username did not match. Account not deleted.", "target": "flash-delete"},
+            status_code=422,
+        )
+    db.delete(current_user)
+    db.commit()
+    response = RedirectResponse("/login", status_code=302)
+    response.delete_cookie("session")
+    return response
+
+
 # --- Library ---
 
 @router.get("/library")

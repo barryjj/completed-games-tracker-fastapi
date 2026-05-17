@@ -4,49 +4,43 @@
 {% block content %}
 <h1>Account Settings</h1>
 
-<div class="grid" style="grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start;">
+<div style="max-width: 520px;">
 
-  <!-- Display Name -->
-  <article>
-    <header><strong>Display Name</strong></header>
-    <form
-      hx-post="/account/display-name"
-      hx-target="#flash-display-name"
-      hx-swap="innerHTML"
-    >
-      <label>
-        Name shown in the nav
-        <input type="text" name="name" value="{{ current_user.name }}" required>
-      </label>
-      <div id="flash-display-name"></div>
-      <button type="submit">Save</button>
+  <section>
+    <h3>Display Name</h3>
+    <form hx-post="/account/display-name" hx-target="#flash-display-name" hx-swap="innerHTML">
+      <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+        <label style="flex:1; margin:0;">
+          <input type="text" name="name" value="{{ current_user.name }}" required>
+        </label>
+        <button type="submit" style="width:auto; margin:0;">Save</button>
+      </div>
+      <div id="flash-display-name" style="min-height:1.2em; margin-top:0.25rem;"></div>
     </form>
-  </article>
+  </section>
 
-  <!-- Username -->
-  <article>
-    <header><strong>Username</strong></header>
-    <form
-      hx-post="/account/username"
-      hx-target="#flash-username"
-      hx-swap="innerHTML"
-    >
+  <hr>
+
+  <section>
+    <h3>Username</h3>
+    <form hx-post="/account/username" hx-target="#flash-username" hx-swap="innerHTML">
       <label>
         New username
         <input type="text" name="new_username" value="{{ current_user.username }}" autocomplete="username" required>
       </label>
       <label>
-        Current password to confirm
+        Current password
         <input type="password" name="current_password" autocomplete="current-password" required>
       </label>
-      <div id="flash-username"></div>
-      <button type="submit">Save</button>
+      <div id="flash-username" style="min-height:1.2em;"></div>
+      <button type="submit" style="width:auto;">Save</button>
     </form>
-  </article>
+  </section>
 
-  <!-- Password -->
-  <article>
-    <header><strong>Change Password</strong></header>
+  <hr>
+
+  <section>
+    <h3>Password</h3>
     <form
       hx-post="/account/password"
       hx-target="#flash-password"
@@ -65,10 +59,61 @@
         Confirm new password
         <input type="password" name="new_password_confirm" autocomplete="new-password" required>
       </label>
-      <div id="flash-password"></div>
-      <button type="submit">Change Password</button>
+      <div id="flash-password" style="min-height:1.2em;"></div>
+      <button type="submit" style="width:auto;">Change Password</button>
     </form>
-  </article>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3>Theme</h3>
+    <label>
+      Color scheme
+      <select id="theme-select">
+        <option value="system">System default</option>
+        <option value="dark">Dark (Catppuccin Mocha)</option>
+        <option value="light">Light (Catppuccin Latte)</option>
+      </select>
+    </label>
+    <script>
+      (function () {
+        const sel = document.getElementById('theme-select');
+        const html = document.documentElement;
+        sel.value = localStorage.getItem('theme') || 'system';
+        sel.addEventListener('change', function () {
+          if (this.value === 'system') {
+            delete html.dataset.theme;
+            localStorage.removeItem('theme');
+          } else {
+            html.dataset.theme = this.value;
+            localStorage.setItem('theme', this.value);
+          }
+        });
+      })();
+    </script>
+  </section>
+
+  <hr>
+
+  <section>
+    <h3 style="color: var(--ctp-red);">Danger Zone</h3>
+    <p><small>Permanently deletes your account, library, and all completions. Type your username to confirm.</small></p>
+    <form
+      hx-post="/account/delete"
+      hx-target="#flash-delete"
+      hx-swap="innerHTML"
+      hx-confirm="Are you absolutely sure? This cannot be undone."
+    >
+      <div style="display:flex; gap:0.5rem; align-items:flex-end;">
+        <label style="flex:1; margin:0;">
+          <input type="text" name="confirm_username" placeholder="{{ current_user.username }}" autocomplete="off" required>
+        </label>
+        <button type="submit" class="outline" style="width:auto; margin:0; color:var(--ctp-red); border-color:var(--ctp-red);">Delete Account</button>
+      </div>
+      <div id="flash-delete" style="min-height:1.2em; margin-top:0.25rem;"></div>
+    </form>
+  </section>
 
 </div>
 {% endblock %}
