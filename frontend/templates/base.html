@@ -18,14 +18,12 @@
       <ul>
         <li><a href="/library">Library</a></li>
         <li><a href="/completions">Completions</a></li>
-        <li>
-          <details class="dropdown">
-            <summary>{{ current_user.name }}</summary>
-            <ul>
-              <li><a href="/account">Settings</a></li>
-              <li><a href="/logout">Sign out</a></li>
-            </ul>
-          </details>
+        <li class="nav-dropdown">
+          <a href="#" class="nav-dropdown-trigger">{{ current_user.name }}</a>
+          <ul class="nav-dropdown-menu" hidden>
+            <li><a href="/account">Settings</a></li>
+            <li><a href="/logout">Sign out</a></li>
+          </ul>
         </li>
       </ul>
     </nav>
@@ -33,5 +31,20 @@
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+  <script>
+    (function () {
+      document.querySelectorAll('.nav-dropdown').forEach(function (d) {
+        var trigger = d.querySelector('.nav-dropdown-trigger');
+        var menu = d.querySelector('.nav-dropdown-menu');
+        trigger.addEventListener('click', function (e) {
+          e.preventDefault();
+          menu.hidden = !menu.hidden;
+        });
+        document.addEventListener('click', function (e) {
+          if (!d.contains(e.target)) menu.hidden = true;
+        });
+      });
+    })();
+  </script>
 </body>
 </html>
