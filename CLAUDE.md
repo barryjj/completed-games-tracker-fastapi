@@ -13,14 +13,15 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 
 ## Git rules
 
-- **Never commit, push, rebase, or force-push without explicit per-action approval.**
 - Never work directly on `main` or `develop`.
-- Never push to `main` — not even after the user approves a rebase. Push is a separate action requiring separate approval.
-- All work goes on a feature branch via pull request.
-- When a destructive git operation is needed (force push, rebase, history rewrite), explain what it does and provide the command. Stop there — let the user run it.
+- Never push to `main` or force-push `main` for any reason — provide the command and let the user run it.
+- Feature branches: push freely, open PRs freely.
+- Force-pushing a feature branch after a rebase is fine — explain what changed.
+- Always pass `--head <branch>` explicitly to `gh pr create`.
 
 ## Branching
 
+- **Always `git pull origin main` immediately before `git checkout -b <branch>`. No exceptions.**
 - Branch from `main` unless explicitly told otherwise.
 - Prefer not stacking branches on unmerged feature branches. If stacking is necessary, rebase the child branch onto `origin/main` after the parent PR lands before the child PR is merged — rebase merges rewrite commit hashes, so the child branch must be updated or it will get phantom conflicts.
 

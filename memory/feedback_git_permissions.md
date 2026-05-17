@@ -1,11 +1,21 @@
 ---
-name: Git push permissions
-description: User has strict rules about pushing to main/develop and force pushing
+name: Git push permissions and branching discipline
+description: Always pull main before branching; main is protected, feature branches are not
 type: feedback
 ---
 
-Never push directly to main or develop, and never force push to any branch, without explicit user authorization for that specific action.
+**Always run `git pull origin main` immediately before `git checkout -b <branch>`. No exceptions. This is the single most repeated mistake in this project.**
 
-**Why:** User has guardrails (agents.md, copilot-instructions.md) that restrict agents from working directly on protected branches. They want to control pushes and force pushes themselves.
+**Why:** Branches created from stale local main get duplicate commits when the user merges a PR via rebase, causing conflicts on every subsequent PR. This has happened on 14+ PRs.
 
-**How to apply:** When a fix requires pushing to main or force pushing, prepare the commands and explain what they do, then stop and let the user run them. Asking "should I go ahead?" and getting a "yes" for a rebase does NOT authorize the subsequent force push — those are separate actions requiring separate confirmation.
+**How to apply:** Branch creation is always two commands, never one:
+```
+git pull origin main
+git checkout -b feature/my-branch
+```
+
+---
+
+Push feature branches and open PRs freely. Always pass `--head <branch>` to `gh pr create` — without it, gh uses the cwd's git context which may be a worktree on a different branch.
+
+Never push to `main` or force-push `main` without explicit per-action authorization.
