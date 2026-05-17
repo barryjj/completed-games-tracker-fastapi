@@ -2,43 +2,44 @@
 {% block title %}Library{% endblock %}
 
 {% block content %}
-<h1>Library</h1>
+<h1 class="mb-4">Library</h1>
 
 <details>
-  <summary role="button" class="outline">Add Game Manually</summary>
+  <summary>Add Game Manually</summary>
   <form
+    class="mt-3"
     hx-post="/library/games"
     hx-target="#library-tbody"
     hx-swap="afterbegin"
     hx-on::after-request="if(event.detail.successful) this.reset()"
   >
-    <div class="grid">
-      <label>
-        Title
-        <input type="text" name="title" placeholder="e.g. Elden Ring" required>
-      </label>
-      <label>
-        Platform
-        <select name="platform">
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Title</label>
+        <input type="text" class="form-control" name="title" placeholder="e.g. Elden Ring" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Platform</label>
+        <select class="form-select" name="platform">
           {% for p in platforms %}
           <option>{{ p }}</option>
           {% endfor %}
         </select>
-      </label>
-      <label>
-        Type
-        <select name="game_type">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Type</label>
+        <select class="form-select" name="game_type">
           {% for t in game_types %}
           <option value="{{ t }}">{{ t | capitalize }}</option>
           {% endfor %}
         </select>
-      </label>
+      </div>
     </div>
-    <button type="submit">Add to Library</button>
+    <button type="submit" class="btn btn-primary">Add to Library</button>
   </form>
 </details>
 
-<table>
+<table class="table table-borderless">
   <thead>
     <tr>
       <th>Title</th>
@@ -55,6 +56,6 @@
 </table>
 
 {% if not entries %}
-<p><em>No games in your library yet. Add one above or import from Steam / PSN (coming soon).</em></p>
+<p class="text-secondary"><em>No games in your library yet. Add one above or import from Steam / PSN (coming soon).</em></p>
 {% endif %}
 {% endblock %}
