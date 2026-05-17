@@ -21,6 +21,7 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 
 ## Branching
 
+- **Always `git pull origin main` immediately before `git checkout -b <branch>`. No exceptions.**
 - Branch from `main` unless explicitly told otherwise.
 - Prefer not stacking branches on unmerged feature branches. If stacking is necessary, rebase the child branch onto `origin/main` after the parent PR lands before the child PR is merged — rebase merges rewrite commit hashes, so the child branch must be updated or it will get phantom conflicts.
 
