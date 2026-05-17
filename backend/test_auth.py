@@ -1,8 +1,14 @@
+def _signup(client, username, password):
+    return client.post("/signup", data={
+        "username": username,
+        "password": password,
+        "password_confirm": password,
+    }, follow_redirects=False)
+
+
 def test_signup_signin_me_flow(client):
-    r = client.post("/signup", json={"username": "testuser", "password": "pass123"})
-    assert r.status_code == 200
-    data = r.json()
-    assert "id" in data
+    r = _signup(client, "testuser", "pass123")
+    assert r.status_code == 302
 
     r2 = client.post("/signin", json={"username": "testuser", "password": "pass123"})
     assert r2.status_code == 200
@@ -11,19 +17,18 @@ def test_signup_signin_me_flow(client):
 
     r3 = client.get("/me", headers={"Authorization": f"Bearer {token}"})
     assert r3.status_code == 200
-    assert r3.json()["id"] == data["id"]
+    assert r3.json()["name"] == "testuser"
 
 
 def test_signup_existing_username(client):
-    r = client.post("/signup", json={"username": "dup", "password": "p"})
-    assert r.status_code == 200
-    r2 = client.post("/signup", json={"username": "dup", "password": "p2"})
-    assert r2.status_code == 400
+    _signup(client, "dup", "p")
+    r2 = _signup(client, "dup", "p2")
+    assert r2.status_code == 422
+    assert b"already taken" in r2.content
 
 
 def test_signin_invalid_password(client):
-    r = client.post("/signup", json={"username": "user2", "password": "pw"})
-    assert r.status_code == 200
+    _signup(client, "user2", "pw")
     r2 = client.post("/signin", json={"username": "user2", "password": "wrong"})
     assert r2.status_code == 401
 

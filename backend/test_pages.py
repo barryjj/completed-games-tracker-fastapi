@@ -5,9 +5,9 @@ from backend import models
 
 def _signup_and_login(client, username="testuser", password="testpass"):
     """Helper: create account and return an authenticated client session."""
-    client.post("/signup", json={"username": username, "password": password})
-    r = client.post("/signin", json={"username": username, "password": password})
-    token = r.json()["token"]
+    client.post("/signup", data={"username": username, "password": password, "password_confirm": password})
+    r = client.post("/login", data={"username": username, "password": password}, follow_redirects=False)
+    token = r.cookies["session"]
     client.cookies.set("session", token)
     return token
 
@@ -35,7 +35,7 @@ def test_login_page_loads(client):
 
 
 def test_login_valid_credentials(client):
-    client.post("/signup", json={"username": "u1", "password": "pw"})
+    client.post("/signup", data={"username": "u1", "password": "pw", "password_confirm": "pw"})
     r = client.post("/login", data={"username": "u1", "password": "pw"}, follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == "/library"

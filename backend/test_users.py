@@ -5,9 +5,10 @@ def test_health(client):
 
 
 def test_get_user_by_id(client):
-    r = client.post("/signup", json={"username": "alice", "password": "pw"})
-    assert r.status_code == 200
-    uid = r.json()["id"]
+    client.post("/signup", data={"username": "alice", "password": "pw", "password_confirm": "pw"})
+    r = client.post("/signin", json={"username": "alice", "password": "pw"})
+    token = r.json()["token"]
+    uid = client.get("/me", headers={"Authorization": f"Bearer {token}"}).json()["id"]
 
     r2 = client.get(f"/users/{uid}")
     assert r2.status_code == 200
