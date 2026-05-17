@@ -1,15 +1,21 @@
 ---
-name: Git push permissions
-description: Push/PR on feature branches is fine; main is the only protected surface
+name: Git push permissions and branching discipline
+description: Always pull main before branching; main is protected, feature branches are not
 type: feedback
 ---
 
-Push feature branches and open PRs freely — that is normal expected workflow.
+**Always run `git pull origin main` immediately before `git checkout -b <branch>`. No exceptions. This is the single most repeated mistake in this project.**
 
-**The hard rules:**
-- Never push to `main` or force-push `main` without explicit per-action authorization
-- Always pass `--head <branch>` to `gh pr create` — without it, gh picks up the cwd's git context which may be a worktree on a different branch
+**Why:** Branches created from stale local main get duplicate commits when the user merges a PR via rebase, causing conflicts on every subsequent PR. This has happened on 14+ PRs.
 
-**Why:** User got burned by agents pushing to main and by a bad PR that pointed at the wrong branch because `gh pr create` was run from a worktree directory.
+**How to apply:** Branch creation is always two commands, never one:
+```
+git pull origin main
+git checkout -b feature/my-branch
+```
 
-**How to apply:** After finishing work on a feature branch, push it and open the PR with `--head`. That's correct. Only stop and ask when the target is `main` itself.
+---
+
+Push feature branches and open PRs freely. Always pass `--head <branch>` to `gh pr create` — without it, gh uses the cwd's git context which may be a worktree on a different branch.
+
+Never push to `main` or force-push `main` without explicit per-action authorization.
