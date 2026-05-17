@@ -91,36 +91,21 @@ header nav strong { color: var(--ctp-mauve); font-size: 1rem; letter-spacing: 0.
 header nav a { color: var(--ctp-subtext); text-decoration: none; transition: color 150ms; }
 header nav a:hover { color: var(--ctp-lavender); }
 
-/* Nav dropdown */
-header nav details.dropdown { position: relative; }
-header nav details.dropdown > summary {
-  color: var(--ctp-subtext); cursor: pointer;
-  transition: color 150ms; padding: 0; margin: 0;
-  /* remove all Pico button/disclosure styling */
-  list-style: none; background: none; border: none;
-  font-size: inherit; font-weight: inherit; border-radius: 0;
-  box-shadow: none;
-}
-header nav details.dropdown > summary::-webkit-details-marker,
-header nav details.dropdown > summary::marker { display: none; }
-header nav details.dropdown > summary::after { display: none; }
-header nav details.dropdown > summary:hover { color: var(--ctp-lavender); background: none; }
-header nav details.dropdown[open] > summary { color: var(--ctp-mauve); background: none; }
-header nav details.dropdown > ul {
+/* Nav dropdown (plain <a> trigger, no <details> so Pico never interferes) */
+.nav-dropdown { position: relative; }
+.nav-dropdown-menu {
   position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 99;
   min-width: 150px; margin: 0; padding: 0.25rem 0; list-style: none;
   background: var(--ctp-mantle); border: 1px solid var(--ctp-surface1);
   border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   overflow: hidden;
 }
-header nav details.dropdown > ul li { padding: 0; margin: 0; }
-header nav details.dropdown > ul a {
-  display: block; padding: 0.4rem 0.85rem;
+.nav-dropdown-menu li { padding: 0; margin: 0; }
+.nav-dropdown-menu a {
+  display: block; padding: 0.4rem 1rem;
   font-size: 0.9rem; color: var(--ctp-subtext);
 }
-header nav details.dropdown > ul a:hover {
-  color: var(--ctp-text); background: var(--ctp-surface0);
-}
+.nav-dropdown-menu a:hover { color: var(--ctp-text); background: var(--ctp-surface0); }
 
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {
@@ -200,3 +185,10 @@ details summary[role="button"].outline:hover { border-color: var(--ctp-mauve); b
 .field-row button { flex-shrink: 0; width: auto; margin: 0; align-self: flex-start; margin-top: 1px; }
 
 .flash-slot { min-height: 1.1em; margin-top: 0.3rem; font-size: 0.85rem; }
+
+/* Apply theme colors directly so Pico's high-specificity :root:not() block can't override */
+.tab-panel select {
+  background-color: var(--ctp-surface0);
+  color: var(--ctp-text);
+  border-color: var(--ctp-surface1);
+}
