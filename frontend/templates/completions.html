@@ -2,44 +2,45 @@
 {% block title %}Completions{% endblock %}
 
 {% block content %}
-<h1>Completions</h1>
+<h1 class="mb-4">Completions</h1>
 
 <details>
-  <summary role="button" class="outline">Log a Completion</summary>
+  <summary>Log a Completion</summary>
   <form
+    class="mt-3"
     hx-post="/completions/log"
     hx-target="#completions-tbody"
     hx-swap="afterbegin"
     hx-on::after-request="if(event.detail.successful) this.reset()"
   >
-    <div class="grid">
-      <label>
-        Game
-        <select name="library_entry_id" required>
+    <div class="row g-3 mb-3">
+      <div class="col-md-4">
+        <label class="form-label">Game</label>
+        <select class="form-select" name="library_entry_id" required>
           <option value="" disabled selected>Select a game…</option>
           {% for entry in library_entries %}
           <option value="{{ entry.id }}">{{ entry.release.game.title }} ({{ entry.release.platform }})</option>
           {% endfor %}
         </select>
-      </label>
-      <label>
-        Date Completed
-        <input type="date" name="completed_at" value="{{ today }}" required>
-      </label>
-      <label>
-        Playthroughs
-        <input type="text" name="playthroughs" value="1" placeholder="1, 1+, 2…">
-      </label>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Date Completed</label>
+        <input type="date" class="form-control" name="completed_at" value="{{ today }}" required>
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Playthroughs</label>
+        <input type="text" class="form-control" name="playthroughs" value="1" placeholder="1, 1+, 2…">
+      </div>
     </div>
-    <label>
-      Notes
-      <input type="text" name="notes" placeholder="Platinum, 100%, co-op with Tommy…">
-    </label>
-    <button type="submit">Log Completion</button>
+    <div class="mb-3">
+      <label class="form-label">Notes</label>
+      <input type="text" class="form-control" name="notes" placeholder="Platinum, 100%, co-op with Tommy…">
+    </div>
+    <button type="submit" class="btn btn-primary">Log Completion</button>
   </form>
 </details>
 
-<table>
+<table class="table table-borderless">
   <thead>
     <tr>
       <th>#</th>
@@ -58,6 +59,6 @@
 </table>
 
 {% if not completions %}
-<p><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
+<p class="text-secondary"><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
 {% endif %}
 {% endblock %}

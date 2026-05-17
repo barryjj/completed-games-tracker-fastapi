@@ -4,47 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{% endblock %} — Completed Games Tracker</title>
-  <script>document.documentElement.dataset.theme=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');</script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <script>document.documentElement.dataset.bsTheme=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
   <link rel="stylesheet" href="/static/css/theme.css">
   <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" defer></script>
 </head>
 <body>
-  <header>
-    <nav class="container">
-      <ul>
-        <li><strong>Completed Games Tracker</strong></li>
-      </ul>
-      <ul>
-        <li><a href="/library">Library</a></li>
-        <li><a href="/completions">Completions</a></li>
-        <li class="nav-dropdown">
-          <a href="#" class="nav-dropdown-trigger">{{ current_user.name }}</a>
-          <ul class="nav-dropdown-menu" hidden>
-            <li><a href="/account">Settings</a></li>
-            <li><a href="/logout">Sign out</a></li>
+  <nav class="navbar border-bottom">
+    <div class="container">
+      <a class="navbar-brand" href="/">Completed Games Tracker</a>
+      <div class="d-flex align-items-center gap-1">
+        <a class="nav-link px-3" href="/library">Library</a>
+        <a class="nav-link px-3" href="/completions">Completions</a>
+        <div class="dropdown">
+          <a class="nav-link px-3 dropdown-toggle" href="#" data-bs-toggle="dropdown" aria-expanded="false">
+            {{ current_user.name }}
+          </a>
+          <ul class="dropdown-menu dropdown-menu-end">
+            <li><a class="dropdown-item" href="/account">Settings</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="/logout">Sign out</a></li>
           </ul>
-        </li>
-      </ul>
-    </nav>
-  </header>
-  <main class="container">
+        </div>
+      </div>
+    </div>
+  </nav>
+  <main class="container py-4">
     {% block content %}{% endblock %}
   </main>
-  <script>
-    (function () {
-      document.querySelectorAll('.nav-dropdown').forEach(function (d) {
-        var trigger = d.querySelector('.nav-dropdown-trigger');
-        var menu = d.querySelector('.nav-dropdown-menu');
-        trigger.addEventListener('click', function (e) {
-          e.preventDefault();
-          menu.hidden = !menu.hidden;
-        });
-        document.addEventListener('click', function (e) {
-          if (!d.contains(e.target)) menu.hidden = true;
-        });
-      });
-    })();
-  </script>
 </body>
 </html>
