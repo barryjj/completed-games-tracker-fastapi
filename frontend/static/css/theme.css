@@ -1,111 +1,213 @@
 /* ─── Catppuccin Mocha (dark) ────────────────────────────────────────────── */
-html[data-theme="dark"] {
+html[data-bs-theme="dark"] {
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
   --ctp-overlay0: #6c7086; --ctp-text:     #cdd6f4; --ctp-subtext:  #a6adc8;
   --ctp-mauve:    #cba6f7; --ctp-lavender: #b4befe; --ctp-blue:     #89b4fa;
   --ctp-green:    #a6e3a1; --ctp-peach:    #fab387; --ctp-red:      #f38ba8;
   --ctp-yellow:   #f9e2af;
-  --badge-blue-bg:  rgba(137,180,250,0.12); --badge-peach-bg: rgba(250,179,135,0.12);
-  --summary-hover:  rgba(203,166,247,0.08);
 
-  --pico-background-color:                    #1e1e2e;
-  --pico-card-background-color:               #181825;
-  --pico-color:                               #cdd6f4;
-  --pico-muted-color:                         #a6adc8;
-  --pico-muted-border-color:                  #45475a;
-  --pico-primary:                             #cba6f7;
-  --pico-primary-hover:                       #b4befe;
-  --pico-primary-focus:                       rgba(203,166,247,0.25);
-  --pico-primary-inverse:                     #11111b;
-  --pico-secondary:                           #45475a;
-  --pico-secondary-hover:                     #585b70;
-  --pico-border-color:                        #45475a;
-  --pico-table-border-color:                  #313244;
-  --pico-form-element-background-color:       #313244;
-  --pico-form-element-border-color:           #45475a;
-  --pico-form-element-color:                  #cdd6f4;
-  --pico-form-element-placeholder-color:      #6c7086;
-  --pico-form-element-active-border-color:    #cba6f7;
-  --pico-form-element-focus-color:            rgba(203,166,247,0.25);
-  --pico-del-color:                           #f38ba8;
-  --pico-ins-color:                           #a6e3a1;
+  /* Bootstrap overrides */
+  --bs-body-bg:                   #1e1e2e;
+  --bs-body-bg-rgb:               30,30,46;
+  --bs-body-color:                #cdd6f4;
+  --bs-body-color-rgb:            205,214,244;
+  --bs-emphasis-color:            #cdd6f4;
+  --bs-secondary-color:           #a6adc8;
+  --bs-secondary-bg:              #181825;
+  --bs-tertiary-bg:               #313244;
+  --bs-border-color:              #45475a;
+  --bs-border-color-translucent:  rgba(69,71,90,0.3);
+  --bs-link-color:                #cba6f7;
+  --bs-link-hover-color:          #b4befe;
+  --bs-primary:                   #cba6f7;
+  --bs-primary-rgb:               203,166,247;
+  --bs-danger:                    #f38ba8;
+  --bs-danger-rgb:                243,139,168;
+  --bs-success:                   #a6e3a1;
+  --bs-success-rgb:               166,227,161;
+  --bs-warning:                   #f9e2af;
+  --bs-code-color:                #a6e3a1;
+  --bs-navbar-color:              #a6adc8;
+  --bs-navbar-hover-color:        #cdd6f4;
+  --bs-navbar-active-color:       #cdd6f4;
+  --bs-navbar-brand-color:        #cba6f7;
+  --bs-navbar-brand-hover-color:  #b4befe;
+  --bs-nav-link-color:            #a6adc8;
+  --bs-nav-link-hover-color:      #cdd6f4;
+  --bs-dropdown-bg:               #181825;
+  --bs-dropdown-border-color:     #45475a;
+  --bs-dropdown-divider-bg:       #45475a;
+  --bs-dropdown-link-color:       #a6adc8;
+  --bs-dropdown-link-hover-color: #cdd6f4;
+  --bs-dropdown-link-hover-bg:    #313244;
+  --bs-dropdown-link-active-bg:   #cba6f7;
+  --bs-dropdown-link-active-color: #11111b;
+  --bs-card-border-color:         #45475a;
+  --bs-card-bg:                   #181825;
+  --bs-input-bg:                  #313244;
+  --bs-input-border-color:        #45475a;
+  --bs-input-color:               #cdd6f4;
+  --bs-input-placeholder-color:   #6c7086;
+  --bs-input-focus-border-color:  #cba6f7;
+  --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(203,166,247,0.25);
+  --bs-table-bg:                  transparent;
+  --bs-table-striped-bg:          rgba(255,255,255,0.03);
+  --bs-table-border-color:        #45475a;
+
+  --badge-blue-bg:  rgba(137,180,250,0.15);
+  --badge-peach-bg: rgba(250,179,135,0.15);
 }
 
-/* ─── Catppuccin Latte (darkened, light) ─────────────────────────────────── */
-html[data-theme="light"] {
+/* ─── Catppuccin Latte (light) ───────────────────────────────────────────── */
+html[data-bs-theme="light"] {
   --ctp-base:     #dce0e8; --ctp-mantle:   #ccd0da; --ctp-crust:    #bcc0cc;
   --ctp-surface0: #acb0be; --ctp-surface1: #9ca0b0; --ctp-surface2: #8c8fa1;
   --ctp-overlay0: #7c7f93; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
   --ctp-green:    #40a02b; --ctp-peach:    #fe640b; --ctp-red:      #d20f39;
   --ctp-yellow:   #df8e1d;
-  --badge-blue-bg:  rgba(30,102,245,0.12); --badge-peach-bg: rgba(254,100,11,0.12);
-  --summary-hover:  rgba(136,57,239,0.09);
 
-  --pico-background-color:                    #dce0e8;
-  --pico-card-background-color:               #ccd0da;
-  --pico-color:                               #4c4f69;
-  --pico-muted-color:                         #5c5f77;
-  --pico-muted-border-color:                  #9ca0b0;
-  --pico-primary:                             #8839ef;
-  --pico-primary-hover:                       #7287fd;
-  --pico-primary-focus:                       rgba(136,57,239,0.2);
-  --pico-primary-inverse:                     #bcc0cc;
-  --pico-secondary:                           #9ca0b0;
-  --pico-secondary-hover:                     #8c8fa1;
-  --pico-border-color:                        #9ca0b0;
-  --pico-table-border-color:                  #acb0be;
-  --pico-form-element-background-color:       #acb0be;
-  --pico-form-element-border-color:           #9ca0b0;
-  --pico-form-element-color:                  #4c4f69;
-  --pico-form-element-placeholder-color:      #7c7f93;
-  --pico-form-element-active-border-color:    #8839ef;
-  --pico-form-element-focus-color:            rgba(136,57,239,0.2);
-  --pico-del-color:                           #d20f39;
-  --pico-ins-color:                           #40a02b;
+  /* Bootstrap overrides */
+  --bs-body-bg:                   #dce0e8;
+  --bs-body-bg-rgb:               220,224,232;
+  --bs-body-color:                #4c4f69;
+  --bs-body-color-rgb:            76,79,105;
+  --bs-emphasis-color:            #4c4f69;
+  --bs-secondary-color:           #5c5f77;
+  --bs-secondary-bg:              #ccd0da;
+  --bs-tertiary-bg:               #acb0be;
+  --bs-border-color:              #9ca0b0;
+  --bs-border-color-translucent:  rgba(156,160,176,0.3);
+  --bs-link-color:                #8839ef;
+  --bs-link-hover-color:          #7287fd;
+  --bs-primary:                   #8839ef;
+  --bs-primary-rgb:               136,57,239;
+  --bs-danger:                    #d20f39;
+  --bs-danger-rgb:                210,15,57;
+  --bs-success:                   #40a02b;
+  --bs-success-rgb:               64,160,43;
+  --bs-warning:                   #df8e1d;
+  --bs-code-color:                #40a02b;
+  --bs-navbar-color:              #5c5f77;
+  --bs-navbar-hover-color:        #4c4f69;
+  --bs-navbar-active-color:       #4c4f69;
+  --bs-navbar-brand-color:        #8839ef;
+  --bs-navbar-brand-hover-color:  #7287fd;
+  --bs-nav-link-color:            #5c5f77;
+  --bs-nav-link-hover-color:      #4c4f69;
+  --bs-dropdown-bg:               #ccd0da;
+  --bs-dropdown-border-color:     #9ca0b0;
+  --bs-dropdown-divider-bg:       #9ca0b0;
+  --bs-dropdown-link-color:       #5c5f77;
+  --bs-dropdown-link-hover-color: #4c4f69;
+  --bs-dropdown-link-hover-bg:    #acb0be;
+  --bs-dropdown-link-active-bg:   #8839ef;
+  --bs-dropdown-link-active-color: #bcc0cc;
+  --bs-card-border-color:         #9ca0b0;
+  --bs-card-bg:                   #ccd0da;
+  --bs-input-bg:                  #acb0be;
+  --bs-input-border-color:        #9ca0b0;
+  --bs-input-color:               #4c4f69;
+  --bs-input-placeholder-color:   #7c7f93;
+  --bs-input-focus-border-color:  #8839ef;
+  --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(136,57,239,0.2);
+  --bs-table-bg:                  transparent;
+  --bs-table-striped-bg:          rgba(0,0,0,0.03);
+  --bs-table-border-color:        #9ca0b0;
+
+  --badge-blue-bg:  rgba(30,102,245,0.12);
+  --badge-peach-bg: rgba(254,100,11,0.12);
 }
 
-/* ─── Global ─────────────────────────────────────────────────────────────── */
-:root {
-  --pico-spacing: 0.875rem;
-  --pico-form-element-spacing-vertical: 0.5rem;
-  --pico-form-element-spacing-horizontal: 0.75rem;
-  --pico-table-row-stripped-background-color: rgba(0,0,0,0.04);
-  --pico-code-background-color: var(--ctp-mantle);
-  --pico-code-color: var(--ctp-green);
-  --pico-mark-background-color: var(--ctp-yellow);
-  --pico-mark-color: var(--ctp-crust);
+/* ─── Form controls — use Catppuccin surface for input bg ────────────────── */
+.form-control, .form-select, .input-group-text {
+  background-color: var(--ctp-surface0);
+  color: var(--ctp-text);
+  border-color: var(--ctp-surface1);
+}
+.form-control:focus, .form-select:focus {
+  background-color: var(--ctp-surface0);
+  color: var(--ctp-text);
+  border-color: var(--ctp-mauve);
+  box-shadow: var(--bs-input-focus-box-shadow);
+}
+.form-control::placeholder { color: var(--ctp-overlay0); }
+.form-control:disabled, .form-select:disabled {
+  background-color: var(--ctp-surface1);
+  color: var(--ctp-subtext);
+}
+.form-label { color: var(--ctp-text); font-weight: 500; }
+
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
+.btn-primary {
+  --bs-btn-bg:           var(--ctp-mauve);
+  --bs-btn-border-color: var(--ctp-mauve);
+  --bs-btn-color:        var(--ctp-crust);
+  --bs-btn-hover-bg:     var(--ctp-lavender);
+  --bs-btn-hover-border-color: var(--ctp-lavender);
+  --bs-btn-hover-color:  var(--ctp-crust);
+  --bs-btn-active-bg:    var(--ctp-lavender);
+  --bs-btn-focus-shadow-rgb: var(--bs-primary-rgb);
+}
+.btn-outline-secondary {
+  --bs-btn-color:              var(--ctp-text);
+  --bs-btn-border-color:       var(--ctp-surface1);
+  --bs-btn-hover-bg:           var(--ctp-surface0);
+  --bs-btn-hover-border-color: var(--ctp-mauve);
+  --bs-btn-hover-color:        var(--ctp-text);
+  --bs-btn-active-bg:          var(--ctp-surface0);
+}
+.btn-outline-danger {
+  --bs-btn-color:              var(--ctp-red);
+  --bs-btn-border-color:       var(--ctp-red);
+  --bs-btn-hover-bg:           var(--ctp-red);
+  --bs-btn-hover-color:        var(--ctp-crust);
 }
 
-html, body { background-color: var(--ctp-base); color: var(--ctp-text); }
-body { min-height: 100vh; }
+/* ─── Navbar ─────────────────────────────────────────────────────────────── */
+.navbar { background-color: var(--ctp-mantle); border-bottom-color: var(--ctp-surface0) !important; }
+.navbar-brand { color: var(--ctp-mauve) !important; font-weight: 700; letter-spacing: 0.02em; font-size: 1rem; }
+.navbar-brand:hover { color: var(--ctp-lavender) !important; }
+.nav-link { color: var(--ctp-subtext) !important; font-size: 0.95rem; }
+.nav-link:hover, .nav-link:focus { color: var(--ctp-text) !important; }
 
-/* ─── Nav ────────────────────────────────────────────────────────────────── */
-header {
-  background-color: var(--ctp-mantle);
-  border-bottom: 1px solid var(--ctp-surface0);
+/* ─── Nav tabs (account page) ────────────────────────────────────────────── */
+.nav-tabs { border-bottom-color: var(--ctp-surface1); }
+.nav-tabs .nav-link {
+  color: var(--ctp-subtext) !important;
+  border-color: transparent;
+  font-size: 0.8rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
 }
-header > nav { padding-top: 0.6rem; padding-bottom: 0.6rem; }
-header nav strong { color: var(--ctp-mauve); font-size: 1rem; letter-spacing: 0.02em; }
-header nav a { color: var(--ctp-subtext); text-decoration: none; transition: color 150ms; }
-header nav a:hover { color: var(--ctp-lavender); }
+.nav-tabs .nav-link:hover {
+  color: var(--ctp-text) !important;
+  border-color: transparent;
+  background: var(--ctp-surface0);
+}
+.nav-tabs .nav-link.active {
+  color: var(--ctp-mauve) !important;
+  background: var(--ctp-base);
+  border-color: var(--ctp-surface1) var(--ctp-surface1) var(--ctp-base);
+}
 
-/* Nav dropdown (plain <a> trigger, no <details> so Pico never interferes) */
-.nav-dropdown { position: relative; }
-.nav-dropdown-menu {
-  position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 99;
-  min-width: 150px; margin: 0; padding: 0.25rem 0; list-style: none;
-  background: var(--ctp-mantle); border: 1px solid var(--ctp-surface1);
-  border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-  overflow: hidden;
+/* ─── Tables ─────────────────────────────────────────────────────────────── */
+.table { --bs-table-color: var(--ctp-text); }
+.table thead th {
+  color: var(--ctp-subtext); font-size: 0.75em; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  border-bottom-color: var(--ctp-surface1);
 }
-.nav-dropdown-menu li { padding: 0; margin: 0; }
-.nav-dropdown-menu a {
-  display: block; padding: 0.4rem 1rem; margin: 0;
-  font-size: 0.9rem; color: var(--ctp-subtext);
+.table tbody td { border-bottom-color: var(--ctp-surface0); }
+
+/* ─── Cards ──────────────────────────────────────────────────────────────── */
+.card { background-color: var(--ctp-mantle); border-color: var(--ctp-surface1); }
+
+/* ─── Auth page ──────────────────────────────────────────────────────────── */
+.auth-card { max-width: 400px; width: 100%; }
+.app-name {
+  color: var(--ctp-mauve); font-size: 1rem; font-weight: 700;
+  letter-spacing: 0.02em; margin-bottom: 0.1rem;
 }
-.nav-dropdown-menu a:hover { color: var(--ctp-text); background: var(--ctp-surface0); }
 
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {
@@ -119,82 +221,42 @@ header nav a:hover { color: var(--ctp-lavender); }
   padding: 0.15em 0.45em; border-radius: 4px;
 }
 
-/* ─── Tables ─────────────────────────────────────────────────────────────── */
-table { width: 100%; }
-table thead th {
-  color: var(--ctp-subtext); font-size: 0.75em; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.07em;
-  border-bottom-color: var(--ctp-surface1);
-}
-
-/* ─── Details/summary (collapsible, not nav dropdown) ────────────────────── */
-details summary[role="button"].outline { color: var(--ctp-mauve); border-color: var(--ctp-surface1); }
-details summary[role="button"].outline:hover { border-color: var(--ctp-mauve); background: var(--summary-hover); }
-
-/* ─── HTMX ───────────────────────────────────────────────────────────────── */
-.htmx-indicator { opacity: 0; transition: opacity 200ms; }
-.htmx-request .htmx-indicator { opacity: 1; }
-
-/* ─── Auth pages (login / signup) ────────────────────────────────────────── */
-.auth-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-.auth-card {
-  width: 100%; max-width: 380px;
-  background-color: var(--ctp-mantle);
-  border: 1px solid var(--ctp-surface1);
-  padding: 1.5rem !important;
-}
-.auth-card .app-name {
-  color: var(--ctp-mauve); font-size: 1rem; font-weight: 700;
-  letter-spacing: 0.02em; margin-bottom: 0.1rem;
-}
-.auth-card h3 { margin-bottom: 1rem; font-size: 1.1rem; }
-.auth-card label { margin-bottom: 0.5rem; }
-.auth-card button { margin-top: 0.25rem; }
-
-/* ─── Account page ───────────────────────────────────────────────────────── */
-.account-tabs {
-  display: flex; gap: 0; margin-bottom: 1.5rem;
-  border-bottom: 1px solid var(--ctp-surface1);
-}
-.tab-btn {
-  color: var(--ctp-subtext); text-decoration: none; font-size: 0.8rem;
-  font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
-  padding: 0.45rem 0.85rem; border-radius: 4px 4px 0 0;
-  border: 1px solid transparent; border-bottom: none; margin-bottom: -1px;
-  transition: color 150ms, background 150ms;
-}
-.tab-btn:hover { color: var(--ctp-text); background: var(--ctp-surface0); }
-.tab-btn.active {
-  color: var(--ctp-mauve); background: var(--ctp-base);
-  border-color: var(--ctp-surface1);
-}
-.tab-btn--danger:hover { color: var(--ctp-red); }
-.tab-btn--danger.active { color: var(--ctp-red); }
-
-.tab-panel h4 {
+/* ─── Account section headings ───────────────────────────────────────────── */
+.section-heading {
   font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.07em; color: var(--ctp-subtext);
   margin-bottom: 0.75rem; margin-top: 1.25rem;
 }
-.tab-panel h4:first-child { margin-top: 0; }
-.tab-panel hr { border-color: var(--ctp-surface1); margin: 1.25rem 0; }
-.tab-panel form { margin-bottom: 0; }
+.section-heading:first-child { margin-top: 0; }
+.tab-pane hr { border-color: var(--ctp-surface1); }
+.flash-slot { min-height: 1.1em; font-size: 0.85rem; }
 
-.field-row { display: flex; gap: 0.5rem; align-items: flex-start; }
-.field-row input { flex: 1; margin-bottom: 0; }
-.field-row button { flex-shrink: 0; width: auto; margin: 0; align-self: flex-start; margin-top: 1px; }
+/* ─── Details/summary (collapsible add form) ─────────────────────────────── */
+details { margin-bottom: 1.5rem; }
+details summary {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.4rem 0.85rem;
+  color: var(--ctp-mauve); border: 1px solid var(--ctp-surface1);
+  border-radius: var(--bs-border-radius);
+  font-size: 0.9rem; font-weight: 500;
+  cursor: pointer; list-style: none; user-select: none;
+  transition: background 150ms, border-color 150ms;
+}
+details summary::-webkit-details-marker { display: none; }
+details summary::before { content: "▶"; font-size: 0.65em; transition: transform 150ms; }
+details[open] summary::before { transform: rotate(90deg); }
+details summary:hover { background: rgba(var(--bs-primary-rgb), 0.08); border-color: var(--ctp-mauve); }
+details > :not(summary) { margin-top: 1rem; }
 
-.flash-slot { min-height: 1.1em; margin-top: 0.3rem; font-size: 0.85rem; }
-
-/* Custom theme picker — replaces <select> to avoid OS native dropdown rendering */
+/* ─── Custom theme picker ────────────────────────────────────────────────── */
 .theme-picker { position: relative; display: inline-block; }
 .theme-picker-trigger {
   background: var(--ctp-surface0); color: var(--ctp-text);
-  border: 1px solid var(--ctp-surface1); border-radius: var(--pico-border-radius);
-  padding: 0.5rem 2rem 0.5rem 0.75rem; font-size: 1rem; font-family: inherit;
-  cursor: pointer; text-align: left; width: 280px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a6adc8' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat; background-position: right 0.6rem center;
+  border: 1px solid var(--ctp-surface1); border-radius: var(--bs-border-radius);
+  padding: 0.375rem 2.25rem 0.375rem 0.75rem;
+  font-size: 1rem; font-family: inherit; cursor: pointer; text-align: left; width: 280px;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23a6adc8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+  background-repeat: no-repeat; background-position: right 0.6rem center; background-size: 12px;
   transition: border-color 150ms;
 }
 .theme-picker-trigger:hover { border-color: var(--ctp-mauve); }
@@ -202,15 +264,18 @@ details summary[role="button"].outline:hover { border-color: var(--ctp-mauve); b
   position: absolute; left: 0; top: calc(100% + 4px); z-index: 99;
   width: 100%; margin: 0; padding: 0.25rem 0; list-style: none;
   background: var(--ctp-surface0); border: 1px solid var(--ctp-surface1);
-  border-radius: var(--pico-border-radius); box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  border-radius: var(--bs-border-radius); box-shadow: var(--bs-box-shadow);
   overflow: hidden;
 }
 .theme-picker-menu li { padding: 0; margin: 0; }
 .theme-picker-menu button {
   display: block; width: 100%; padding: 0.4rem 0.75rem; margin: 0;
   background: none; border: none; text-align: left;
-  font-size: 1rem; font-family: inherit; color: var(--ctp-subtext);
-  cursor: pointer;
+  font-size: 1rem; font-family: inherit; color: var(--ctp-subtext); cursor: pointer;
 }
 .theme-picker-menu button:hover { color: var(--ctp-text); background: var(--ctp-surface1); }
 .theme-picker-menu button[aria-selected="true"] { color: var(--ctp-mauve); }
+
+/* ─── HTMX ───────────────────────────────────────────────────────────────── */
+.htmx-indicator { opacity: 0; transition: opacity 200ms; }
+.htmx-request .htmx-indicator { opacity: 1; }
