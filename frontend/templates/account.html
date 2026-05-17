@@ -86,23 +86,60 @@
   <!-- Appearance -->
   <div id="tab-appearance" class="tab-panel" hidden>
     <h4>Color Theme</h4>
-    <select id="theme-select" style="max-width: 280px;">
-      <option value="system">System default</option>
-      <option value="dark">Dark (Catppuccin Mocha)</option>
-      <option value="light">Light (Catppuccin Latte)</option>
-    </select>
+    <div class="theme-picker" id="theme-picker">
+      <button type="button" class="theme-picker-trigger" aria-haspopup="listbox" aria-expanded="false">
+        System default
+      </button>
+      <ul class="theme-picker-menu" role="listbox" hidden>
+        <li role="option"><button type="button" data-value="system">System default</button></li>
+        <li role="option"><button type="button" data-value="dark">Dark (Catppuccin Mocha)</button></li>
+        <li role="option"><button type="button" data-value="light">Light (Catppuccin Latte)</button></li>
+      </ul>
+    </div>
     <script>
       (function () {
-        const sel = document.getElementById('theme-select');
-        sel.value = localStorage.getItem('theme') || 'system';
-        sel.addEventListener('change', function () {
-          if (this.value === 'system') {
+        var labels = { system: 'System default', dark: 'Dark (Catppuccin Mocha)', light: 'Light (Catppuccin Latte)' };
+        var picker  = document.getElementById('theme-picker');
+        var trigger = picker.querySelector('.theme-picker-trigger');
+        var menu    = picker.querySelector('.theme-picker-menu');
+        var current = localStorage.getItem('theme') || 'system';
+
+        function applyTheme(val) {
+          if (val === 'system') {
             localStorage.removeItem('theme');
             document.documentElement.dataset.theme =
               matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
           } else {
-            document.documentElement.dataset.theme = this.value;
-            localStorage.setItem('theme', this.value);
+            document.documentElement.dataset.theme = val;
+            localStorage.setItem('theme', val);
+          }
+          trigger.textContent = labels[val];
+          menu.querySelectorAll('button').forEach(function (b) {
+            b.setAttribute('aria-selected', b.dataset.value === val ? 'true' : 'false');
+          });
+          current = val;
+        }
+
+        applyTheme(current);
+
+        trigger.addEventListener('click', function () {
+          var open = !menu.hidden;
+          menu.hidden = open;
+          trigger.setAttribute('aria-expanded', !open);
+        });
+
+        menu.querySelectorAll('button').forEach(function (b) {
+          b.addEventListener('click', function () {
+            applyTheme(b.dataset.value);
+            menu.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
+          });
+        });
+
+        document.addEventListener('click', function (e) {
+          if (!picker.contains(e.target)) {
+            menu.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
           }
         });
       })();
