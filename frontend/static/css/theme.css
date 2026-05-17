@@ -1,40 +1,4 @@
-/* ─── Catppuccin Mocha — dark OS default ────────────────────────────────── */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
-    --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
-    --ctp-overlay0: #6c7086; --ctp-text:     #cdd6f4; --ctp-subtext:  #a6adc8;
-    --ctp-mauve:    #cba6f7; --ctp-lavender: #b4befe; --ctp-blue:     #89b4fa;
-    --ctp-green:    #a6e3a1; --ctp-peach:    #fab387; --ctp-red:      #f38ba8;
-    --ctp-yellow:   #f9e2af;
-    --badge-blue-bg:  rgba(137,180,250,0.12); --badge-peach-bg: rgba(250,179,135,0.12);
-    --summary-hover:  rgba(203,166,247,0.08);
-
-    --pico-background-color:                    #1e1e2e;
-    --pico-card-background-color:               #181825;
-    --pico-color:                               #cdd6f4;
-    --pico-muted-color:                         #a6adc8;
-    --pico-muted-border-color:                  #45475a;
-    --pico-primary:                             #cba6f7;
-    --pico-primary-hover:                       #b4befe;
-    --pico-primary-focus:                       rgba(203,166,247,0.25);
-    --pico-primary-inverse:                     #11111b;
-    --pico-secondary:                           #45475a;
-    --pico-secondary-hover:                     #585b70;
-    --pico-border-color:                        #45475a;
-    --pico-table-border-color:                  #313244;
-    --pico-form-element-background-color:       #313244;
-    --pico-form-element-border-color:           #45475a;
-    --pico-form-element-color:                  #cdd6f4;
-    --pico-form-element-placeholder-color:      #6c7086;
-    --pico-form-element-active-border-color:    #cba6f7;
-    --pico-form-element-focus-color:            rgba(203,166,247,0.25);
-    --pico-del-color:                           #f38ba8;
-    --pico-ins-color:                           #a6e3a1;
-  }
-}
-
-/* ─── Catppuccin Mocha — explicit override ──────────────────────────────── */
+/* ─── Catppuccin Mocha (dark) ────────────────────────────────────────────── */
 html[data-theme="dark"] {
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
@@ -68,43 +32,7 @@ html[data-theme="dark"] {
   --pico-ins-color:                           #a6e3a1;
 }
 
-/* ─── Catppuccin Latte (darkened) — light OS default ───────────────────── */
-@media (prefers-color-scheme: light) {
-  :root {
-    --ctp-base:     #dce0e8; --ctp-mantle:   #ccd0da; --ctp-crust:    #bcc0cc;
-    --ctp-surface0: #acb0be; --ctp-surface1: #9ca0b0; --ctp-surface2: #8c8fa1;
-    --ctp-overlay0: #7c7f93; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
-    --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
-    --ctp-green:    #40a02b; --ctp-peach:    #fe640b; --ctp-red:      #d20f39;
-    --ctp-yellow:   #df8e1d;
-    --badge-blue-bg:  rgba(30,102,245,0.12); --badge-peach-bg: rgba(254,100,11,0.12);
-    --summary-hover:  rgba(136,57,239,0.09);
-
-    --pico-background-color:                    #dce0e8;
-    --pico-card-background-color:               #ccd0da;
-    --pico-color:                               #4c4f69;
-    --pico-muted-color:                         #5c5f77;
-    --pico-muted-border-color:                  #9ca0b0;
-    --pico-primary:                             #8839ef;
-    --pico-primary-hover:                       #7287fd;
-    --pico-primary-focus:                       rgba(136,57,239,0.2);
-    --pico-primary-inverse:                     #bcc0cc;
-    --pico-secondary:                           #9ca0b0;
-    --pico-secondary-hover:                     #8c8fa1;
-    --pico-border-color:                        #9ca0b0;
-    --pico-table-border-color:                  #acb0be;
-    --pico-form-element-background-color:       #acb0be;
-    --pico-form-element-border-color:           #9ca0b0;
-    --pico-form-element-color:                  #4c4f69;
-    --pico-form-element-placeholder-color:      #7c7f93;
-    --pico-form-element-active-border-color:    #8839ef;
-    --pico-form-element-focus-color:            rgba(136,57,239,0.2);
-    --pico-del-color:                           #d20f39;
-    --pico-ins-color:                           #40a02b;
-  }
-}
-
-/* ─── Catppuccin Latte — explicit override ──────────────────────────────── */
+/* ─── Catppuccin Latte (darkened, light) ─────────────────────────────────── */
 html[data-theme="light"] {
   --ctp-base:     #dce0e8; --ctp-mantle:   #ccd0da; --ctp-crust:    #bcc0cc;
   --ctp-surface0: #acb0be; --ctp-surface1: #9ca0b0; --ctp-surface2: #8c8fa1;
@@ -162,6 +90,31 @@ header nav strong { color: var(--ctp-mauve); font-size: 1rem; letter-spacing: 0.
 header nav a { color: var(--ctp-subtext); text-decoration: none; transition: color 150ms; }
 header nav a:hover { color: var(--ctp-lavender); }
 
+/* Nav dropdown */
+header nav details.dropdown { position: relative; }
+header nav details.dropdown > summary {
+  color: var(--ctp-subtext); cursor: pointer; list-style: none;
+  transition: color 150ms; padding: 0; margin: 0;
+}
+header nav details.dropdown > summary::-webkit-details-marker,
+header nav details.dropdown > summary::marker { display: none; }
+header nav details.dropdown > summary:hover { color: var(--ctp-lavender); }
+header nav details.dropdown[open] > summary { color: var(--ctp-mauve); }
+header nav details.dropdown > ul {
+  position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 99;
+  min-width: 160px; margin: 0; padding: 0.25rem 0; list-style: none;
+  background: var(--ctp-mantle); border: 1px solid var(--ctp-surface1);
+  border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+header nav details.dropdown > ul li { padding: 0; margin: 0; }
+header nav details.dropdown > ul a {
+  display: block; padding: 0.4rem 0.85rem;
+  font-size: 0.9rem; color: var(--ctp-subtext);
+}
+header nav details.dropdown > ul a:hover {
+  color: var(--ctp-text); background: var(--ctp-surface0);
+}
+
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {
   font-size: 0.72em; font-weight: 600; text-transform: uppercase;
@@ -182,7 +135,7 @@ table thead th {
   border-bottom-color: var(--ctp-surface1);
 }
 
-/* ─── Details/summary ────────────────────────────────────────────────────── */
+/* ─── Details/summary (collapsible, not nav dropdown) ────────────────────── */
 details summary[role="button"].outline { color: var(--ctp-mauve); border-color: var(--ctp-surface1); }
 details summary[role="button"].outline:hover { border-color: var(--ctp-mauve); background: var(--summary-hover); }
 
@@ -205,3 +158,38 @@ details summary[role="button"].outline:hover { border-color: var(--ctp-mauve); b
 .auth-card h3 { margin-bottom: 1rem; font-size: 1.1rem; }
 .auth-card label { margin-bottom: 0.5rem; }
 .auth-card button { margin-top: 0.25rem; }
+
+/* ─── Account page ───────────────────────────────────────────────────────── */
+.account-tabs {
+  display: flex; gap: 0; margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+.tab-btn {
+  color: var(--ctp-subtext); text-decoration: none; font-size: 0.8rem;
+  font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+  padding: 0.45rem 0.85rem; border-radius: 4px 4px 0 0;
+  border: 1px solid transparent; border-bottom: none; margin-bottom: -1px;
+  transition: color 150ms, background 150ms;
+}
+.tab-btn:hover { color: var(--ctp-text); background: var(--ctp-surface0); }
+.tab-btn.active {
+  color: var(--ctp-mauve); background: var(--ctp-base);
+  border-color: var(--ctp-surface1);
+}
+.tab-btn--danger:hover { color: var(--ctp-red); }
+.tab-btn--danger.active { color: var(--ctp-red); }
+
+.tab-panel h4 {
+  font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--ctp-subtext);
+  margin-bottom: 0.75rem; margin-top: 1.25rem;
+}
+.tab-panel h4:first-child { margin-top: 0; }
+.tab-panel hr { border-color: var(--ctp-surface1); margin: 1.25rem 0; }
+.tab-panel form { margin-bottom: 0; }
+
+.field-row { display: flex; gap: 0.5rem; align-items: flex-start; }
+.field-row input { flex: 1; margin-bottom: 0; }
+.field-row button { flex-shrink: 0; width: auto; margin: 0; align-self: flex-start; margin-top: 1px; }
+
+.flash-slot { min-height: 1.1em; margin-top: 0.3rem; font-size: 0.85rem; }

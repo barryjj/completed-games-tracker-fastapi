@@ -55,7 +55,7 @@ def test_account_page_loads(client):
     _signup_and_login(client)
     r = client.get("/account")
     assert r.status_code == 200
-    assert b"Account Settings" in r.content
+    assert b"tab-profile" in r.content
 
 
 def test_account_requires_auth(client):
