@@ -8,7 +8,6 @@
     <a href="#" class="tab-btn active" data-tab="profile">Profile</a>
     <a href="#" class="tab-btn" data-tab="security">Security</a>
     <a href="#" class="tab-btn" data-tab="appearance">Appearance</a>
-    <a href="#" class="tab-btn tab-btn--danger" data-tab="danger">Danger Zone</a>
   </nav>
 
   <!-- Profile -->
@@ -63,38 +62,9 @@
       <div id="flash-password" class="flash-slot"></div>
       <button type="submit" class="outline" style="width: auto;">Change Password</button>
     </form>
-  </div>
 
-  <!-- Appearance -->
-  <div id="tab-appearance" class="tab-panel" hidden>
-    <h4>Color Theme</h4>
-    <label style="max-width: 280px;">
-      <select id="theme-select">
-        <option value="system">System default</option>
-        <option value="dark">Dark (Catppuccin Mocha)</option>
-        <option value="light">Light (Catppuccin Latte)</option>
-      </select>
-    </label>
-    <script>
-      (function () {
-        const sel = document.getElementById('theme-select');
-        sel.value = localStorage.getItem('theme') || 'system';
-        sel.addEventListener('change', function () {
-          if (this.value === 'system') {
-            localStorage.removeItem('theme');
-            document.documentElement.dataset.theme =
-              matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-          } else {
-            document.documentElement.dataset.theme = this.value;
-            localStorage.setItem('theme', this.value);
-          }
-        });
-      })();
-    </script>
-  </div>
+    <hr>
 
-  <!-- Danger Zone -->
-  <div id="tab-danger" class="tab-panel" hidden>
     <h4 style="color: var(--ctp-red);">Delete Account</h4>
     <p><small>Permanently deletes your account, library, and all completions. Type your username to confirm.</small></p>
     <form
@@ -111,6 +81,32 @@
       </div>
       <div id="flash-delete" class="flash-slot"></div>
     </form>
+  </div>
+
+  <!-- Appearance -->
+  <div id="tab-appearance" class="tab-panel" hidden>
+    <h4>Color Theme</h4>
+    <select id="theme-select" style="max-width: 280px;">
+      <option value="system">System default</option>
+      <option value="dark">Dark (Catppuccin Mocha)</option>
+      <option value="light">Light (Catppuccin Latte)</option>
+    </select>
+    <script>
+      (function () {
+        const sel = document.getElementById('theme-select');
+        sel.value = localStorage.getItem('theme') || 'system';
+        sel.addEventListener('change', function () {
+          if (this.value === 'system') {
+            localStorage.removeItem('theme');
+            document.documentElement.dataset.theme =
+              matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+          } else {
+            document.documentElement.dataset.theme = this.value;
+            localStorage.setItem('theme', this.value);
+          }
+        });
+      })();
+    </script>
   </div>
 
 </div>

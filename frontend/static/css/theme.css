@@ -78,7 +78,8 @@ html[data-theme="light"] {
   --pico-mark-color: var(--ctp-crust);
 }
 
-body { background-color: var(--ctp-base); color: var(--ctp-text); }
+html, body { background-color: var(--ctp-base); color: var(--ctp-text); }
+body { min-height: 100vh; }
 
 /* ─── Nav ────────────────────────────────────────────────────────────────── */
 header {
@@ -93,18 +94,24 @@ header nav a:hover { color: var(--ctp-lavender); }
 /* Nav dropdown */
 header nav details.dropdown { position: relative; }
 header nav details.dropdown > summary {
-  color: var(--ctp-subtext); cursor: pointer; list-style: none;
+  color: var(--ctp-subtext); cursor: pointer;
   transition: color 150ms; padding: 0; margin: 0;
+  /* remove all Pico button/disclosure styling */
+  list-style: none; background: none; border: none;
+  font-size: inherit; font-weight: inherit; border-radius: 0;
+  box-shadow: none;
 }
 header nav details.dropdown > summary::-webkit-details-marker,
 header nav details.dropdown > summary::marker { display: none; }
-header nav details.dropdown > summary:hover { color: var(--ctp-lavender); }
-header nav details.dropdown[open] > summary { color: var(--ctp-mauve); }
+header nav details.dropdown > summary::after { display: none; }
+header nav details.dropdown > summary:hover { color: var(--ctp-lavender); background: none; }
+header nav details.dropdown[open] > summary { color: var(--ctp-mauve); background: none; }
 header nav details.dropdown > ul {
   position: absolute; right: 0; top: calc(100% + 0.5rem); z-index: 99;
-  min-width: 160px; margin: 0; padding: 0.25rem 0; list-style: none;
+  min-width: 150px; margin: 0; padding: 0.25rem 0; list-style: none;
   background: var(--ctp-mantle); border: 1px solid var(--ctp-surface1);
   border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  overflow: hidden;
 }
 header nav details.dropdown > ul li { padding: 0; margin: 0; }
 header nav details.dropdown > ul a {
