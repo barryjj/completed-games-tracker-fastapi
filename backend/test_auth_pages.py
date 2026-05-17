@@ -148,3 +148,28 @@ def test_new_password_works_for_login(client):
     r = client.post("/login", data={"username": "changer", "password": "newpass"}, follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == "/library"
+
+
+# --- delete account ---
+
+def test_delete_account_wrong_username(client):
+    _signup_and_login(client, username="keeper", password="pw")
+    r = client.post("/account/delete", data={"confirm_username": "wrong"})
+    assert r.status_code == 422
+    assert b"did not match" in r.content
+
+
+def test_delete_account_success(client, db_session):
+    _signup_and_login(client, username="goner", password="pw")
+    r = client.post("/account/delete", data={"confirm_username": "goner"}, follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/login"
+    from backend import models
+    assert db_session.query(models.User).filter_by(username="goner").first() is None
+
+
+def test_deleted_account_cannot_login(client):
+    _signup_and_login(client, username="ghost", password="pw")
+    client.post("/account/delete", data={"confirm_username": "ghost"})
+    r = client.post("/login", data={"username": "ghost", "password": "pw"}, follow_redirects=False)
+    assert r.status_code == 401

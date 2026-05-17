@@ -4,19 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sign In — Completed Games Tracker</title>
+  <script>const t=localStorage.getItem('theme');if(t)document.documentElement.dataset.theme=t;</script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-  <style>
-    body { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
-    article { width: 100%; max-width: 400px; }
-  </style>
+  <link rel="stylesheet" href="/static/css/theme.css">
 </head>
-<body>
+<body class="auth-page">
   <main class="container">
-    <article>
-      <h2>🎮 Games Tracker</h2>
+    <article class="auth-card">
+      <p class="app-name">Completed Games Tracker</p>
       <h3>Sign In</h3>
       {% if error %}
-      <p><small style="color: var(--pico-del-color)">{{ error }}</small></p>
+      <p><small style="color: var(--ctp-red)">{{ error }}</small></p>
       {% endif %}
       <form method="post" action="/login">
         <label>
