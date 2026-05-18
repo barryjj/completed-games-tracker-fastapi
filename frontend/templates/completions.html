@@ -4,15 +4,16 @@
 {% block content %}
 <h1 class="mb-4">Completions</h1>
 
-<details>
-  <summary>Log a Completion</summary>
+<details id="log-completion-details">
+  <summary id="log-completion-summary">Log a Completion</summary>
   <form
     class="mt-3"
     hx-post="/completions/log"
     hx-target="#completions-tbody"
     hx-swap="afterbegin"
-    hx-on::after-request="if(event.detail.successful) resetCompletionForm()"
+    hx-on::after-request="if(event.detail.successful && event.detail.elt === this) resetCompletionForm()"
   >
+    <input type="hidden" name="completion_id" id="edit-completion-id" value="">
     <div class="row g-3 mb-3">
       <div class="col-md-4">
         <label class="form-label">Game</label>
@@ -32,18 +33,21 @@
       </div>
       <div class="col-md-4">
         <label class="form-label">Date Completed</label>
-        <input type="date" class="form-control" name="completed_at" value="{{ today }}" required>
+        <input type="date" class="form-control" name="completed_at" id="completed-at-input" value="{{ today }}" required>
       </div>
       <div class="col-md-4">
         <label class="form-label">Playthroughs</label>
-        <input type="text" class="form-control" name="playthroughs" value="1" placeholder="1, 1+, 2…">
+        <input type="text" class="form-control" name="playthroughs" id="playthroughs-input" value="1" placeholder="1, 1+, 2…">
       </div>
     </div>
     <div class="mb-3">
       <label class="form-label">Notes</label>
-      <input type="text" class="form-control" name="notes" placeholder="Platinum, 100%, co-op with Tommy…">
+      <input type="text" class="form-control" name="notes" id="notes-input" placeholder="Platinum, 100%, co-op with Tommy…">
     </div>
-    <button type="submit" class="btn btn-primary" id="log-completion-btn" disabled>Log Completion</button>
+    <div class="d-flex gap-2 align-items-center">
+      <button type="submit" class="btn btn-primary" id="log-completion-btn" disabled>Log Completion</button>
+      <button type="button" class="btn btn-outline-secondary" id="cancel-edit-btn" hidden onclick="resetCompletionForm()">Cancel</button>
+    </div>
   </form>
   <script>
   function selectCompletionGame(id, label) {
@@ -52,11 +56,40 @@
     document.getElementById('game-search-results').innerHTML = '';
     document.getElementById('log-completion-btn').disabled = false;
   }
+
+  function editCompletion(id, libraryEntryId, gameLabel, date, playthroughs, notes) {
+    document.getElementById('edit-completion-id').value = id;
+    document.getElementById('library-entry-id').value = libraryEntryId;
+    document.getElementById('game-search-input').value = gameLabel;
+    document.getElementById('completed-at-input').value = date;
+    document.getElementById('playthroughs-input').value = playthroughs;
+    document.getElementById('notes-input').value = notes;
+    document.getElementById('game-search-results').innerHTML = '';
+    document.getElementById('log-completion-btn').disabled = false;
+    document.getElementById('log-completion-btn').textContent = 'Update Completion';
+    document.getElementById('cancel-edit-btn').hidden = false;
+    document.getElementById('log-completion-details').open = true;
+    document.getElementById('log-completion-summary').textContent = 'Editing Completion';
+    // highlight the row being edited
+    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('table-warning'));
+    var row = document.getElementById('completion-' + id);
+    if (row) row.classList.add('table-warning');
+    document.getElementById('log-completion-details').scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+
   function resetCompletionForm() {
+    document.getElementById('edit-completion-id').value = '';
     document.getElementById('library-entry-id').value = '';
     document.getElementById('game-search-input').value = '';
+    document.getElementById('completed-at-input').value = '{{ today }}';
+    document.getElementById('playthroughs-input').value = '1';
+    document.getElementById('notes-input').value = '';
     document.getElementById('game-search-results').innerHTML = '';
     document.getElementById('log-completion-btn').disabled = true;
+    document.getElementById('log-completion-btn').textContent = 'Log Completion';
+    document.getElementById('cancel-edit-btn').hidden = true;
+    document.getElementById('log-completion-summary').textContent = 'Log a Completion';
+    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('table-warning'));
   }
   </script>
 </details>
@@ -70,6 +103,7 @@
       <th>Date</th>
       <th>Playthroughs</th>
       <th>Notes</th>
+      <th></th>
     </tr>
   </thead>
   <tbody id="completions-tbody">
