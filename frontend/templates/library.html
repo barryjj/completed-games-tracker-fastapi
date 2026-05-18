@@ -95,6 +95,20 @@
   </form>
 </details>
 
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <span class="text-secondary"><small>{{ total }} game{{ 's' if total != 1 }} — page {{ page }} of {{ total_pages }}</small></span>
+  {% if total_pages > 1 %}
+  <div class="d-flex gap-1">
+    {% if page > 1 %}
+    <a href="/library?page={{ page - 1 }}" class="btn btn-outline-secondary btn-sm">&larr;</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a href="/library?page={{ page + 1 }}" class="btn btn-outline-secondary btn-sm">&rarr;</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
 <table class="table table-striped table-borderless">
   <thead>
     <tr>
@@ -113,5 +127,19 @@
 
 {% if not entries %}
 <p id="library-empty" class="text-secondary"><em>No games in your library yet. Add one above.</em></p>
+{% endif %}
+
+{% if total_pages > 1 %}
+<div class="d-flex justify-content-between align-items-center mt-2">
+  <span class="text-secondary"><small>Page {{ page }} of {{ total_pages }}</small></span>
+  <div class="d-flex gap-1">
+    {% if page > 1 %}
+    <a href="/library?page={{ page - 1 }}" class="btn btn-outline-secondary btn-sm">&larr; Prev</a>
+    {% endif %}
+    {% if page < total_pages %}
+    <a href="/library?page={{ page + 1 }}" class="btn btn-outline-secondary btn-sm">Next &rarr;</a>
+    {% endif %}
+  </div>
+</div>
 {% endif %}
 {% endblock %}

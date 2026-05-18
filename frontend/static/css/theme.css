@@ -166,6 +166,17 @@ html[data-bs-theme="light"] {
   --bs-btn-hover-bg:           var(--ctp-red);
   --bs-btn-hover-color:        var(--ctp-crust);
 }
+.btn-success {
+  --bs-btn-bg:                 var(--ctp-green);
+  --bs-btn-border-color:       var(--ctp-green);
+  --bs-btn-color:              var(--ctp-crust);
+  --bs-btn-hover-bg:           var(--ctp-green);
+  --bs-btn-hover-border-color: var(--ctp-green);
+  --bs-btn-hover-color:        var(--ctp-crust);
+  --bs-btn-active-bg:          var(--ctp-green);
+  filter: brightness(1);
+}
+.btn-success:hover { filter: brightness(1.1); }
 
 /* ─── Navbar ─────────────────────────────────────────────────────────────── */
 .navbar { background-color: var(--ctp-mantle); border-bottom-color: var(--ctp-surface0) !important; }

@@ -53,8 +53,9 @@ async def requires_login_handler(request: Request, exc: RequiresLoginException):
 
 
 # Import and register the pages router after app is created to avoid circular imports
-from . import pages  # noqa: E402
+from . import pages, integrations  # noqa: E402
 app.include_router(pages.router)
+app.include_router(integrations.router)
 
 
 @app.get("/health")
