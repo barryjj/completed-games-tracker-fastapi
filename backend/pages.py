@@ -15,7 +15,8 @@ TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
-GAME_TYPES = ["game", "dlc", "expansion", "collection"]
+GAME_TYPES = ["game", "dlc", "collection"]
+GAME_TYPE_LABELS = {"game": "Game", "dlc": "DLC", "collection": "Collection"}
 
 
 def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User:
@@ -230,6 +231,7 @@ def library_page(
             "entries": entries,
             "platforms": PLATFORMS,
             "game_types": GAME_TYPES,
+            "game_type_labels": GAME_TYPE_LABELS,
         },
     )
 
@@ -263,7 +265,7 @@ def add_game(
     return templates.TemplateResponse(
         request=request,
         name="partials/library_row.html",
-        context={"entry": entry},
+        context={"entry": entry, "game_type_labels": GAME_TYPE_LABELS},
     )
 
 
