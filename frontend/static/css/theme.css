@@ -52,7 +52,7 @@ html[data-bs-theme="dark"] {
   --bs-input-focus-border-color:  #cba6f7;
   --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(203,166,247,0.25);
   --bs-table-bg:                  transparent;
-  --bs-table-striped-bg:          rgba(255,255,255,0.03);
+  --bs-table-striped-bg:          rgba(255,255,255,0.05);
   --bs-table-border-color:        #45475a;
 
   --badge-blue-bg:  rgba(137,180,250,0.15);
@@ -61,24 +61,24 @@ html[data-bs-theme="dark"] {
 
 /* ─── Catppuccin Latte (light) ───────────────────────────────────────────── */
 html[data-bs-theme="light"] {
-  --ctp-base:     #dce0e8; --ctp-mantle:   #ccd0da; --ctp-crust:    #bcc0cc;
-  --ctp-surface0: #acb0be; --ctp-surface1: #9ca0b0; --ctp-surface2: #8c8fa1;
-  --ctp-overlay0: #7c7f93; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
+  --ctp-base:     #eff1f5; --ctp-mantle:   #e6e9ef; --ctp-crust:    #dce0e8;
+  --ctp-surface0: #ccd0da; --ctp-surface1: #bcc0cc; --ctp-surface2: #acb0be;
+  --ctp-overlay0: #9ca0b0; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
   --ctp-green:    #40a02b; --ctp-peach:    #fe640b; --ctp-red:      #d20f39;
   --ctp-yellow:   #df8e1d;
 
   /* Bootstrap overrides */
-  --bs-body-bg:                   #dce0e8;
-  --bs-body-bg-rgb:               220,224,232;
+  --bs-body-bg:                   #eff1f5;
+  --bs-body-bg-rgb:               239,241,245;
   --bs-body-color:                #4c4f69;
   --bs-body-color-rgb:            76,79,105;
   --bs-emphasis-color:            #4c4f69;
   --bs-secondary-color:           #5c5f77;
-  --bs-secondary-bg:              #ccd0da;
-  --bs-tertiary-bg:               #acb0be;
-  --bs-border-color:              #9ca0b0;
-  --bs-border-color-translucent:  rgba(156,160,176,0.3);
+  --bs-secondary-bg:              #e6e9ef;
+  --bs-tertiary-bg:               #ccd0da;
+  --bs-border-color:              #bcc0cc;
+  --bs-border-color-translucent:  rgba(188,192,204,0.3);
   --bs-link-color:                #8839ef;
   --bs-link-hover-color:          #7287fd;
   --bs-primary:                   #8839ef;
@@ -96,25 +96,25 @@ html[data-bs-theme="light"] {
   --bs-navbar-brand-hover-color:  #7287fd;
   --bs-nav-link-color:            #5c5f77;
   --bs-nav-link-hover-color:      #4c4f69;
-  --bs-dropdown-bg:               #ccd0da;
-  --bs-dropdown-border-color:     #9ca0b0;
-  --bs-dropdown-divider-bg:       #9ca0b0;
+  --bs-dropdown-bg:               #e6e9ef;
+  --bs-dropdown-border-color:     #bcc0cc;
+  --bs-dropdown-divider-bg:       #bcc0cc;
   --bs-dropdown-link-color:       #5c5f77;
   --bs-dropdown-link-hover-color: #4c4f69;
-  --bs-dropdown-link-hover-bg:    #acb0be;
+  --bs-dropdown-link-hover-bg:    #ccd0da;
   --bs-dropdown-link-active-bg:   #8839ef;
-  --bs-dropdown-link-active-color: #bcc0cc;
-  --bs-card-border-color:         #9ca0b0;
-  --bs-card-bg:                   #ccd0da;
-  --bs-input-bg:                  #acb0be;
-  --bs-input-border-color:        #9ca0b0;
+  --bs-dropdown-link-active-color: #eff1f5;
+  --bs-card-border-color:         #bcc0cc;
+  --bs-card-bg:                   #e6e9ef;
+  --bs-input-bg:                  #ccd0da;
+  --bs-input-border-color:        #bcc0cc;
   --bs-input-color:               #4c4f69;
-  --bs-input-placeholder-color:   #7c7f93;
+  --bs-input-placeholder-color:   #9ca0b0;
   --bs-input-focus-border-color:  #8839ef;
   --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(136,57,239,0.2);
   --bs-table-bg:                  transparent;
-  --bs-table-striped-bg:          rgba(0,0,0,0.03);
-  --bs-table-border-color:        #9ca0b0;
+  --bs-table-striped-bg:          rgba(0,0,0,0.04);
+  --bs-table-border-color:        #bcc0cc;
 
   --badge-blue-bg:  rgba(30,102,245,0.12);
   --badge-peach-bg: rgba(254,100,11,0.12);
@@ -275,6 +275,12 @@ details > :not(summary) { margin-top: 1rem; }
 }
 .theme-picker-menu button:hover { color: var(--ctp-text); background: var(--ctp-surface1); }
 .theme-picker-menu button[aria-selected="true"] { color: var(--ctp-mauve); }
+
+/* ─── Completions row counter (works with HTMX inserts) ─────────────────── */
+#completions-tbody { counter-reset: completion-row; }
+#completions-tbody tr { counter-increment: completion-row; }
+#completions-tbody tr td.row-num { color: var(--ctp-overlay0); font-size: 0.85em; width: 2.5rem; }
+#completions-tbody tr td.row-num::before { content: counter(completion-row); }
 
 /* ─── HTMX ───────────────────────────────────────────────────────────────── */
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }
