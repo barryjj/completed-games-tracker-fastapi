@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Integrations{% endblock %}
+
+{% block content %}
+<h1 class="mb-4">Integrations</h1>
+
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">Steam</h5>
+        <p class="card-text text-secondary">Import your Steam library and playtime.</p>
+        {% if current_user.steam_id64 %}
+        <p class="mb-2"><span class="badge bg-success">Connected</span></p>
+        {% if current_user.steam_last_synced_at %}
+        <p class="text-secondary mb-3"><small>Last synced {{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</small></p>
+        {% endif %}
+        {% else %}
+        <p class="mb-3"><span class="badge bg-secondary">Not connected</span></p>
+        {% endif %}
+        <a href="/integrations/steam" class="btn btn-primary btn-sm">Configure</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h5 class="card-title">PlayStation Network</h5>
+        <p class="card-text text-secondary">Import your PSN library and trophies.</p>
+        <p class="mb-3"><span class="badge bg-secondary">Coming soon</span></p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
