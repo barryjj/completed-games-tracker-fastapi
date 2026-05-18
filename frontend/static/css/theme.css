@@ -106,7 +106,7 @@ html[data-bs-theme="light"] {
   --bs-dropdown-link-active-color: #eff1f5;
   --bs-card-border-color:         #bcc0cc;
   --bs-card-bg:                   #e6e9ef;
-  --bs-input-bg:                  #ccd0da;
+  --bs-input-bg:                  #ffffff;
   --bs-input-border-color:        #bcc0cc;
   --bs-input-color:               #4c4f69;
   --bs-input-placeholder-color:   #9ca0b0;
@@ -120,14 +120,14 @@ html[data-bs-theme="light"] {
   --badge-peach-bg: rgba(254,100,11,0.12);
 }
 
-/* ─── Form controls — use Catppuccin surface for input bg ────────────────── */
+/* ─── Form controls ──────────────────────────────────────────────────────── */
 .form-control, .form-select, .input-group-text {
-  background-color: var(--ctp-surface0);
+  background-color: var(--bs-input-bg);
   color: var(--ctp-text);
   border-color: var(--ctp-surface1);
 }
 .form-control:focus, .form-select:focus {
-  background-color: var(--ctp-surface0);
+  background-color: var(--bs-input-bg);
   color: var(--ctp-text);
   border-color: var(--ctp-mauve);
   box-shadow: var(--bs-input-focus-box-shadow);
@@ -251,7 +251,7 @@ details > :not(summary) { margin-top: 1rem; }
 /* ─── Custom theme picker ────────────────────────────────────────────────── */
 .theme-picker { position: relative; display: inline-block; }
 .theme-picker-trigger {
-  background: var(--ctp-surface0); color: var(--ctp-text);
+  background: var(--bs-input-bg); color: var(--ctp-text);
   border: 1px solid var(--ctp-surface1); border-radius: var(--bs-border-radius);
   padding: 0.375rem 2.25rem 0.375rem 0.75rem;
   font-size: 1rem; font-family: inherit; cursor: pointer; text-align: left; width: 280px;
@@ -263,7 +263,7 @@ details > :not(summary) { margin-top: 1rem; }
 .theme-picker-menu {
   position: absolute; left: 0; top: calc(100% + 4px); z-index: 99;
   width: 100%; margin: 0; padding: 0.25rem 0; list-style: none;
-  background: var(--ctp-surface0); border: 1px solid var(--ctp-surface1);
+  background: var(--bs-input-bg); border: 1px solid var(--ctp-surface1);
   border-radius: var(--bs-border-radius); box-shadow: var(--bs-box-shadow);
   overflow: hidden;
 }
