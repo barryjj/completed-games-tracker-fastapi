@@ -13,7 +13,7 @@ def _signup_and_login(client, username="testuser", password="testpass"):
 
 
 def _add_game(db, user, title="Elden Ring", platform="Steam"):
-    game = models.Game(title=title, game_type="game")
+    game = models.Game(title=title)
     db.add(game)
     db.flush()
     release = models.GameRelease(game_id=game.id, platform=platform, source="manual")
@@ -86,7 +86,7 @@ def test_library_page_loads(client):
 
 def test_add_game_to_library(client):
     _signup_and_login(client)
-    r = client.post("/library/games", data={"title": "Elden Ring", "platform": "Steam", "game_type": "game"})
+    r = client.post("/library/games", data={"title": "Elden Ring", "platform": "Steam"})
     assert r.status_code == 200
     assert b"Elden Ring" in r.content
     assert b"Steam" in r.content
@@ -94,7 +94,7 @@ def test_add_game_to_library(client):
 
 def test_add_game_appears_in_library(client):
     _signup_and_login(client)
-    client.post("/library/games", data={"title": "Hollow Knight", "platform": "Switch", "game_type": "game"})
+    client.post("/library/games", data={"title": "Hollow Knight", "platform": "Switch"})
     r = client.get("/library")
     assert b"Hollow Knight" in r.content
     assert b"Switch" in r.content
@@ -102,7 +102,7 @@ def test_add_game_appears_in_library(client):
 
 def test_add_dlc_type(client):
     _signup_and_login(client)
-    r = client.post("/library/games", data={"title": "Shadow of the Erdtree", "platform": "Steam", "game_type": "dlc"})
+    r = client.post("/library/games", data={"title": "Shadow of the Erdtree", "platform": "Steam", "is_dlc": "true"})
     assert r.status_code == 200
     assert b"DLC" in r.content
 
