@@ -1,10 +1,10 @@
 import datetime
 import os
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from . import models, users
 from .models import get_db
@@ -216,26 +216,47 @@ def delete_account(
     return response
 
 
+PAGE_SIZE = 50
+
 # --- Library ---
 
 @router.get("/library")
 def library_page(
     request: Request,
+    page: int = Query(1, ge=1),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    entries = (
+    base_q = (
         db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.game)
+            .joinedload(models.Game.parent)
+        )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
         .join(models.GameRelease)
         .join(models.Game)
         .order_by(models.Game.title)
+    )
+    total = base_q.count()
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(page, total_pages)
+    entries = base_q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+
+    # Collections for the "part of collection" dropdown — needs all, not just current page
+    collections = (
+        db.query(models.UserLibraryEntry)
+        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.Game.is_collection == True,
+        )
+        .order_by(models.Game.title)
         .all()
     )
-    # Collections in this user's library — for the "part of collection" dropdown
-    collections = [
-        e for e in entries if e.release.game.is_collection
-    ]
     return templates.TemplateResponse(
         request=request,
         name="library.html",
@@ -244,6 +265,9 @@ def library_page(
             "entries": entries,
             "collections": collections,
             "platforms": PLATFORMS,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
         },
     )
 

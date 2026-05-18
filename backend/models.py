@@ -27,7 +27,7 @@ class User(Base):
 class Game(Base):
     __tablename__ = "games"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    title: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False, index=True)
     # True if this entry is a DLC (add-on for another game)
     is_dlc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # True if this entry is itself a collection (e.g. Anniversary Collection)
@@ -50,9 +50,9 @@ class GameRelease(Base):
     # e.g. "Steam", "PS5", "PS4", "Switch", "iOS", "Manual"
     platform: Mapped[str] = mapped_column(String, nullable=False)
     # "steam" | "psn" | "manual"
-    source: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False, index=True)
     # steam_app_id or psn_title_id — stored as string to handle both
-    external_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    external_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # full API payload — mine later without needing schema changes
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -87,8 +87,8 @@ class UserLibraryEntry(Base):
     """User's ownership of a specific game release. One row per user+release combo."""
     __tablename__ = "user_library"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False, index=True)
     playtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_played_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # single URL override for when the user wants different art than what was scraped
