@@ -29,20 +29,33 @@
       <div class="col-md-3 d-flex flex-column justify-content-end pb-1">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" name="is_dlc" id="is_dlc" value="true"
-                 onchange="document.getElementById('parent-row').hidden = !(this.checked || document.getElementById('is_collection').checked)">
+                 onchange="updateParentRow()">
           <label class="form-check-label" for="is_dlc">DLC</label>
         </div>
         <div class="form-check">
-          <input class="form-check-input" type="checkbox" name="is_collection" id="is_collection" value="true"
-                 onchange="document.getElementById('parent-row').hidden = !(this.checked || document.getElementById('is_dlc').checked)">
+          <input class="form-check-input" type="checkbox" name="is_collection" id="is_collection" value="true">
           <label class="form-check-label" for="is_collection">Is a collection</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" id="part_of_collection" value="true"
+                 onchange="updateParentRow()">
+          <label class="form-check-label" for="part_of_collection">Part of a collection</label>
         </div>
       </div>
     </div>
     <div class="row g-3 mb-3" id="parent-row" hidden>
-      <div class="col-md-9">
-        <label class="form-label">Part of / base game <span class="text-secondary fw-normal">(optional)</span></label>
-        <select class="form-select" name="parent_game_id">
+      <div class="col-md-9" id="parent-dlc-col">
+        <label class="form-label">Base game <span class="text-secondary fw-normal">(optional)</span></label>
+        <select class="form-select" name="parent_game_id" id="parent-dlc-select">
+          <option value="">— none —</option>
+          {% for e in entries %}
+          <option value="{{ e.release.id }}">{{ e.release.game.title }} ({{ e.release.platform }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-9" id="parent-collection-col" hidden>
+        <label class="form-label">Collection <span class="text-secondary fw-normal">(optional)</span></label>
+        <select class="form-select" name="parent_game_id" id="parent-collection-select">
           <option value="">— none —</option>
           {% for c in collections %}
           <option value="{{ c.release.id }}">{{ c.release.game.title }} ({{ c.release.platform }})</option>
@@ -50,6 +63,19 @@
         </select>
       </div>
     </div>
+    <script>
+    function updateParentRow() {
+      var isDlc = document.getElementById('is_dlc').checked;
+      var isPartOf = document.getElementById('part_of_collection').checked;
+      document.getElementById('parent-row').hidden = !(isDlc || isPartOf);
+      document.getElementById('parent-dlc-col').hidden = !isDlc;
+      document.getElementById('parent-collection-col').hidden = !isPartOf;
+      // disable the hidden select so it doesn't submit
+      document.getElementById('parent-dlc-select').disabled = !isDlc;
+      document.getElementById('parent-collection-select').disabled = !isPartOf;
+    }
+    updateParentRow();
+    </script>
     <button type="submit" class="btn btn-primary">Add to Library</button>
   </form>
 </details>
