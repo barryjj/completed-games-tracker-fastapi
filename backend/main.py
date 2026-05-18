@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from alembic.config import Config
+from alembic import command
 from sqlalchemy.orm import Session
 import os
 
@@ -22,7 +24,17 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    models.init_db()
+    if not os.environ.get("TESTING"):
+        try:
+            models.engine.dispose()
+            base_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+            alembic_cfg = Config()
+            alembic_cfg.set_main_option("script_location", os.path.join(base_dir, "alembic"))
+            alembic_cfg.set_main_option("sqlalchemy.url", models.DB_URL)
+            command.upgrade(alembic_cfg, "head")
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning("Alembic migration failed: %s", e)
     yield
 
 

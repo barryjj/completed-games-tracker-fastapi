@@ -16,7 +16,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 config = context.config
 
 # Interpret the config file for Python logging.
-fileConfig(config.config_file_name)
+# Guard against overwriting uvicorn's logging when called programmatically.
+if config.config_file_name:
+    fileConfig(config.config_file_name)
 
 # Import your model's MetaData object for 'autogenerate' support
 from backend.models import Base

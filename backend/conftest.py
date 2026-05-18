@@ -1,8 +1,11 @@
+import os
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 from fastapi.testclient import TestClient
+
+os.environ["TESTING"] = "1"
 
 from backend import models
 from backend.main import app
