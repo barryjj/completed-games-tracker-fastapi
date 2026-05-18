@@ -25,9 +25,11 @@ class Game(Base):
     __tablename__ = "games"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String, nullable=False)
-    # "game" | "dlc" | "expansion" | "collection"
-    game_type: Mapped[str] = mapped_column(String, nullable=False, default="game")
-    # for DLC/expansions: points to base game; for collection items: points to the collection
+    # True if this entry is a DLC (add-on for another game)
+    is_dlc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # True if this entry is itself a collection (e.g. Anniversary Collection)
+    is_collection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # DLC -> base game, or standalone game -> collection it belongs to
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True)
     igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
