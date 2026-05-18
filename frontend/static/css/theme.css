@@ -176,8 +176,14 @@ html[data-bs-theme="light"] {
 .nav-link:active, .nav-link.show { color: var(--ctp-mauve) !important; }
 /* dropdown trigger is a <button> — reset button chrome so it looks like a nav-link */
 button.nav-link { background: none; border: none; }
-button.nav-link:focus-visible { outline-color: var(--ctp-mauve); box-shadow: none; }
-/* kill the browser's default blue :active flash on any link */
+button.nav-link:focus        { outline: none; box-shadow: none; }
+button.nav-link:focus-visible { outline: 2px solid var(--ctp-mauve); outline-offset: 2px; box-shadow: none; }
+/* Bootstrap scopes --bs-dropdown-link-active-bg on .dropdown-menu itself,
+   so html[data-bs-theme] overrides don't reach it — redefine here */
+.dropdown-menu {
+  --bs-dropdown-link-active-bg:    var(--ctp-surface1);
+  --bs-dropdown-link-active-color: var(--ctp-text);
+}
 a:active { color: var(--bs-link-color); }
 
 /* ─── Nav tabs (account page) ────────────────────────────────────────────── */
