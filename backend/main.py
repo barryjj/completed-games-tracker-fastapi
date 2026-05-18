@@ -5,6 +5,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from alembic.config import Config
+from alembic import command
 from sqlalchemy.orm import Session
 import os
 
@@ -22,7 +24,9 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    models.init_db()
+    if not os.environ.get("TESTING"):
+        alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+        command.upgrade(alembic_cfg, "head")
     yield
 
 
