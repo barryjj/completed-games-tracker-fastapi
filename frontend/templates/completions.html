@@ -11,17 +11,24 @@
     hx-post="/completions/log"
     hx-target="#completions-tbody"
     hx-swap="afterbegin"
-    hx-on::after-request="if(event.detail.successful) this.reset()"
+    hx-on::after-request="if(event.detail.successful) resetCompletionForm()"
   >
     <div class="row g-3 mb-3">
       <div class="col-md-4">
         <label class="form-label">Game</label>
-        <select class="form-select" name="library_entry_id" required>
-          <option value="" disabled selected>Select a game…</option>
-          {% for entry in library_entries %}
-          <option value="{{ entry.id }}">{{ entry.release.game.title }} ({{ entry.release.platform }})</option>
-          {% endfor %}
-        </select>
+        <input
+          type="text"
+          class="form-control"
+          id="game-search-input"
+          placeholder="Search your library…"
+          autocomplete="off"
+          hx-get="/completions/games/search"
+          hx-trigger="input changed delay:300ms"
+          hx-target="#game-search-results"
+          name="q"
+        >
+        <input type="hidden" name="library_entry_id" id="library-entry-id">
+        <div id="game-search-results" class="mt-1"></div>
       </div>
       <div class="col-md-4">
         <label class="form-label">Date Completed</label>
@@ -36,8 +43,22 @@
       <label class="form-label">Notes</label>
       <input type="text" class="form-control" name="notes" placeholder="Platinum, 100%, co-op with Tommy…">
     </div>
-    <button type="submit" class="btn btn-primary">Log Completion</button>
+    <button type="submit" class="btn btn-primary" id="log-completion-btn" disabled>Log Completion</button>
   </form>
+  <script>
+  function selectCompletionGame(id, label) {
+    document.getElementById('library-entry-id').value = id;
+    document.getElementById('game-search-input').value = label;
+    document.getElementById('game-search-results').innerHTML = '';
+    document.getElementById('log-completion-btn').disabled = false;
+  }
+  function resetCompletionForm() {
+    document.getElementById('library-entry-id').value = '';
+    document.getElementById('game-search-input').value = '';
+    document.getElementById('game-search-results').innerHTML = '';
+    document.getElementById('log-completion-btn').disabled = true;
+  }
+  </script>
 </details>
 
 <table class="table table-striped table-borderless">
