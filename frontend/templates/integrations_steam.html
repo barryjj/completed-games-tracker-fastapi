@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Steam Integration{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <a href="/integrations" class="text-secondary text-decoration-none">&larr; Integrations</a>
+</div>
+<h1 class="mb-4">Steam</h1>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <h5 class="mb-3">Credentials</h5>
+    <form
+      hx-post="/integrations/steam/credentials"
+      hx-target="#steam-flash"
+      hx-swap="innerHTML"
+    >
+      <div class="mb-3">
+        <label class="form-label">Steam API Key</label>
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="steam_api_key"
+          value="{{ current_user.steam_api_key or '' }}"
+          placeholder="Your Steam Web API key"
+          autocomplete="off"
+        >
+        <div class="form-text">Get yours at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a></div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Steam ID64</label>
+        <input
+          type="text"
+          class="form-control font-monospace"
+          name="steam_id64"
+          value="{{ current_user.steam_id64 or '' }}"
+          placeholder="e.g. 76561197960287930"
+          autocomplete="off"
+        >
+        <div class="form-text">Find yours at <a href="https://www.steamidfinder.com/" target="_blank" rel="noopener">steamidfinder.com</a></div>
+      </div>
+      <button type="submit" class="btn btn-primary">Save Credentials</button>
+    </form>
+  </div>
+
+  <div class="col-lg-6">
+    <h5 class="mb-3">Library Sync</h5>
+    {% if current_user.steam_id64 and current_user.steam_api_key %}
+    {% if current_user.steam_last_synced_at %}
+    <p class="text-secondary"><small>Last synced {{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</small></p>
+    {% else %}
+    <p class="text-secondary"><small>Never synced</small></p>
+    {% endif %}
+    <button
+      class="btn btn-success"
+      hx-post="/integrations/steam/sync"
+      hx-target="#steam-flash"
+      hx-swap="innerHTML"
+      hx-indicator="#sync-spinner"
+      hx-disabled-elt="this"
+    >
+      Sync Library
+    </button>
+    <span id="sync-spinner" class="htmx-indicator ms-2 text-secondary"><small>Syncing...</small></span>
+    {% else %}
+    <p class="text-secondary">Save your credentials above to enable syncing.</p>
+    {% endif %}
+  </div>
+</div>
+
+<div id="steam-flash" class="mt-4"></div>
+{% endblock %}
