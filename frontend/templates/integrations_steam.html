@@ -39,7 +39,20 @@
         >
         <div class="form-text">Find yours at <a href="https://www.steamidfinder.com/" target="_blank" rel="noopener">steamidfinder.com</a></div>
       </div>
-      <button type="submit" class="btn btn-primary">Save Credentials</button>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Save Credentials</button>
+        {% if current_user.steam_api_key or current_user.steam_id64 %}
+        <button
+          type="button"
+          class="btn btn-outline-danger"
+          hx-post="/integrations/steam/credentials"
+          hx-vals='{"steam_api_key": "", "steam_id64": ""}'
+          hx-target="#steam-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Clear your saved Steam credentials?"
+        >Clear Credentials</button>
+        {% endif %}
+      </div>
     </form>
   </div>
 
