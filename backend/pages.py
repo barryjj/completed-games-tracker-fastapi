@@ -216,7 +216,7 @@ def delete_account(
     return response
 
 
-PAGE_SIZE = 50
+PAGE_SIZE = 250
 
 # --- Library ---
 
