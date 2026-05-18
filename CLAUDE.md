@@ -22,10 +22,15 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 ## Branching
 
 - **Always `git pull origin main` immediately before `git checkout -b <branch>`. No exceptions.**
-- **After a PR is merged, immediately `git checkout main && git pull origin main`. No exceptions.**
 - Branch from `main` unless explicitly told otherwise.
 - Prefer not stacking branches on unmerged feature branches. If stacking is necessary, rebase the child branch onto `origin/main` after the parent PR lands before the child PR is merged — rebase merges rewrite commit hashes, so the child branch must be updated or it will get phantom conflicts.
-- Keep no more than 5 feature branches on GitHub at a time. When creating a new local branch, delete the previous branch locally and remotely if it has been merged.
+- Keep no more than 5 feature branches on GitHub at a time. When creating a new branch, delete the old branch locally and remotely if it has been merged.
+
+## PR workflow
+
+1. Feature branch → work → commit → push → open PR → **immediately `git checkout main`**
+2. Stay on `main` while the PR is open. If fixes are needed: checkout the feature branch, fix, push, return to `main`.
+3. When the user confirms the PR is merged: `git pull origin main` → create next feature branch → delete old branch locally and remotely.
 
 ## Code
 
