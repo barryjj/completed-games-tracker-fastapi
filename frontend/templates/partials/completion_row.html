@@ -5,4 +5,24 @@
   <td>{{ completion.completed_at.strftime("%Y-%m-%d") }}</td>
   <td>{{ completion.playthroughs or "" }}</td>
   <td>{{ completion.notes or "" }}</td>
+  <td class="text-end text-nowrap">
+    <button
+      class="btn btn-sm btn-outline-secondary"
+      onclick="editCompletion(
+        {{ completion.id }},
+        {{ completion.library_entry_id }},
+        '{{ completion.library_entry.release.game.title | e }} ({{ completion.library_entry.release.platform | e }})',
+        '{{ completion.completed_at.strftime("%Y-%m-%d") }}',
+        '{{ completion.playthroughs or "" }}',
+        {{ completion.notes | tojson if completion.notes else '""' }}
+      )"
+    >Edit</button>
+    <button
+      class="btn btn-sm btn-outline-danger"
+      hx-delete="/completions/{{ completion.id }}"
+      hx-target="#completion-{{ completion.id }}"
+      hx-swap="outerHTML"
+      hx-confirm="Delete this completion?"
+    >Delete</button>
+  </td>
 </tr>

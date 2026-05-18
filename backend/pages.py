@@ -396,9 +396,37 @@ def log_completion(
     completed_at: str = Form(...),
     playthroughs: str = Form("1"),
     notes: str = Form(""),
+    completion_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    if completion_id:
+        completion = db.query(models.Completion).filter(
+            models.Completion.id == completion_id,
+            models.Completion.user_id == current_user.id,
+        ).first()
+        if not completion:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/completion_row.html",
+                context={},
+                status_code=404,
+            )
+        completion.library_entry_id = library_entry_id
+        completion.completed_at = datetime.date.fromisoformat(completed_at)
+        completion.playthroughs = playthroughs.strip() or None
+        completion.notes = notes.strip() or None
+        db.commit()
+        db.refresh(completion)
+        response = templates.TemplateResponse(
+            request=request,
+            name="partials/completion_row.html",
+            context={"completion": completion},
+        )
+        response.headers["HX-Retarget"] = f"#completion-{completion.id}"
+        response.headers["HX-Reswap"] = "outerHTML"
+        return response
+
     completion = models.Completion(
         user_id=current_user.id,
         library_entry_id=library_entry_id,
@@ -415,3 +443,19 @@ def log_completion(
         name="partials/completion_row.html",
         context={"completion": completion},
     )
+
+
+@router.delete("/completions/{completion_id}")
+def delete_completion(
+    completion_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    completion = db.query(models.Completion).filter(
+        models.Completion.id == completion_id,
+        models.Completion.user_id == current_user.id,
+    ).first()
+    if completion:
+        db.delete(completion)
+        db.commit()
+    return ""
