@@ -57,6 +57,7 @@ html[data-bs-theme="dark"] {
 
   --badge-blue-bg:  rgba(137,180,250,0.15);
   --badge-peach-bg: rgba(250,179,135,0.15);
+  --bs-focus-ring-color: rgba(203,166,247,0.25);
 }
 
 /* ─── Catppuccin Latte (light) ───────────────────────────────────────────── */
@@ -118,6 +119,7 @@ html[data-bs-theme="light"] {
 
   --badge-blue-bg:  rgba(30,102,245,0.12);
   --badge-peach-bg: rgba(254,100,11,0.12);
+  --bs-focus-ring-color: rgba(136,57,239,0.2);
 }
 
 /* ─── Form controls ──────────────────────────────────────────────────────── */
@@ -171,6 +173,10 @@ html[data-bs-theme="light"] {
 .navbar-brand:hover { color: var(--ctp-lavender) !important; }
 .nav-link { color: var(--ctp-subtext) !important; font-size: 0.95rem; }
 .nav-link:hover, .nav-link:focus { color: var(--ctp-text) !important; }
+.nav-link:active, .nav-link.show { color: var(--ctp-mauve) !important; }
+.dropdown-toggle:focus-visible { outline-color: var(--ctp-mauve); }
+/* kill the browser's default blue :active flash on any link */
+a:active { color: var(--bs-link-color); }
 
 /* ─── Nav tabs (account page) ────────────────────────────────────────────── */
 .nav-tabs { border-bottom-color: var(--ctp-surface1); }
