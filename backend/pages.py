@@ -16,6 +16,17 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
 
+COLLECTION_KEYWORDS = [
+    "collection", "anthology", "trilogy", "compilation",
+    "complete edition", "complete pack", "bundle", "chronicles",
+    "archives", "legacy", "origins",
+]
+
+def infer_is_collection(title: str) -> bool:
+    """Auto-detect collections by title keyword — used at import time and on manual add."""
+    t = title.lower()
+    return any(kw in t for kw in COLLECTION_KEYWORDS)
+
 
 def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User:
     """Dependency for page routes — raises RequiresLoginException instead of 401."""
@@ -248,7 +259,10 @@ def add_game(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    # Resolve parent: for DLC the parent is the base game (via its release's game_id)
+    # Auto-detect collections by title if not explicitly flagged
+    detected_collection = is_collection or infer_is_collection(title.strip())
+
+    # Resolve parent release_id → game_id
     parent_id: int | None = None
     if parent_game_id:
         parent_release = db.query(models.GameRelease).filter(
@@ -260,7 +274,7 @@ def add_game(
     game = models.Game(
         title=title.strip(),
         is_dlc=is_dlc,
-        is_collection=is_collection,
+        is_collection=detected_collection,
         parent_id=parent_id,
     )
     db.add(game)
