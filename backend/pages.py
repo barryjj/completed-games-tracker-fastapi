@@ -15,8 +15,6 @@ TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
-GAME_TYPES = ["game", "dlc", "collection"]
-GAME_TYPE_LABELS = {"game": "Game", "dlc": "DLC", "collection": "Collection"}
 
 
 def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User:
@@ -223,15 +221,18 @@ def library_page(
         .order_by(models.Game.title)
         .all()
     )
+    # Collections in this user's library — for the "part of collection" dropdown
+    collections = [
+        e for e in entries if e.release.game.is_collection
+    ]
     return templates.TemplateResponse(
         request=request,
         name="library.html",
         context={
             "current_user": current_user,
             "entries": entries,
+            "collections": collections,
             "platforms": PLATFORMS,
-            "game_types": GAME_TYPES,
-            "game_type_labels": GAME_TYPE_LABELS,
         },
     )
 
@@ -241,11 +242,27 @@ def add_game(
     request: Request,
     title: str = Form(...),
     platform: str = Form(...),
-    game_type: str = Form("game"),
+    is_dlc: bool = Form(False),
+    is_collection: bool = Form(False),
+    parent_game_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    game = models.Game(title=title.strip(), game_type=game_type)
+    # Resolve parent: for DLC the parent is the base game (via its release's game_id)
+    parent_id: int | None = None
+    if parent_game_id:
+        parent_release = db.query(models.GameRelease).filter(
+            models.GameRelease.id == parent_game_id
+        ).first()
+        if parent_release:
+            parent_id = parent_release.game_id
+
+    game = models.Game(
+        title=title.strip(),
+        is_dlc=is_dlc,
+        is_collection=is_collection,
+        parent_id=parent_id,
+    )
     db.add(game)
     db.flush()
 
@@ -265,7 +282,7 @@ def add_game(
     return templates.TemplateResponse(
         request=request,
         name="partials/library_row.html",
-        context={"entry": entry, "game_type_labels": GAME_TYPE_LABELS},
+        context={"entry": entry},
     )
 
 
