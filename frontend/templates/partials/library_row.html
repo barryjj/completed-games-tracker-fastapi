@@ -1,6 +1,6 @@
 <tr id="library-entry-{{ entry.id }}">
   <td>{{ entry.release.game.title }}</td>
   <td><span class="platform-badge">{{ entry.release.platform }}</span></td>
-  <td><span class="game-type-badge">{{ entry.release.game.game_type }}</span></td>
+  <td><span class="game-type-badge">{{ game_type_labels.get(entry.release.game.game_type, entry.release.game.game_type | upper) }}</span></td>
   <td><small>{{ entry.imported_at.strftime("%Y-%m-%d") }}</small></td>
 </tr>
