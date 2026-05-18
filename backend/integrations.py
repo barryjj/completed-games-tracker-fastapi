@@ -1,0 +1,88 @@
+import os
+
+from fastapi import APIRouter, Depends, Form, Request
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+
+from . import models, steam
+from .models import get_db
+from .pages import get_web_user
+
+router = APIRouter(prefix="/integrations")
+
+TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "frontend", "templates"))
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
+
+
+@router.get("")
+def integrations_hub(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="integrations.html",
+        context={"current_user": current_user},
+    )
+
+
+@router.get("/steam")
+def steam_page(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="integrations_steam.html",
+        context={"current_user": current_user},
+    )
+
+
+@router.post("/steam/credentials")
+def save_steam_credentials(
+    request: Request,
+    steam_id64: str = Form(""),
+    steam_api_key: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    current_user.steam_id64 = steam_id64.strip() or None
+    current_user.steam_api_key = steam_api_key.strip() or None
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "Steam credentials saved."},
+    )
+
+
+@router.post("/steam/sync")
+def sync_steam(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    try:
+        result = steam.sync_steam_library(db, current_user)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={
+                "message": f"Sync complete — {result['added']} added, {result['updated']} updated ({result['total']} total).",
+                "last_synced": current_user.steam_last_synced_at,
+            },
+        )
+    except ValueError as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": str(e)},
+            status_code=422,
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Sync failed: {e}"},
+            status_code=500,
+        )
