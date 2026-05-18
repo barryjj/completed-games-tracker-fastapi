@@ -23,7 +23,7 @@ COLLECTION_KEYWORDS = [
 ]
 
 def infer_is_collection(title: str) -> bool:
-    """Auto-detect collections by title keyword — used at import time and on manual add."""
+    """Auto-detect collections by title keyword — for import-time use only."""
     t = title.lower()
     return any(kw in t for kw in COLLECTION_KEYWORDS)
 
@@ -259,9 +259,6 @@ def add_game(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    # Auto-detect collections by title if not explicitly flagged
-    detected_collection = is_collection or infer_is_collection(title.strip())
-
     # Resolve parent release_id → game_id
     parent_id: int | None = None
     if parent_game_id:
@@ -274,7 +271,7 @@ def add_game(
     game = models.Game(
         title=title.strip(),
         is_dlc=is_dlc,
-        is_collection=detected_collection,
+        is_collection=is_collection,
         parent_id=parent_id,
     )
     db.add(game)

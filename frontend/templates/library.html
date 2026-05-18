@@ -16,7 +16,7 @@
     <div class="row g-3 mb-3">
       <div class="col-md-5">
         <label class="form-label">Title</label>
-        <input type="text" class="form-control" name="title" placeholder="e.g. Elden Ring" required>
+        <input type="text" class="form-control" name="title" id="title-input" placeholder="e.g. Elden Ring" required oninput="hintIsCollection()">
       </div>
       <div class="col-md-4">
         <label class="form-label">Platform</label>
@@ -64,6 +64,8 @@
       </div>
     </div>
     <script>
+    var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","complete edition","complete pack","bundle","chronicles","archives","legacy","origins"];
+
     function updateParentRow() {
       var isDlc = document.getElementById('is_dlc').checked;
       var isPartOf = document.getElementById('part_of_collection').checked;
@@ -74,6 +76,19 @@
       document.getElementById('parent-dlc-select').disabled = !isDlc;
       document.getElementById('parent-collection-select').disabled = !isPartOf;
     }
+
+    function hintIsCollection() {
+      var title = document.getElementById('title-input').value.toLowerCase();
+      var matches = COLLECTION_KEYWORDS.some(function(kw) { return title.includes(kw); });
+      var cb = document.getElementById('is_collection');
+      if (matches && !cb.dataset.userSet) cb.checked = true;
+      else if (!matches && !cb.dataset.userSet) cb.checked = false;
+    }
+
+    document.getElementById('is_collection').addEventListener('change', function() {
+      this.dataset.userSet = '1';
+    });
+
     updateParentRow();
     </script>
     <button type="submit" class="btn btn-primary">Add to Library</button>
