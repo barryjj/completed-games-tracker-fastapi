@@ -104,7 +104,7 @@ def test_add_dlc_type(client):
     _signup_and_login(client)
     r = client.post("/library/games", data={"title": "Shadow of the Erdtree", "platform": "Steam", "game_type": "dlc"})
     assert r.status_code == 200
-    assert b"dlc" in r.content
+    assert b"DLC" in r.content
 
 
 # --- completions page ---
