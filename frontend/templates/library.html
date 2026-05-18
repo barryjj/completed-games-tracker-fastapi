@@ -14,7 +14,7 @@
     hx-on::after-request="if(event.detail.successful){ this.reset(); var e=document.getElementById('library-empty'); if(e) e.remove(); }"
   >
     <div class="row g-3 mb-3">
-      <div class="col-md-4">
+      <div class="col-md-5">
         <label class="form-label">Title</label>
         <input type="text" class="form-control" name="title" placeholder="e.g. Elden Ring" required>
       </div>
@@ -26,11 +26,26 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-4">
-        <label class="form-label">Type</label>
-        <select class="form-select" name="game_type">
-          {% for t in game_types %}
-          <option value="{{ t }}">{{ game_type_labels.get(t, t | title) }}</option>
+      <div class="col-md-3 d-flex flex-column justify-content-end pb-1">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_dlc" id="is_dlc" value="true"
+                 onchange="document.getElementById('parent-row').hidden = !(this.checked || document.getElementById('is_collection').checked)">
+          <label class="form-check-label" for="is_dlc">DLC</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" name="is_collection" id="is_collection" value="true"
+                 onchange="document.getElementById('parent-row').hidden = !(this.checked || document.getElementById('is_dlc').checked)">
+          <label class="form-check-label" for="is_collection">Is a collection</label>
+        </div>
+      </div>
+    </div>
+    <div class="row g-3 mb-3" id="parent-row" hidden>
+      <div class="col-md-9">
+        <label class="form-label">Part of / base game <span class="text-secondary fw-normal">(optional)</span></label>
+        <select class="form-select" name="parent_game_id">
+          <option value="">— none —</option>
+          {% for c in collections %}
+          <option value="{{ c.release.id }}">{{ c.release.game.title }} ({{ c.release.platform }})</option>
           {% endfor %}
         </select>
       </div>

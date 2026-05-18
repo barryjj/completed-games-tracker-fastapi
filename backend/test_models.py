@@ -36,8 +36,8 @@ def make_user(db, username="player1"):
     return u
 
 
-def make_game(db, title="Elden Ring", game_type="game", parent=None):
-    g = models.Game(title=title, game_type=game_type, parent_id=parent.id if parent else None)
+def make_game(db, title="Elden Ring", is_dlc=False, is_collection=False, parent=None):
+    g = models.Game(title=title, is_dlc=is_dlc, is_collection=is_collection, parent_id=parent.id if parent else None)
     db.add(g)
     db.commit()
     db.refresh(g)
@@ -66,26 +66,29 @@ def test_create_game(db):
     g = make_game(db)
     assert g.id is not None
     assert g.title == "Elden Ring"
-    assert g.game_type == "game"
+    assert g.is_dlc is False
+    assert g.is_collection is False
     assert g.parent_id is None
 
 
 def test_dlc_parent_relationship(db):
     base = make_game(db, "Elden Ring")
-    dlc = make_game(db, "Shadow of the Erdtree", game_type="dlc", parent=base)
+    dlc = make_game(db, "Shadow of the Erdtree", is_dlc=True, parent=base)
     db.refresh(base)
 
+    assert dlc.is_dlc is True
     assert dlc.parent_id == base.id
     assert dlc.parent.title == "Elden Ring"
     assert any(c.id == dlc.id for c in base.children)
 
 
 def test_collection_parent_relationship(db):
-    collection = make_game(db, "Contra Anniversary Collection", game_type="collection")
+    collection = make_game(db, "Contra Anniversary Collection", is_collection=True)
     super_c = make_game(db, "Super C", parent=collection)
     op_c = make_game(db, "Operation C", parent=collection)
     db.refresh(collection)
 
+    assert collection.is_collection is True
     assert len(collection.children) == 2
     assert {c.title for c in collection.children} == {"Super C", "Operation C"}
 
@@ -203,7 +206,7 @@ def test_library_entry_unique_constraint(db):
 
 def test_collection_item_parent_entry(db):
     user = make_user(db)
-    collection_game = make_game(db, "Contra Anniversary Collection", game_type="collection")
+    collection_game = make_game(db, "Contra Anniversary Collection", is_collection=True)
     super_c_game = make_game(db, "Super C", parent=collection_game)
 
     collection_release = make_release(db, collection_game, external_id="1018060")
