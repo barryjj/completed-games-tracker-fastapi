@@ -107,6 +107,13 @@ def test_add_dlc_type(client):
     assert b"DLC" in r.content
 
 
+def test_collection_auto_detected_by_title(client):
+    _signup_and_login(client)
+    r = client.post("/library/games", data={"title": "Castlevania Anniversary Collection", "platform": "Steam"})
+    assert r.status_code == 200
+    assert b"Collection" in r.content
+
+
 # --- completions page ---
 
 def test_completions_page_loads(client):
