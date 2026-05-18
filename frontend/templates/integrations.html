@@ -5,30 +5,60 @@
 <h1 class="mb-4">Integrations</h1>
 
 <div class="row g-3">
-  <div class="col-md-4">
+  <div class="col-md-5">
     <div class="card h-100">
       <div class="card-body">
-        <h5 class="card-title">Steam</h5>
-        <p class="card-text text-secondary">Import your Steam library and playtime.</p>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h5 class="card-title mb-0">Steam</h5>
+          {% if current_user.steam_id64 %}
+          <span class="badge bg-success">Connected</span>
+          {% else %}
+          <span class="badge bg-secondary">Not connected</span>
+          {% endif %}
+        </div>
+
         {% if current_user.steam_id64 %}
-        <p class="mb-2"><span class="badge bg-success">Connected</span></p>
-        {% if current_user.steam_last_synced_at %}
-        <p class="text-secondary mb-3"><small>Last synced {{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</small></p>
+        <p class="text-secondary mb-1"><small>
+          {% if current_user.steam_last_synced_at %}
+          Last synced {{ current_user.steam_last_synced_at.strftime("%A, %B %-d, %Y @ %-I:%M %p") }}
+          {% else %}
+          Never synced
+          {% endif %}
+        </small></p>
+        {% if steam_count is not none %}
+        <p class="text-secondary mb-3"><small>{{ steam_count }} game{{ 's' if steam_count != 1 }}</small></p>
         {% endif %}
         {% else %}
-        <p class="mb-3"><span class="badge bg-secondary">Not connected</span></p>
+        <p class="card-text text-secondary mb-3">Import your Steam library and playtime.</p>
         {% endif %}
-        <a href="/integrations/steam" class="btn btn-primary btn-sm">Configure</a>
+
+        <div class="d-flex gap-2 align-items-center">
+          <a href="/integrations/steam" class="btn btn-primary btn-sm">Configure</a>
+          {% if current_user.steam_id64 and current_user.steam_api_key %}
+          <button
+            class="btn btn-success btn-sm"
+            hx-post="/integrations/steam/sync"
+            hx-target="#steam-hub-status"
+            hx-swap="innerHTML"
+            hx-indicator="#steam-hub-spinner"
+            hx-disabled-elt="this"
+          >Sync</button>
+          <span id="steam-hub-spinner" class="htmx-indicator text-secondary"><small>Syncing...</small></span>
+          {% endif %}
+        </div>
+        <div id="steam-hub-status" class="mt-3"></div>
       </div>
     </div>
   </div>
 
-  <div class="col-md-4">
+  <div class="col-md-5">
     <div class="card h-100">
       <div class="card-body">
-        <h5 class="card-title">PlayStation Network</h5>
-        <p class="card-text text-secondary">Import your PSN library and trophies.</p>
-        <p class="mb-3"><span class="badge bg-secondary">Coming soon</span></p>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h5 class="card-title mb-0">PlayStation Network</h5>
+          <span class="badge bg-secondary">Coming soon</span>
+        </div>
+        <p class="card-text text-secondary mb-0">Import your PSN library and trophies.</p>
       </div>
     </div>
   </div>

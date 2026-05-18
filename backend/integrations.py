@@ -1,6 +1,7 @@
 import os
 
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
@@ -14,15 +15,33 @@ TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
+def _steam_game_count(db: Session, user: models.User) -> int | None:
+    if not user.steam_id64:
+        return None
+    return (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease)
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.source == "steam",
+        )
+        .count()
+    )
+
+
 @router.get("")
 def integrations_hub(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     return templates.TemplateResponse(
         request=request,
         name="integrations.html",
-        context={"current_user": current_user},
+        context={
+            "current_user": current_user,
+            "steam_count": _steam_game_count(db, current_user),
+        },
     )
 
 
@@ -49,11 +68,14 @@ def save_steam_credentials(
     current_user.steam_id64 = steam_id64.strip() or None
     current_user.steam_api_key = steam_api_key.strip() or None
     db.commit()
-    return templates.TemplateResponse(
+    # HX-Refresh reloads the page so the sync button appears/disappears correctly
+    response = templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
         context={"message": "Steam credentials saved."},
     )
+    response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @router.post("/steam/sync")
