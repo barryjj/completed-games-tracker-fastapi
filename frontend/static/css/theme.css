@@ -174,7 +174,9 @@ html[data-bs-theme="light"] {
 .nav-link { color: var(--ctp-subtext) !important; font-size: 0.95rem; }
 .nav-link:hover, .nav-link:focus { color: var(--ctp-text) !important; }
 .nav-link:active, .nav-link.show { color: var(--ctp-mauve) !important; }
-.dropdown-toggle:focus-visible { outline-color: var(--ctp-mauve); }
+/* dropdown trigger is a <button> — reset button chrome so it looks like a nav-link */
+button.nav-link { background: none; border: none; }
+button.nav-link:focus-visible { outline-color: var(--ctp-mauve); box-shadow: none; }
 /* kill the browser's default blue :active flash on any link */
 a:active { color: var(--bs-link-color); }
 
