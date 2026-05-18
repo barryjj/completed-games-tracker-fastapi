@@ -162,3 +162,40 @@ def test_log_completion_appears_in_list(client, db_session):
     assert b"Astro Bot" in r.content
     assert b"PS5" in r.content
     assert b"Platinum + DLC" in r.content
+
+
+# --- completion game search ---
+
+def test_completion_search_returns_match(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _add_game(db_session, user, title="Elden Ring", platform="Steam")
+    _add_game(db_session, user, title="Hollow Knight", platform="Switch")
+
+    r = client.get("/completions/games/search?q=elden")
+    assert r.status_code == 200
+    assert b"Elden Ring" in r.content
+    assert b"Hollow Knight" not in r.content
+
+
+def test_completion_search_empty_query_returns_empty(client):
+    _signup_and_login(client)
+    r = client.get("/completions/games/search?q=")
+    assert r.status_code == 200
+    assert b"list-group-item" not in r.content
+
+
+def test_completion_search_no_match(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _add_game(db_session, user, title="Elden Ring", platform="Steam")
+
+    r = client.get("/completions/games/search?q=xyzzy")
+    assert r.status_code == 200
+    assert b"Elden Ring" not in r.content
+
+
+def test_completion_search_requires_auth(client):
+    r = client.get("/completions/games/search?q=test", follow_redirects=False)
+    assert r.status_code == 302
+    assert "/login" in r.headers["location"]

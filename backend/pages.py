@@ -331,19 +331,16 @@ def completions_page(
 ):
     completions = (
         db.query(models.Completion)
+        .options(
+            joinedload(models.Completion.library_entry)
+            .joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.game)
+        )
         .filter(models.Completion.user_id == current_user.id)
         .join(models.UserLibraryEntry)
         .join(models.GameRelease)
         .join(models.Game)
         .order_by(models.Completion.completed_at.desc())
-        .all()
-    )
-    library_entries = (
-        db.query(models.UserLibraryEntry)
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
-        .join(models.GameRelease)
-        .join(models.Game)
-        .order_by(models.Game.title)
         .all()
     )
     return templates.TemplateResponse(
@@ -352,9 +349,43 @@ def completions_page(
         context={
             "current_user": current_user,
             "completions": completions,
-            "library_entries": library_entries,
             "today": datetime.date.today().isoformat(),
         },
+    )
+
+
+@router.get("/completions/games/search")
+def search_completion_games(
+    request: Request,
+    q: str = Query("", min_length=0),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    q = q.strip()
+    query = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.game)
+        )
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(models.UserLibraryEntry.user_id == current_user.id)
+    )
+    if q:
+        query = query.filter(models.Game.title.ilike(f"%{q}%"))
+    else:
+        # Empty query — return nothing, wait for user to type
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/completion_game_results.html",
+            context={"results": []},
+        )
+    results = query.order_by(models.Game.title).limit(20).all()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/completion_game_results.html",
+        context={"results": results},
     )
 
 
