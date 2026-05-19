@@ -223,6 +223,8 @@ a:active { color: var(--bs-link-color); }
   border-bottom-color: var(--ctp-surface1);
 }
 .table tbody td { border-bottom-color: var(--ctp-surface0); }
+tr.completion-editing > td { background-color: var(--ctp-surface0) !important; }
+tr.completion-editing > td:first-child { border-left: 3px solid var(--ctp-mauve); }
 
 /* ─── Cards ──────────────────────────────────────────────────────────────── */
 .card { background-color: var(--ctp-mantle); border-color: var(--ctp-surface1); }
@@ -233,6 +235,11 @@ a:active { color: var(--bs-link-color); }
   color: var(--ctp-mauve); font-size: 1rem; font-weight: 700;
   letter-spacing: 0.02em; margin-bottom: 0.1rem;
 }
+
+/* ─── Status badges ──────────────────────────────────────────────────────── */
+/* bg-success on a light Catppuccin green needs dark text; ctp-crust is dark in
+   Mocha (dark green bg) and light in Latte (dark green bg) — readable both ways */
+.badge.bg-success { color: var(--ctp-crust); }
 
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {

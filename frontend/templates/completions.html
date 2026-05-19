@@ -71,9 +71,9 @@
     document.getElementById('cancel-edit-btn').hidden = false;
     document.getElementById('log-completion-details').open = true;
     document.getElementById('log-completion-summary').textContent = 'Editing Completion';
-    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('table-warning'));
+    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('completion-editing'));
     var row = document.getElementById('completion-' + ds.completionId);
-    if (row) row.classList.add('table-warning');
+    if (row) row.classList.add('completion-editing');
     document.getElementById('log-completion-details').scrollIntoView({behavior: 'smooth', block: 'start'});
   }
 
@@ -89,7 +89,7 @@
     document.getElementById('log-completion-btn').textContent = 'Log Completion';
     document.getElementById('cancel-edit-btn').hidden = true;
     document.getElementById('log-completion-summary').textContent = 'Log a Completion';
-    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('table-warning'));
+    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('completion-editing'));
   }
   </script>
 </details>
