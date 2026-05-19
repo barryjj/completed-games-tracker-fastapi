@@ -199,3 +199,61 @@ def test_completion_search_requires_auth(client):
     r = client.get("/completions/games/search?q=test", follow_redirects=False)
     assert r.status_code == 302
     assert "/login" in r.headers["location"]
+
+
+# --- completion edit / delete ---
+
+def _log_completion(client, entry_id, date="2026-01-15"):
+    return client.post("/completions/log", data={
+        "library_entry_id": entry_id,
+        "completed_at": date,
+        "playthroughs": "1",
+        "notes": "test note",
+    })
+
+
+def test_delete_completion(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user)
+    r = _log_completion(client, entry.id)
+    completion_id = db_session.query(models.Completion).filter_by(user_id=user.id).first().id
+
+    r = client.delete(f"/completions/{completion_id}")
+    assert r.status_code == 200
+    assert db_session.query(models.Completion).filter_by(id=completion_id).first() is None
+
+
+def test_delete_completion_other_user(client, db_session):
+    token = _signup_and_login(client, username="u1")
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user)
+    _log_completion(client, entry.id)
+    completion_id = db_session.query(models.Completion).filter_by(user_id=user.id).first().id
+
+    _signup_and_login(client, username="u2")
+    r = client.delete(f"/completions/{completion_id}")
+    assert r.status_code == 200
+    assert db_session.query(models.Completion).filter_by(id=completion_id).first() is not None
+
+
+def test_update_completion(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user)
+    _log_completion(client, entry.id)
+    completion = db_session.query(models.Completion).filter_by(user_id=user.id).first()
+
+    r = client.post("/completions/log", data={
+        "completion_id": completion.id,
+        "library_entry_id": entry.id,
+        "completed_at": "2026-06-01",
+        "playthroughs": "2",
+        "notes": "updated note",
+    })
+    assert r.status_code == 200
+    assert b"updated note" in r.content
+    assert r.headers.get("hx-retarget") == f"#completion-{completion.id}"
+    db_session.refresh(completion)
+    assert completion.notes == "updated note"
+    assert str(completion.completed_at) == "2026-06-01"

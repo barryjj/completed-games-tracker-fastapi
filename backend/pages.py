@@ -2,9 +2,9 @@ import datetime
 import os
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, contains_eager
 
 from . import models, users
 from .models import get_db
@@ -331,15 +331,15 @@ def completions_page(
 ):
     completions = (
         db.query(models.Completion)
+        .join(models.Completion.library_entry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
         .options(
-            joinedload(models.Completion.library_entry)
-            .joinedload(models.UserLibraryEntry.release)
-            .joinedload(models.GameRelease.game)
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .contains_eager(models.GameRelease.game)
         )
         .filter(models.Completion.user_id == current_user.id)
-        .join(models.UserLibraryEntry)
-        .join(models.GameRelease)
-        .join(models.Game)
         .order_by(models.Completion.completed_at.desc())
         .all()
     )
@@ -362,26 +362,28 @@ def search_completion_games(
     current_user: models.User = Depends(get_web_user),
 ):
     q = q.strip()
-    query = (
-        db.query(models.UserLibraryEntry)
-        .options(
-            joinedload(models.UserLibraryEntry.release)
-            .joinedload(models.GameRelease.game)
-        )
-        .join(models.GameRelease)
-        .join(models.Game)
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
-    )
-    if q:
-        query = query.filter(models.Game.title.ilike(f"%{q}%"))
-    else:
-        # Empty query — return nothing, wait for user to type
+    if not q:
         return templates.TemplateResponse(
             request=request,
             name="partials/completion_game_results.html",
             context={"results": []},
         )
-    results = query.order_by(models.Game.title).limit(20).all()
+    results = (
+        db.query(models.UserLibraryEntry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .options(
+            contains_eager(models.UserLibraryEntry.release)
+            .contains_eager(models.GameRelease.game)
+        )
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.Game.title.ilike(f"%{q}%"),
+        )
+        .order_by(models.Game.title)
+        .limit(20)
+        .all()
+    )
     return templates.TemplateResponse(
         request=request,
         name="partials/completion_game_results.html",
@@ -396,9 +398,37 @@ def log_completion(
     completed_at: str = Form(...),
     playthroughs: str = Form("1"),
     notes: str = Form(""),
+    completion_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    if completion_id:
+        completion = db.query(models.Completion).filter(
+            models.Completion.id == completion_id,
+            models.Completion.user_id == current_user.id,
+        ).first()
+        if not completion:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/completion_row.html",
+                context={},
+                status_code=404,
+            )
+        completion.library_entry_id = library_entry_id
+        completion.completed_at = datetime.date.fromisoformat(completed_at)
+        completion.playthroughs = playthroughs.strip() or None
+        completion.notes = notes.strip() or None
+        db.commit()
+        db.refresh(completion)
+        response = templates.TemplateResponse(
+            request=request,
+            name="partials/completion_row.html",
+            context={"completion": completion},
+        )
+        response.headers["HX-Retarget"] = f"#completion-{completion.id}"
+        response.headers["HX-Reswap"] = "outerHTML"
+        return response
+
     completion = models.Completion(
         user_id=current_user.id,
         library_entry_id=library_entry_id,
@@ -415,3 +445,19 @@ def log_completion(
         name="partials/completion_row.html",
         context={"completion": completion},
     )
+
+
+@router.delete("/completions/{completion_id}")
+def delete_completion(
+    completion_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    completion = db.query(models.Completion).filter(
+        models.Completion.id == completion_id,
+        models.Completion.user_id == current_user.id,
+    ).first()
+    if completion:
+        db.delete(completion)
+        db.commit()
+    return Response(status_code=200)
