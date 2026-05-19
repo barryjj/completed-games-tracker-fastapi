@@ -1,8 +1,5 @@
 {% if message %}
 <div class="alert alert-success mb-0">{{ message }}</div>
-{% if last_synced %}
-<p class="text-secondary mt-2 mb-0"><small>Last synced {{ last_synced.strftime("%Y-%m-%d %H:%M") }} UTC</small></p>
-{% endif %}
 {% elif error %}
 <div class="alert alert-danger mb-0">{{ error }}</div>
 {% endif %}

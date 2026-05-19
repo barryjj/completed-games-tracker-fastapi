@@ -4,6 +4,7 @@ import os
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload, contains_eager
 
 from . import models, users
@@ -340,7 +341,7 @@ def completions_page(
             .contains_eager(models.GameRelease.game)
         )
         .filter(models.Completion.user_id == current_user.id)
-        .order_by(models.Completion.completed_at.desc())
+        .order_by(models.Completion.id.desc())
         .all()
     )
     return templates.TemplateResponse(
@@ -378,7 +379,10 @@ def search_completion_games(
         )
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
-            models.Game.title.ilike(f"%{q}%"),
+            or_(
+                models.Game.title.ilike(f"{q}%"),
+                models.Game.title.ilike(f"% {q}%"),
+            ),
         )
         .order_by(models.Game.title)
         .limit(20)
