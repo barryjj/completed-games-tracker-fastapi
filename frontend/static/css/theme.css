@@ -143,34 +143,43 @@ html[data-bs-theme="light"] {
 
 /* ─── Buttons ────────────────────────────────────────────────────────────── */
 .btn-primary {
-  --bs-btn-bg:           var(--ctp-mauve);
-  --bs-btn-border-color: var(--ctp-mauve);
-  --bs-btn-color:        var(--ctp-crust);
-  --bs-btn-hover-bg:     var(--ctp-lavender);
-  --bs-btn-hover-border-color: var(--ctp-lavender);
-  --bs-btn-hover-color:  var(--ctp-crust);
-  --bs-btn-active-bg:    var(--ctp-lavender);
-  --bs-btn-focus-shadow-rgb: var(--bs-primary-rgb);
+  --bs-btn-bg:                  var(--ctp-mauve);
+  --bs-btn-border-color:        var(--ctp-mauve);
+  --bs-btn-color:               var(--ctp-crust);
+  --bs-btn-hover-bg:            var(--ctp-lavender);
+  --bs-btn-hover-border-color:  var(--ctp-lavender);
+  --bs-btn-hover-color:         var(--ctp-crust);
+  --bs-btn-active-bg:           var(--ctp-lavender);
+  --bs-btn-disabled-bg:         var(--ctp-mauve);
+  --bs-btn-disabled-border-color: var(--ctp-mauve);
+  --bs-btn-disabled-color:      var(--ctp-crust);
+  --bs-btn-focus-shadow-rgb:    var(--bs-primary-rgb);
 }
-/* Latte's mauve/green are vivid on light bg; use softer mid-tones instead */
+/* Latte's mauve is vivid on light bg; use a softer mid-tone instead */
 html[data-bs-theme="light"] .btn-primary {
-  --bs-btn-bg:                 #a370e8;
-  --bs-btn-border-color:       #a370e8;
-  --bs-btn-color:              #fff;
-  --bs-btn-hover-bg:           #8f5cd4;
-  --bs-btn-hover-border-color: #8f5cd4;
-  --bs-btn-hover-color:        #fff;
-  --bs-btn-active-bg:          #8f5cd4;
-  --bs-btn-focus-shadow-rgb:   163,112,232;
+  --bs-btn-bg:                  #a370e8;
+  --bs-btn-border-color:        #a370e8;
+  --bs-btn-color:               #fff;
+  --bs-btn-hover-bg:            #8f5cd4;
+  --bs-btn-hover-border-color:  #8f5cd4;
+  --bs-btn-hover-color:         #fff;
+  --bs-btn-active-bg:           #8f5cd4;
+  --bs-btn-disabled-bg:         #a370e8;
+  --bs-btn-disabled-border-color: #a370e8;
+  --bs-btn-disabled-color:      #fff;
+  --bs-btn-focus-shadow-rgb:    163,112,232;
 }
 html[data-bs-theme="light"] .btn-success {
-  --bs-btn-bg:                 #5aba54;
-  --bs-btn-border-color:       #5aba54;
-  --bs-btn-color:              #fff;
-  --bs-btn-hover-bg:           #46a640;
-  --bs-btn-hover-border-color: #46a640;
-  --bs-btn-hover-color:        #fff;
-  --bs-btn-active-bg:          #46a640;
+  --bs-btn-bg:                  #5aba54;
+  --bs-btn-border-color:        #5aba54;
+  --bs-btn-color:               #fff;
+  --bs-btn-hover-bg:            #46a640;
+  --bs-btn-hover-border-color:  #46a640;
+  --bs-btn-hover-color:         #fff;
+  --bs-btn-active-bg:           #46a640;
+  --bs-btn-disabled-bg:         #5aba54;
+  --bs-btn-disabled-border-color: #5aba54;
+  --bs-btn-disabled-color:      #fff;
 }
 .btn-outline-secondary {
   --bs-btn-color:              var(--ctp-text);
@@ -204,6 +213,8 @@ html[data-bs-theme="light"] .btn-success:hover { filter: none; }
 .navbar { background-color: var(--ctp-mantle); border-bottom-color: var(--ctp-surface0) !important; }
 .navbar-brand { color: var(--ctp-mauve) !important; font-weight: 700; letter-spacing: 0.02em; font-size: 1rem; }
 .navbar-brand:hover { color: var(--ctp-lavender) !important; }
+html[data-bs-theme="light"] .navbar-brand { color: #a370e8 !important; }
+html[data-bs-theme="light"] .navbar-brand:hover { color: #8f5cd4 !important; }
 .nav-link { color: var(--ctp-subtext) !important; font-size: 0.95rem; }
 .nav-link:hover, .nav-link:focus { color: var(--ctp-text) !important; }
 .nav-link:active, .nav-link.show { color: var(--ctp-mauve) !important; }
@@ -305,6 +316,12 @@ details summary::-webkit-details-marker { display: none; }
 details summary::before { content: "▶"; font-size: 0.65em; transition: transform 150ms; }
 details[open] summary::before { transform: rotate(90deg); }
 details summary:hover { background: rgba(var(--bs-primary-rgb), 0.08); border-color: var(--ctp-mauve); }
+html[data-bs-theme="light"] details summary {
+  background-color: #a370e8; color: #fff; border-color: #a370e8;
+}
+html[data-bs-theme="light"] details summary:hover {
+  background-color: #8f5cd4; border-color: #8f5cd4;
+}
 details > :not(summary) { margin-top: 1rem; }
 
 /* ─── Custom theme picker ────────────────────────────────────────────────── */
