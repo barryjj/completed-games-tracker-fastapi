@@ -20,7 +20,7 @@
         {% if current_user.steam_id64 %}
         <p class="text-secondary mb-1"><small>
           {% if current_user.steam_last_synced_at %}
-          Last synced {{ current_user.steam_last_synced_at.strftime("%A, %B %-d, %Y @ %-I:%M %p") }}
+          Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
           {% else %}
           Never synced
           {% endif %}
@@ -63,4 +63,5 @@
     </div>
   </div>
 </div>
+
 {% endblock %}
