@@ -152,6 +152,26 @@ html[data-bs-theme="light"] {
   --bs-btn-active-bg:    var(--ctp-lavender);
   --bs-btn-focus-shadow-rgb: var(--bs-primary-rgb);
 }
+/* Latte's mauve/green are vivid on light bg; use softer mid-tones instead */
+html[data-bs-theme="light"] .btn-primary {
+  --bs-btn-bg:                 #a370e8;
+  --bs-btn-border-color:       #a370e8;
+  --bs-btn-color:              #fff;
+  --bs-btn-hover-bg:           #8f5cd4;
+  --bs-btn-hover-border-color: #8f5cd4;
+  --bs-btn-hover-color:        #fff;
+  --bs-btn-active-bg:          #8f5cd4;
+  --bs-btn-focus-shadow-rgb:   163,112,232;
+}
+html[data-bs-theme="light"] .btn-success {
+  --bs-btn-bg:                 #5aba54;
+  --bs-btn-border-color:       #5aba54;
+  --bs-btn-color:              #fff;
+  --bs-btn-hover-bg:           #46a640;
+  --bs-btn-hover-border-color: #46a640;
+  --bs-btn-hover-color:        #fff;
+  --bs-btn-active-bg:          #46a640;
+}
 .btn-outline-secondary {
   --bs-btn-color:              var(--ctp-text);
   --bs-btn-border-color:       var(--ctp-surface1);
@@ -177,6 +197,8 @@ html[data-bs-theme="light"] {
   filter: brightness(1);
 }
 .btn-success:hover { filter: brightness(1.1); }
+html[data-bs-theme="light"] .btn-success { filter: none; }
+html[data-bs-theme="light"] .btn-success:hover { filter: none; }
 
 /* ─── Navbar ─────────────────────────────────────────────────────────────── */
 .navbar { background-color: var(--ctp-mantle); border-bottom-color: var(--ctp-surface0) !important; }
@@ -223,8 +245,10 @@ a:active { color: var(--bs-link-color); }
   border-bottom-color: var(--ctp-surface1);
 }
 .table tbody td { border-bottom-color: var(--ctp-surface0); }
-tr.completion-editing > td { background-color: var(--ctp-surface0) !important; }
+html[data-bs-theme="dark"]  tr.completion-editing > td { background-color: var(--ctp-surface0) !important; }
+html[data-bs-theme="light"] tr.completion-editing > td { background-color: rgba(163,112,232,0.1) !important; }
 tr.completion-editing > td:first-child { border-left: 3px solid var(--ctp-mauve); }
+html[data-bs-theme="light"] tr.completion-editing > td:first-child { border-left-color: #a370e8; }
 
 /* ─── Cards ──────────────────────────────────────────────────────────────── */
 .card { background-color: var(--ctp-mantle); border-color: var(--ctp-surface1); }
@@ -237,9 +261,8 @@ tr.completion-editing > td:first-child { border-left: 3px solid var(--ctp-mauve)
 }
 
 /* ─── Status badges ──────────────────────────────────────────────────────── */
-/* bg-success on a light Catppuccin green needs dark text; ctp-crust is dark in
-   Mocha (dark green bg) and light in Latte (dark green bg) — readable both ways */
-.badge.bg-success { color: var(--ctp-crust); }
+html[data-bs-theme="dark"]  .badge.bg-success { color: var(--ctp-crust); }
+html[data-bs-theme="light"] .badge.bg-success { background-color: #5aba54 !important; color: #fff; }
 
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {

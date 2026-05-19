@@ -27,6 +27,7 @@
           hx-trigger="input changed delay:300ms"
           hx-target="#game-search-results"
           hx-sync="this:abort"
+          oninput="document.getElementById('game-search-results').innerHTML=''"
           name="q"
         >
         <input type="hidden" name="library_entry_id" id="library-entry-id">

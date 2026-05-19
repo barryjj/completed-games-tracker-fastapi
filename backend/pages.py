@@ -385,13 +385,20 @@ def search_completion_games(
             ),
         )
         .order_by(models.Game.title)
-        .limit(20)
+        .limit(40)
         .all()
     )
+    seen: set[tuple] = set()
+    unique: list[models.UserLibraryEntry] = []
+    for entry in results:
+        key = (entry.release.game_id, entry.release.platform)
+        if key not in seen:
+            seen.add(key)
+            unique.append(entry)
     return templates.TemplateResponse(
         request=request,
         name="partials/completion_game_results.html",
-        context={"results": results},
+        context={"results": unique[:20]},
     )
 
 
