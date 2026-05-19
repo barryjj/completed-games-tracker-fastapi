@@ -26,6 +26,7 @@
           hx-get="/completions/games/search"
           hx-trigger="input changed delay:300ms"
           hx-target="#game-search-results"
+          hx-sync="this:abort"
           name="q"
         >
         <input type="hidden" name="library_entry_id" id="library-entry-id">
@@ -57,22 +58,21 @@
     document.getElementById('log-completion-btn').disabled = false;
   }
 
-  function editCompletion(id, libraryEntryId, gameLabel, date, playthroughs, notes) {
-    document.getElementById('edit-completion-id').value = id;
-    document.getElementById('library-entry-id').value = libraryEntryId;
-    document.getElementById('game-search-input').value = gameLabel;
-    document.getElementById('completed-at-input').value = date;
-    document.getElementById('playthroughs-input').value = playthroughs;
-    document.getElementById('notes-input').value = notes;
+  function editCompletion(ds) {
+    document.getElementById('edit-completion-id').value = ds.completionId;
+    document.getElementById('library-entry-id').value = ds.entryId;
+    document.getElementById('game-search-input').value = ds.label;
+    document.getElementById('completed-at-input').value = ds.date;
+    document.getElementById('playthroughs-input').value = ds.playthroughs;
+    document.getElementById('notes-input').value = ds.notes;
     document.getElementById('game-search-results').innerHTML = '';
     document.getElementById('log-completion-btn').disabled = false;
     document.getElementById('log-completion-btn').textContent = 'Update Completion';
     document.getElementById('cancel-edit-btn').hidden = false;
     document.getElementById('log-completion-details').open = true;
     document.getElementById('log-completion-summary').textContent = 'Editing Completion';
-    // highlight the row being edited
     document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('table-warning'));
-    var row = document.getElementById('completion-' + id);
+    var row = document.getElementById('completion-' + ds.completionId);
     if (row) row.classList.add('table-warning');
     document.getElementById('log-completion-details').scrollIntoView({behavior: 'smooth', block: 'start'});
   }
