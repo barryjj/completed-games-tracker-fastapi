@@ -8,14 +8,13 @@
   <td class="text-end text-nowrap">
     <button
       class="btn btn-sm btn-outline-secondary"
-      onclick="editCompletion(
-        {{ completion.id }},
-        {{ completion.library_entry_id }},
-        '{{ completion.library_entry.release.game.title | e }} ({{ completion.library_entry.release.platform | e }})',
-        '{{ completion.completed_at.strftime("%Y-%m-%d") }}',
-        '{{ completion.playthroughs or "" }}',
-        {{ completion.notes | tojson if completion.notes else '""' }}
-      )"
+      onclick="editCompletion(this.dataset)"
+      data-completion-id="{{ completion.id }}"
+      data-entry-id="{{ completion.library_entry_id }}"
+      data-label="{{ (completion.library_entry.release.game.title ~ ' (' ~ completion.library_entry.release.platform ~ ')') | e }}"
+      data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
+      data-playthroughs="{{ (completion.playthroughs or '') | e }}"
+      data-notes="{{ (completion.notes or '') | e }}"
     >Edit</button>
     <button
       class="btn btn-sm btn-outline-danger"
