@@ -60,17 +60,18 @@
     <h5 class="mb-3">Library Sync</h5>
     {% if current_user.steam_id64 and current_user.steam_api_key %}
     {% if current_user.steam_last_synced_at %}
-    <p class="text-secondary"><small>Last synced {{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</small></p>
+    <p class="text-secondary"><small>Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% else %}
     <p class="text-secondary"><small>Never synced</small></p>
     {% endif %}
     <button
-      class="btn btn-success"
+      class="btn btn-primary"
       hx-post="/integrations/steam/sync"
       hx-target="#steam-flash"
       hx-swap="innerHTML"
       hx-indicator="#sync-spinner"
       hx-disabled-elt="this"
+      hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
     >
       Sync Library
     </button>

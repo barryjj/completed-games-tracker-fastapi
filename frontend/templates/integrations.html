@@ -36,12 +36,13 @@
           <a href="/integrations/steam" class="btn btn-primary btn-sm">Configure</a>
           {% if current_user.steam_id64 and current_user.steam_api_key %}
           <button
-            class="btn btn-success btn-sm"
+            class="btn btn-primary btn-sm"
             hx-post="/integrations/steam/sync"
             hx-target="#steam-hub-status"
             hx-swap="innerHTML"
             hx-indicator="#steam-hub-spinner"
             hx-disabled-elt="this"
+            hx-on::before-request="document.getElementById('steam-hub-status').innerHTML=''"
           >Sync</button>
           <span id="steam-hub-spinner" class="htmx-indicator text-secondary"><small>Syncing...</small></span>
           {% endif %}
