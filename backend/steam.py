@@ -11,6 +11,17 @@ from . import models
 # Symbols that Steam appends to titles but are meaningless for display
 _JUNK_RE = re.compile(r"[™®©]+")
 
+COLLECTION_KEYWORDS = [
+    "collection", "anthology", "trilogy", "compilation",
+    "complete edition", "complete pack", "bundle", "chronicles",
+    "archives", "legacy", "origins",
+]
+
+
+def _infer_is_collection(title: str) -> bool:
+    t = title.lower()
+    return any(kw in t for kw in COLLECTION_KEYWORDS)
+
 
 def _clean_title(title: str) -> str:
     """Return title with trademark/copyright symbols stripped and whitespace normalised."""
@@ -77,14 +88,36 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
 
         if release is None:
             cleaned = _clean_title(title)
-            game = models.Game(
-                title=title,
-                display_name=cleaned if cleaned != title else None,
-                is_dlc=False,
-                is_collection=False,
+
+            # Before creating a new Game, check if this user already has one
+            # with the same title (e.g. manually added before Steam sync).
+            # If so, attach the Steam release to the existing game instead of
+            # creating a duplicate.
+            existing_game = (
+                db.query(models.Game)
+                .join(models.GameRelease)
+                .join(models.UserLibraryEntry)
+                .filter(
+                    models.UserLibraryEntry.user_id == user.id,
+                    models.Game.title == title,
+                )
+                .first()
             )
-            db.add(game)
-            db.flush()
+
+            if existing_game is not None:
+                game = existing_game
+                # Backfill display_name if not already set
+                if game.display_name is None and cleaned != title:
+                    game.display_name = cleaned
+            else:
+                game = models.Game(
+                    title=title,
+                    display_name=cleaned if cleaned != title else None,
+                    is_dlc=False,
+                    is_collection=_infer_is_collection(title),
+                )
+                db.add(game)
+                db.flush()
 
             release = models.GameRelease(
                 game_id=game.id,
@@ -107,10 +140,13 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
                         url=url,
                     ))
         else:
-            # Keep raw_data fresh
+            # Keep raw_data fresh; never overwrite display_name
             release.raw_data = g
 
-        # Find or create library entry
+        # Find or create library entry for this release.
+        # Also check if the user already has the game via a different release
+        # (e.g. the manual entry we just matched above) — if so, update that
+        # entry's playtime rather than creating a second library row.
         entry = (
             db.query(models.UserLibraryEntry)
             .filter_by(user_id=user.id, release_id=release.id)
@@ -118,14 +154,30 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
         )
 
         if entry is None:
-            db.add(models.UserLibraryEntry(
-                user_id=user.id,
-                release_id=release.id,
-                playtime_minutes=playtime,
-                last_played_at=last_played,
-                import_source="steam_import",
-            ))
-            added += 1
+            existing_entry = (
+                db.query(models.UserLibraryEntry)
+                .join(models.GameRelease)
+                .filter(
+                    models.UserLibraryEntry.user_id == user.id,
+                    models.GameRelease.game_id == release.game_id,
+                )
+                .first()
+            )
+            if existing_entry is not None:
+                # Update playtime on the pre-existing manual entry
+                existing_entry.playtime_minutes = playtime
+                existing_entry.last_played_at = last_played
+                existing_entry.updated_at = datetime.datetime.now(datetime.timezone.utc)
+                updated += 1
+            else:
+                db.add(models.UserLibraryEntry(
+                    user_id=user.id,
+                    release_id=release.id,
+                    playtime_minutes=playtime,
+                    last_played_at=last_played,
+                    import_source="steam_import",
+                ))
+                added += 1
         else:
             entry.playtime_minutes = playtime
             entry.last_played_at = last_played
