@@ -1,6 +1,6 @@
 <tr id="completion-{{ completion.id }}">
   <td class="row-num"></td>
-  <td>{{ completion.library_entry.release.game.title }}</td>
+  <td>{{ completion.library_entry.release.game.display_title }}</td>
   <td><span class="platform-badge">{{ completion.library_entry.release.platform }}</span></td>
   <td>{{ completion.completed_at.strftime("%Y-%m-%d") }}</td>
   <td>{{ completion.playthroughs or "" }}</td>
@@ -11,7 +11,7 @@
       onclick="editCompletion(this.dataset)"
       data-completion-id="{{ completion.id }}"
       data-entry-id="{{ completion.library_entry_id }}"
-      data-label="{{ (completion.library_entry.release.game.title ~ ' (' ~ completion.library_entry.release.platform ~ ')') | e }}"
+      data-label="{{ (completion.library_entry.release.game.display_title ~ ' (' ~ completion.library_entry.release.platform ~ ')') | e }}"
       data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
       data-playthroughs="{{ (completion.playthroughs or '') | e }}"
       data-notes="{{ (completion.notes or '') | e }}"

@@ -49,7 +49,7 @@
         <select class="form-select" name="parent_game_id" id="parent-dlc-select">
           <option value="">— none —</option>
           {% for e in entries %}
-          <option value="{{ e.release.id }}">{{ e.release.game.title }} ({{ e.release.platform }})</option>
+          <option value="{{ e.release.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
           {% endfor %}
         </select>
       </div>
@@ -58,7 +58,7 @@
         <select class="form-select" name="parent_game_id" id="parent-collection-select">
           <option value="">— none —</option>
           {% for c in collections %}
-          <option value="{{ c.release.id }}">{{ c.release.game.title }} ({{ c.release.platform }})</option>
+          <option value="{{ c.release.id }}">{{ c.release.game.display_title }} ({{ c.release.platform }})</option>
           {% endfor %}
         </select>
       </div>
@@ -116,6 +116,7 @@
       <th>Platform</th>
       <th>Type</th>
       <th>Added</th>
+      <th></th>
     </tr>
   </thead>
   <tbody id="library-tbody">
@@ -142,4 +143,92 @@
   </div>
 </div>
 {% endif %}
+
+<!-- Library entry edit modal -->
+<div class="modal fade" id="editEntryModal" tabindex="-1" aria-labelledby="editEntryModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="editEntryModalLabel">Edit Library Entry</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="edit-entry-form">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Display name <span class="text-secondary fw-normal">(leave blank to use the raw title)</span></label>
+            <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off">
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_dlc" id="edit-is-dlc" value="true">
+              <label class="form-check-label" for="edit-is-dlc">DLC</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_collection" id="edit-is-collection" value="true">
+              <label class="form-check-label" for="edit-is-collection">Is a collection</label>
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Base game / Collection <span class="text-secondary fw-normal">(optional)</span></label>
+            <select class="form-select" name="parent_game_id" id="edit-parent-select">
+              <option value="">— none —</option>
+              {% for e in entries %}
+              <option value="{{ e.release.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{% block scripts %}
+<script>
+var _editEntryId = null;
+var _editModal = null;
+
+function editLibraryEntry(ds) {
+  _editEntryId = ds.entryId;
+  document.getElementById('edit-display-name').value = ds.displayName || '';
+  document.getElementById('edit-is-dlc').checked = ds.isDlc === 'true';
+  document.getElementById('edit-is-collection').checked = ds.isCollection === 'true';
+  var parentSel = document.getElementById('edit-parent-select');
+  // parent-id is a game_id, not release_id — we store release_id in the option values,
+  // so we can't directly match. Pre-select if possible, else leave at none.
+  parentSel.value = '';
+  document.getElementById('editEntryModalLabel').textContent = 'Edit: ' + ds.label;
+  if (!_editModal) _editModal = new bootstrap.Modal(document.getElementById('editEntryModal'));
+  _editModal.show();
+}
+
+document.getElementById('edit-entry-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  if (!_editEntryId) return;
+  var form = e.target;
+  var body = new URLSearchParams();
+  body.append('display_name', form.display_name.value);
+  body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
+  body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
+  var parentVal = form.parent_game_id.value;
+  if (parentVal) body.append('parent_game_id', parentVal);
+
+  fetch('/library/entries/' + _editEntryId, {
+    method: 'PATCH',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body.toString(),
+  })
+  .then(function(r) { return r.text(); })
+  .then(function(html) {
+    var row = document.getElementById('library-entry-' + _editEntryId);
+    if (row) row.outerHTML = html;
+    _editModal.hide();
+  });
+});
+</script>
+{% endblock %}
 {% endblock %}
