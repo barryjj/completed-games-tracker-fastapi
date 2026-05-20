@@ -95,6 +95,44 @@
   </form>
 </details>
 
+<form
+  class="row g-2 mb-3"
+  hx-get="/library"
+  hx-target="#library-content"
+  hx-select="#library-content"
+  hx-push-url="true"
+  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-type"
+>
+  <div class="col-md-5">
+    <input
+      type="text"
+      class="form-control form-control-sm"
+      id="lib-q"
+      name="q"
+      placeholder="Search titles…"
+      value="{{ q }}"
+      autocomplete="off"
+    >
+  </div>
+  <div class="col-auto">
+    <select class="form-select form-select-sm" id="lib-platform" name="platform">
+      <option value="">All platforms</option>
+      {% for p in lib_platforms %}
+      <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select class="form-select form-select-sm" id="lib-type" name="type_filter">
+      <option value="">All types</option>
+      <option value="game" {% if type_filter == 'game' %}selected{% endif %}>Games</option>
+      <option value="dlc" {% if type_filter == 'dlc' %}selected{% endif %}>DLC</option>
+      <option value="collection" {% if type_filter == 'collection' %}selected{% endif %}>Collections</option>
+    </select>
+  </div>
+</form>
+
+<div id="library-content">
 <div class="d-flex justify-content-between align-items-center mb-2">
   <span class="text-secondary"><small>{{ total }} game{{ 's' if total != 1 }} — page {{ page }} of {{ total_pages }}</small></span>
   {% if total_pages > 1 %}
@@ -143,6 +181,7 @@
   </div>
 </div>
 {% endif %}
+</div>
 
 <!-- Library entry edit modal -->
 <div class="modal fade" id="editEntryModal" tabindex="-1" aria-labelledby="editEntryModalLabel" aria-hidden="true">

@@ -302,7 +302,7 @@ html[data-bs-theme="light"] tr.completion-editing > td:first-child { border-left
 /* ─── Status badges ──────────────────────────────────────────────────────── */
 html[data-bs-theme="dark"]  .badge.bg-success { color: var(--ctp-crust); }
 /* Light: match the alert-success subtle palette so badge and flash feel like the same green */
-html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !important; color: #0a3622 !important; }
+html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !important; color: #0a3622 !important; border: 1px solid #a3cfbb !important; font-weight: 600 !important; }
 
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {
@@ -386,6 +386,21 @@ details > :not(summary) { margin-top: 1rem; }
 #completions-tbody tr { counter-increment: completion-row; }
 #completions-tbody tr td.row-num { color: var(--ctp-overlay0); font-size: 0.85em; width: 2.5rem; }
 #completions-tbody tr td.row-num::before { content: counter(completion-row); }
+
+/* ─── Slide-reveal row actions ──────────────────────────────────────────── */
+.row-actions {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: flex-end;
+  opacity: 0;
+  transform: translateX(6px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+tr:hover .row-actions,
+tr:focus-within .row-actions {
+  opacity: 1;
+  transform: translateX(0);
+}
 
 /* ─── HTMX ───────────────────────────────────────────────────────────────── */
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }

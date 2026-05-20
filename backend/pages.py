@@ -225,6 +225,9 @@ PAGE_SIZE = 250
 def library_page(
     request: Request,
     page: int = Query(1, ge=1),
+    q: str = Query(""),
+    platform: str = Query(""),
+    type_filter: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -240,6 +243,22 @@ def library_page(
         .join(models.Game)
         .order_by(models.Game.title)
     )
+    q = q.strip()
+    if q:
+        base_q = base_q.filter(
+            or_(
+                models.Game.title.ilike(f"%{q}%"),
+                models.Game.display_name.ilike(f"%{q}%"),
+            )
+        )
+    if platform:
+        base_q = base_q.filter(models.GameRelease.platform == platform)
+    if type_filter == "dlc":
+        base_q = base_q.filter(models.Game.is_dlc == True)
+    elif type_filter == "collection":
+        base_q = base_q.filter(models.Game.is_collection == True)
+    elif type_filter == "game":
+        base_q = base_q.filter(models.Game.is_dlc == False, models.Game.is_collection == False)
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
@@ -258,6 +277,15 @@ def library_page(
         .order_by(models.Game.title)
         .all()
     )
+    lib_platforms = (
+        db.query(models.GameRelease.platform)
+        .join(models.UserLibraryEntry)
+        .filter(models.UserLibraryEntry.user_id == current_user.id)
+        .distinct()
+        .order_by(models.GameRelease.platform)
+        .all()
+    )
+    lib_platform_list = [p[0] for p in lib_platforms]
     return templates.TemplateResponse(
         request=request,
         name="library.html",
@@ -269,6 +297,10 @@ def library_page(
             "page": page,
             "total_pages": total_pages,
             "total": total,
+            "q": q,
+            "platform": platform,
+            "type_filter": type_filter,
+            "lib_platforms": lib_platform_list,
         },
     )
 
@@ -386,10 +418,14 @@ def delete_library_entry(
 @router.get("/completions")
 def completions_page(
     request: Request,
+    q: str = Query(""),
+    platform: str = Query(""),
+    completed_from: str = Query(""),
+    completed_to: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    completions = (
+    completions_q = (
         db.query(models.Completion)
         .join(models.Completion.library_entry)
         .join(models.UserLibraryEntry.release)
@@ -400,9 +436,42 @@ def completions_page(
             .contains_eager(models.GameRelease.game)
         )
         .filter(models.Completion.user_id == current_user.id)
-        .order_by(models.Completion.id.desc())
+    )
+    q = q.strip()
+    if q:
+        completions_q = completions_q.filter(
+            or_(
+                models.Game.title.ilike(f"%{q}%"),
+                models.Game.display_name.ilike(f"%{q}%"),
+            )
+        )
+    if platform:
+        completions_q = completions_q.filter(models.GameRelease.platform == platform)
+    if completed_from:
+        try:
+            completions_q = completions_q.filter(
+                models.Completion.completed_at >= datetime.date.fromisoformat(completed_from)
+            )
+        except ValueError:
+            pass
+    if completed_to:
+        try:
+            completions_q = completions_q.filter(
+                models.Completion.completed_at <= datetime.date.fromisoformat(completed_to)
+            )
+        except ValueError:
+            pass
+    completions = completions_q.order_by(models.Completion.id.desc()).all()
+    comp_platforms = (
+        db.query(models.GameRelease.platform)
+        .join(models.UserLibraryEntry, models.GameRelease.id == models.UserLibraryEntry.release_id)
+        .join(models.Completion, models.UserLibraryEntry.id == models.Completion.library_entry_id)
+        .filter(models.Completion.user_id == current_user.id)
+        .distinct()
+        .order_by(models.GameRelease.platform)
         .all()
     )
+    comp_platform_list = [p[0] for p in comp_platforms]
     return templates.TemplateResponse(
         request=request,
         name="completions.html",
@@ -410,6 +479,11 @@ def completions_page(
             "current_user": current_user,
             "completions": completions,
             "today": datetime.date.today().isoformat(),
+            "q": q,
+            "platform": platform,
+            "completed_from": completed_from,
+            "completed_to": completed_to,
+            "comp_platforms": comp_platform_list,
         },
     )
 
@@ -441,6 +515,8 @@ def search_completion_games(
             or_(
                 models.Game.title.ilike(f"{q}%"),
                 models.Game.title.ilike(f"% {q}%"),
+                models.Game.display_name.ilike(f"{q}%"),
+                models.Game.display_name.ilike(f"% {q}%"),
             ),
         )
         .order_by(models.Game.title)
