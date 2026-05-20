@@ -28,6 +28,9 @@ class Game(Base):
     __tablename__ = "games"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     title: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # User-facing title override — strips junk suffixes (™, ®, ©) from imported titles.
+    # If set, use this everywhere; fall back to title when None.
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # True if this entry is a DLC (add-on for another game)
     is_dlc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # True if this entry is itself a collection (e.g. Anniversary Collection)
@@ -36,6 +39,10 @@ class Game(Base):
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True)
     igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+
+    @property
+    def display_title(self) -> str:
+        return self.display_name or self.title
 
     parent: Mapped["Game | None"] = relationship("Game", remote_side="Game.id", back_populates="children")
     children: Mapped[list["Game"]] = relationship("Game", back_populates="parent")

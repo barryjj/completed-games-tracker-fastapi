@@ -1,11 +1,20 @@
 import datetime
 import logging
+import re
 import time
 
 import httpx
 from sqlalchemy.orm import Session
 
 from . import models
+
+# Symbols that Steam appends to titles but are meaningless for display
+_JUNK_RE = re.compile(r"[™®©]+")
+
+
+def _clean_title(title: str) -> str:
+    """Return title with trademark/copyright symbols stripped and whitespace normalised."""
+    return _JUNK_RE.sub("", title).strip()
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +76,13 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
         )
 
         if release is None:
-            game = models.Game(title=title, is_dlc=False, is_collection=False)
+            cleaned = _clean_title(title)
+            game = models.Game(
+                title=title,
+                display_name=cleaned if cleaned != title else None,
+                is_dlc=False,
+                is_collection=False,
+            )
             db.add(game)
             db.flush()
 

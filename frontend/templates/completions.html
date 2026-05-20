@@ -95,26 +95,77 @@
   </script>
 </details>
 
-<table class="table table-striped table-borderless">
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Game</th>
-      <th>Platform</th>
-      <th>Date</th>
-      <th>Playthroughs</th>
-      <th>Notes</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody id="completions-tbody">
-    {% for completion in completions %}
-    {% include "partials/completion_row.html" %}
-    {% endfor %}
-  </tbody>
-</table>
+<form
+  class="row g-2 mb-3"
+  hx-get="/completions"
+  hx-target="#completions-content"
+  hx-select="#completions-content"
+  hx-push-url="true"
+  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to"
+>
+  <div class="col-md-4">
+    <input
+      type="text"
+      class="form-control form-control-sm"
+      id="comp-q"
+      name="q"
+      placeholder="Search titles…"
+      value="{{ q }}"
+      autocomplete="off"
+    >
+  </div>
+  <div class="col-auto">
+    <select class="form-select form-select-sm" id="comp-platform" name="platform">
+      <option value="">All platforms</option>
+      {% for p in comp_platforms %}
+      <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <input
+      type="date"
+      class="form-control form-control-sm"
+      id="comp-from"
+      name="completed_from"
+      value="{{ completed_from }}"
+      title="From date"
+    >
+  </div>
+  <div class="col-auto">
+    <input
+      type="date"
+      class="form-control form-control-sm"
+      id="comp-to"
+      name="completed_to"
+      value="{{ completed_to }}"
+      title="To date"
+    >
+  </div>
+</form>
 
-{% if not completions %}
-<p class="text-secondary"><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
-{% endif %}
+<div id="completions-content">
+  <p class="text-secondary mb-2"><small>{{ completions | length }} completion{{ 's' if completions | length != 1 }}</small></p>
+  <table class="table table-striped table-borderless">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Game</th>
+        <th>Platform</th>
+        <th>Date</th>
+        <th>Playthroughs</th>
+        <th>Notes</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="completions-tbody">
+      {% for completion in completions %}
+      {% include "partials/completion_row.html" %}
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if not completions %}
+  <p class="text-secondary"><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
+  {% endif %}
+</div>
 {% endblock %}
