@@ -173,7 +173,7 @@
             <select class="form-select" name="parent_game_id" id="edit-parent-select">
               <option value="">— none —</option>
               {% for e in entries %}
-              <option value="{{ e.release.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
+              <option value="{{ e.release.id }}" data-game-id="{{ e.release.game.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
               {% endfor %}
             </select>
           </div>
@@ -198,9 +198,8 @@ function editLibraryEntry(ds) {
   document.getElementById('edit-is-dlc').checked = ds.isDlc === 'true';
   document.getElementById('edit-is-collection').checked = ds.isCollection === 'true';
   var parentSel = document.getElementById('edit-parent-select');
-  // parent-id is a game_id, not release_id — we store release_id in the option values,
-  // so we can't directly match. Pre-select if possible, else leave at none.
-  parentSel.value = '';
+  var matchOpt = ds.parentId ? parentSel.querySelector('[data-game-id="' + ds.parentId + '"]') : null;
+  parentSel.value = matchOpt ? matchOpt.value : '';
   document.getElementById('editEntryModalLabel').textContent = 'Edit: ' + ds.label;
   if (!_editModal) _editModal = new bootstrap.Modal(document.getElementById('editEntryModal'));
   _editModal.show();
