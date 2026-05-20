@@ -273,7 +273,8 @@ html[data-bs-theme="light"] tr.completion-editing > td:first-child { border-left
 
 /* ─── Status badges ──────────────────────────────────────────────────────── */
 html[data-bs-theme="dark"]  .badge.bg-success { color: var(--ctp-crust); }
-html[data-bs-theme="light"] .badge.bg-success { background-color: #5aba54 !important; color: #fff; }
+/* Light: match the alert-success subtle palette so badge and flash feel like the same green */
+html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !important; color: #0a3622 !important; }
 
 /* ─── Badges ─────────────────────────────────────────────────────────────── */
 .platform-badge {
