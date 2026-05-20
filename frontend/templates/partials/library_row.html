@@ -4,7 +4,16 @@
   <td>
     {% if entry.release.game.is_dlc %}<span class="game-type-badge">DLC</span>{% endif %}
     {% if entry.release.game.is_collection %}<span class="game-type-badge">Collection</span>{% endif %}
-    {% if entry.release.game.parent %}<span class="parent-badge">{{ entry.release.game.parent.display_title }}</span>{% endif %}
+    {% if entry.release.game.parent_id %}
+      {% set parent_known = owned_game_ids is defined and entry.release.game.parent_id in owned_game_ids %}
+      {% if parent_known %}
+        <span class="parent-badge">{{ entry.release.game.parent.display_title }}</span>
+      {% elif owned_game_ids is defined %}
+        <span class="parent-badge orphan-badge" title="Parent game not in your library">orphaned</span>
+      {% else %}
+        <span class="parent-badge">{{ entry.release.game.parent.display_title if entry.release.game.parent else '' }}</span>
+      {% endif %}
+    {% endif %}
   </td>
   <td><small>{{ entry.imported_at.strftime("%Y-%m-%d") }}</small></td>
   <td class="text-end text-nowrap">
