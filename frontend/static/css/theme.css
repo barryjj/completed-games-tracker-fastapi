@@ -315,14 +315,8 @@ html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !impor
   letter-spacing: 0.08em; color: var(--ctp-peach); background: var(--badge-peach-bg);
   padding: 0.15em 0.45em; border-radius: 4px;
 }
-.parent-badge {
-  font-size: 0.72em; font-weight: 500; font-style: italic;
-  color: var(--ctp-subtext);
-}
-.orphan-badge {
-  font-size: 0.68em; font-weight: 600; font-style: normal; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--ctp-red); background: var(--badge-red-bg, color-mix(in srgb, var(--ctp-red) 15%, transparent));
-  padding: 0.15em 0.45em; border-radius: 4px; cursor: help;
+.badge-in-collection {
+  color: var(--ctp-teal); background: color-mix(in srgb, var(--ctp-teal) 15%, transparent);
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */
