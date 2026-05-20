@@ -17,7 +17,7 @@
       data-notes="{{ (completion.notes or '') | e }}"
     >Edit</button>
     <button
-      class="btn btn-sm btn-outline-danger"
+      class="btn btn-sm btn-danger"
       hx-delete="/completions/{{ completion.id }}"
       hx-target="#completion-{{ completion.id }}"
       hx-swap="outerHTML"
