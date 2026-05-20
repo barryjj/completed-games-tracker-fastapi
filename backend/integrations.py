@@ -110,6 +110,35 @@ def sync_steam(
         )
 
 
+@router.post("/steam/backfill-collection-flags")
+def backfill_collection_flags(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    games = (
+        db.query(models.Game)
+        .join(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.Game.is_collection == False,
+        )
+        .all()
+    )
+    updated = 0
+    for game in games:
+        if steam._infer_is_collection(game.title):
+            game.is_collection = True
+            updated += 1
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"Backfill complete — {updated} game{'s' if updated != 1 else ''} flagged as collections."},
+    )
+
+
 @router.post("/steam/backfill-display-names")
 def backfill_steam_display_names(
     request: Request,
