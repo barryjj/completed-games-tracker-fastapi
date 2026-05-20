@@ -11,7 +11,7 @@
     hx-post="/library/games"
     hx-target="#library-tbody"
     hx-swap="afterbegin"
-    hx-on::after-request="if(event.detail.successful){ this.reset(); var e=document.getElementById('library-empty'); if(e) e.remove(); }"
+    hx-on::after-request="if(event.detail.successful){ this.reset(); updateParentRow(); var e=document.getElementById('library-empty'); if(e) e.remove(); }"
   >
     <div class="row g-3 mb-3">
       <div class="col-md-5">
@@ -45,16 +45,20 @@
     </div>
     <div class="row g-3 mb-3" id="parent-row" hidden>
       <div class="col-md-9" id="parent-dlc-col">
-        <label class="form-label" id="parent-dlc-label">Base game</label>
+        <label class="form-label">Base game</label>
+        <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
+               oninput="filterSelect(this, 'parent-dlc-select')">
         <select class="form-select" name="parent_game_id" id="parent-dlc-select">
           <option value="">— none —</option>
-          {% for e in entries %}
+          {% for e in base_game_options %}
           <option value="{{ e.release.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
           {% endfor %}
         </select>
       </div>
       <div class="col-md-9" id="parent-collection-col" hidden>
-        <label class="form-label" id="parent-collection-label">Collection</label>
+        <label class="form-label">Collection</label>
+        <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
+               oninput="filterSelect(this, 'parent-collection-select')">
         <select class="form-select" name="parent_game_id" id="parent-collection-select">
           <option value="">— none —</option>
           {% for c in collections %}
@@ -65,6 +69,15 @@
     </div>
     <script>
     var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","complete edition","complete pack","bundle","chronicles","archives","legacy","origins"];
+
+    function filterSelect(input, selectId) {
+      var filter = input.value.toLowerCase();
+      var sel = document.getElementById(selectId);
+      for (var i = 0; i < sel.options.length; i++) {
+        var opt = sel.options[i];
+        opt.hidden = filter.length > 0 && opt.value !== '' && !opt.textContent.toLowerCase().includes(filter);
+      }
+    }
 
     function updateParentRow() {
       var isDlc = document.getElementById('is_dlc').checked;
@@ -206,20 +219,39 @@
           </div>
           <div class="mb-3">
             <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="is_dlc" id="edit-is-dlc" value="true">
+              <input class="form-check-input" type="checkbox" name="is_dlc" id="edit-is-dlc" value="true"
+                     onchange="updateEditParentRows()">
               <label class="form-check-label" for="edit-is-dlc">DLC</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" name="is_collection" id="edit-is-collection" value="true">
               <label class="form-check-label" for="edit-is-collection">Is a collection</label>
             </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="edit-part-of-collection" value="true"
+                     onchange="updateEditParentRows()">
+              <label class="form-check-label" for="edit-part-of-collection">Part of a collection</label>
+            </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Base game / Collection <span class="text-secondary fw-normal">(optional)</span></label>
-            <select class="form-select" name="parent_game_id" id="edit-parent-select">
+          <div class="mb-3" id="edit-dlc-parent-row" hidden>
+            <label class="form-label">Base game</label>
+            <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
+                   oninput="filterSelect(this, 'edit-dlc-parent-select')">
+            <select class="form-select" id="edit-dlc-parent-select">
               <option value="">— none —</option>
-              {% for e in entries %}
+              {% for e in base_game_options %}
               <option value="{{ e.release.id }}" data-game-id="{{ e.release.game.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3" id="edit-collection-parent-row" hidden>
+            <label class="form-label">Collection</label>
+            <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
+                   oninput="filterSelect(this, 'edit-collection-parent-select')">
+            <select class="form-select" id="edit-collection-parent-select">
+              <option value="">— none —</option>
+              {% for c in collections %}
+              <option value="{{ c.release.id }}" data-game-id="{{ c.release.game.id }}">{{ c.release.game.display_title }} ({{ c.release.platform }})</option>
               {% endfor %}
             </select>
           </div>
@@ -238,14 +270,43 @@
 var _editEntryId = null;
 var _editModal = null;
 
+function updateEditParentRows() {
+  var isDlc = document.getElementById('edit-is-dlc').checked;
+  var isPartOf = document.getElementById('edit-part-of-collection').checked;
+  document.getElementById('edit-dlc-parent-row').hidden = !isDlc;
+  document.getElementById('edit-collection-parent-row').hidden = !isPartOf;
+}
+
 function editLibraryEntry(ds) {
   _editEntryId = ds.entryId;
   document.getElementById('edit-display-name').value = ds.displayName || '';
-  document.getElementById('edit-is-dlc').checked = ds.isDlc === 'true';
-  document.getElementById('edit-is-collection').checked = ds.isCollection === 'true';
-  var parentSel = document.getElementById('edit-parent-select');
-  var matchOpt = ds.parentId ? parentSel.querySelector('[data-game-id="' + ds.parentId + '"]') : null;
-  parentSel.value = matchOpt ? matchOpt.value : '';
+
+  var isDlc = ds.isDlc === 'true';
+  var isCollection = ds.isCollection === 'true';
+  var isPartOfCollection = ds.isPartOfCollection === 'true';
+
+  document.getElementById('edit-is-dlc').checked = isDlc;
+  document.getElementById('edit-is-collection').checked = isCollection;
+  document.getElementById('edit-part-of-collection').checked = isPartOfCollection;
+  updateEditParentRows();
+
+  // Pre-populate the right parent select using game id from data attribute
+  if (isDlc && ds.parentId) {
+    var dlcSel = document.getElementById('edit-dlc-parent-select');
+    var match = dlcSel.querySelector('option[data-game-id="' + ds.parentId + '"]');
+    dlcSel.value = match ? match.value : '';
+  } else {
+    document.getElementById('edit-dlc-parent-select').value = '';
+  }
+
+  if (isPartOfCollection && ds.parentId) {
+    var colSel = document.getElementById('edit-collection-parent-select');
+    var match = colSel.querySelector('option[data-game-id="' + ds.parentId + '"]');
+    colSel.value = match ? match.value : '';
+  } else {
+    document.getElementById('edit-collection-parent-select').value = '';
+  }
+
   document.getElementById('editEntryModalLabel').textContent = 'Edit: ' + ds.label;
   if (!_editModal) _editModal = new bootstrap.Modal(document.getElementById('editEntryModal'));
   _editModal.show();
@@ -259,7 +320,14 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
   body.append('display_name', form.display_name.value);
   body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
   body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
-  var parentVal = form.parent_game_id.value;
+
+  // Pick the parent from whichever section is visible
+  var parentVal = '';
+  if (form.is_dlc.checked) {
+    parentVal = document.getElementById('edit-dlc-parent-select').value;
+  } else if (document.getElementById('edit-part-of-collection').checked) {
+    parentVal = document.getElementById('edit-collection-parent-select').value;
+  }
   if (parentVal) body.append('parent_game_id', parentVal);
 
   fetch('/library/entries/' + _editEntryId, {

@@ -275,6 +275,20 @@ def library_page(
     page = min(page, total_pages)
     entries = base_q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
 
+    # All non-DLC entries — used for "base game" parent dropdowns (add + edit)
+    base_game_options = (
+        db.query(models.UserLibraryEntry)
+        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.Game.is_dlc == False,
+        )
+        .order_by(models.Game.title)
+        .all()
+    )
+
     # Collections for the "part of collection" dropdown — needs all, not just current page
     collections = (
         db.query(models.UserLibraryEntry)
@@ -317,6 +331,7 @@ def library_page(
             "current_user": current_user,
             "entries": entries,
             "collections": collections,
+            "base_game_options": base_game_options,
             "platforms": PLATFORMS,
             "page": page,
             "total_pages": total_pages,
