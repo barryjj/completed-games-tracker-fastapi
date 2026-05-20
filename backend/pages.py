@@ -322,6 +322,65 @@ def add_game(
     )
 
 
+@router.patch("/library/entries/{entry_id}")
+def edit_library_entry(
+    request: Request,
+    entry_id: int,
+    display_name: str = Form(""),
+    is_dlc: bool = Form(False),
+    is_collection: bool = Form(False),
+    parent_game_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    game = entry.release.game
+
+    # display_name: empty string means "use raw title"
+    game.display_name = display_name.strip() or None
+    game.is_dlc = is_dlc
+    game.is_collection = is_collection
+
+    # Resolve parent_game_id (release id) → game.parent_id
+    if parent_game_id:
+        parent_release = db.query(models.GameRelease).filter_by(id=parent_game_id).first()
+        game.parent_id = parent_release.game_id if parent_release else None
+    else:
+        game.parent_id = None
+
+    db.commit()
+    db.refresh(entry)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/library_row.html",
+        context={"entry": entry},
+    )
+
+
+@router.delete("/library/entries/{entry_id}")
+def delete_library_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if entry:
+        db.delete(entry)
+        db.commit()
+    return Response(status_code=200)
+
+
 # --- Completions ---
 
 @router.get("/completions")
