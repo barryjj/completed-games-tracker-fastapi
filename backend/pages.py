@@ -227,7 +227,8 @@ def library_page(
     page: int = Query(1, ge=1),
     q: str = Query(""),
     platform: str = Query(""),
-    type_filter: str = Query(""),
+    show_dlc: str = Query(""),
+    show_in_collection: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -253,12 +254,22 @@ def library_page(
         )
     if platform:
         base_q = base_q.filter(models.GameRelease.platform == platform)
-    if type_filter == "dlc":
-        base_q = base_q.filter(models.Game.is_dlc == True)
-    elif type_filter == "collection":
-        base_q = base_q.filter(models.Game.is_collection == True)
-    elif type_filter == "game":
-        base_q = base_q.filter(models.Game.is_dlc == False, models.Game.is_collection == False)
+
+    # Default: hide children (DLC and games-within-collections).
+    # Each checkbox independently re-admits its category.
+    show_dlc_bool = show_dlc == "1"
+    show_in_collection_bool = show_in_collection == "1"
+    if not show_dlc_bool and not show_in_collection_bool:
+        base_q = base_q.filter(models.Game.parent_id == None)
+    elif show_dlc_bool and not show_in_collection_bool:
+        base_q = base_q.filter(
+            or_(models.Game.parent_id == None, models.Game.is_dlc == True)
+        )
+    elif not show_dlc_bool and show_in_collection_bool:
+        base_q = base_q.filter(
+            or_(models.Game.parent_id == None, models.Game.is_dlc == False)
+        )
+    # both checked → no additional filter, show everything
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
@@ -286,6 +297,19 @@ def library_page(
         .all()
     )
     lib_platform_list = [p[0] for p in lib_platforms]
+
+    # Build filter_qs for pagination links (preserves active filters)
+    filter_parts = []
+    if q:
+        filter_parts.append(f"q={q}")
+    if platform:
+        filter_parts.append(f"platform={platform}")
+    if show_dlc_bool:
+        filter_parts.append("show_dlc=1")
+    if show_in_collection_bool:
+        filter_parts.append("show_in_collection=1")
+    filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
+
     return templates.TemplateResponse(
         request=request,
         name="library.html",
@@ -299,7 +323,9 @@ def library_page(
             "total": total,
             "q": q,
             "platform": platform,
-            "type_filter": type_filter,
+            "show_dlc": show_dlc_bool,
+            "show_in_collection": show_in_collection_bool,
+            "filter_qs": filter_qs,
             "lib_platforms": lib_platform_list,
         },
     )

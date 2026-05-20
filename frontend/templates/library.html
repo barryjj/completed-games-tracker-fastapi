@@ -45,7 +45,7 @@
     </div>
     <div class="row g-3 mb-3" id="parent-row" hidden>
       <div class="col-md-9" id="parent-dlc-col">
-        <label class="form-label">Base game <span class="text-secondary fw-normal">(optional)</span></label>
+        <label class="form-label" id="parent-dlc-label">Base game</label>
         <select class="form-select" name="parent_game_id" id="parent-dlc-select">
           <option value="">— none —</option>
           {% for e in entries %}
@@ -54,7 +54,7 @@
         </select>
       </div>
       <div class="col-md-9" id="parent-collection-col" hidden>
-        <label class="form-label">Collection <span class="text-secondary fw-normal">(optional)</span></label>
+        <label class="form-label" id="parent-collection-label">Collection</label>
         <select class="form-select" name="parent_game_id" id="parent-collection-select">
           <option value="">— none —</option>
           {% for c in collections %}
@@ -72,9 +72,13 @@
       document.getElementById('parent-row').hidden = !(isDlc || isPartOf);
       document.getElementById('parent-dlc-col').hidden = !isDlc;
       document.getElementById('parent-collection-col').hidden = !isPartOf;
-      // disable the hidden select so it doesn't submit
-      document.getElementById('parent-dlc-select').disabled = !isDlc;
-      document.getElementById('parent-collection-select').disabled = !isPartOf;
+      // disable hidden selects so they don't submit; require visible ones
+      var dlcSel = document.getElementById('parent-dlc-select');
+      var colSel = document.getElementById('parent-collection-select');
+      dlcSel.disabled = !isDlc;
+      colSel.disabled = !isPartOf;
+      dlcSel.required = isDlc;
+      colSel.required = isPartOf;
     }
 
     function hintIsCollection() {
@@ -101,7 +105,7 @@
   hx-target="#library-content"
   hx-select="#library-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-type"
+  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-show-dlc, change from:#lib-show-collection-games"
 >
   <div class="col-md-5">
     <input
@@ -122,13 +126,16 @@
       {% endfor %}
     </select>
   </div>
-  <div class="col-auto">
-    <select class="form-select form-select-sm" id="lib-type" name="type_filter">
-      <option value="">All types</option>
-      <option value="game" {% if type_filter == 'game' %}selected{% endif %}>Games</option>
-      <option value="dlc" {% if type_filter == 'dlc' %}selected{% endif %}>DLC</option>
-      <option value="collection" {% if type_filter == 'collection' %}selected{% endif %}>Collections</option>
-    </select>
+  <div class="col-auto d-flex align-items-center gap-3 ps-1">
+    <span class="text-secondary" style="font-size:0.82em; white-space:nowrap">Also include:</span>
+    <div class="form-check form-check-inline mb-0">
+      <input class="form-check-input" type="checkbox" id="lib-show-dlc" name="show_dlc" value="1" {% if show_dlc %}checked{% endif %}>
+      <label class="form-check-label" for="lib-show-dlc" style="font-size:0.85em">DLC</label>
+    </div>
+    <div class="form-check form-check-inline mb-0">
+      <input class="form-check-input" type="checkbox" id="lib-show-collection-games" name="show_in_collection" value="1" {% if show_in_collection %}checked{% endif %}>
+      <label class="form-check-label" for="lib-show-collection-games" style="font-size:0.85em">Games in collections</label>
+    </div>
   </div>
 </form>
 
@@ -138,10 +145,10 @@
   {% if total_pages > 1 %}
   <div class="d-flex gap-1">
     {% if page > 1 %}
-    <a href="/library?page={{ page - 1 }}" class="btn btn-outline-secondary btn-sm">&larr;</a>
+    <a href="/library?page={{ page - 1 }}{{ filter_qs }}" class="btn btn-outline-secondary btn-sm">&larr;</a>
     {% endif %}
     {% if page < total_pages %}
-    <a href="/library?page={{ page + 1 }}" class="btn btn-outline-secondary btn-sm">&rarr;</a>
+    <a href="/library?page={{ page + 1 }}{{ filter_qs }}" class="btn btn-outline-secondary btn-sm">&rarr;</a>
     {% endif %}
   </div>
   {% endif %}
@@ -173,10 +180,10 @@
   <span class="text-secondary"><small>Page {{ page }} of {{ total_pages }}</small></span>
   <div class="d-flex gap-1">
     {% if page > 1 %}
-    <a href="/library?page={{ page - 1 }}" class="btn btn-outline-secondary btn-sm">&larr; Prev</a>
+    <a href="/library?page={{ page - 1 }}{{ filter_qs }}" class="btn btn-outline-secondary btn-sm">&larr; Prev</a>
     {% endif %}
     {% if page < total_pages %}
-    <a href="/library?page={{ page + 1 }}" class="btn btn-outline-secondary btn-sm">Next &rarr;</a>
+    <a href="/library?page={{ page + 1 }}{{ filter_qs }}" class="btn btn-outline-secondary btn-sm">Next &rarr;</a>
     {% endif %}
   </div>
 </div>
