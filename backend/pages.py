@@ -4,7 +4,7 @@ import os
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import or_
+from sqlalchemy import or_, and_, false as sql_false
 from sqlalchemy.orm import Session, joinedload, contains_eager
 
 from . import models, users
@@ -227,8 +227,11 @@ def library_page(
     page: int = Query(1, ge=1),
     q: str = Query(""),
     platform: str = Query(""),
-    show_dlc: str = Query(""),
-    show_in_collection: str = Query(""),
+    filter_set: str = Query(""),       # sentinel — "1" when the filter form was submitted
+    show_games: str = Query(""),       # regular games (not DLC, not in a collection)
+    show_collections: str = Query(""), # entries marked is_collection=True
+    show_dlc: str = Query(""),         # DLC entries
+    show_in_collection: str = Query(""),  # games that are part of a collection
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -255,21 +258,38 @@ def library_page(
     if platform:
         base_q = base_q.filter(models.GameRelease.platform == platform)
 
-    # Default: hide children (DLC and games-within-collections).
-    # Each checkbox independently re-admits its category.
-    show_dlc_bool = show_dlc == "1"
-    show_in_collection_bool = show_in_collection == "1"
-    if not show_dlc_bool and not show_in_collection_bool:
+    # Type filter — four independent "Show" checkboxes, each admitting a category.
+    # When filter_set is absent (fresh page load / direct URL), default to showing
+    # everything with parent_id IS NULL (games + collections), matching legacy behaviour.
+    if not filter_set:
+        show_games_bool = True
+        show_collections_bool = True
+        show_dlc_bool = False
+        show_in_collection_bool = False
         base_q = base_q.filter(models.Game.parent_id == None)
-    elif show_dlc_bool and not show_in_collection_bool:
-        base_q = base_q.filter(
-            or_(models.Game.parent_id == None, models.Game.is_dlc == True)
-        )
-    elif not show_dlc_bool and show_in_collection_bool:
-        base_q = base_q.filter(
-            or_(models.Game.parent_id == None, models.Game.is_dlc == False)
-        )
-    # both checked → no additional filter, show everything
+    else:
+        show_games_bool = show_games == "1"
+        show_collections_bool = show_collections == "1"
+        show_dlc_bool = show_dlc == "1"
+        show_in_collection_bool = show_in_collection == "1"
+
+        conditions = []
+        if show_games_bool:
+            conditions.append(and_(
+                models.Game.is_dlc == False,
+                models.Game.is_collection == False,
+                models.Game.parent_id == None,
+            ))
+        if show_collections_bool:
+            conditions.append(models.Game.is_collection == True)
+        if show_dlc_bool:
+            conditions.append(models.Game.is_dlc == True)
+        if show_in_collection_bool:
+            conditions.append(and_(
+                models.Game.is_dlc == False,
+                models.Game.parent_id != None,
+            ))
+        base_q = base_q.filter(or_(*conditions) if conditions else sql_false())
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
@@ -302,6 +322,17 @@ def library_page(
         .order_by(models.Game.title)
         .all()
     )
+    # Set of game IDs the user actually owns — used to flag orphaned children in the row
+    owned_game_ids = set(
+        gid for (gid,) in (
+            db.query(models.Game.id)
+            .join(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.user_id == current_user.id)
+            .all()
+        )
+    )
+
     lib_platforms = (
         db.query(models.GameRelease.platform)
         .join(models.UserLibraryEntry)
@@ -318,10 +349,16 @@ def library_page(
         filter_parts.append(f"q={q}")
     if platform:
         filter_parts.append(f"platform={platform}")
-    if show_dlc_bool:
-        filter_parts.append("show_dlc=1")
-    if show_in_collection_bool:
-        filter_parts.append("show_in_collection=1")
+    if filter_set:
+        filter_parts.append("filter_set=1")
+        if show_games_bool:
+            filter_parts.append("show_games=1")
+        if show_collections_bool:
+            filter_parts.append("show_collections=1")
+        if show_dlc_bool:
+            filter_parts.append("show_dlc=1")
+        if show_in_collection_bool:
+            filter_parts.append("show_in_collection=1")
     filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
 
     return templates.TemplateResponse(
@@ -338,6 +375,10 @@ def library_page(
             "total": total,
             "q": q,
             "platform": platform,
+            "owned_game_ids": owned_game_ids,
+            "filter_set": bool(filter_set),
+            "show_games": show_games_bool,
+            "show_collections": show_collections_bool,
             "show_dlc": show_dlc_bool,
             "show_in_collection": show_in_collection_bool,
             "filter_qs": filter_qs,
