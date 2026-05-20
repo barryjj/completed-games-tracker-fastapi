@@ -108,3 +108,34 @@ def sync_steam(
             context={"error": f"Sync failed: {e}"},
             status_code=500,
         )
+
+
+@router.post("/steam/backfill-display-names")
+def backfill_steam_display_names(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    games = (
+        db.query(models.Game)
+        .join(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+            models.Game.display_name == None,
+        )
+        .all()
+    )
+    updated = 0
+    for game in games:
+        cleaned = steam._clean_title(game.title)
+        if cleaned != game.title:
+            game.display_name = cleaned
+            updated += 1
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"Backfill complete — {updated} game{'s' if updated != 1 else ''} updated."},
+    )

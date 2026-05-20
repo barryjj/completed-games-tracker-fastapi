@@ -8,22 +8,24 @@
   </td>
   <td><small>{{ entry.imported_at.strftime("%Y-%m-%d") }}</small></td>
   <td class="text-end text-nowrap">
-    <button
-      class="btn btn-sm btn-outline-secondary"
-      onclick="editLibraryEntry(this.dataset)"
-      data-entry-id="{{ entry.id }}"
-      data-display-name="{{ (entry.release.game.display_name or '') | e }}"
-      data-is-dlc="{{ 'true' if entry.release.game.is_dlc else 'false' }}"
-      data-is-collection="{{ 'true' if entry.release.game.is_collection else 'false' }}"
-      data-parent-id="{{ entry.release.game.parent_id or '' }}"
-      data-label="{{ entry.release.game.display_title | e }}"
-    >Edit</button>
-    <button
-      class="btn btn-sm btn-danger"
-      hx-delete="/library/entries/{{ entry.id }}"
-      hx-target="#library-entry-{{ entry.id }}"
-      hx-swap="outerHTML"
-      hx-confirm="Remove {{ entry.release.game.display_title | e }} from your library?"
-    >Remove</button>
+    <div class="row-actions">
+      <button
+        class="btn btn-sm btn-outline-secondary"
+        onclick="editLibraryEntry(this.dataset)"
+        data-entry-id="{{ entry.id }}"
+        data-display-name="{{ (entry.release.game.display_name or '') | e }}"
+        data-is-dlc="{{ 'true' if entry.release.game.is_dlc else 'false' }}"
+        data-is-collection="{{ 'true' if entry.release.game.is_collection else 'false' }}"
+        data-parent-id="{{ entry.release.game.parent_id or '' }}"
+        data-label="{{ entry.release.game.display_title | e }}"
+      >Edit</button>
+      <button
+        class="btn btn-sm btn-danger"
+        hx-delete="/library/entries/{{ entry.id }}"
+        hx-target="#library-entry-{{ entry.id }}"
+        hx-swap="outerHTML"
+        hx-confirm="Remove {{ entry.release.game.display_title | e }} from your library?"
+      >Remove</button>
+    </div>
   </td>
 </tr>
