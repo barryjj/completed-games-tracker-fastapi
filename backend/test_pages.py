@@ -111,14 +111,15 @@ def test_add_collection_type(client):
     _signup_and_login(client)
     r = client.post("/library/games", data={"title": "Castlevania Anniversary Collection", "platform": "Steam", "is_collection": "true"})
     assert r.status_code == 200
-    assert b'game-type-badge">Collection' in r.content
+    assert b'tag-collection">Collection' in r.content
 
 
 def test_collection_not_auto_detected_server_side(client):
     _signup_and_login(client)
     r = client.post("/library/games", data={"title": "Castlevania Anniversary Collection", "platform": "Steam"})
     assert r.status_code == 200
-    assert b'game-type-badge">Collection' not in r.content
+    # is_collection only set when checkbox is explicitly submitted
+    assert b'tag-collection">Collection' not in r.content
 
 
 # --- completions page ---
