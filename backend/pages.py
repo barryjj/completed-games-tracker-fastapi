@@ -15,6 +15,26 @@ router = APIRouter()
 TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "frontend", "templates"))
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
+
+def _platform_color_class(platform: str) -> str:
+    p = platform.lower()
+    if "steam" in p:
+        return "tag-platform-steam"
+    if "ps" in p or "playstation" in p or "psn" in p:
+        return "tag-platform-playstation"
+    if "switch" in p or "nintendo" in p:
+        return "tag-platform-nintendo"
+    if "xbox" in p:
+        return "tag-platform-xbox"
+    if "ios" in p or "mac" in p or "apple" in p or "iphone" in p or "ipad" in p:
+        return "tag-platform-apple"
+    if "pc" in p or "windows" in p:
+        return "tag-platform-pc"
+    return "tag-platform-other"
+
+
+templates.env.filters["platform_color"] = _platform_color_class
+
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
 
 COLLECTION_KEYWORDS = [

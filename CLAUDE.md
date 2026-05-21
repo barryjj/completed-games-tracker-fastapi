@@ -13,8 +13,18 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 
 ## Git rules
 
+### ⛔ HARD STOPS — no exceptions, no bypasses, no "quick fixes"
+
+**Before every single `git commit` or `git push`: run `git branch` and read the output.**
+
+- **If the current branch is `main`: STOP. Do not commit. Do not push. Branch first.**
+- **If `git push` is rejected with a bypass prompt: STOP. Do not bypass. Tell the user and let them decide.**
+- These rules apply to ALL changes — migrations, test fixes, CSS, typos, everything. There is no category of change small enough to justify committing directly to `main`.
+
+### Normal rules
+
 - Never work directly on `main` or `develop`.
-- Never push to `main` or force-push `main` for any reason — provide the command and let the user run it.
+- Never push to `main` for any reason — provide the command and let the user run it.
 - Feature branches: push freely, open PRs freely.
 - Force-pushing a feature branch after a rebase is fine — explain what changed.
 - Always pass `--head <branch>` explicitly to `gh pr create`.
@@ -45,6 +55,14 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - Theme: Catppuccin Mocha (dark default) / Latte (light). OS-default via `prefers-color-scheme`; user can override via localStorage toggle.
 - No emoji in UI chrome.
 - HTMX for dynamic interactions — no JavaScript frameworks.
+
+## Confirmation required — do not act unilaterally
+
+**When the user reports an error or problem: stop, explain what you think the cause is and what you propose to do about it, and wait for approval before doing anything.**
+
+- Do not diagnose and immediately fix. Say what you found, say what you'd do, ask if you should proceed.
+- This applies to migrations, config changes, dependency changes, and anything that touches files outside the immediate feature being worked on.
+- "I can see the problem" is not permission to fix it.
 
 ## What not to do
 

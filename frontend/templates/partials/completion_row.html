@@ -1,7 +1,7 @@
 <tr id="completion-{{ completion.id }}">
   <td class="row-num"></td>
   <td>{{ completion.library_entry.release.game.display_title }}</td>
-  <td><span class="platform-badge">{{ completion.library_entry.release.platform }}</span></td>
+  <td><span class="tag-badge {{ completion.library_entry.release.platform | platform_color }}">{{ completion.library_entry.release.platform }}</span></td>
   <td>{{ completion.completed_at.strftime("%Y-%m-%d") }}</td>
   <td>{{ completion.playthroughs or "" }}</td>
   <td>{{ completion.notes or "" }}</td>
