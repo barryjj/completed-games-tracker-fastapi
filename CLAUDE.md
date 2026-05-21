@@ -56,6 +56,14 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - No emoji in UI chrome.
 - HTMX for dynamic interactions — no JavaScript frameworks.
 
+## Confirmation required — do not act unilaterally
+
+**When the user reports an error or problem: stop, explain what you think the cause is and what you propose to do about it, and wait for approval before doing anything.**
+
+- Do not diagnose and immediately fix. Say what you found, say what you'd do, ask if you should proceed.
+- This applies to migrations, config changes, dependency changes, and anything that touches files outside the immediate feature being worked on.
+- "I can see the problem" is not permission to fix it.
+
 ## What not to do
 
 - Do not push to protected branches.
