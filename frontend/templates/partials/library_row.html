@@ -1,13 +1,13 @@
 <tr id="library-entry-{{ entry.id }}">
   <td>{{ entry.release.game.display_title }}</td>
-  <td><span class="platform-badge">{{ entry.release.platform }}</span></td>
+  <td><span class="tag-badge {{ entry.release.platform | platform_color }}">{{ entry.release.platform }}</span></td>
   <td>
     {% if entry.release.game.is_dlc %}
-      <span class="game-type-badge">DLC</span>
+      <span class="tag-badge tag-dlc">DLC</span>
     {% elif entry.release.game.is_collection %}
-      <span class="game-type-badge">Collection</span>
+      <span class="tag-badge tag-collection">Collection</span>
     {% elif entry.release.game.parent_id %}
-      <span class="game-type-badge badge-in-collection">In collection</span>
+      <span class="tag-badge tag-in-collection">In collection</span>
     {% endif %}
   </td>
   <td><small>{{ entry.imported_at.strftime("%Y-%m-%d") }}</small></td>

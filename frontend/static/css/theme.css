@@ -55,8 +55,6 @@ html[data-bs-theme="dark"] {
   --bs-table-striped-bg:          rgba(255,255,255,0.05);
   --bs-table-border-color:        #45475a;
 
-  --badge-blue-bg:  rgba(137,180,250,0.15);
-  --badge-peach-bg: rgba(250,179,135,0.15);
   --bs-focus-ring-color: rgba(203,166,247,0.25);
 }
 
@@ -117,8 +115,6 @@ html[data-bs-theme="light"] {
   --bs-table-striped-bg:          rgba(0,0,0,0.04);
   --bs-table-border-color:        #bcc0cc;
 
-  --badge-blue-bg:  rgba(30,102,245,0.12);
-  --badge-peach-bg: rgba(254,100,11,0.12);
   --bs-focus-ring-color: rgba(136,57,239,0.2);
 }
 
@@ -304,18 +300,34 @@ html[data-bs-theme="dark"]  .badge.bg-success { color: var(--ctp-crust); }
 /* Light: match the alert-success subtle palette so badge and flash feel like the same green */
 html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !important; color: #0a3622 !important; border: 1px solid #a3cfbb !important; font-weight: 600 !important; }
 
-/* ─── Badges ─────────────────────────────────────────────────────────────── */
-.platform-badge {
-  font-size: 0.72em; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--ctp-blue); background: var(--badge-blue-bg);
-  padding: 0.15em 0.45em; border-radius: 4px;
-}
-.game-type-badge {
+/* ─── Tags / Badges ──────────────────────────────────────────────────────── */
+.tag-badge {
+  display: inline-block;
   font-size: 0.68em; font-weight: 600; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--ctp-peach); background: var(--badge-peach-bg);
-  padding: 0.15em 0.45em; border-radius: 4px;
+  letter-spacing: 0.07em;
+  padding: 0.18em 0.5em; border-radius: 4px;
+  margin-right: 0.25em;
+  white-space: nowrap;
 }
-.badge-in-collection {
+.tag-badge:last-child { margin-right: 0; }
+
+/* Platform colors */
+.tag-platform-steam       { color: var(--ctp-blue);    background: color-mix(in srgb, var(--ctp-blue)    15%, transparent); }
+.tag-platform-playstation { color: var(--ctp-lavender); background: color-mix(in srgb, var(--ctp-lavender) 15%, transparent); }
+.tag-platform-nintendo    { color: var(--ctp-red);     background: color-mix(in srgb, var(--ctp-red)     15%, transparent); }
+.tag-platform-xbox        { color: var(--ctp-green);   background: color-mix(in srgb, var(--ctp-green)   15%, transparent); }
+.tag-platform-apple       { color: var(--ctp-sky);     background: color-mix(in srgb, var(--ctp-sky)     15%, transparent); }
+.tag-platform-pc          { color: var(--ctp-sapphire); background: color-mix(in srgb, var(--ctp-sapphire) 15%, transparent); }
+.tag-platform-other       { color: var(--ctp-subtext0); background: color-mix(in srgb, var(--ctp-subtext0) 12%, transparent); }
+
+/* Game type tag colors */
+.tag-dlc {
+  color: var(--ctp-peach); background: color-mix(in srgb, var(--ctp-peach) 15%, transparent);
+}
+.tag-collection {
+  color: var(--ctp-mauve); background: color-mix(in srgb, var(--ctp-mauve) 15%, transparent);
+}
+.tag-in-collection {
   color: var(--ctp-teal); background: color-mix(in srgb, var(--ctp-teal) 15%, transparent);
 }
 
