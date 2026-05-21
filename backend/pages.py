@@ -217,7 +217,7 @@ def delete_account(
     return response
 
 
-PAGE_SIZE = 250
+PAGE_SIZE = 100
 
 # --- Library ---
 
@@ -238,7 +238,6 @@ def library_page(
         .options(
             joinedload(models.UserLibraryEntry.release)
             .joinedload(models.GameRelease.game)
-            .joinedload(models.Game.parent)
         )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
         .join(models.GameRelease)
@@ -313,15 +312,20 @@ def library_page(
             .order_by(models.Game.title)
             .all()
         )
-    lib_platforms = (
-        db.query(models.GameRelease.platform)
-        .join(models.UserLibraryEntry)
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
-        .distinct()
-        .order_by(models.GameRelease.platform)
-        .all()
-    )
-    lib_platform_list = [p[0] for p in lib_platforms]
+    # lib_platforms populates the platform dropdown outside #library-content —
+    # skip it on HTMX requests just like base_game_options/collections.
+    if is_htmx:
+        lib_platform_list = []
+    else:
+        lib_platforms = (
+            db.query(models.GameRelease.platform)
+            .join(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.user_id == current_user.id)
+            .distinct()
+            .order_by(models.GameRelease.platform)
+            .all()
+        )
+        lib_platform_list = [p[0] for p in lib_platforms]
 
     # Build filter_qs for pagination links (preserves active filters)
     filter_parts = []
