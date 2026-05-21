@@ -139,6 +139,32 @@ def backfill_collection_flags(
     )
 
 
+@router.post("/steam/sync-dlc")
+def steam_sync_dlc(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    try:
+        result = steam.sync_dlc_flags(db, current_user)
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": str(e)},
+        )
+    msg = (
+        f"Checked {result['checked']} apps — "
+        f"found {result['found_dlc']} DLC, "
+        f"linked {result['linked']} to base games."
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": msg},
+    )
+
+
 @router.post("/steam/backfill-display-names")
 def backfill_steam_display_names(
     request: Request,

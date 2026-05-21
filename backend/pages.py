@@ -4,7 +4,7 @@ import os
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import or_, and_, false as sql_false
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload, contains_eager
 
 from . import models, users
@@ -217,9 +217,11 @@ def delete_account(
     return response
 
 
-PAGE_SIZE = 250
+PAGE_SIZE = 100
 
 # --- Library ---
+
+VIEW_OPTIONS = ["default", "dlc", "collections", "in_collection", "manual", "all"]
 
 @router.get("/library")
 def library_page(
@@ -227,24 +229,19 @@ def library_page(
     page: int = Query(1, ge=1),
     q: str = Query(""),
     platform: str = Query(""),
-    filter_set: str = Query(""),       # sentinel — "1" when the filter form was submitted
-    show_games: str = Query(""),       # regular games (not DLC, not in a collection)
-    show_collections: str = Query(""), # entries marked is_collection=True
-    show_dlc: str = Query(""),         # DLC entries
-    show_in_collection: str = Query(""),  # games that are part of a collection
+    view: str = Query("default"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     base_q = (
         db.query(models.UserLibraryEntry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
         .options(
-            joinedload(models.UserLibraryEntry.release)
-            .joinedload(models.GameRelease.game)
-            .joinedload(models.Game.parent)
+            contains_eager(models.UserLibraryEntry.release)
+            .contains_eager(models.GameRelease.game)
         )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
-        .join(models.GameRelease)
-        .join(models.Game)
         .order_by(models.Game.title)
     )
     q = q.strip()
@@ -258,90 +255,77 @@ def library_page(
     if platform:
         base_q = base_q.filter(models.GameRelease.platform == platform)
 
-    # Type filter — four independent "Show" checkboxes, each admitting a category.
-    # When filter_set is absent (fresh page load / direct URL), default to showing
-    # everything with parent_id IS NULL (games + collections), matching legacy behaviour.
-    if not filter_set:
-        show_games_bool = True
-        show_collections_bool = True
-        show_dlc_bool = False
-        show_in_collection_bool = False
-        base_q = base_q.filter(models.Game.parent_id == None)
-    else:
-        show_games_bool = show_games == "1"
-        show_collections_bool = show_collections == "1"
-        show_dlc_bool = show_dlc == "1"
-        show_in_collection_bool = show_in_collection == "1"
+    # Normalise view param — unknown values fall back to default
+    if view not in VIEW_OPTIONS:
+        view = "default"
 
-        conditions = []
-        if show_games_bool:
-            conditions.append(and_(
-                models.Game.is_dlc == False,
-                models.Game.is_collection == False,
-                models.Game.parent_id == None,
-            ))
-        if show_collections_bool:
-            conditions.append(models.Game.is_collection == True)
-        if show_dlc_bool:
-            conditions.append(models.Game.is_dlc == True)
-        if show_in_collection_bool:
-            conditions.append(and_(
-                models.Game.is_dlc == False,
-                models.Game.parent_id != None,
-            ))
-        base_q = base_q.filter(or_(*conditions) if conditions else sql_false())
+    if view == "default":
+        # Games + collections; hide DLC and sub-collection games
+        base_q = base_q.filter(models.Game.parent_id == None)
+    elif view == "dlc":
+        base_q = base_q.filter(models.Game.is_dlc == True)
+    elif view == "collections":
+        base_q = base_q.filter(models.Game.is_collection == True)
+    elif view == "in_collection":
+        base_q = base_q.filter(
+            models.Game.parent_id != None,
+            models.Game.is_dlc == False,
+        )
+    elif view == "manual":
+        base_q = base_q.filter(models.UserLibraryEntry.import_source == "manual")
+    # "all" — no additional filter
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
     entries = base_q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
 
-    # All non-DLC entries — used for "base game" parent dropdowns (add + edit)
-    base_game_options = (
-        db.query(models.UserLibraryEntry)
-        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
-        .join(models.GameRelease)
-        .join(models.Game)
-        .filter(
-            models.UserLibraryEntry.user_id == current_user.id,
-            models.Game.is_dlc == False,
-        )
-        .order_by(models.Game.title)
-        .all()
-    )
+    # base_game_options and collections are only needed to populate the add-form
+    # and edit-modal dropdowns, which live outside #library-content and are never
+    # re-rendered by HTMX filter/search requests. Skip them on HTMX calls.
+    is_htmx = request.headers.get("HX-Request") == "true"
 
-    # Collections for the "part of collection" dropdown — needs all, not just current page
-    collections = (
-        db.query(models.UserLibraryEntry)
-        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
-        .join(models.GameRelease)
-        .join(models.Game)
-        .filter(
-            models.UserLibraryEntry.user_id == current_user.id,
-            models.Game.is_collection == True,
-        )
-        .order_by(models.Game.title)
-        .all()
-    )
-    # Set of game IDs the user actually owns — used to flag orphaned children in the row
-    owned_game_ids = set(
-        gid for (gid,) in (
-            db.query(models.Game.id)
+    if is_htmx:
+        base_game_options = []
+        collections = []
+    else:
+        base_game_options = (
+            db.query(models.UserLibraryEntry)
+            .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
             .join(models.GameRelease)
-            .join(models.UserLibraryEntry)
-            .filter(models.UserLibraryEntry.user_id == current_user.id)
+            .join(models.Game)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.is_dlc == False,
+            )
+            .order_by(models.Game.title)
             .all()
         )
-    )
-
-    lib_platforms = (
-        db.query(models.GameRelease.platform)
-        .join(models.UserLibraryEntry)
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
-        .distinct()
-        .order_by(models.GameRelease.platform)
-        .all()
-    )
-    lib_platform_list = [p[0] for p in lib_platforms]
+        collections = (
+            db.query(models.UserLibraryEntry)
+            .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+            .join(models.GameRelease)
+            .join(models.Game)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.is_collection == True,
+            )
+            .order_by(models.Game.title)
+            .all()
+        )
+    # lib_platforms populates the platform dropdown outside #library-content —
+    # skip it on HTMX requests just like base_game_options/collections.
+    if is_htmx:
+        lib_platform_list = []
+    else:
+        lib_platforms = (
+            db.query(models.GameRelease.platform)
+            .join(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.user_id == current_user.id)
+            .distinct()
+            .order_by(models.GameRelease.platform)
+            .all()
+        )
+        lib_platform_list = [p[0] for p in lib_platforms]
 
     # Build filter_qs for pagination links (preserves active filters)
     filter_parts = []
@@ -349,16 +333,8 @@ def library_page(
         filter_parts.append(f"q={q}")
     if platform:
         filter_parts.append(f"platform={platform}")
-    if filter_set:
-        filter_parts.append("filter_set=1")
-        if show_games_bool:
-            filter_parts.append("show_games=1")
-        if show_collections_bool:
-            filter_parts.append("show_collections=1")
-        if show_dlc_bool:
-            filter_parts.append("show_dlc=1")
-        if show_in_collection_bool:
-            filter_parts.append("show_in_collection=1")
+    if view != "default":
+        filter_parts.append(f"view={view}")
     filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
 
     return templates.TemplateResponse(
@@ -375,12 +351,7 @@ def library_page(
             "total": total,
             "q": q,
             "platform": platform,
-            "owned_game_ids": owned_game_ids,
-            "filter_set": bool(filter_set),
-            "show_games": show_games_bool,
-            "show_collections": show_collections_bool,
-            "show_dlc": show_dlc_bool,
-            "show_in_collection": show_in_collection_bool,
+            "view": view,
             "filter_qs": filter_qs,
             "lib_platforms": lib_platform_list,
         },

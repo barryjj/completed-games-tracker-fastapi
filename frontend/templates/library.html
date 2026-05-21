@@ -118,9 +118,8 @@
   hx-target="#library-content"
   hx-select="#library-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-show-games, change from:#lib-show-collections, change from:#lib-show-dlc, change from:#lib-show-in-collection"
+  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view"
 >
-  <input type="hidden" name="filter_set" value="1">
   <div class="col-md-4">
     <input
       type="text"
@@ -140,24 +139,15 @@
       {% endfor %}
     </select>
   </div>
-  <div class="col-auto d-flex align-items-center gap-3 ps-1">
-    <span class="text-secondary" style="font-size:0.82em; white-space:nowrap">Show:</span>
-    <div class="form-check form-check-inline mb-0">
-      <input class="form-check-input" type="checkbox" id="lib-show-games" name="show_games" value="1" {% if show_games %}checked{% endif %}>
-      <label class="form-check-label" for="lib-show-games" style="font-size:0.85em">Games</label>
-    </div>
-    <div class="form-check form-check-inline mb-0">
-      <input class="form-check-input" type="checkbox" id="lib-show-collections" name="show_collections" value="1" {% if show_collections %}checked{% endif %}>
-      <label class="form-check-label" for="lib-show-collections" style="font-size:0.85em">Collections</label>
-    </div>
-    <div class="form-check form-check-inline mb-0">
-      <input class="form-check-input" type="checkbox" id="lib-show-dlc" name="show_dlc" value="1" {% if show_dlc %}checked{% endif %}>
-      <label class="form-check-label" for="lib-show-dlc" style="font-size:0.85em">DLC</label>
-    </div>
-    <div class="form-check form-check-inline mb-0">
-      <input class="form-check-input" type="checkbox" id="lib-show-in-collection" name="show_in_collection" value="1" {% if show_in_collection %}checked{% endif %}>
-      <label class="form-check-label" for="lib-show-in-collection" style="font-size:0.85em">In a collection</label>
-    </div>
+  <div class="col-auto">
+    <select class="form-select form-select-sm" id="lib-view" name="view">
+      <option value="default"      {% if view == 'default'       %}selected{% endif %}>Default</option>
+      <option value="dlc"          {% if view == 'dlc'           %}selected{% endif %}>DLC</option>
+      <option value="collections"  {% if view == 'collections'   %}selected{% endif %}>Collections</option>
+      <option value="in_collection"{% if view == 'in_collection' %}selected{% endif %}>In a collection</option>
+      <option value="manual"       {% if view == 'manual'        %}selected{% endif %}>Manually added</option>
+      <option value="all"          {% if view == 'all'           %}selected{% endif %}>Everything</option>
+    </select>
   </div>
 </form>
 

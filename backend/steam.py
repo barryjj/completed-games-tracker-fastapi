@@ -140,8 +140,11 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
                         url=url,
                     ))
         else:
-            # Keep raw_data fresh; never overwrite display_name
-            release.raw_data = g
+            # Merge fresh owned-games data into raw_data, preserving any keys
+            # we've stored from other API calls (e.g. appdetails_type).
+            raw = dict(release.raw_data or {})
+            raw.update(g)
+            release.raw_data = raw
 
         # Find or create library entry for this release.
         # Also check if the user already has the game via a different release
@@ -188,3 +191,86 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
     db.commit()
 
     return {"added": added, "updated": updated, "total": len(games)}
+
+
+def _fetch_appdetails(appid: int) -> dict | None:
+    """Fetch app metadata from the Steam store API. Returns the data dict or None on failure."""
+    try:
+        resp = httpx.get(
+            "https://store.steampowered.com/api/appdetails",
+            params={"appids": appid},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        result = resp.json().get(str(appid), {})
+        if result.get("success"):
+            return result.get("data", {})
+    except Exception:
+        logger.warning("appdetails fetch failed for appid %s", appid)
+    return None
+
+
+def sync_dlc_flags(db: Session, user: models.User) -> dict:
+    """
+    Check Steam appdetails for library entries not yet inspected.
+    Sets is_dlc=True and links parent_id for confirmed DLC.
+    Skips entries already checked (raw_data['appdetails_type'] present).
+    """
+    releases_to_check = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .join(models.Game)
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.source == "steam",
+            models.Game.is_dlc == False,
+        )
+        .all()
+    )
+
+    checked = 0
+    found_dlc = 0
+    linked = 0
+
+    for release in releases_to_check:
+        # Skip if we've already fetched appdetails for this app
+        if (release.raw_data or {}).get("appdetails_type"):
+            checked += 1
+            continue
+
+        details = _fetch_appdetails(int(release.external_id))
+        time.sleep(0.3)  # stay well within Steam's rate limit
+
+        if details is None:
+            continue
+
+        app_type = details.get("type", "game")
+
+        # Persist the type so we never re-fetch this app
+        raw = dict(release.raw_data or {})
+        raw["appdetails_type"] = app_type
+        release.raw_data = raw
+        checked += 1
+
+        if app_type != "dlc":
+            continue
+
+        game = release.game
+        game.is_dlc = True
+        found_dlc += 1
+
+        # Link parent via fullgame.appid
+        fullgame = details.get("fullgame", {})
+        parent_appid = str(fullgame.get("appid", "")).strip()
+        if parent_appid:
+            parent_release = (
+                db.query(models.GameRelease)
+                .filter_by(source="steam", external_id=parent_appid)
+                .first()
+            )
+            if parent_release:
+                game.parent_id = parent_release.game_id
+                linked += 1
+
+    db.commit()
+    return {"checked": checked, "found_dlc": found_dlc, "linked": linked}

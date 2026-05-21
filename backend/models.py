@@ -32,11 +32,11 @@ class Game(Base):
     # If set, use this everywhere; fall back to title when None.
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     # True if this entry is a DLC (add-on for another game)
-    is_dlc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_dlc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # True if this entry is itself a collection (e.g. Anniversary Collection)
-    is_collection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_collection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # DLC -> base game, or standalone game -> collection it belongs to
-    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True)
+    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True, index=True)
     igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
@@ -53,7 +53,7 @@ class GameRelease(Base):
     """One row per game+platform combination. Holds platform-specific metadata and the raw API payload."""
     __tablename__ = "game_releases"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False)
+    game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     # e.g. "Steam", "PS5", "PS4", "Switch", "iOS", "Manual"
     platform: Mapped[str] = mapped_column(String, nullable=False)
     # "steam" | "psn" | "manual"
@@ -101,7 +101,7 @@ class UserLibraryEntry(Base):
     # single URL override for when the user wants different art than what was scraped
     cover_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
     # "steam_import" | "psn_import" | "manual"
-    import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual")
+    import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry
     parent_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True)
     imported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
