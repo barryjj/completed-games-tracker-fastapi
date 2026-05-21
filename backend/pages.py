@@ -235,13 +235,13 @@ def library_page(
 ):
     base_q = (
         db.query(models.UserLibraryEntry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
         .options(
-            joinedload(models.UserLibraryEntry.release)
-            .joinedload(models.GameRelease.game)
+            contains_eager(models.UserLibraryEntry.release)
+            .contains_eager(models.GameRelease.game)
         )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
-        .join(models.GameRelease)
-        .join(models.Game)
         .order_by(models.Game.title)
     )
     q = q.strip()
@@ -272,7 +272,7 @@ def library_page(
             models.Game.is_dlc == False,
         )
     elif view == "manual":
-        base_q = base_q.filter(models.UserLibraryEntry.import_source == None)
+        base_q = base_q.filter(models.UserLibraryEntry.import_source == "manual")
     # "all" — no additional filter
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
