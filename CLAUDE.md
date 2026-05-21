@@ -13,8 +13,18 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 
 ## Git rules
 
+### ⛔ HARD STOPS — no exceptions, no bypasses, no "quick fixes"
+
+**Before every single `git commit` or `git push`: run `git branch` and read the output.**
+
+- **If the current branch is `main`: STOP. Do not commit. Do not push. Branch first.**
+- **If `git push` is rejected with a bypass prompt: STOP. Do not bypass. Tell the user and let them decide.**
+- These rules apply to ALL changes — migrations, test fixes, CSS, typos, everything. There is no category of change small enough to justify committing directly to `main`.
+
+### Normal rules
+
 - Never work directly on `main` or `develop`.
-- Never push to `main` or force-push `main` for any reason — provide the command and let the user run it.
+- Never push to `main` for any reason — provide the command and let the user run it.
 - Feature branches: push freely, open PRs freely.
 - Force-pushing a feature branch after a rebase is fine — explain what changed.
 - Always pass `--head <branch>` explicitly to `gh pr create`.
