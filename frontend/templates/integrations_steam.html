@@ -78,6 +78,20 @@
     <span id="sync-spinner" class="htmx-indicator ms-2 text-secondary"><small>Syncing...</small></span>
     <div class="mt-3 d-flex flex-column gap-2">
       <div>
+        <p class="text-secondary mb-1"><small>Check each Steam app against the store API to detect DLC, set the DLC flag, and link it to its base game. Only checks apps not yet inspected — safe to run multiple times.</small></p>
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          hx-post="/integrations/steam/sync-dlc"
+          hx-target="#steam-flash"
+          hx-swap="innerHTML"
+          hx-indicator="#dlc-spinner"
+          hx-disabled-elt="this"
+          hx-confirm="Check unchecked Steam apps for DLC status? This makes one API call per app and may take a few minutes for large libraries."
+          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+        >Detect DLC</button>
+        <span id="dlc-spinner" class="htmx-indicator ms-2 text-secondary"><small>Checking apps…</small></span>
+      </div>
+      <div>
         <p class="text-secondary mb-1"><small>Fix display names for existing Steam games (strips ™, ®, © from titles).</small></p>
         <button
           class="btn btn-outline-secondary btn-sm"
