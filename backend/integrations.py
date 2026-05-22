@@ -263,7 +263,7 @@ def steam_enrichment_status(
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
-            steam.needs_enrichment(),
+            models.GameRelease.metadata_fetched_at == None,
         )
         .count()
     )
@@ -290,8 +290,9 @@ def steam_enrichment_refresh(
     current_user: models.User = Depends(get_web_user),
 ):
     """
-    Mark all Steam entries for re-enrichment. Existing metadata stays in place
-    and is only replaced when the background worker gets to each entry.
+    Re-queue all Steam entries for metadata enrichment by nulling metadata_fetched_at.
+    raw_data["appdetails"] is untouched — existing metadata stays visible until
+    the background worker overwrites each entry with fresh data.
     """
     updated = (
         db.query(models.GameRelease)
@@ -300,10 +301,7 @@ def steam_enrichment_refresh(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
         )
-        .update(
-            {"metadata_fetched_at": steam.METADATA_REFRESH_REQUESTED},
-            synchronize_session=False,
-        )
+        .update({"metadata_fetched_at": None}, synchronize_session=False)
     )
     db.commit()
     return templates.TemplateResponse(
