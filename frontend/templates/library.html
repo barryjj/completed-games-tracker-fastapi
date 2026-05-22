@@ -2,115 +2,10 @@
 {% block title %}Library{% endblock %}
 
 {% block content %}
-<h1 class="mb-4">Library</h1>
-
-<details>
-  <summary>Add Game Manually</summary>
-  <form
-    class="mt-3"
-    hx-post="/library/games"
-    hx-target="#library-tbody"
-    hx-swap="afterbegin"
-    hx-on::after-request="if(event.detail.successful){ this.reset(); updateParentRow(); var e=document.getElementById('library-empty'); if(e) e.remove(); }"
-  >
-    <div class="row g-3 mb-3">
-      <div class="col-md-5">
-        <label class="form-label">Title</label>
-        <input type="text" class="form-control" name="title" id="title-input" placeholder="e.g. Elden Ring" required oninput="hintIsCollection()">
-      </div>
-      <div class="col-md-4">
-        <label class="form-label">Platform</label>
-        <select class="form-select" name="platform">
-          {% for p in platforms %}
-          <option>{{ p }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-3 d-flex flex-column justify-content-end pb-1">
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" name="is_dlc" id="is_dlc" value="true"
-                 onchange="updateParentRow()">
-          <label class="form-check-label" for="is_dlc">DLC</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" name="is_collection" id="is_collection" value="true">
-          <label class="form-check-label" for="is_collection">Is a collection</label>
-        </div>
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" id="part_of_collection" value="true"
-                 onchange="updateParentRow()">
-          <label class="form-check-label" for="part_of_collection">Part of a collection</label>
-        </div>
-      </div>
-    </div>
-    <div class="row g-3 mb-3" id="parent-row" hidden>
-      <div class="col-md-9" id="parent-dlc-col">
-        <label class="form-label">Base game</label>
-        <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
-               oninput="filterSelect(this, 'parent-dlc-select')">
-        <select class="form-select" name="parent_game_id" id="parent-dlc-select">
-          <option value="">— none —</option>
-          {% for e in base_game_options %}
-          <option value="{{ e.release.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-9" id="parent-collection-col" hidden>
-        <label class="form-label">Collection</label>
-        <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
-               oninput="filterSelect(this, 'parent-collection-select')">
-        <select class="form-select" name="parent_game_id" id="parent-collection-select">
-          <option value="">— none —</option>
-          {% for c in collections %}
-          <option value="{{ c.release.id }}">{{ c.release.game.display_title }} ({{ c.release.platform }})</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
-    <script>
-    var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","complete edition","complete pack","bundle","chronicles","archives","legacy","origins"];
-
-    function filterSelect(input, selectId) {
-      var filter = input.value.toLowerCase();
-      var sel = document.getElementById(selectId);
-      for (var i = 0; i < sel.options.length; i++) {
-        var opt = sel.options[i];
-        opt.hidden = filter.length > 0 && opt.value !== '' && !opt.textContent.toLowerCase().includes(filter);
-      }
-    }
-
-    function updateParentRow() {
-      var isDlc = document.getElementById('is_dlc').checked;
-      var isPartOf = document.getElementById('part_of_collection').checked;
-      document.getElementById('parent-row').hidden = !(isDlc || isPartOf);
-      document.getElementById('parent-dlc-col').hidden = !isDlc;
-      document.getElementById('parent-collection-col').hidden = !isPartOf;
-      // disable hidden selects so they don't submit; require visible ones
-      var dlcSel = document.getElementById('parent-dlc-select');
-      var colSel = document.getElementById('parent-collection-select');
-      dlcSel.disabled = !isDlc;
-      colSel.disabled = !isPartOf;
-      dlcSel.required = isDlc;
-      colSel.required = isPartOf;
-    }
-
-    function hintIsCollection() {
-      var title = document.getElementById('title-input').value.toLowerCase();
-      var matches = COLLECTION_KEYWORDS.some(function(kw) { return title.includes(kw); });
-      var cb = document.getElementById('is_collection');
-      if (matches && !cb.dataset.userSet) cb.checked = true;
-      else if (!matches && !cb.dataset.userSet) cb.checked = false;
-    }
-
-    document.getElementById('is_collection').addEventListener('change', function() {
-      this.dataset.userSet = '1';
-    });
-
-    updateParentRow();
-    </script>
-    <button type="submit" class="btn btn-primary">Add to Library</button>
-  </form>
-</details>
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h1 class="mb-0">Library</h1>
+  <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
+</div>
 
 <form
   class="row g-2 mb-3 align-items-center"
@@ -264,10 +159,129 @@
   </div>
 </div>
 
+<!-- Add Game Modal -->
+<div class="modal fade" id="addGameModal" tabindex="-1" aria-labelledby="addGameModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addGameModalLabel">Add Game to Library</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <form id="add-game-form"
+            hx-post="/library/games"
+            hx-target="#library-tbody"
+            hx-swap="afterbegin"
+            hx-on::after-request="if(event.detail.successful){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Title</label>
+            <input type="text" class="form-control" name="title" id="add-title-input" placeholder="e.g. Elden Ring" required oninput="hintIsCollection()">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Platform</label>
+            <select class="form-select" name="platform">
+              {% for p in platforms %}
+              <option>{{ p }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_dlc" id="add-is-dlc" value="true"
+                     onchange="updateAddGameParentRow()">
+              <label class="form-check-label" for="add-is-dlc">DLC</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_collection" id="add-is-collection" value="true">
+              <label class="form-check-label" for="add-is-collection">Is a collection</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="add-part-of-collection" value="true"
+                     onchange="updateAddGameParentRow()">
+              <label class="form-check-label" for="add-part-of-collection">Part of a collection</label>
+            </div>
+          </div>
+          <div class="mb-3" id="add-parent-row" hidden>
+            <div id="add-parent-dlc-col">
+              <label class="form-label">Base game</label>
+              <input type="text" class="form-control form-control-sm mb-2" id="add-dlc-search" placeholder="Search for base game…" autocomplete="off"
+                     hx-get="/library/games/search?is_dlc=false"
+                     hx-trigger="input changed delay:300ms"
+                     hx-target="#add-dlc-results"
+                     hx-sync="this:abort">
+              <div id="add-dlc-results"></div>
+              <input type="hidden" name="parent_game_id" id="add-parent-game-id">
+            </div>
+            <div id="add-parent-collection-col" hidden>
+              <label class="form-label">Collection</label>
+              <input type="text" class="form-control form-control-sm mb-2" id="add-collection-search" placeholder="Search for collection…" autocomplete="off"
+                     hx-get="/library/games/search?is_collection=true"
+                     hx-trigger="input changed delay:300ms"
+                     hx-target="#add-collection-results"
+                     hx-sync="this:abort">
+              <div id="add-collection-results"></div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add to Library</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 {% block scripts %}
 <script>
+var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","complete edition","complete pack","bundle","chronicles","archives","legacy","origins"];
 var _editEntryId = null;
 var _editModal = null;
+var _addGameModal = null;
+
+function openAddGameModal() {
+  if (!_addGameModal) {
+    _addGameModal = new bootstrap.Modal(document.getElementById('addGameModal'));
+  }
+  resetAddGameForm();
+  _addGameModal.show();
+}
+
+function resetAddGameForm() {
+  document.getElementById('add-game-form').reset();
+  document.getElementById('add-parent-row').hidden = true;
+  document.getElementById('add-parent-dlc-col').hidden = false;
+  document.getElementById('add-parent-collection-col').hidden = true;
+  document.getElementById('add-dlc-results').innerHTML = '';
+  document.getElementById('add-collection-results').innerHTML = '';
+  document.getElementById('add-parent-game-id').value = '';
+}
+
+function updateAddGameParentRow() {
+  var isDlc = document.getElementById('add-is-dlc').checked;
+  var isPartOf = document.getElementById('add-part-of-collection').checked;
+  document.getElementById('add-parent-row').hidden = !(isDlc || isPartOf);
+  document.getElementById('add-parent-dlc-col').hidden = !isDlc;
+  document.getElementById('add-parent-collection-col').hidden = !isPartOf;
+}
+
+function selectLibraryParent(releaseId, label) {
+  document.getElementById('add-parent-game-id').value = releaseId;
+  document.getElementById('add-dlc-results').innerHTML = '';
+  document.getElementById('add-collection-results').innerHTML = '';
+}
+
+function hintIsCollection() {
+  var title = document.getElementById('add-title-input').value.toLowerCase();
+  var matches = COLLECTION_KEYWORDS.some(function(kw) { return title.includes(kw); });
+  var cb = document.getElementById('add-is-collection');
+  if (matches && !cb.dataset.userSet) cb.checked = true;
+  else if (!matches && !cb.dataset.userSet) cb.checked = false;
+}
+
+document.getElementById('add-is-collection').addEventListener('change', function() {
+  this.dataset.userSet = '1';
+});
 
 function updateEditParentRows() {
   var isDlc = document.getElementById('edit-is-dlc').checked;
