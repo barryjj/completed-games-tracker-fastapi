@@ -272,5 +272,6 @@ def sync_dlc_flags(db: Session, user: models.User) -> dict:
                 game.parent_id = parent_release.game_id
                 linked += 1
 
+    user.steam_last_dlc_synced_at = datetime.datetime.now(datetime.timezone.utc)
     db.commit()
     return {"checked": checked, "found_dlc": found_dlc, "linked": linked}

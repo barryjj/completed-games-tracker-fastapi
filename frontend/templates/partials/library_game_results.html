@@ -1,0 +1,13 @@
+{% if entries %}
+<div class="list-group">
+  {% for entry in entries %}
+  <button type="button" class="list-group-item list-group-item-action text-start"
+          onclick="selectLibraryParent({{ entry.release.id }}, '{{ entry.release.game.display_title | e }} ({{ entry.release.platform | e }})')">
+    {{ entry.release.game.display_title }}
+    <small class="text-secondary">({{ entry.release.platform }})</small>
+  </button>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-secondary"><small>No matches found</small></div>
+{% endif %}

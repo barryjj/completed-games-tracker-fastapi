@@ -2,98 +2,116 @@
 {% block title %}Completions{% endblock %}
 
 {% block content %}
-<h1 class="mb-4">Completions</h1>
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h1 class="mb-0">Completions</h1>
+  <button type="button" class="btn btn-primary" onclick="openLogCompletionModal()">+ Log Completion</button>
+</div>
 
-<details id="log-completion-details">
-  <summary id="log-completion-summary">Log a Completion</summary>
-  <form
-    class="mt-3"
-    hx-post="/completions/log"
-    hx-target="#completions-tbody"
-    hx-swap="afterbegin"
-    hx-on::after-request="if(event.detail.successful && event.detail.elt === this) resetCompletionForm()"
-  >
-    <input type="hidden" name="completion_id" id="edit-completion-id" value="">
-    <div class="row g-3 mb-3">
-      <div class="col-md-4">
-        <label class="form-label">Game</label>
-        <input
-          type="text"
-          class="form-control"
-          id="game-search-input"
-          placeholder="Search your library…"
-          autocomplete="off"
-          hx-get="/completions/games/search"
-          hx-trigger="input changed delay:300ms"
-          hx-target="#game-search-results"
-          hx-sync="this:abort"
-          oninput="document.getElementById('game-search-results').innerHTML=''"
-          name="q"
-        >
-        <input type="hidden" name="library_entry_id" id="library-entry-id">
-        <div id="game-search-results" class="mt-1"></div>
+<!-- Log / Edit Completion Modal -->
+<div class="modal fade" id="logCompletionModal" tabindex="-1" aria-labelledby="logCompletionModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="logCompletionModalLabel">Log a Completion</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="col-md-4">
-        <label class="form-label">Date Completed</label>
-        <input type="date" class="form-control" name="completed_at" id="completed-at-input" value="{{ today }}" required>
-      </div>
-      <div class="col-md-4">
-        <label class="form-label">Playthroughs</label>
-        <input type="text" class="form-control" name="playthroughs" id="playthroughs-input" value="1" placeholder="1, 1+, 2…">
-      </div>
+      <form id="log-completion-form"
+            hx-post="/completions/log"
+            hx-target="#completions-tbody"
+            hx-swap="afterbegin"
+            hx-on::after-request="if(event.detail.successful && event.detail.elt === this) { resetCompletionForm(); _logCompletionModal.hide(); }">
+        <input type="hidden" name="completion_id" id="edit-completion-id" value="">
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Game</label>
+            <input
+              type="text"
+              class="form-control"
+              id="game-search-input"
+              placeholder="Search your library…"
+              autocomplete="off"
+              hx-get="/completions/games/search"
+              hx-trigger="input changed delay:300ms"
+              hx-target="#game-search-results"
+              hx-sync="this:abort"
+              oninput="document.getElementById('game-search-results').innerHTML=''"
+              name="q"
+            >
+            <input type="hidden" name="library_entry_id" id="library-entry-id">
+            <div id="game-search-results" class="mt-1"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Date Completed</label>
+            <input type="date" class="form-control" name="completed_at" id="completed-at-input" value="{{ today }}" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Playthroughs</label>
+            <input type="text" class="form-control" name="playthroughs" id="playthroughs-input" value="1" placeholder="1, 1+, 2…">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Notes</label>
+            <input type="text" class="form-control" name="notes" id="notes-input" placeholder="Platinum, 100%, co-op with Tommy…">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" onclick="resetCompletionForm()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="log-completion-btn" disabled>Log Completion</button>
+        </div>
+      </form>
     </div>
-    <div class="mb-3">
-      <label class="form-label">Notes</label>
-      <input type="text" class="form-control" name="notes" id="notes-input" placeholder="Platinum, 100%, co-op with Tommy…">
-    </div>
-    <div class="d-flex gap-2 align-items-center">
-      <button type="submit" class="btn btn-primary" id="log-completion-btn" disabled>Log Completion</button>
-      <button type="button" class="btn btn-outline-secondary" id="cancel-edit-btn" hidden onclick="resetCompletionForm()">Cancel</button>
-    </div>
-  </form>
-  <script>
-  function selectCompletionGame(id, label) {
-    document.getElementById('library-entry-id').value = id;
-    document.getElementById('game-search-input').value = label;
-    document.getElementById('game-search-results').innerHTML = '';
-    document.getElementById('log-completion-btn').disabled = false;
-  }
+  </div>
+</div>
 
-  function editCompletion(ds) {
-    document.getElementById('edit-completion-id').value = ds.completionId;
-    document.getElementById('library-entry-id').value = ds.entryId;
-    document.getElementById('game-search-input').value = ds.label;
-    document.getElementById('completed-at-input').value = ds.date;
-    document.getElementById('playthroughs-input').value = ds.playthroughs;
-    document.getElementById('notes-input').value = ds.notes;
-    document.getElementById('game-search-results').innerHTML = '';
-    document.getElementById('log-completion-btn').disabled = false;
-    document.getElementById('log-completion-btn').textContent = 'Update Completion';
-    document.getElementById('cancel-edit-btn').hidden = false;
-    document.getElementById('log-completion-details').open = true;
-    document.getElementById('log-completion-summary').textContent = 'Editing Completion';
-    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('completion-editing'));
-    var row = document.getElementById('completion-' + ds.completionId);
-    if (row) row.classList.add('completion-editing');
-    document.getElementById('log-completion-details').scrollIntoView({behavior: 'smooth', block: 'start'});
-  }
+{% block scripts %}
+<script>
+var _logCompletionModal = null;
 
-  function resetCompletionForm() {
-    document.getElementById('edit-completion-id').value = '';
-    document.getElementById('library-entry-id').value = '';
-    document.getElementById('game-search-input').value = '';
-    document.getElementById('completed-at-input').value = '{{ today }}';
-    document.getElementById('playthroughs-input').value = '1';
-    document.getElementById('notes-input').value = '';
-    document.getElementById('game-search-results').innerHTML = '';
-    document.getElementById('log-completion-btn').disabled = true;
-    document.getElementById('log-completion-btn').textContent = 'Log Completion';
-    document.getElementById('cancel-edit-btn').hidden = true;
-    document.getElementById('log-completion-summary').textContent = 'Log a Completion';
-    document.querySelectorAll('#completions-tbody tr').forEach(r => r.classList.remove('completion-editing'));
+function openLogCompletionModal() {
+  if (!_logCompletionModal) {
+    _logCompletionModal = new bootstrap.Modal(document.getElementById('logCompletionModal'));
   }
-  </script>
-</details>
+  resetCompletionForm();
+  _logCompletionModal.show();
+}
+
+function selectCompletionGame(id, label) {
+  document.getElementById('library-entry-id').value = id;
+  document.getElementById('game-search-input').value = label;
+  document.getElementById('game-search-results').innerHTML = '';
+  document.getElementById('log-completion-btn').disabled = false;
+}
+
+function editCompletion(ds) {
+  document.getElementById('edit-completion-id').value = ds.completionId;
+  document.getElementById('library-entry-id').value = ds.entryId;
+  document.getElementById('game-search-input').value = ds.label;
+  document.getElementById('completed-at-input').value = ds.date;
+  document.getElementById('playthroughs-input').value = ds.playthroughs;
+  document.getElementById('notes-input').value = ds.notes;
+  document.getElementById('game-search-results').innerHTML = '';
+  document.getElementById('log-completion-btn').disabled = false;
+  document.getElementById('log-completion-btn').textContent = 'Update Completion';
+  document.getElementById('logCompletionModalLabel').textContent = 'Edit Completion';
+  if (!_logCompletionModal) {
+    _logCompletionModal = new bootstrap.Modal(document.getElementById('logCompletionModal'));
+  }
+  _logCompletionModal.show();
+}
+
+function resetCompletionForm() {
+  document.getElementById('edit-completion-id').value = '';
+  document.getElementById('library-entry-id').value = '';
+  document.getElementById('game-search-input').value = '';
+  document.getElementById('completed-at-input').value = '{{ today }}';
+  document.getElementById('playthroughs-input').value = '1';
+  document.getElementById('notes-input').value = '';
+  document.getElementById('game-search-results').innerHTML = '';
+  document.getElementById('log-completion-btn').disabled = true;
+  document.getElementById('log-completion-btn').textContent = 'Log Completion';
+  document.getElementById('logCompletionModalLabel').textContent = 'Log a Completion';
+}
+</script>
+{% endblock %}
 
 <form
   class="row g-2 mb-3"
@@ -168,4 +186,5 @@
   <p class="text-secondary"><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
   {% endif %}
 </div>
+
 {% endblock %}
