@@ -210,7 +210,6 @@
                      hx-target="#add-dlc-results"
                      hx-sync="this:abort">
               <div id="add-dlc-results"></div>
-              <input type="hidden" name="parent_game_id" id="add-parent-game-id">
             </div>
             <div id="add-parent-collection-col" hidden>
               <label class="form-label">Collection</label>
@@ -221,6 +220,8 @@
                      hx-sync="this:abort">
               <div id="add-collection-results"></div>
             </div>
+            <input type="hidden" name="parent_game_id" id="add-parent-game-id">
+            <p id="add-parent-selected" class="text-secondary mb-0 mt-1" hidden><small>Selected: <span id="add-parent-selected-label"></span></small></p>
           </div>
         </div>
         <div class="modal-footer">
@@ -255,6 +256,8 @@ function resetAddGameForm() {
   document.getElementById('add-dlc-results').innerHTML = '';
   document.getElementById('add-collection-results').innerHTML = '';
   document.getElementById('add-parent-game-id').value = '';
+  document.getElementById('add-parent-selected').hidden = true;
+  document.getElementById('add-parent-selected-label').textContent = '';
 }
 
 function updateAddGameParentRow() {
@@ -269,6 +272,8 @@ function selectLibraryParent(releaseId, label) {
   document.getElementById('add-parent-game-id').value = releaseId;
   document.getElementById('add-dlc-results').innerHTML = '';
   document.getElementById('add-collection-results').innerHTML = '';
+  document.getElementById('add-parent-selected-label').textContent = label;
+  document.getElementById('add-parent-selected').hidden = false;
 }
 
 function hintIsCollection() {
