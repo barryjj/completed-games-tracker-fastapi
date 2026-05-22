@@ -21,6 +21,7 @@ class User(Base):
     steam_id64: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    steam_last_dlc_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
 
