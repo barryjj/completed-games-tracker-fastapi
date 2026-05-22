@@ -486,6 +486,41 @@ def delete_library_entry(
     return Response(status_code=200)
 
 
+@router.get("/library/games/search")
+def search_library_games(
+    request: Request,
+    q: str = Query(""),
+    is_dlc: bool | None = Query(None),
+    is_collection: bool | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Search user's library games by title, optionally filtered by type."""
+    query = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(models.UserLibraryEntry.user_id == current_user.id)
+    )
+
+    if q.strip():
+        query = query.filter(models.Game.title.ilike(f"%{q}%"))
+
+    if is_dlc is not None:
+        query = query.filter(models.Game.is_dlc == is_dlc)
+
+    if is_collection is not None:
+        query = query.filter(models.Game.is_collection == is_collection)
+
+    entries = query.order_by(models.Game.title).limit(15).all()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/library_game_results.html",
+        context={"entries": entries, "q": q},
+    )
+
+
 # --- Completions ---
 
 @router.get("/completions")
