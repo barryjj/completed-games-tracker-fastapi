@@ -393,27 +393,35 @@ def sync_full_library(db: Session, user: models.User) -> dict:
 
 
 def _fetch_appdetails(appid: int) -> dict | None:
-    """Fetch app metadata from the Steam store API. Returns the data dict or None on failure."""
-    try:
-        resp = httpx.get(
-            "https://store.steampowered.com/api/appdetails",
-            params={"appids": appid},
-            timeout=10,
-        )
-        resp.raise_for_status()
-        result = resp.json().get(str(appid), {})
-        if result.get("success"):
-            return result.get("data", {})
-    except Exception:
-        logger.warning("appdetails fetch failed for appid %s", appid)
+    """
+    Fetch app metadata from the Steam store API.
+    - Returns the data dict when Steam reports success.
+    - Returns None when Steam responds with {"success": false} — the app is
+      delisted, region-locked, or otherwise permanently unavailable.
+    - Raises on transient errors (network failure, HTTP 5xx, rate limits) so
+      the caller can decide whether to retry rather than stamping the entry
+      as enriched with no data.
+    """
+    resp = httpx.get(
+        "https://store.steampowered.com/api/appdetails",
+        params={"appids": appid},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    result = resp.json().get(str(appid), {})
+    if result.get("success"):
+        return result.get("data", {})
     return None
 
 
 def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
     """
     Fetch appdetails for the next batch of Steam entries missing metadata.
-    Stamps metadata_fetched_at on every processed entry (even on API failure,
-    to avoid retrying broken/delisted apps). Returns count still pending.
+    - On Steam success: store payload, update DLC flag + parent link, stamp.
+    - On Steam-confirmed unavailability (success=false): stamp anyway (no point retrying).
+    - On transient errors (network/HTTP 5xx): leave metadata_fetched_at null
+      so the worker picks the entry back up on the next cycle.
+    Returns count still pending.
     """
     entries = (
         db.query(models.GameRelease)
@@ -430,7 +438,15 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
     now = datetime.datetime.now(datetime.timezone.utc)
 
     for release in entries:
-        details = _fetch_appdetails(int(release.external_id))
+        try:
+            details = _fetch_appdetails(int(release.external_id))
+        except Exception as e:
+            logger.warning(
+                "appdetails fetch failed for appid %s (transient, will retry): %s",
+                release.external_id, e,
+            )
+            time.sleep(0.3)
+            continue
 
         if details is not None:
             raw = dict(release.raw_data or {})
@@ -498,7 +514,12 @@ def sync_dlc_flags(db: Session, user: models.User) -> dict:
             checked += 1
             continue
 
-        details = _fetch_appdetails(int(release.external_id))
+        try:
+            details = _fetch_appdetails(int(release.external_id))
+        except Exception as e:
+            logger.warning("appdetails fetch failed for appid %s: %s", release.external_id, e)
+            time.sleep(0.3)
+            continue
         time.sleep(0.3)
 
         if details is None:

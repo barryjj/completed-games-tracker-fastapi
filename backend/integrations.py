@@ -3,8 +3,8 @@ import os
 import httpx as _httpx
 
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import models, steam, worker_state
@@ -17,18 +17,25 @@ TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
-def _steam_game_count(db: Session, user: models.User) -> int | None:
+def _steam_counts(db: Session, user: models.User) -> dict | None:
+    """Return {'games': N, 'dlc': N, 'total': N} for the user's Steam library, or None
+    if Steam isn't connected."""
     if not user.steam_id64:
         return None
-    return (
-        db.query(models.UserLibraryEntry)
-        .join(models.GameRelease)
+    rows = (
+        db.query(models.Game.is_dlc, func.count(models.UserLibraryEntry.id))
+        .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
         .filter(
             models.UserLibraryEntry.user_id == user.id,
             models.GameRelease.source == "steam",
         )
-        .count()
+        .group_by(models.Game.is_dlc)
+        .all()
     )
+    games = sum(count for is_dlc, count in rows if not is_dlc)
+    dlc = sum(count for is_dlc, count in rows if is_dlc)
+    return {"games": games, "dlc": dlc, "total": games + dlc}
 
 
 @router.get("")
@@ -42,7 +49,7 @@ def integrations_hub(
         name="integrations.html",
         context={
             "current_user": current_user,
-            "steam_count": _steam_game_count(db, current_user),
+            "steam_counts": _steam_counts(db, current_user),
         },
     )
 
