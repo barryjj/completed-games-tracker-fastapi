@@ -14,6 +14,7 @@ import os
 
 from . import models
 from . import users
+from . import worker_state
 from .models import get_db, SessionLocal
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
@@ -26,11 +27,15 @@ async def _enrichment_worker():
     entries that haven't been processed yet. Runs for the lifetime of the server.
     - Processes 5 entries per cycle at 0.3s each (~1.5s of work per cycle)
     - Sleeps 2s between cycles when there's a backlog, 5min when caught up
+    - Pauses automatically while a library sync is running
     - Naturally resumable: metadata_fetched_at tracks what's done
     """
     await asyncio.sleep(15)  # let the app finish starting up first
     while True:
         try:
+            if worker_state.enrichment_paused:
+                await asyncio.sleep(1)
+                continue
             db = SessionLocal()
             try:
                 from . import steam

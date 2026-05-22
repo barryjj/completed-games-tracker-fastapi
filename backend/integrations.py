@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from . import models, steam
+from . import models, steam, worker_state
 from .models import get_db
 from .pages import get_web_user
 
@@ -133,6 +133,7 @@ def sync_steam_all(
     current_user: models.User = Depends(get_web_user),
 ):
     """Full sync: games + DLC. Requires API key, Steam ID64, and browser cookies."""
+    worker_state.enrichment_paused = True
     try:
         result = steam.sync_full_library(db, current_user)
         msg = (
@@ -161,6 +162,8 @@ def sync_steam_all(
             context={"error": f"Sync failed: {e}"},
             status_code=500,
         )
+    finally:
+        worker_state.enrichment_paused = False
 
 
 @router.post("/steam/sync")
@@ -170,6 +173,7 @@ def sync_steam(
     current_user: models.User = Depends(get_web_user),
 ):
     """Games-only sync via GetOwnedGames. Fallback when cookies aren't configured."""
+    worker_state.enrichment_paused = True
     try:
         result = steam.sync_steam_library(db, current_user)
         return templates.TemplateResponse(
@@ -194,6 +198,8 @@ def sync_steam(
             context={"error": f"Sync failed: {e}"},
             status_code=500,
         )
+    finally:
+        worker_state.enrichment_paused = False
 
 
 @router.post("/steam/backfill-collection-flags")
@@ -294,13 +300,19 @@ def steam_enrichment_refresh(
     raw_data["appdetails"] is untouched — existing metadata stays visible until
     the background worker overwrites each entry with fresh data.
     """
-    updated = (
-        db.query(models.GameRelease)
+    release_ids = [
+        row[0]
+        for row in db.query(models.GameRelease.id)
         .join(models.UserLibraryEntry)
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
         )
+        .all()
+    ]
+    updated = (
+        db.query(models.GameRelease)
+        .filter(models.GameRelease.id.in_(release_ids))
         .update({"metadata_fetched_at": None}, synchronize_session=False)
     )
     db.commit()
