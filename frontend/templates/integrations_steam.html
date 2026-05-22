@@ -181,12 +181,12 @@
       <div class="mt-2">
         <button
           class="btn btn-outline-secondary btn-sm"
-          hx-post="/integrations/steam/enrichment-reset"
+          hx-post="/integrations/steam/enrichment-refresh"
           hx-target="#steam-flash"
           hx-swap="innerHTML"
-          hx-confirm="Re-queue all Steam entries for metadata enrichment? The background worker will re-fetch appdetails for everything."
+          hx-confirm="Queue all Steam entries for a metadata refresh? Existing metadata stays visible until each entry is updated by the background worker."
           hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-        >Re-enrich All</button>
+        >Refresh Metadata</button>
       </div>
     </div>
     {% else %}
