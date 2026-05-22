@@ -45,3 +45,4 @@ pnpm-debug.log*
 *.log
 *.tmp
 *.swp
+backend/steam_applist_cache.json
