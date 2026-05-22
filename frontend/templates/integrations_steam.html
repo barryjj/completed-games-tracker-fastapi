@@ -64,6 +64,18 @@
           autocomplete="off"
         >
       </div>
+      {% if current_user.steam_session_id and current_user.steam_login_secure %}
+      <div class="mb-3">
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          hx-post="/integrations/steam/test-cookies"
+          hx-target="#steam-flash"
+          hx-swap="innerHTML"
+          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+        >Test Cookies</button>
+      </div>
+      {% endif %}
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">Save Credentials</button>
         {% if current_user.steam_api_key or current_user.steam_id64 or current_user.steam_session_id or current_user.steam_login_secure %}
