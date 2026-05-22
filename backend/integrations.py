@@ -251,6 +251,62 @@ def steam_sync_dlc(
     )
 
 
+@router.get("/steam/enrichment-status")
+def steam_enrichment_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    pending = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at == None,
+        )
+        .count()
+    )
+    total = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+        )
+        .count()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/enrichment_status.html",
+        context={"pending": pending, "total": total},
+    )
+
+
+@router.post("/steam/enrichment-reset")
+def steam_enrichment_reset(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Reset metadata_fetched_at for all the user's Steam entries, re-queuing for enrichment."""
+    updated = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+        )
+        .update({"metadata_fetched_at": None}, synchronize_session=False)
+    )
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"Re-queued {updated} entries for metadata enrichment."},
+    )
+
+
 @router.post("/steam/backfill-display-names")
 def backfill_steam_display_names(
     request: Request,
