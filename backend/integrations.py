@@ -126,19 +126,57 @@ def test_steam_cookies(
         )
 
 
+@router.post("/steam/sync-all")
+def sync_steam_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Full sync: games + DLC. Requires API key, Steam ID64, and browser cookies."""
+    try:
+        result = steam.sync_full_library(db, current_user)
+        msg = (
+            f"Sync complete — "
+            f"{result['games_added']} games added, {result['games_updated']} updated "
+            f"({result['games_total']} total) · "
+            f"{result['dlc_added']} DLC added, {result['dlc_marked']} marked "
+            f"({result['dlc_total']} total DLC owned)."
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"message": msg},
+        )
+    except ValueError as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": str(e)},
+            status_code=422,
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Sync failed: {e}"},
+            status_code=500,
+        )
+
+
 @router.post("/steam/sync")
 def sync_steam(
     request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Games-only sync via GetOwnedGames. Fallback when cookies aren't configured."""
     try:
         result = steam.sync_steam_library(db, current_user)
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
             context={
-                "message": f"Sync complete — {result['added']} added, {result['updated']} updated ({result['total']} total).",
+                "message": f"Games sync complete — {result['added']} added, {result['updated']} updated ({result['total']} total).",
                 "last_synced": current_user.steam_last_synced_at,
             },
         )
