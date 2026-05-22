@@ -25,8 +25,12 @@
           Never synced
           {% endif %}
         </small></p>
-        {% if steam_count is not none %}
-        <p class="text-secondary mb-3"><small>{{ steam_count }} game{{ 's' if steam_count != 1 }}</small></p>
+        {% if steam_counts is not none %}
+        <p class="text-secondary mb-3"><small>
+          {{ "{:,}".format(steam_counts.games) }} game{{ 's' if steam_counts.games != 1 }} ·
+          {{ "{:,}".format(steam_counts.dlc) }} DLC ·
+          {{ "{:,}".format(steam_counts.total) }} total
+        </small></p>
         {% endif %}
         {% else %}
         <p class="card-text text-secondary mb-3">Import your Steam library and playtime.</p>
