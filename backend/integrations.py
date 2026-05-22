@@ -62,11 +62,15 @@ def save_steam_credentials(
     request: Request,
     steam_id64: str = Form(""),
     steam_api_key: str = Form(""),
+    steam_session_id: str = Form(""),
+    steam_login_secure: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     current_user.steam_id64 = steam_id64.strip() or None
     current_user.steam_api_key = steam_api_key.strip() or None
+    current_user.steam_session_id = steam_session_id.strip() or None
+    current_user.steam_login_secure = steam_login_secure.strip() or None
     db.commit()
     # HX-Refresh reloads the page so the sync button appears/disappears correctly
     response = templates.TemplateResponse(
