@@ -280,8 +280,14 @@ def library_page(
         view = "default"
 
     if view == "default":
-        # Games + collections; hide DLC and sub-collection games
-        base_q = base_q.filter(models.Game.parent_id == None)
+        # Games + collections; hide DLC and sub-collection games.
+        # Manually added entries are always included regardless of parent status.
+        base_q = base_q.filter(
+            or_(
+                models.Game.parent_id == None,
+                models.UserLibraryEntry.import_source == "manual",
+            )
+        )
     elif view == "dlc":
         base_q = base_q.filter(models.Game.is_dlc == True)
     elif view == "collections":
