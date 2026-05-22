@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.responses import FileResponse, RedirectResponse
@@ -12,8 +14,37 @@ import os
 
 from . import models
 from . import users
-from .models import get_db
+from .models import get_db, SessionLocal
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+_worker_logger = logging.getLogger("steam.enrichment")
+
+
+async def _enrichment_worker():
+    """
+    Ambient background task: quietly enriches Steam appdetails metadata for any
+    entries that haven't been processed yet. Runs for the lifetime of the server.
+    - Processes 5 entries per cycle at 0.3s each (~1.5s of work per cycle)
+    - Sleeps 2s between cycles when there's a backlog, 5min when caught up
+    - Naturally resumable: metadata_fetched_at tracks what's done
+    """
+    await asyncio.sleep(15)  # let the app finish starting up first
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                from . import steam
+                pending = await asyncio.to_thread(steam.enrich_next_batch, db)
+                if pending == 0:
+                    await asyncio.sleep(300)  # fully caught up, check again in 5 min
+                else:
+                    _worker_logger.debug("Enrichment: %d entries remaining", pending)
+                    await asyncio.sleep(2)
+            finally:
+                db.close()
+        except Exception as e:
+            _worker_logger.warning("Enrichment worker error: %s", e)
+            await asyncio.sleep(30)
 
 security = HTTPBearer()
 
@@ -33,8 +64,8 @@ async def lifespan(app: FastAPI):
             alembic_cfg.set_main_option("sqlalchemy.url", models.DB_URL)
             command.upgrade(alembic_cfg, "head")
         except Exception as e:
-            import logging
             logging.getLogger(__name__).warning("Alembic migration failed: %s", e)
+        asyncio.create_task(_enrichment_worker())
     yield
 
 

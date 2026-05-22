@@ -170,6 +170,25 @@
         >Fix Collection Flags</button>
       </div>
     </div>
+    <div class="mt-4">
+      <h6 class="mb-2">Metadata Enrichment</h6>
+      <p class="text-secondary mb-2"><small>Runs automatically in the background while the app is open. Fetches full details (type, description, parent game links) for each Steam entry at Steam's rate limit.</small></p>
+      <div hx-get="/integrations/steam/enrichment-status"
+           hx-trigger="load"
+           hx-swap="outerHTML">
+        <p class="text-secondary mb-0"><small>Loading&hellip;</small></p>
+      </div>
+      <div class="mt-2">
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          hx-post="/integrations/steam/enrichment-reset"
+          hx-target="#steam-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Re-queue all Steam entries for metadata enrichment? The background worker will re-fetch appdetails for everything."
+          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+        >Re-enrich All</button>
+      </div>
+    </div>
     {% else %}
     <p class="text-secondary">Save your credentials above to enable syncing.</p>
     {% endif %}

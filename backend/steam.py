@@ -409,6 +409,69 @@ def _fetch_appdetails(appid: int) -> dict | None:
     return None
 
 
+def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
+    """
+    Fetch appdetails for the next batch of Steam entries missing metadata.
+    Stamps metadata_fetched_at on every processed entry (even on API failure,
+    to avoid retrying broken/delisted apps). Returns count still pending.
+    """
+    entries = (
+        db.query(models.GameRelease)
+        .options(joinedload(models.GameRelease.game))
+        .filter(
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at == None,
+        )
+        .order_by(models.GameRelease.created_at.asc())
+        .limit(batch_size)
+        .all()
+    )
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    for release in entries:
+        details = _fetch_appdetails(int(release.external_id))
+
+        if details is not None:
+            raw = dict(release.raw_data or {})
+            raw["appdetails"] = details
+            raw["appdetails_type"] = details.get("type", "game")
+            release.raw_data = raw
+
+            game = release.game
+            app_type = details.get("type", "game")
+
+            if app_type == "dlc" and not game.is_dlc:
+                game.is_dlc = True
+
+            # Link DLC to its base game if not already linked
+            if app_type == "dlc" and game.parent_id is None:
+                fullgame = details.get("fullgame", {})
+                parent_appid = str(fullgame.get("appid", "")).strip()
+                if parent_appid:
+                    parent_release = (
+                        db.query(models.GameRelease)
+                        .filter_by(source="steam", external_id=parent_appid)
+                        .first()
+                    )
+                    if parent_release:
+                        game.parent_id = parent_release.game_id
+
+        release.metadata_fetched_at = now
+        db.commit()
+        time.sleep(0.3)
+
+    pending = (
+        db.query(models.GameRelease)
+        .filter(
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at == None,
+        )
+        .count()
+    )
+    return pending
+
+
 def sync_dlc_flags(db: Session, user: models.User) -> dict:
     """
     Legacy DLC detection via appdetails — one API call per game.
