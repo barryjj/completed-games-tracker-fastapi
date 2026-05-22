@@ -66,6 +66,8 @@ class GameRelease(Base):
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     # full API payload — mine later without needing schema changes
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # set when appdetails enrichment has run for this entry (null = never enriched)
+    metadata_fetched_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     game: Mapped["Game"] = relationship("Game", back_populates="releases")
