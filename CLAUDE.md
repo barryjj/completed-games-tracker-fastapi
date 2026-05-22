@@ -64,6 +64,15 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - This applies to migrations, config changes, dependency changes, and anything that touches files outside the immediate feature being worked on.
 - "I can see the problem" is not permission to fix it.
 
+## Roadmap maintenance
+
+**ROADMAP.md is a living document. Keep it current.**
+
+- When a feature is discussed and agreed on — even informally — add it to `ROADMAP.md` before or alongside the implementation, not after.
+- When work is staged into phases, document all phases in the roadmap, not just the one being worked on now.
+- When a feature is completed, move or remove it from the roadmap rather than leaving it as a pending item.
+- Roadmap updates go on a branch and PR like everything else — never commit directly to `main`.
+
 ## What not to do
 
 - Do not push to protected branches.
