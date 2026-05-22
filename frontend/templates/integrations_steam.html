@@ -39,14 +39,39 @@
         >
         <div class="form-text">Find yours at <a href="https://www.steamidfinder.com/" target="_blank" rel="noopener">steamidfinder.com</a></div>
       </div>
+      <hr class="my-3">
+      <h6 class="mb-1">Browser Cookies <span class="text-secondary fw-normal">(optional — enables faster DLC detection)</span></h6>
+      <p class="text-secondary mb-3"><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
+      <div class="mb-3">
+        <label class="form-label"><code>sessionid</code></label>
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="steam_session_id"
+          value="{{ current_user.steam_session_id or '' }}"
+          placeholder="Steam sessionid cookie"
+          autocomplete="off"
+        >
+      </div>
+      <div class="mb-3">
+        <label class="form-label"><code>steamLoginSecure</code></label>
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="steam_login_secure"
+          value="{{ current_user.steam_login_secure or '' }}"
+          placeholder="Steam steamLoginSecure cookie"
+          autocomplete="off"
+        >
+      </div>
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">Save Credentials</button>
-        {% if current_user.steam_api_key or current_user.steam_id64 %}
+        {% if current_user.steam_api_key or current_user.steam_id64 or current_user.steam_session_id or current_user.steam_login_secure %}
         <button
           type="button"
           class="btn btn-outline-danger"
           hx-post="/integrations/steam/credentials"
-          hx-vals='{"steam_api_key": "", "steam_id64": ""}'
+          hx-vals='{"steam_api_key": "", "steam_id64": "", "steam_session_id": "", "steam_login_secure": ""}'
           hx-target="#steam-flash"
           hx-swap="innerHTML"
           hx-confirm="Clear your saved Steam credentials?"
