@@ -1,5 +1,7 @@
 import os
 
+import httpx as _httpx
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
@@ -80,6 +82,48 @@ def save_steam_credentials(
     )
     response.headers["HX-Refresh"] = "true"
     return response
+
+
+@router.post("/steam/test-cookies")
+def test_steam_cookies(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    if not current_user.steam_session_id or not current_user.steam_login_secure:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "No cookies saved — enter both sessionid and steamLoginSecure above and save first."},
+        )
+    try:
+        resp = _httpx.get(
+            "https://store.steampowered.com/dynamicstore/userdata/",
+            cookies={
+                "sessionid": current_user.steam_session_id,
+                "steamLoginSecure": current_user.steam_login_secure,
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        owned = data.get("rgOwnedApps", [])
+        if not owned:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={"error": "Cookies appear invalid or expired — rgOwnedApps was empty. Try copying fresh values from your browser."},
+            )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"message": f"Cookies valid — {len(owned):,} owned apps visible (games + DLC)."},
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Request failed: {e}"},
+        )
 
 
 @router.post("/steam/sync")
