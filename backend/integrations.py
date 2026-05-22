@@ -263,7 +263,7 @@ def steam_enrichment_status(
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
-            models.GameRelease.metadata_fetched_at == None,
+            steam.needs_enrichment(),
         )
         .count()
     )
@@ -283,13 +283,16 @@ def steam_enrichment_status(
     )
 
 
-@router.post("/steam/enrichment-reset")
-def steam_enrichment_reset(
+@router.post("/steam/enrichment-refresh")
+def steam_enrichment_refresh(
     request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Reset metadata_fetched_at for all the user's Steam entries, re-queuing for enrichment."""
+    """
+    Mark all Steam entries for re-enrichment. Existing metadata stays in place
+    and is only replaced when the background worker gets to each entry.
+    """
     updated = (
         db.query(models.GameRelease)
         .join(models.UserLibraryEntry)
@@ -297,13 +300,16 @@ def steam_enrichment_reset(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
         )
-        .update({"metadata_fetched_at": None}, synchronize_session=False)
+        .update(
+            {"metadata_fetched_at": steam.METADATA_REFRESH_REQUESTED},
+            synchronize_session=False,
+        )
     )
     db.commit()
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": f"Re-queued {updated} entries for metadata enrichment."},
+        context={"message": f"Queued {updated} entries for metadata refresh — existing data stays in place until updated."},
     )
 
 

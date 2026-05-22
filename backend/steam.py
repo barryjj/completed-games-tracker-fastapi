@@ -6,9 +6,23 @@ import re
 import time
 
 import httpx
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from . import models
+
+# Sentinel value written to metadata_fetched_at when a refresh is requested.
+# The old raw_data["appdetails"] stays in place until the worker overwrites it,
+# so nothing goes blank mid-refresh.
+METADATA_REFRESH_REQUESTED = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+def needs_enrichment():
+    """SQLAlchemy filter clause: never enriched OR marked for refresh."""
+    return or_(
+        models.GameRelease.metadata_fetched_at == None,
+        models.GameRelease.metadata_fetched_at <= METADATA_REFRESH_REQUESTED,
+    )
 
 # Symbols that Steam appends to titles but are meaningless for display
 _JUNK_RE = re.compile(r"[™®©]+")
@@ -420,7 +434,7 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
         .options(joinedload(models.GameRelease.game))
         .filter(
             models.GameRelease.source == "steam",
-            models.GameRelease.metadata_fetched_at == None,
+            needs_enrichment(),
         )
         .order_by(models.GameRelease.created_at.asc())
         .limit(batch_size)
@@ -463,10 +477,7 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
 
     pending = (
         db.query(models.GameRelease)
-        .filter(
-            models.GameRelease.source == "steam",
-            models.GameRelease.metadata_fetched_at == None,
-        )
+        .filter(models.GameRelease.source == "steam", needs_enrichment())
         .count()
     )
     return pending
