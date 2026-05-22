@@ -1,0 +1,13 @@
+{% if pending > 0 %}
+<p class="text-secondary mb-0" id="enrichment-status"
+   hx-get="/integrations/steam/enrichment-status"
+   hx-trigger="every 10s"
+   hx-target="#enrichment-status"
+   hx-swap="outerHTML">
+  <small>Enriching metadata — {{ "{:,}".format(pending) }} of {{ "{:,}".format(total) }} entries remaining&hellip;</small>
+</p>
+{% else %}
+<p class="text-secondary mb-0" id="enrichment-status">
+  <small>Metadata up to date &mdash; {{ total }} entries enriched.</small>
+</p>
+{% endif %}

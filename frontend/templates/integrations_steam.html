@@ -105,6 +105,20 @@
     <p class="text-secondary"><small>Last DLC sync <span class="local-time" data-utc="{{ current_user.steam_last_dlc_synced_at.isoformat() }}">{{ current_user.steam_last_dlc_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% endif %}
     <div class="d-flex gap-2 mb-3">
+      {% if current_user.steam_session_id and current_user.steam_login_secure %}
+      <button
+        class="btn btn-primary"
+        hx-post="/integrations/steam/sync-all"
+        hx-target="#steam-flash"
+        hx-swap="innerHTML"
+        hx-indicator="#sync-spinner"
+        hx-disabled-elt="this"
+        hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+      >
+        Sync
+      </button>
+      <span id="sync-spinner" class="htmx-indicator text-secondary"><small>Syncing games and DLC…</small></span>
+      {% else %}
       <button
         class="btn btn-primary"
         hx-post="/integrations/steam/sync"
@@ -117,19 +131,7 @@
         Sync Games
       </button>
       <span id="sync-games-spinner" class="htmx-indicator text-secondary"><small>Syncing...</small></span>
-      <button
-        class="btn btn-primary"
-        hx-post="/integrations/steam/sync-dlc"
-        hx-target="#steam-flash"
-        hx-swap="innerHTML"
-        hx-indicator="#sync-dlc-spinner"
-        hx-disabled-elt="this"
-        hx-confirm="Check unchecked Steam apps for DLC status? This makes one API call per app and may take a few minutes for large libraries."
-        hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-      >
-        Sync DLC
-      </button>
-      <span id="sync-dlc-spinner" class="htmx-indicator text-secondary"><small>Checking apps…</small></span>
+      {% endif %}
     </div>
     <div class="mt-3 d-flex flex-column gap-2">
       <div>
@@ -153,6 +155,25 @@
           hx-confirm="Auto-flag collections for all Steam games currently marked as regular games?"
           hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
         >Fix Collection Flags</button>
+      </div>
+    </div>
+    <div class="mt-4">
+      <h6 class="mb-2">Metadata Enrichment</h6>
+      <p class="text-secondary mb-2"><small>Runs automatically in the background while the app is open. Fetches full details (type, description, parent game links) for each Steam entry at Steam's rate limit.</small></p>
+      <div hx-get="/integrations/steam/enrichment-status"
+           hx-trigger="load"
+           hx-swap="outerHTML">
+        <p class="text-secondary mb-0"><small>Loading&hellip;</small></p>
+      </div>
+      <div class="mt-2">
+        <button
+          class="btn btn-outline-secondary btn-sm"
+          hx-post="/integrations/steam/enrichment-refresh"
+          hx-target="#steam-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Queue all Steam entries for a metadata refresh? Existing metadata stays visible until each entry is updated by the background worker."
+          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+        >Refresh Metadata</button>
       </div>
     </div>
     {% else %}

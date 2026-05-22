@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
-from . import models, steam
+from . import models, steam, worker_state
 from .models import get_db
 from .pages import get_web_user
 
@@ -126,19 +126,61 @@ def test_steam_cookies(
         )
 
 
+@router.post("/steam/sync-all")
+def sync_steam_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Full sync: games + DLC. Requires API key, Steam ID64, and browser cookies."""
+    worker_state.enrichment_paused = True
+    try:
+        result = steam.sync_full_library(db, current_user)
+        msg = (
+            f"Sync complete — "
+            f"{result['games_added']} games added, {result['games_updated']} updated "
+            f"({result['games_total']} total) · "
+            f"{result['dlc_added']} DLC added, {result['dlc_marked']} marked "
+            f"({result['dlc_total']} total DLC owned)."
+        )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"message": msg},
+        )
+    except ValueError as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": str(e)},
+            status_code=422,
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Sync failed: {e}"},
+            status_code=500,
+        )
+    finally:
+        worker_state.enrichment_paused = False
+
+
 @router.post("/steam/sync")
 def sync_steam(
     request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Games-only sync via GetOwnedGames. Fallback when cookies aren't configured."""
+    worker_state.enrichment_paused = True
     try:
         result = steam.sync_steam_library(db, current_user)
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
             context={
-                "message": f"Sync complete — {result['added']} added, {result['updated']} updated ({result['total']} total).",
+                "message": f"Games sync complete — {result['added']} added, {result['updated']} updated ({result['total']} total).",
                 "last_synced": current_user.steam_last_synced_at,
             },
         )
@@ -156,6 +198,8 @@ def sync_steam(
             context={"error": f"Sync failed: {e}"},
             status_code=500,
         )
+    finally:
+        worker_state.enrichment_paused = False
 
 
 @router.post("/steam/backfill-collection-flags")
@@ -210,6 +254,72 @@ def steam_sync_dlc(
         request=request,
         name="partials/integrations_flash.html",
         context={"message": msg},
+    )
+
+
+@router.get("/steam/enrichment-status")
+def steam_enrichment_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    pending = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at == None,
+        )
+        .count()
+    )
+    total = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+        )
+        .count()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/enrichment_status.html",
+        context={"pending": pending, "total": total},
+    )
+
+
+@router.post("/steam/enrichment-refresh")
+def steam_enrichment_refresh(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """
+    Re-queue all Steam entries for metadata enrichment by nulling metadata_fetched_at.
+    raw_data["appdetails"] is untouched — existing metadata stays visible until
+    the background worker overwrites each entry with fresh data.
+    """
+    release_ids = [
+        row[0]
+        for row in db.query(models.GameRelease.id)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+        )
+        .all()
+    ]
+    updated = (
+        db.query(models.GameRelease)
+        .filter(models.GameRelease.id.in_(release_ids))
+        .update({"metadata_fetched_at": None}, synchronize_session=False)
+    )
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"Queued {updated} entries for metadata refresh — existing data stays in place until updated."},
     )
 
 

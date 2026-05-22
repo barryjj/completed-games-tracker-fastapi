@@ -6,32 +6,31 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## In progress / next up
 
+### Unified Steam sync (branch: feature/unified-steam-sync)
+- Single "Sync" button that gets everything in 3 API calls: GetOwnedGames (games + playtime) + rgOwnedApps via cookies (all owned app IDs) + GetAppList (name index cached 7 days)
+- DLC = rgOwnedApps minus GetOwnedGames IDs; names resolved from GetAppList cache
+- Replaces separate Sync Games / Sync DLC buttons and the old per-game appdetails scrape
+- Old appdetails approach kept as fallback for users without cookies
+
+### Steam OAuth / "Sign in through Steam"
+- Replace manual API key + cookie fields with OpenID "Sign in through Steam" flow
+- Captures session cookies automatically after login — no manual DevTools copy-paste
+- API key still needed for GetOwnedGames; long-term goal is to eliminate it too
+- Depends on Tauri for proper cookie capture (desktop) or a redirect flow (web)
+
+### Library and completions polish
+- Click a library row → slide-out detail pane showing metadata, edit controls, completion history, child DLC
+- Grid view toggle on library page using Steam CDN cover art (already stored in GameArtwork table)
+- Completions page: cover thumbnails alongside game titles
+
 ### Async job system
-- Background tasks for all long-running sync operations (Steam games, DLC, future IGDB/SteamGridDB)
-- SSE (`sse-starlette`) to push job completion back to the client
-- Toast notification system in the UI — fires on any async job completion with result summary and appropriate color
-- "Sync All" button: kicks off games + DLC sync together as background tasks
-
-### Steam DLC — better approach
-- Add `steamLoginSecure` + `sessionid` cookie fields to Steam settings (like API key)
-- Use `store.steampowered.com/dynamicstore/userdata/` (`rgOwnedApps`) to get full owned app list including DLC in one request — replaces 10k × 0.3s `appdetails` scrape
-- Existing `appdetails` approach as fallback for users who don't provide cookies
-
-### Modal forms — phase 2 (branch: feature/modal-forms-and-polish)
-- Add Completion modal (currently inline `<details>`)
-- Edit Completion modal (reuse same modal, swap to PATCH)
-- Edit Library Entry: replace filtered dropdowns with typeahead search for parent game / collection
+- Background tasks for sync operations (already slow; will get slower with 18k DLC)
+- Toast notification in UI when job finishes with result summary
+- Polling-based (no new dependencies); SSE upgrade later if needed
 
 ---
 
 ## Near-term
-
-### Game detail pane
-- Click a library row → slide-out panel showing full metadata, edit controls, completion history, child entries (DLC, games within a collection)
-
-### Cover art / grid view
-- Grid view toggle on library page showing cover art
-- Steam CDN cover URLs already stored in `GameArtwork` table
 
 ### Platforms table
 - `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`
@@ -43,7 +42,6 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 ### PSN integration
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
-- Similar cookie-capture pattern to Steam approach above
 
 ---
 
