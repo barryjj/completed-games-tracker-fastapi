@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 STEAM_API_BASE = "https://api.steampowered.com"
 STEAM_CDN = "https://cdn.akamai.steamstatic.com/steam/apps"
 
+# Identify ourselves on every Steam request — Steam has been seen returning
+# 404s to default Python User-Agents on some endpoints.
+_HEADERS = {"User-Agent": "completed-games-tracker/1.0 (+https://github.com/barryjj/completed-games-tracker-fastapi)"}
+
 # App list cache — refreshed from disk/API when stale
 _APP_LIST_CACHE_PATH = os.path.join(os.path.dirname(__file__), "steam_applist_cache.json")
 _APP_LIST_CACHE_TTL = datetime.timedelta(days=7)
@@ -51,7 +55,7 @@ def get_owned_games(api_key: str, steam_id64: str) -> list[dict]:
         "include_played_free_games": 1,
         "format": "json",
     }
-    response = httpx.get(url, params=params, timeout=15)
+    response = httpx.get(url, params=params, headers=_HEADERS, timeout=15)
     response.raise_for_status()
     data = response.json()
     games = data.get("response", {}).get("games", [])
@@ -59,10 +63,15 @@ def get_owned_games(api_key: str, steam_id64: str) -> list[dict]:
     return games
 
 
-def get_app_list() -> dict[int, str]:
+def get_app_list(api_key: str) -> dict[int, str]:
     """
     Return {appid: name} for every app on Steam.
     Cached to disk for 7 days; loaded into memory for the server's lifetime.
+
+    Steam moved this endpoint: the old unauthenticated
+    `ISteamApps/GetAppList/v2/` was deprecated in favor of
+    `IStoreService/GetAppList/v1/`, which requires the API key and is paginated.
+    Page size cap is 50,000; the full catalog is ~200k apps so this is ~4 calls.
     """
     global _app_list_memory, _app_list_cached_at
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -85,15 +94,47 @@ def get_app_list() -> dict[int, str]:
         except Exception as e:
             logger.warning("Failed to read app list cache: %s", e)
 
-    # Fetch from Steam
-    logger.info("Fetching Steam app list from API...")
-    resp = httpx.get(
-        f"{STEAM_API_BASE}/ISteamApps/GetAppList/v2/",
-        timeout=60,
-    )
-    resp.raise_for_status()
-    apps = resp.json()["applist"]["apps"]
-    app_dict = {a["appid"]: a["name"] for a in apps}
+    # Fetch from Steam (paginated)
+    logger.info("Fetching Steam app list from IStoreService/GetAppList...")
+    app_dict: dict[int, str] = {}
+    last_appid = 0
+    page = 0
+    while True:
+        params = {
+            "key": api_key,
+            "max_results": 50000,
+            "include_games": "true",
+            "include_dlc": "true",
+            "include_software": "true",
+            "include_hardware": "false",
+            "include_videos": "false",
+        }
+        if last_appid:
+            params["last_appid"] = last_appid
+
+        resp = httpx.get(
+            f"{STEAM_API_BASE}/IStoreService/GetAppList/v1/",
+            params=params,
+            headers=_HEADERS,
+            timeout=60,
+        )
+        resp.raise_for_status()
+        body = resp.json().get("response", {})
+        apps = body.get("apps", [])
+        if not apps:
+            break
+        for a in apps:
+            app_dict[a["appid"]] = a.get("name", "")
+        page += 1
+        logger.info("GetAppList page %d: +%d apps (total %d)", page, len(apps), len(app_dict))
+
+        if not body.get("have_more_results"):
+            break
+        last_appid = body.get("last_appid", 0)
+        if not last_appid:
+            # Defensive: avoid infinite loop if Steam ever omits last_appid
+            break
+
     logger.info("Fetched %d apps from Steam", len(app_dict))
 
     try:
@@ -369,6 +410,7 @@ def sync_full_library(db: Session, user: models.User) -> dict:
             "sessionid": user.steam_session_id,
             "steamLoginSecure": user.steam_login_secure,
         },
+        headers=_HEADERS,
         timeout=30,
     )
     userdata.raise_for_status()
@@ -379,7 +421,7 @@ def sync_full_library(db: Session, user: models.User) -> dict:
     logger.info("Found %d owned apps, %d games, %d DLC", len(all_owned), len(game_appids), len(dlc_appids))
 
     # 3. App name index
-    app_names = get_app_list()
+    app_names = get_app_list(user.steam_api_key)
 
     # 4. Import DLC
     dlc_result = _import_dlc(db, user, dlc_appids, app_names)
@@ -405,6 +447,7 @@ def _fetch_appdetails(appid: int) -> dict | None:
     resp = httpx.get(
         "https://store.steampowered.com/api/appdetails",
         params={"appids": appid},
+        headers=_HEADERS,
         timeout=10,
     )
     resp.raise_for_status()
@@ -412,6 +455,13 @@ def _fetch_appdetails(appid: int) -> dict | None:
     if result.get("success"):
         return result.get("data", {})
     return None
+
+
+# Sleep durations for the enrichment worker. Steam's appdetails endpoint is
+# documented at roughly 200 requests per 5 minutes (~1 request every 1.5s).
+# We use a safety-margined steady-state sleep and a much longer backoff on 429.
+_ENRICH_SLEEP_OK = 2.0       # normal pace between successful requests
+_ENRICH_SLEEP_429 = 60.0     # how long to wait when Steam rate-limits us
 
 
 def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
@@ -440,12 +490,26 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
     for release in entries:
         try:
             details = _fetch_appdetails(int(release.external_id))
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                logger.warning(
+                    "Steam rate-limited (429) for appid %s — backing off %.0fs",
+                    release.external_id, _ENRICH_SLEEP_429,
+                )
+                time.sleep(_ENRICH_SLEEP_429)
+                return _pending_count(db)  # bail out of this batch; loop again later
+            logger.warning(
+                "appdetails fetch failed for appid %s (transient, will retry): %s",
+                release.external_id, e,
+            )
+            time.sleep(_ENRICH_SLEEP_OK)
+            continue
         except Exception as e:
             logger.warning(
                 "appdetails fetch failed for appid %s (transient, will retry): %s",
                 release.external_id, e,
             )
-            time.sleep(0.3)
+            time.sleep(_ENRICH_SLEEP_OK)
             continue
 
         if details is not None:
@@ -475,9 +539,13 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
 
         release.metadata_fetched_at = now
         db.commit()
-        time.sleep(0.3)
+        time.sleep(_ENRICH_SLEEP_OK)
 
-    pending = (
+    return _pending_count(db)
+
+
+def _pending_count(db: Session) -> int:
+    return (
         db.query(models.GameRelease)
         .filter(
             models.GameRelease.source == "steam",
@@ -485,7 +553,6 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
         )
         .count()
     )
-    return pending
 
 
 def sync_dlc_flags(db: Session, user: models.User) -> dict:
@@ -518,9 +585,9 @@ def sync_dlc_flags(db: Session, user: models.User) -> dict:
             details = _fetch_appdetails(int(release.external_id))
         except Exception as e:
             logger.warning("appdetails fetch failed for appid %s: %s", release.external_id, e)
-            time.sleep(0.3)
+            time.sleep(_ENRICH_SLEEP_OK)
             continue
-        time.sleep(0.3)
+        time.sleep(_ENRICH_SLEEP_OK)
 
         if details is None:
             continue
