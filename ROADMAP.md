@@ -6,18 +6,17 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## In progress / next up
 
-### Toast notifications (started)
-- Bottom-right toast container in `base.html`, stacks vertically
-- Auto-dismiss after ~10s; manual X to close
-- Two variants: success (Catppuccin green) and error (Catppuccin red)
+### Toast notifications ✅ (PR #55 / styling polish PR #56)
+- Bottom-right toast container in `base.html`, stacks vertically, auto-dismiss after 10s
 - HTMX out-of-band (OOB) swap pattern so any endpoint can push a toast without per-page wiring
-- Replaces the current inline `#steam-flash` / `#steam-hub-status` div pattern
+- Catppuccin-tinted backgrounds with colored accent stripe (success/danger variants)
 
-### Async job system + background sync
-- Pairs with toasts above: sync runs as a background task, user can navigate away
-- In-process job tracker keyed by user_id, simple status enum (queued/running/done/failed)
-- `GET /jobs/{id}` polling endpoint returning current status + result summary
-- Small JS poller in `base.html` that surfaces the toast on completion
+### Async job system + background sync ✅ (in this PR)
+- In-process job tracker (`backend/jobs.py`) keyed by user_id, status enum (queued/running/done/failed)
+- Sync endpoints kick off `asyncio.create_task` and return a "started" toast immediately
+- `GET /integrations/jobs/poll` polled every 5s from `base.html`; returns OOB completion toasts for any of the user's jobs that finished since the last poll
+- `notified` flag on each job ensures toasts surface exactly once
+- Works across page navigation — the poller lives in `base.html` so the user gets the toast wherever they are when the sync finishes
 - No new dependencies; SSE upgrade considered later if polling feels rough
 
 ### Hidden flag + auto-hide heuristic

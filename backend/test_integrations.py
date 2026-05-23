@@ -62,61 +62,135 @@ def test_sync_requires_credentials(client):
     assert b"required" in r.content.lower()
 
 
-def test_sync_success(client, db_session):
-    token = _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "FAKEKEY",
-        "steam_id64": "76561197960287930",
-    })
+def test_sync_kickoff_returns_started_toast_and_creates_job(client, db_session):
+    """The POST returns immediately with a 'started' toast and a Job is registered.
+    The actual sync mechanics are covered by test_run_sync_job_full below."""
+    from backend import jobs
+    jobs.clear_all()
 
-    fake_games = [
-        {"appid": 1245620, "name": "Elden Ring", "playtime_forever": 300, "rtime_last_played": 0},
-        {"appid": 570, "name": "Dota 2", "playtime_forever": 0, "rtime_last_played": 0},
-    ]
-
-    with patch("backend.steam.get_owned_games", return_value=fake_games):
-        r = client.post("/integrations/steam/sync")
-
-    assert r.status_code == 200
-    assert b"2 added" in r.content or b"added" in r.content
-
-    entries = db_session.query(models.UserLibraryEntry).all()
-    assert len(entries) == 2
-    titles = {e.release.game.title for e in entries}
-    assert titles == {"Elden Ring", "Dota 2"}
-
-
-def test_sync_all_imports_games_and_dlc(client, db_session):
-    """Full sync mocks all three Steam endpoints — runs in ms, no real network."""
     _signup_and_login(client)
     client.post("/integrations/steam/credentials", data={
         "steam_api_key": "FAKEKEY",
         "steam_id64": "76561197960287930",
-        "steam_session_id": "fake-session",
-        "steam_login_secure": "fake-login",
     })
+
+    # Patch the sync function so even if the background task starts running, it doesn't
+    # try to hit Steam. We're testing the kickoff response, not the sync itself.
+    with patch("backend.steam.sync_steam_library", return_value={"added": 0, "updated": 0, "total": 0}):
+        r = client.post("/integrations/steam/sync")
+
+    assert r.status_code == 200
+    assert b"started" in r.content.lower()
+
+    # A job for this user should exist (may already have completed in the background)
+    user = db_session.query(models.User).first()
+    all_jobs = [j for j in jobs._jobs.values() if j.user_id == user.id]
+    assert len(all_jobs) == 1
+    assert all_jobs[0].kind == "steam_sync_games"
+
+
+def test_sync_kickoff_rejects_concurrent_run(client, db_session):
+    """If a sync is already active for the user, kickoff returns 409."""
+    from backend import jobs
+    jobs.clear_all()
+
+    _signup_and_login(client)
+    client.post("/integrations/steam/credentials", data={
+        "steam_api_key": "FAKEKEY", "steam_id64": "76561197960287930",
+    })
+    user = db_session.query(models.User).first()
+    # Pretend a sync is already running
+    jobs.create(user_id=user.id, kind="steam_sync_games")
+    jobs.update(list(jobs._jobs.keys())[0], status=jobs.JobStatus.RUNNING)
+
+    r = client.post("/integrations/steam/sync")
+    assert r.status_code == 409
+    assert b"already running" in r.content.lower()
+
+
+def test_run_sync_job_full_imports_games_and_dlc(db_session):
+    """End-to-end test of the background runner: mocks Steam, runs the async
+    job directly, verifies the DB state and job completion message."""
+    import asyncio
+    from backend import jobs
+    from backend.integrations import _run_sync_job
+    jobs.clear_all()
+
+    user = models.User(
+        name="t", username="t", password_hash="x", api_token="tok",
+        steam_api_key="FAKEKEY", steam_id64="76561197960287930",
+        steam_session_id="sess", steam_login_secure="login",
+    )
+    db_session.add(user)
+    db_session.commit()
 
     fake_games = [
         {"appid": 100, "name": "Game One", "playtime_forever": 0, "rtime_last_played": 0},
         {"appid": 200, "name": "Game Two", "playtime_forever": 60, "rtime_last_played": 0},
     ]
-    # rgOwnedApps includes the 2 games above plus 2 DLC IDs not in fake_games
     fake_userdata = MagicMock()
     fake_userdata.json.return_value = {"rgOwnedApps": [100, 200, 300, 400]}
     fake_userdata.raise_for_status.return_value = None
-
     fake_app_names = {100: "Game One", 200: "Game Two", 300: "Game One - DLC", 400: "Game Two - DLC"}
+
+    job = jobs.create(user_id=user.id, kind="steam_sync_full")
 
     with patch("backend.steam.get_owned_games", return_value=fake_games), \
          patch("backend.steam.httpx.get", return_value=fake_userdata), \
-         patch("backend.steam.get_app_list", return_value=fake_app_names):
-        r = client.post("/integrations/steam/sync-all")
+         patch("backend.steam.get_app_list", return_value=fake_app_names), \
+         patch("backend.integrations.SessionLocal", return_value=db_session):
+        # Stop SessionLocal-as-context-manager from closing our test session
+        db_session.close = lambda: None
+        asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_full"))
 
-    assert r.status_code == 200
+    final = jobs.get(job.id)
+    assert final.status == jobs.JobStatus.DONE
+    assert "games added" in final.message
+    assert "DLC" in final.message
+
     # 2 games + 2 DLC = 4 library entries
+    db_session.expire_all()
     assert db_session.query(models.UserLibraryEntry).count() == 4
-    dlc_count = db_session.query(models.Game).filter_by(is_dlc=True).count()
-    assert dlc_count == 2
+    assert db_session.query(models.Game).filter_by(is_dlc=True).count() == 2
+
+
+def test_jobs_poll_returns_completed_toasts_once(client, db_session):
+    """A completed job appears in the next poll, then is suppressed on
+    subsequent polls (notified flag prevents repeat toasts)."""
+    from backend import jobs
+    jobs.clear_all()
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    job = jobs.create(user_id=user.id, kind="steam_sync_games")
+    jobs.mark_done(job.id, "Games sync complete — 3 added.")
+
+    r = client.get("/integrations/jobs/poll")
+    assert r.status_code == 200
+    assert b"3 added" in r.content
+    # The poller element comes back so polling continues
+    assert b'id="job-poller"' in r.content
+
+    # Second poll: notification was consumed, no toast this time
+    r2 = client.get("/integrations/jobs/poll")
+    assert r2.status_code == 200
+    assert b"3 added" not in r2.content
+    assert b'id="job-poller"' in r2.content
+
+
+def test_jobs_poll_failure_toast_is_danger(client, db_session):
+    from backend import jobs
+    jobs.clear_all()
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    job = jobs.create(user_id=user.id, kind="steam_sync_games")
+    jobs.mark_failed(job.id, "Sync failed: connection refused.")
+
+    r = client.get("/integrations/jobs/poll")
+    assert r.status_code == 200
+    assert b"text-bg-danger" in r.content
+    assert b"connection refused" in r.content
 
 
 def test_enrichment_status_returns_counts(client, db_session):
@@ -132,13 +206,17 @@ def test_enrichment_status_returns_counts(client, db_session):
 
 def test_enrichment_refresh_nulls_timestamps(client, db_session):
     """The bug we just fixed: this endpoint used to 500 on a join+update."""
+    from backend import steam
     _signup_and_login(client)
     client.post("/integrations/steam/credentials", data={
         "steam_api_key": "FAKEKEY", "steam_id64": "76561197960287930",
     })
+    user = db_session.query(models.User).first()
     fake_games = [{"appid": 100, "name": "G", "playtime_forever": 0, "rtime_last_played": 0}]
+    # Seed a Steam release directly (used to go through the HTTP sync endpoint,
+    # but that's now async and the import happens in a background task)
     with patch("backend.steam.get_owned_games", return_value=fake_games):
-        client.post("/integrations/steam/sync")
+        steam.sync_steam_library(db_session, user)
 
     # Pretend the worker has enriched it
     import datetime
@@ -275,19 +353,24 @@ def test_get_app_list_paginates(monkeypatch, tmp_path):
 
 
 def test_sync_updates_playtime_on_resync(client, db_session):
-    token = _signup_and_login(client)
+    """Tests the steam.sync_steam_library logic directly (the HTTP endpoint now
+    queues a background task; the underlying sync function is what actually
+    upserts the data)."""
+    from backend import steam
+    _signup_and_login(client)
     client.post("/integrations/steam/credentials", data={
         "steam_api_key": "FAKEKEY",
         "steam_id64": "76561197960287930",
     })
+    user = db_session.query(models.User).first()
 
     game_v1 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 100, "rtime_last_played": 0}]
     game_v2 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 250, "rtime_last_played": 0}]
 
     with patch("backend.steam.get_owned_games", return_value=game_v1):
-        client.post("/integrations/steam/sync")
+        steam.sync_steam_library(db_session, user)
     with patch("backend.steam.get_owned_games", return_value=game_v2):
-        client.post("/integrations/steam/sync")
+        steam.sync_steam_library(db_session, user)
 
     entries = db_session.query(models.UserLibraryEntry).all()
     assert len(entries) == 1

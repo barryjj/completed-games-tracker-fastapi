@@ -1,0 +1,17 @@
+{# Re-renders itself on every poll so HTMX keeps the loop alive.
+   Any completed jobs since the last poll come back as OOB toasts. #}
+<div id="job-poller"
+     hx-get="/integrations/jobs/poll"
+     hx-trigger="every 5s"
+     hx-swap="outerHTML"></div>
+
+{% for job in completed_jobs %}
+<div class="toast align-items-center {{ 'text-bg-success' if job.status.value == 'done' else 'text-bg-danger' }} border-0"
+     role="alert" aria-live="polite" aria-atomic="true"
+     hx-swap-oob="beforeend:#toast-container">
+  <div class="d-flex">
+    <div class="toast-body">{{ job.message or job.error }}</div>
+    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+  </div>
+</div>
+{% endfor %}
