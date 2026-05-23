@@ -137,20 +137,25 @@ def test_steam_cookies(
         )
 
 
-def _format_full_sync_result(result: dict) -> str:
-    return (
-        f"Sync complete — "
-        f"{result['games_added']} games added, {result['games_updated']} updated "
-        f"({result['games_total']} total) · "
-        f"{result['dlc_added']} DLC added, {result['dlc_marked']} marked "
-        f"({result['dlc_total']} total DLC owned)."
-    )
+def _format_sync_result(db: Session, user: models.User, kind: str, result: dict) -> str:
+    """Unified message format for sync completion toasts. Always reports actual
+    library totals (queried from the DB) so the count reflects real state, not
+    just what Steam returned this run (which can be 0 if cookies expired)."""
+    totals = _steam_counts(db, user) or {"games": 0, "dlc": 0, "total": 0}
 
-
-def _format_games_sync_result(result: dict) -> str:
+    if kind == "steam_sync_full":
+        delta = (
+            f"{result['games_added']} games added, {result['games_updated']} updated · "
+            f"{result['dlc_added']} DLC added, {result['dlc_marked']} linked"
+        )
+    else:  # steam_sync_games
+        delta = (
+            f"{result['added']} games added, {result['updated']} updated"
+        )
     return (
-        f"Games sync complete — {result['added']} added, "
-        f"{result['updated']} updated ({result['total']} total)."
+        f"Sync complete — {delta}. "
+        f"Library now has {totals['games']:,} games and {totals['dlc']:,} DLC "
+        f"({totals['total']:,} total)."
     )
 
 
@@ -174,12 +179,13 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
 
         if kind == "steam_sync_full":
             result = await asyncio.to_thread(steam.sync_full_library, db, user)
-            jobs.mark_done(job_id, _format_full_sync_result(result))
         elif kind == "steam_sync_games":
             result = await asyncio.to_thread(steam.sync_steam_library, db, user)
-            jobs.mark_done(job_id, _format_games_sync_result(result))
         else:
             jobs.mark_failed(job_id, f"Unknown sync kind: {kind}")
+            return
+
+        jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
     except ValueError as e:
         # Validation errors (missing credentials etc.) — show the literal message
         jobs.mark_failed(job_id, str(e))
