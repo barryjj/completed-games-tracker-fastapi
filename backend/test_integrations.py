@@ -206,6 +206,74 @@ def test_enrichment_permanent_failure_stamps_entry(db_session):
     assert release.metadata_fetched_at is not None
 
 
+def test_enrichment_429_triggers_backoff_and_unstamps(db_session):
+    """A 429 from Steam must trigger long backoff AND not stamp the entry as done."""
+    import httpx
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok429")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="999")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    fake_resp = MagicMock(status_code=429)
+    err = httpx.HTTPStatusError("429", request=MagicMock(), response=fake_resp)
+    sleep_mock = MagicMock()
+
+    with patch("backend.steam._fetch_appdetails", side_effect=err), \
+         patch("backend.steam.time.sleep", sleep_mock):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    release = db_session.query(models.GameRelease).first()
+    # 429 must NOT stamp — Steam was rate-limiting, not confirming the app is gone
+    assert release.metadata_fetched_at is None
+    # And we should have slept at least once for the long backoff window
+    assert any(call.args[0] >= 30 for call in sleep_mock.call_args_list), \
+        f"Expected a >=30s backoff sleep, got: {[c.args[0] for c in sleep_mock.call_args_list]}"
+
+
+def test_get_app_list_paginates(monkeypatch, tmp_path):
+    """GetAppList uses cursor-style pagination via last_appid — verify we walk all pages."""
+    from backend import steam
+
+    # Use an isolated cache file so we don't poison the real one
+    monkeypatch.setattr(steam, "_APP_LIST_CACHE_PATH", str(tmp_path / "applist.json"))
+    monkeypatch.setattr(steam, "_app_list_memory", {})
+    monkeypatch.setattr(steam, "_app_list_cached_at", None)
+
+    page1 = MagicMock()
+    page1.json.return_value = {"response": {
+        "apps": [{"appid": 1, "name": "A"}, {"appid": 2, "name": "B"}],
+        "have_more_results": True,
+        "last_appid": 2,
+    }}
+    page1.raise_for_status.return_value = None
+    page2 = MagicMock()
+    page2.json.return_value = {"response": {
+        "apps": [{"appid": 3, "name": "C"}],
+        "have_more_results": False,
+    }}
+    page2.raise_for_status.return_value = None
+
+    with patch("backend.steam.httpx.get", side_effect=[page1, page2]) as get_mock:
+        result = steam.get_app_list("FAKEKEY")
+
+    assert result == {1: "A", 2: "B", 3: "C"}
+    # Two calls: first with no last_appid, second with last_appid=2
+    assert get_mock.call_count == 2
+    second_params = get_mock.call_args_list[1].kwargs["params"]
+    assert second_params["last_appid"] == 2
+    assert second_params["key"] == "FAKEKEY"
+
+
 def test_sync_updates_playtime_on_resync(client, db_session):
     token = _signup_and_login(client)
     client.post("/integrations/steam/credentials", data={
