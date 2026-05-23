@@ -64,18 +64,6 @@
           autocomplete="off"
         >
       </div>
-      {% if current_user.steam_session_id and current_user.steam_login_secure %}
-      <div class="mb-3">
-        <button
-          type="button"
-          class="btn btn-outline-secondary btn-sm"
-          hx-post="/integrations/steam/test-cookies"
-          hx-target="#steam-flash"
-          hx-swap="innerHTML"
-          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-        >Test Cookies</button>
-      </div>
-      {% endif %}
       <div class="d-flex gap-2">
         <button type="submit" class="btn btn-primary">Save Credentials</button>
         {% if current_user.steam_api_key or current_user.steam_id64 or current_user.steam_session_id or current_user.steam_login_secure %}
@@ -97,15 +85,17 @@
     <h5 class="mb-3">Library Sync</h5>
     {% if current_user.steam_id64 and current_user.steam_api_key %}
     {% if current_user.steam_last_synced_at %}
-    <p class="text-secondary"><small>Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
+    <p class="text-secondary mb-1"><small>Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% else %}
-    <p class="text-secondary"><small>Never synced</small></p>
+    <p class="text-secondary mb-1"><small>Never synced</small></p>
     {% endif %}
     {% if current_user.steam_last_dlc_synced_at %}
-    <p class="text-secondary"><small>Last DLC sync <span class="local-time" data-utc="{{ current_user.steam_last_dlc_synced_at.isoformat() }}">{{ current_user.steam_last_dlc_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
+    <p class="text-secondary mb-3"><small>Last DLC sync <span class="local-time" data-utc="{{ current_user.steam_last_dlc_synced_at.isoformat() }}">{{ current_user.steam_last_dlc_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% endif %}
-    <div class="d-flex gap-2 mb-3">
-      {% if current_user.steam_session_id and current_user.steam_login_secure %}
+
+    {# Primary action — the 95% case. #}
+    {% if current_user.steam_session_id and current_user.steam_login_secure %}
+    <div class="mb-3">
       <button
         class="btn btn-primary"
         hx-post="/integrations/steam/sync-all"
@@ -114,7 +104,12 @@
         hx-disabled-elt="this"
         hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
       >Sync</button>
-      {% else %}
+    </div>
+    {% else %}
+    <div class="alert alert-warning mb-3 py-2">
+      <small>Save browser cookies above to enable full library sync (games + DLC).</small>
+    </div>
+    <div class="mb-3">
       <button
         class="btn btn-primary"
         hx-post="/integrations/steam/sync"
@@ -122,52 +117,86 @@
         hx-swap="innerHTML"
         hx-disabled-elt="this"
         hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-      >Sync Games</button>
-      {% endif %}
+      >Sync Games Only</button>
     </div>
-    <div class="mt-3 d-flex flex-column gap-2">
-      <div>
-        <p class="text-secondary mb-1"><small>Fix display names for existing Steam games (strips ™, ®, © from titles).</small></p>
-        <button
-          class="btn btn-outline-secondary btn-sm"
-          hx-post="/integrations/steam/backfill-display-names"
-          hx-target="#steam-flash"
-          hx-swap="innerHTML"
-          hx-confirm="Update display names for all Steam games missing a cleaned title?"
-          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-        >Fix Display Names</button>
-      </div>
-      <div>
-        <p class="text-secondary mb-1"><small>Flag collections for existing Steam games (Anthology, Bundle, Complete Edition, etc.).</small></p>
-        <button
-          class="btn btn-outline-secondary btn-sm"
-          hx-post="/integrations/steam/backfill-collection-flags"
-          hx-target="#steam-flash"
-          hx-swap="innerHTML"
-          hx-confirm="Auto-flag collections for all Steam games currently marked as regular games?"
-          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-        >Fix Collection Flags</button>
-      </div>
-    </div>
+    {% endif %}
+
+    {# Metadata enrichment status — visible by default since it tells you whether
+       the background worker is still chewing through things. #}
     <div class="mt-4">
       <h6 class="mb-2">Metadata Enrichment</h6>
-      <p class="text-secondary mb-2"><small>Runs automatically in the background while the app is open. Fetches full details (type, description, parent game links) for each Steam entry at Steam's rate limit.</small></p>
+      <p class="text-secondary mb-2"><small>Runs automatically in the background while the app is open. Fetches full details for each Steam entry at Steam's rate limit.</small></p>
       <div hx-get="/integrations/steam/enrichment-status"
            hx-trigger="load"
            hx-swap="outerHTML">
         <p class="text-secondary mb-0"><small>Loading&hellip;</small></p>
       </div>
-      <div class="mt-2">
-        <button
-          class="btn btn-outline-secondary btn-sm"
-          hx-post="/integrations/steam/enrichment-refresh"
-          hx-target="#steam-flash"
-          hx-swap="innerHTML"
-          hx-confirm="Queue all Steam entries for a metadata refresh? Existing metadata stays visible until each entry is updated by the background worker."
-          hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-        >Refresh Metadata</button>
-      </div>
     </div>
+
+    {# Power-user / diagnostic operations. Collapsed by default. #}
+    <details class="mt-4">
+      <summary class="text-secondary" style="cursor: pointer;"><small>More sync options</small></summary>
+      <div class="mt-3 d-flex flex-column gap-2">
+        {% if current_user.steam_session_id and current_user.steam_login_secure %}
+        <div>
+          <p class="text-secondary mb-1"><small>Re-fetch DLC only, using already-synced games as the baseline. Faster than a full sync.</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/integrations/steam/sync-dlc-only"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-disabled-elt="this"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Sync DLC Only</button>
+        </div>
+        <div>
+          <p class="text-secondary mb-1"><small>Re-fetch games only via GetOwnedGames (skips DLC). Diagnostic.</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/integrations/steam/sync"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-disabled-elt="this"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Sync Games Only</button>
+        </div>
+        {% endif %}
+        <div>
+          <p class="text-secondary mb-1"><small>Force a fresh fetch of the full Steam app catalog (~200k names, cached 7 days otherwise).</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/integrations/steam/refresh-app-catalog"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-disabled-elt="this"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Refresh App Catalog</button>
+        </div>
+        <div>
+          <p class="text-secondary mb-1"><small>Re-queue all Steam entries for metadata refresh. Existing data stays visible until the background worker updates each one.</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/integrations/steam/enrichment-refresh"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-confirm="Queue all Steam entries for a metadata refresh?"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Refresh Metadata</button>
+        </div>
+        {% if current_user.steam_session_id and current_user.steam_login_secure %}
+        <div>
+          <p class="text-secondary mb-1"><small>Sanity-check your saved cookies by hitting Steam's owned-app endpoint.</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/integrations/steam/test-cookies"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Test Cookies</button>
+        </div>
+        {% endif %}
+      </div>
+    </details>
     {% else %}
     <p class="text-secondary">Save your credentials above to enable syncing.</p>
     {% endif %}

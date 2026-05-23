@@ -137,37 +137,77 @@ def test_steam_cookies(
         )
 
 
+# All Steam sync job kinds, mapped to their (sync function, started toast text) tuple.
+# Adding a new kind here is the only place you need to wire up — endpoint just calls
+# _kick_off_sync with the kind, and _run_sync_job picks the function out of this table.
+_STEAM_KINDS: dict[str, dict] = {
+    "steam_sync_full": {
+        "fn": "sync_full_library",
+        "needs_cookies": True,
+        "started": "Steam sync started — feel free to navigate away. You'll see a toast when it finishes.",
+        "label": "Sync",
+    },
+    "steam_sync_games": {
+        "fn": "sync_steam_library",
+        "needs_cookies": False,
+        "started": "Steam games sync started — you'll see a toast when it finishes.",
+        "label": "Games only",
+    },
+    "steam_sync_dlc": {
+        "fn": "sync_dlc_only",
+        "needs_cookies": True,
+        "started": "Steam DLC sync started — you'll see a toast when it finishes.",
+        "label": "DLC only",
+    },
+    "steam_refresh_catalog": {
+        "fn": "refresh_app_catalog",
+        "needs_cookies": False,
+        "started": "Refreshing Steam app catalog — this takes a few seconds.",
+        "label": "Refresh app catalog",
+    },
+}
+
+
 def _format_sync_result(db: Session, user: models.User, kind: str, result: dict) -> str:
-    """Unified message format for sync completion toasts. Always reports actual
+    """Unified message format for completion toasts. Always reports actual
     library totals (queried from the DB) so the count reflects real state, not
-    just what Steam returned this run (which can be 0 if cookies expired)."""
+    just what Steam returned this run (which can be 0 if cookies expired).
+    Platform prefix ("Steam") lets PSN drop in with the same shape later."""
     totals = _steam_counts(db, user) or {"games": 0, "dlc": 0, "total": 0}
+    library_total = (
+        f"Library now has {totals['games']:,} games and {totals['dlc']:,} DLC "
+        f"({totals['total']:,} total)."
+    )
 
     if kind == "steam_sync_full":
         delta = (
             f"{result['games_added']} games added, {result['games_updated']} updated · "
             f"{result['dlc_added']} DLC added, {result['dlc_marked']} linked"
         )
-    else:  # steam_sync_games
-        delta = (
-            f"{result['added']} games added, {result['updated']} updated"
-        )
-    return (
-        f"Sync complete — {delta}. "
-        f"Library now has {totals['games']:,} games and {totals['dlc']:,} DLC "
-        f"({totals['total']:,} total)."
-    )
+        return f"Steam sync complete — {delta}. {library_total}"
+    if kind == "steam_sync_games":
+        delta = f"{result['added']} games added, {result['updated']} updated"
+        return f"Steam games sync complete — {delta}. {library_total}"
+    if kind == "steam_sync_dlc":
+        delta = f"{result['dlc_added']} DLC added, {result['dlc_marked']} linked"
+        return f"Steam DLC sync complete — {delta}. {library_total}"
+    if kind == "steam_refresh_catalog":
+        return f"Steam app catalog refreshed — {result['app_count']:,} entries cached."
+    # Fallback shouldn't be reachable thanks to _STEAM_KINDS validation, but cover it
+    return f"Steam job complete. {library_total}"
 
 
 async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
     """
-    Background runner for a Steam sync job.
-    - Creates a fresh DB session inside the task (can't borrow the request's).
-    - Pauses the enrichment worker for the duration so we don't compete on
-      Steam's rate limits.
-    - Marks the job done/failed; the /jobs/poll endpoint picks up the result
-      and surfaces a toast to the user (even if they've navigated away).
+    Background runner for a Steam job (any sync or catalog refresh).
+    Creates a fresh DB session, pauses the enrichment worker for the duration,
+    dispatches to the right steam.* function based on kind.
     """
+    spec = _STEAM_KINDS.get(kind)
+    if spec is None:
+        jobs.mark_failed(job_id, f"Unknown job kind: {kind}")
+        return
+
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
     worker_state.enrichment_paused = True
     db = SessionLocal()
@@ -177,34 +217,40 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        if kind == "steam_sync_full":
-            result = await asyncio.to_thread(steam.sync_full_library, db, user)
-        elif kind == "steam_sync_games":
-            result = await asyncio.to_thread(steam.sync_steam_library, db, user)
+        fn = getattr(steam, spec["fn"])
+        if kind == "steam_refresh_catalog":
+            result = await asyncio.to_thread(fn, user.steam_api_key)
         else:
-            jobs.mark_failed(job_id, f"Unknown sync kind: {kind}")
-            return
+            result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
     except ValueError as e:
-        # Validation errors (missing credentials etc.) — show the literal message
         jobs.mark_failed(job_id, str(e))
     except Exception as e:
-        _logger.exception("Sync job %s failed", job_id)
-        jobs.mark_failed(job_id, f"Sync failed: {e}")
+        _logger.exception("Job %s (%s) failed", job_id, kind)
+        jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
         worker_state.enrichment_paused = False
         db.close()
 
 
-def _kick_off_sync(request: Request, current_user: models.User, kind: str, started_message: str):
+def _kick_off_sync(request: Request, current_user: models.User, kind: str):
     """Create a job, schedule the background task, return a 'started' toast."""
+    spec = _STEAM_KINDS[kind]
+    err = _credential_error(current_user, kind)
+    if err:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": err},
+            status_code=422,
+        )
     active = jobs.active_jobs_for(current_user.id)
     if active:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
-            context={"error": "A sync is already running — please wait for it to finish."},
+            context={"error": "A Steam job is already running — please wait for it to finish."},
             status_code=409,
         )
     job = jobs.create(user_id=current_user.id, kind=kind)
@@ -212,7 +258,7 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str, start
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": started_message},
+        context={"message": spec["started"]},
     )
 
 
@@ -221,51 +267,35 @@ def _credential_error(current_user: models.User, kind: str) -> str | None:
     doomed background job."""
     if not current_user.steam_api_key or not current_user.steam_id64:
         return "Steam API key and Steam ID64 are required."
-    if kind == "steam_sync_full":
+    spec = _STEAM_KINDS.get(kind, {})
+    if spec.get("needs_cookies"):
         if not current_user.steam_session_id or not current_user.steam_login_secure:
-            return "Browser cookies (sessionid + steamLoginSecure) are required for full sync."
+            return "Browser cookies (sessionid + steamLoginSecure) are required for this operation."
     return None
 
 
 @router.post("/steam/sync-all")
-async def sync_steam_all(
-    request: Request,
-    current_user: models.User = Depends(get_web_user),
-):
-    """Full sync (games + DLC). Runs in background; result is delivered via /jobs/poll.
-    Must be async so we have access to the running event loop for asyncio.create_task."""
-    err = _credential_error(current_user, "steam_sync_full")
-    if err:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": err},
-            status_code=422,
-        )
-    return _kick_off_sync(
-        request, current_user, "steam_sync_full",
-        "Steam sync started — feel free to navigate away. You'll see a toast when it finishes.",
-    )
+async def sync_steam_all(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Full sync (games + DLC). Runs in background; result is delivered via /jobs/poll."""
+    return _kick_off_sync(request, current_user, "steam_sync_full")
 
 
 @router.post("/steam/sync")
-async def sync_steam(
-    request: Request,
-    current_user: models.User = Depends(get_web_user),
-):
-    """Games-only sync. Runs in background; result is delivered via /jobs/poll."""
-    err = _credential_error(current_user, "steam_sync_games")
-    if err:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": err},
-            status_code=422,
-        )
-    return _kick_off_sync(
-        request, current_user, "steam_sync_games",
-        "Steam games sync started — feel free to navigate away. You'll see a toast when it finishes.",
-    )
+async def sync_steam(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Games-only sync. Diagnostic / fallback for users without cookies."""
+    return _kick_off_sync(request, current_user, "steam_sync_games")
+
+
+@router.post("/steam/sync-dlc-only")
+async def sync_steam_dlc_only(request: Request, current_user: models.User = Depends(get_web_user)):
+    """DLC-only sync — uses already-synced games as the baseline. Power-user diagnostic."""
+    return _kick_off_sync(request, current_user, "steam_sync_dlc")
+
+
+@router.post("/steam/refresh-app-catalog")
+async def refresh_steam_app_catalog(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Force a fresh GetAppList fetch by invalidating the 7-day cache."""
+    return _kick_off_sync(request, current_user, "steam_refresh_catalog")
 
 
 @router.get("/jobs/poll")
