@@ -189,7 +189,7 @@ def test_jobs_poll_failure_toast_is_danger(client, db_session):
 
     r = client.get("/integrations/jobs/poll")
     assert r.status_code == 200
-    assert b"text-bg-danger" in r.content
+    assert b"toast-danger" in r.content
     assert b"connection refused" in r.content
 
 
