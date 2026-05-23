@@ -385,6 +385,24 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
     return {"added": result["games_added"], "updated": result["games_updated"], "total": result["games_total"]}
 
 
+def _fetch_owned_appids(user: models.User) -> set[int]:
+    """Hit dynamicstore/userdata/ with the user's session cookies and return the
+    set of every appid they own (games + DLC + tools + everything)."""
+    if not user.steam_session_id or not user.steam_login_secure:
+        raise ValueError("Browser cookies (sessionid + steamLoginSecure) are required.")
+    resp = httpx.get(
+        "https://store.steampowered.com/dynamicstore/userdata/",
+        cookies={
+            "sessionid": user.steam_session_id,
+            "steamLoginSecure": user.steam_login_secure,
+        },
+        headers=_HEADERS,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return set(resp.json().get("rgOwnedApps", []))
+
+
 def sync_full_library(db: Session, user: models.User) -> dict:
     """
     Full sync: games via GetOwnedGames + DLC via rgOwnedApps + GetAppList name lookup.
@@ -404,17 +422,7 @@ def sync_full_library(db: Session, user: models.User) -> dict:
 
     # 2. All owned app IDs (games + DLC) via cookies
     logger.info("Fetching rgOwnedApps for user %s", user.steam_id64)
-    userdata = httpx.get(
-        "https://store.steampowered.com/dynamicstore/userdata/",
-        cookies={
-            "sessionid": user.steam_session_id,
-            "steamLoginSecure": user.steam_login_secure,
-        },
-        headers=_HEADERS,
-        timeout=30,
-    )
-    userdata.raise_for_status()
-    all_owned = set(userdata.json().get("rgOwnedApps", []))
+    all_owned = _fetch_owned_appids(user)
 
     # DLC = apps owned but not in the games list
     dlc_appids = all_owned - game_appids
@@ -432,6 +440,61 @@ def sync_full_library(db: Session, user: models.User) -> dict:
     db.commit()
 
     return {**game_result, **dlc_result}
+
+
+def sync_dlc_only(db: Session, user: models.User) -> dict:
+    """
+    Diagnostic: refresh DLC ownership without touching games. Uses the already-
+    synced games in the DB as the baseline (no GetOwnedGames call), so this only
+    needs cookies + the GetAppList catalog. Useful when you've already synced
+    your games and only want to refresh DLC after Steam updates the catalog.
+    """
+    if not user.steam_api_key or not user.steam_id64:
+        raise ValueError("Steam API key and Steam ID64 are required.")
+    if not user.steam_session_id or not user.steam_login_secure:
+        raise ValueError("Browser cookies (sessionid + steamLoginSecure) are required.")
+
+    # Existing Steam games in the user's library — those appids are "games", not DLC
+    rows = (
+        db.query(models.GameRelease.external_id)
+        .join(models.UserLibraryEntry)
+        .join(models.Game)
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.source == "steam",
+            models.Game.is_dlc == False,
+        )
+        .all()
+    )
+    game_appids = {int(r[0]) for r in rows if r[0] and r[0].isdigit()}
+
+    all_owned = _fetch_owned_appids(user)
+    dlc_appids = all_owned - game_appids
+    logger.info("DLC-only sync: %d owned, %d known games, %d DLC", len(all_owned), len(game_appids), len(dlc_appids))
+
+    app_names = get_app_list(user.steam_api_key)
+    dlc_result = _import_dlc(db, user, dlc_appids, app_names)
+
+    user.steam_last_dlc_synced_at = datetime.datetime.now(datetime.timezone.utc)
+    db.commit()
+
+    return dlc_result
+
+
+def refresh_app_catalog(api_key: str) -> dict:
+    """Force a re-fetch of the GetAppList catalog by invalidating both the
+    memory and disk caches. Returns the new count."""
+    global _app_list_memory, _app_list_cached_at
+    _app_list_memory = {}
+    _app_list_cached_at = None
+    try:
+        if os.path.exists(_APP_LIST_CACHE_PATH):
+            os.remove(_APP_LIST_CACHE_PATH)
+    except OSError as e:
+        logger.warning("Could not remove app list cache file: %s", e)
+
+    app_dict = get_app_list(api_key)
+    return {"app_count": len(app_dict)}
 
 
 def _fetch_appdetails(appid: int) -> dict | None:
