@@ -6,27 +6,46 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## In progress / next up
 
-### Unified Steam sync (branch: feature/unified-steam-sync)
-- Single "Sync" button that gets everything in 3 API calls: GetOwnedGames (games + playtime) + rgOwnedApps via cookies (all owned app IDs) + GetAppList (name index cached 7 days)
-- DLC = rgOwnedApps minus GetOwnedGames IDs; names resolved from GetAppList cache
-- Replaces separate Sync Games / Sync DLC buttons and the old per-game appdetails scrape
-- Old appdetails approach kept as fallback for users without cookies
+### Toast notifications (started)
+- Bottom-right toast container in `base.html`, stacks vertically
+- Auto-dismiss after ~10s; manual X to close
+- Two variants: success (Catppuccin green) and error (Catppuccin red)
+- HTMX out-of-band (OOB) swap pattern so any endpoint can push a toast without per-page wiring
+- Replaces the current inline `#steam-flash` / `#steam-hub-status` div pattern
+
+### Async job system + background sync
+- Pairs with toasts above: sync runs as a background task, user can navigate away
+- In-process job tracker keyed by user_id, simple status enum (queued/running/done/failed)
+- `GET /jobs/{id}` polling endpoint returning current status + result summary
+- Small JS poller in `base.html` that surfaces the toast on completion
+- No new dependencies; SSE upgrade considered later if polling feels rough
+
+### Hidden flag + auto-hide heuristic
+- `is_hidden: bool` on `UserLibraryEntry` (per-user, not per-game)
+- Library default view filters `is_hidden=false`; "Show hidden" toggle reveals them
+- Enrichment worker auto-flags entries when `appdetails` indicates soundtrack/artbook/OST etc. (categories or `type=music`, plus title heuristics)
+- Manual hide/unhide from the row's action menu
+
+### Library detail pane
+- Click a library row → slide-out detail pane showing metadata, edit controls, completion history, child DLC
+- Single place for cover art + appdetails description + parent navigation
+- Reduces the need for inline nesting/grouping (clicking a parent already reveals children)
+
+### Library nesting / grouping (after detail pane)
+- Default view: parent collapsed with `[N DLC] ▸` indicator, expandable inline
+- Search match on DLC name: parent expanded with matching DLC highlighted
+- DLC-only filter: flat list with parent name shown alongside each row
+- Sort by added date meaningful only at parent level
+
+### Cover art grid view
+- Grid toggle on library page using Steam CDN cover art (already stored in `GameArtwork` table)
+- Completions page: cover thumbnails alongside game titles
 
 ### Steam OAuth / "Sign in through Steam"
 - Replace manual API key + cookie fields with OpenID "Sign in through Steam" flow
 - Captures session cookies automatically after login — no manual DevTools copy-paste
 - API key still needed for GetOwnedGames; long-term goal is to eliminate it too
 - Depends on Tauri for proper cookie capture (desktop) or a redirect flow (web)
-
-### Library and completions polish
-- Click a library row → slide-out detail pane showing metadata, edit controls, completion history, child DLC
-- Grid view toggle on library page using Steam CDN cover art (already stored in GameArtwork table)
-- Completions page: cover thumbnails alongside game titles
-
-### Async job system
-- Background tasks for sync operations (already slow; will get slower with 18k DLC)
-- Toast notification in UI when job finishes with result summary
-- Polling-based (no new dependencies); SSE upgrade later if needed
 
 ---
 
