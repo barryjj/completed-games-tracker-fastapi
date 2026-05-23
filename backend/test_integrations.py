@@ -154,6 +154,116 @@ def test_run_sync_job_full_imports_games_and_dlc(db_session):
     assert db_session.query(models.Game).filter_by(is_dlc=True).count() == 2
 
 
+def test_run_sync_job_dlc_only(db_session):
+    """DLC-only sync uses already-synced games as the baseline (no GetOwnedGames call)."""
+    import asyncio
+    from backend import jobs, steam
+    from backend.integrations import _run_sync_job
+    jobs.clear_all()
+
+    user = models.User(
+        name="t", username="t", password_hash="x", api_token="tok-dlc",
+        steam_api_key="FAKEKEY", steam_id64="76561197960287930",
+        steam_session_id="sess", steam_login_secure="login",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    # Seed a game so it gets excluded from the DLC set
+    game = models.Game(title="Existing Game", is_dlc=False)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="100")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    fake_userdata = MagicMock()
+    fake_userdata.json.return_value = {"rgOwnedApps": [100, 500, 600]}
+    fake_userdata.raise_for_status.return_value = None
+    fake_app_names = {100: "Existing Game", 500: "DLC A", 600: "DLC B"}
+
+    job = jobs.create(user_id=user.id, kind="steam_sync_dlc")
+
+    with patch("backend.steam.httpx.get", return_value=fake_userdata), \
+         patch("backend.steam.get_app_list", return_value=fake_app_names), \
+         patch("backend.integrations.SessionLocal", return_value=db_session):
+        db_session.close = lambda: None
+        asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_dlc"))
+
+    final = jobs.get(job.id)
+    assert final.status == jobs.JobStatus.DONE
+    assert "DLC sync complete" in final.message
+    # 1 existing game + 2 new DLC = 3 library entries
+    db_session.expire_all()
+    assert db_session.query(models.UserLibraryEntry).count() == 3
+    assert db_session.query(models.Game).filter_by(is_dlc=True).count() == 2
+
+
+def test_run_sync_job_refresh_catalog(db_session):
+    """Catalog refresh invalidates caches and re-fetches; toast reports count."""
+    import asyncio
+    from backend import jobs
+    from backend.integrations import _run_sync_job
+    jobs.clear_all()
+
+    user = models.User(
+        name="t", username="t", password_hash="x", api_token="tok-cat",
+        steam_api_key="FAKEKEY", steam_id64="76561197960287930",
+    )
+    db_session.add(user)
+    db_session.commit()
+
+    job = jobs.create(user_id=user.id, kind="steam_refresh_catalog")
+
+    with patch("backend.steam.get_app_list", return_value={1: "A", 2: "B", 3: "C"}), \
+         patch("backend.integrations.SessionLocal", return_value=db_session):
+        db_session.close = lambda: None
+        asyncio.run(_run_sync_job(job.id, user.id, "steam_refresh_catalog"))
+
+    final = jobs.get(job.id)
+    assert final.status == jobs.JobStatus.DONE
+    assert "catalog refreshed" in final.message
+    assert "3" in final.message
+
+
+def test_run_sync_job_unknown_kind_marks_failed(db_session):
+    import asyncio
+    from backend import jobs
+    from backend.integrations import _run_sync_job
+    jobs.clear_all()
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-bad")
+    db_session.add(user)
+    db_session.commit()
+
+    job = jobs.create(user_id=user.id, kind="steam_bogus")
+    asyncio.run(_run_sync_job(job.id, user.id, "steam_bogus"))
+
+    final = jobs.get(job.id)
+    assert final.status == jobs.JobStatus.FAILED
+    assert "Unknown" in final.error
+
+
+def test_sync_kickoff_concurrent_runs_blocked_across_kinds(client, db_session):
+    """Catalog refresh and library sync share the same active-job lock."""
+    from backend import jobs
+    jobs.clear_all()
+
+    _signup_and_login(client)
+    client.post("/integrations/steam/credentials", data={
+        "steam_api_key": "K", "steam_id64": "1",
+    })
+    user = db_session.query(models.User).first()
+    # Pretend a catalog refresh is in progress
+    j = jobs.create(user_id=user.id, kind="steam_refresh_catalog")
+    jobs.update(j.id, status=jobs.JobStatus.RUNNING)
+
+    r = client.post("/integrations/steam/sync")
+    assert r.status_code == 409
+
+
 def test_jobs_poll_returns_completed_toasts_once(client, db_session):
     """A completed job appears in the next poll, then is suppressed on
     subsequent polls (notified flag prevents repeat toasts)."""

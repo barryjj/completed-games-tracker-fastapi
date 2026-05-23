@@ -11,13 +11,23 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - HTMX out-of-band (OOB) swap pattern so any endpoint can push a toast without per-page wiring
 - Catppuccin-tinted backgrounds with colored accent stripe (success/danger variants)
 
-### Async job system + background sync ✅ (in this PR)
+### Async job system + background sync ✅ (PR #57)
 - In-process job tracker (`backend/jobs.py`) keyed by user_id, status enum (queued/running/done/failed)
 - Sync endpoints kick off `asyncio.create_task` and return a "started" toast immediately
 - `GET /integrations/jobs/poll` polled every 5s from `base.html`; returns OOB completion toasts for any of the user's jobs that finished since the last poll
 - `notified` flag on each job ensures toasts surface exactly once
 - Works across page navigation — the poller lives in `base.html` so the user gets the toast wherever they are when the sync finishes
 - No new dependencies; SSE upgrade considered later if polling feels rough
+
+### Steam sync operations consolidation ✅ (this PR)
+- One primary "Sync" button (full library) — what 95% of usage wants
+- Power-user / diagnostic ops collapsed in a `<details>` block: Sync DLC only, Sync games only, Refresh App Catalog, Refresh Metadata, Test Cookies
+- All ops go through the job system: started toast → background → completion toast, no matter how slow
+- Job kind table (`_STEAM_KINDS`) is the only wiring needed when adding a new op
+- Platform prefix on completion messages (`"Steam sync complete — ..."`) so PSN can drop in with `"PSN sync complete — ..."` later
+- Removed Fix Display Names / Fix Collection Flags buttons from UI; endpoints and functions kept for future user-configurable cleanup rules
+- New `steam.sync_dlc_only()` (cookie-based DLC refresh using already-synced games as the baseline)
+- New `steam.refresh_app_catalog()` (force re-fetch the 200k Steam app catalog when the 7-day cache misses something new)
 
 ### Hidden flag + auto-hide heuristic
 - `is_hidden: bool` on `UserLibraryEntry` (per-user, not per-game)
