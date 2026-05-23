@@ -36,6 +36,13 @@
     {% block content %}{% endblock %}
   </main>
   <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container" style="z-index: 1080"></div>
+  {# Background job poller — every authenticated page polls every 5s. When a
+     sync job finishes, the next poll's response includes the completion toast
+     via OOB swap and the toast surfaces wherever the user happens to be. #}
+  <div id="job-poller"
+       hx-get="/integrations/jobs/poll"
+       hx-trigger="load delay:2s, every 5s"
+       hx-swap="outerHTML"></div>
   {% block scripts %}{% endblock %}
 </body>
 </html>
