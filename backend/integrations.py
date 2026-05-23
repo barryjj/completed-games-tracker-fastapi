@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 
 import httpx as _httpx
@@ -7,9 +9,11 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from . import models, steam, worker_state
-from .models import get_db
+from . import jobs, models, steam, worker_state
+from .models import SessionLocal, get_db
 from .pages import get_web_user
+
+_logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/integrations")
 
@@ -133,80 +137,148 @@ def test_steam_cookies(
         )
 
 
-@router.post("/steam/sync-all")
-def sync_steam_all(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    """Full sync: games + DLC. Requires API key, Steam ID64, and browser cookies."""
+def _format_full_sync_result(result: dict) -> str:
+    return (
+        f"Sync complete — "
+        f"{result['games_added']} games added, {result['games_updated']} updated "
+        f"({result['games_total']} total) · "
+        f"{result['dlc_added']} DLC added, {result['dlc_marked']} marked "
+        f"({result['dlc_total']} total DLC owned)."
+    )
+
+
+def _format_games_sync_result(result: dict) -> str:
+    return (
+        f"Games sync complete — {result['added']} added, "
+        f"{result['updated']} updated ({result['total']} total)."
+    )
+
+
+async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
+    """
+    Background runner for a Steam sync job.
+    - Creates a fresh DB session inside the task (can't borrow the request's).
+    - Pauses the enrichment worker for the duration so we don't compete on
+      Steam's rate limits.
+    - Marks the job done/failed; the /jobs/poll endpoint picks up the result
+      and surfaces a toast to the user (even if they've navigated away).
+    """
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING)
     worker_state.enrichment_paused = True
+    db = SessionLocal()
     try:
-        result = steam.sync_full_library(db, current_user)
-        msg = (
-            f"Sync complete — "
-            f"{result['games_added']} games added, {result['games_updated']} updated "
-            f"({result['games_total']} total) · "
-            f"{result['dlc_added']} DLC added, {result['dlc_marked']} marked "
-            f"({result['dlc_total']} total DLC owned)."
-        )
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"message": msg},
-        )
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user is None:
+            jobs.mark_failed(job_id, "User no longer exists.")
+            return
+
+        if kind == "steam_sync_full":
+            result = await asyncio.to_thread(steam.sync_full_library, db, user)
+            jobs.mark_done(job_id, _format_full_sync_result(result))
+        elif kind == "steam_sync_games":
+            result = await asyncio.to_thread(steam.sync_steam_library, db, user)
+            jobs.mark_done(job_id, _format_games_sync_result(result))
+        else:
+            jobs.mark_failed(job_id, f"Unknown sync kind: {kind}")
     except ValueError as e:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": str(e)},
-            status_code=422,
-        )
+        # Validation errors (missing credentials etc.) — show the literal message
+        jobs.mark_failed(job_id, str(e))
     except Exception as e:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": f"Sync failed: {e}"},
-            status_code=500,
-        )
+        _logger.exception("Sync job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Sync failed: {e}")
     finally:
         worker_state.enrichment_paused = False
+        db.close()
+
+
+def _kick_off_sync(request: Request, current_user: models.User, kind: str, started_message: str):
+    """Create a job, schedule the background task, return a 'started' toast."""
+    active = jobs.active_jobs_for(current_user.id)
+    if active:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "A sync is already running — please wait for it to finish."},
+            status_code=409,
+        )
+    job = jobs.create(user_id=current_user.id, kind=kind)
+    asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": started_message},
+    )
+
+
+def _credential_error(current_user: models.User, kind: str) -> str | None:
+    """Pre-flight credential check so we 422 immediately instead of queueing a
+    doomed background job."""
+    if not current_user.steam_api_key or not current_user.steam_id64:
+        return "Steam API key and Steam ID64 are required."
+    if kind == "steam_sync_full":
+        if not current_user.steam_session_id or not current_user.steam_login_secure:
+            return "Browser cookies (sessionid + steamLoginSecure) are required for full sync."
+    return None
+
+
+@router.post("/steam/sync-all")
+async def sync_steam_all(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Full sync (games + DLC). Runs in background; result is delivered via /jobs/poll.
+    Must be async so we have access to the running event loop for asyncio.create_task."""
+    err = _credential_error(current_user, "steam_sync_full")
+    if err:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": err},
+            status_code=422,
+        )
+    return _kick_off_sync(
+        request, current_user, "steam_sync_full",
+        "Steam sync started — feel free to navigate away. You'll see a toast when it finishes.",
+    )
 
 
 @router.post("/steam/sync")
-def sync_steam(
+async def sync_steam(
     request: Request,
-    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Games-only sync via GetOwnedGames. Fallback when cookies aren't configured."""
-    worker_state.enrichment_paused = True
-    try:
-        result = steam.sync_steam_library(db, current_user)
+    """Games-only sync. Runs in background; result is delivered via /jobs/poll."""
+    err = _credential_error(current_user, "steam_sync_games")
+    if err:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
-            context={
-                "message": f"Games sync complete — {result['added']} added, {result['updated']} updated ({result['total']} total).",
-                "last_synced": current_user.steam_last_synced_at,
-            },
-        )
-    except ValueError as e:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": str(e)},
+            context={"error": err},
             status_code=422,
         )
-    except Exception as e:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": f"Sync failed: {e}"},
-            status_code=500,
-        )
-    finally:
-        worker_state.enrichment_paused = False
+    return _kick_off_sync(
+        request, current_user, "steam_sync_games",
+        "Steam games sync started — feel free to navigate away. You'll see a toast when it finishes.",
+    )
+
+
+@router.get("/jobs/poll")
+def jobs_poll(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """
+    Polled by every authenticated page (see base.html). Returns a fresh poller
+    element plus OOB toasts for any of this user's jobs that have completed
+    since the last poll. Idempotent — once a job is reported, it won't be
+    reported again.
+    """
+    pending = jobs.pending_notifications_for(current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/job_poller.html",
+        context={"completed_jobs": pending},
+    )
 
 
 @router.post("/steam/backfill-collection-flags")
