@@ -416,3 +416,38 @@ tr:focus-within .row-actions {
 /* ─── HTMX ───────────────────────────────────────────────────────────────── */
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }
 .htmx-request .htmx-indicator { opacity: 1; }
+
+/* ─── Toasts ─────────────────────────────────────────────────────────────── */
+/* Notification-style toasts: tinted surface with a colored accent stripe on
+   the left. Text stays at normal body color so messages remain readable in
+   either theme. */
+.toast.toast-success,
+.toast.toast-danger {
+  background-color: var(--ctp-mantle);
+  color: var(--ctp-text);
+  border: 1px solid var(--ctp-surface1);
+  border-left-width: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.toast.toast-success {
+  border-left-color: var(--ctp-green);
+  background-color: color-mix(in srgb, var(--ctp-green) 12%, var(--ctp-mantle));
+}
+.toast.toast-danger {
+  border-left-color: var(--ctp-red);
+  background-color: color-mix(in srgb, var(--ctp-red) 12%, var(--ctp-mantle));
+}
+html[data-bs-theme="light"] .toast.toast-success,
+html[data-bs-theme="light"] .toast.toast-danger {
+  box-shadow: 0 4px 12px rgba(76, 79, 105, 0.15);
+}
+html[data-bs-theme="light"] .toast.toast-success {
+  background-color: color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base));
+}
+html[data-bs-theme="light"] .toast.toast-danger {
+  background-color: color-mix(in srgb, var(--ctp-red) 18%, var(--ctp-base));
+}
+/* Bootstrap's btn-close uses a white SVG by default; flip it for light theme
+   so it remains visible against the tinted background. */
+html[data-bs-theme="light"] .toast .btn-close { filter: none; }
+html[data-bs-theme="dark"]  .toast .btn-close { filter: invert(1) grayscale(100%) brightness(2); }
