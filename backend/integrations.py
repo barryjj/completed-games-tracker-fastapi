@@ -169,32 +169,48 @@ _STEAM_KINDS: dict[str, dict] = {
 
 
 def _format_sync_result(db: Session, user: models.User, kind: str, result: dict) -> str:
-    """Unified message format for completion toasts. Always reports actual
-    library totals (queried from the DB) so the count reflects real state, not
-    just what Steam returned this run (which can be 0 if cookies expired).
+    """Unified multi-line message format for completion toasts. Newlines render
+    as line breaks thanks to `white-space: pre-line` on .toast-body. Shape:
+
+        {Header}
+        {Delta}
+        {Totals}
+
+    Delta only mentions ADDITIONS (no "updated"/"linked" — those are internal
+    mechanics, not news the user cares about in a confirmation toast). Totals
+    are read from the DB after the sync, so they reflect real library state
+    even when Steam returned 0 for some count this run.
     Platform prefix ("Steam") lets PSN drop in with the same shape later."""
     totals = _steam_counts(db, user) or {"games": 0, "dlc": 0, "total": 0}
-    library_total = (
-        f"Library now has {totals['games']:,} games and {totals['dlc']:,} DLC "
-        f"({totals['total']:,} total)."
-    )
+    totals_line = f"{totals['games']:,} games · {totals['dlc']:,} DLC total"
+
+    if kind == "steam_refresh_catalog":
+        return f"Steam app catalog refreshed\n{result['app_count']:,} entries cached"
 
     if kind == "steam_sync_full":
-        delta = (
-            f"{result['games_added']} games added, {result['games_updated']} updated · "
-            f"{result['dlc_added']} DLC added, {result['dlc_marked']} linked"
-        )
-        return f"Steam sync complete — {delta}. {library_total}"
-    if kind == "steam_sync_games":
-        delta = f"{result['added']} games added, {result['updated']} updated"
-        return f"Steam games sync complete — {delta}. {library_total}"
-    if kind == "steam_sync_dlc":
-        delta = f"{result['dlc_added']} DLC added, {result['dlc_marked']} linked"
-        return f"Steam DLC sync complete — {delta}. {library_total}"
-    if kind == "steam_refresh_catalog":
-        return f"Steam app catalog refreshed — {result['app_count']:,} entries cached."
-    # Fallback shouldn't be reachable thanks to _STEAM_KINDS validation, but cover it
-    return f"Steam job complete. {library_total}"
+        header = "Steam sync complete"
+        added_games = result.get("games_added", 0)
+        added_dlc = result.get("dlc_added", 0)
+        if added_games and added_dlc:
+            delta = f"+{added_games:,} games · +{added_dlc:,} DLC"
+        elif added_games:
+            delta = f"+{added_games:,} games"
+        elif added_dlc:
+            delta = f"+{added_dlc:,} DLC"
+        else:
+            delta = "No new items"
+    elif kind == "steam_sync_games":
+        header = "Steam games sync complete"
+        added = result.get("added", 0)
+        delta = f"+{added:,} games" if added else "No new games"
+    elif kind == "steam_sync_dlc":
+        header = "Steam DLC sync complete"
+        added = result.get("dlc_added", 0)
+        delta = f"+{added:,} DLC" if added else "No new DLC"
+    else:
+        return f"Steam job complete\n{totals_line}"
+
+    return f"{header}\n{delta}\n{totals_line}"
 
 
 async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:

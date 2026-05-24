@@ -145,8 +145,10 @@ def test_run_sync_job_full_imports_games_and_dlc(db_session):
 
     final = jobs.get(job.id)
     assert final.status == jobs.JobStatus.DONE
-    assert "games added" in final.message
-    assert "DLC" in final.message
+    # New format: "Steam sync complete\n+2 games · +2 DLC\n2 games · 2 DLC total"
+    assert "Steam sync complete" in final.message
+    assert "+2 games" in final.message
+    assert "+2 DLC" in final.message
 
     # 2 games + 2 DLC = 4 library entries
     db_session.expire_all()
