@@ -488,3 +488,146 @@ def test_sync_updates_playtime_on_resync(client, db_session):
     assert len(entries) == 1
     db_session.refresh(entries[0])
     assert entries[0].playtime_minutes == 250
+
+
+# ─── Heuristic / user-override tests ─────────────────────────────────────────
+
+def test_clean_title_strips_trademark_symbols():
+    from backend.steam import _clean_title
+    assert _clean_title("ELDEN RING™") == "Elden Ring"
+    assert _clean_title("Halo®: Combat Evolved") == "Halo: Combat Evolved"
+
+
+def test_clean_title_all_caps_normalizes():
+    from backend.steam import _clean_title
+    assert _clean_title("ELDEN RING") == "Elden Ring"
+    assert _clean_title("RESIDENT EVIL 4") == "Resident Evil 4"
+    assert _clean_title("DEAD CELLS") == "Dead Cells"
+
+
+def test_clean_title_preserves_roman_numerals_and_acronyms():
+    from backend.steam import _clean_title
+    assert _clean_title("GRAND THEFT AUTO V") == "Grand Theft Auto V"
+    assert _clean_title("DARK SOULS III") == "Dark Souls III"
+    assert _clean_title("FINAL FANTASY VII REMAKE") == "Final Fantasy VII Remake"
+    assert _clean_title("FTL: FASTER THAN LIGHT") == "FTL: Faster Than Light"
+    assert _clean_title("CALL OF DUTY: BLACK OPS VIII") == "Call Of Duty: Black Ops VIII"
+
+
+def test_clean_title_handles_apostrophes():
+    from backend.steam import _clean_title
+    assert _clean_title("ASSASSIN'S CREED II") == "Assassin's Creed II"
+
+
+def test_clean_title_leaves_short_or_single_word_alone():
+    from backend.steam import _clean_title
+    assert _clean_title("DOOM") == "DOOM"
+    assert _clean_title("FTL") == "FTL"
+    assert _clean_title("GTA V") == "GTA V"  # too short for the heuristic to trigger
+
+
+def test_clean_title_is_idempotent():
+    from backend.steam import _clean_title
+    # Running on already-cleaned title should be a no-op.
+    assert _clean_title("Elden Ring") == "Elden Ring"
+    assert _clean_title("Dark Souls III") == "Dark Souls III"
+
+
+def test_should_auto_hide():
+    from backend.steam import _should_auto_hide
+    # Title-based matches
+    assert _should_auto_hide("Elden Ring - Soundtrack", None) is True
+    assert _should_auto_hide("Game OST", None) is True
+    assert _should_auto_hide("Game Artbook", None) is True
+    assert _should_auto_hide("Cosmetic Pack", None) is True
+    assert _should_auto_hide("Wallpaper Set", None) is True
+    # appdetails-based match
+    assert _should_auto_hide("Music Pack", {"type": "music"}) is True
+    # Negative: real games shouldn't match
+    assert _should_auto_hide("Elden Ring", None) is False
+    assert _should_auto_hide("Doom Eternal", None) is False
+
+
+def test_enrichment_respects_is_dlc_user_set(db_session):
+    """If the user has manually marked a game as not-DLC, the worker must
+    not re-promote it to DLC on enrichment."""
+    from unittest.mock import patch
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-user-set")
+    db_session.add(user)
+    db_session.flush()
+    # User has explicitly said "this is NOT DLC" (e.g., for a base game Steam
+    # incorrectly tagged as DLC)
+    game = models.Game(title="G", is_dlc=False, is_dlc_user_set=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="500")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    # Steam says this is DLC. User says no. User wins.
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "dlc"}), \
+         patch("backend.steam.time.sleep", return_value=None):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    assert db_session.query(models.Game).first().is_dlc is False
+
+
+def test_enrichment_auto_hides_soundtrack_but_respects_user_unhide(db_session):
+    from unittest.mock import patch
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-hide")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Elden Ring Soundtrack")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="700")
+    db_session.add(release)
+    db_session.flush()
+    # User has explicitly UNHID this (they actually want the soundtrack visible)
+    entry = models.UserLibraryEntry(
+        user_id=user.id, release_id=release.id, import_source="steam_import",
+        is_hidden=False, is_hidden_user_set=True,
+    )
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "music"}), \
+         patch("backend.steam.time.sleep", return_value=None):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    # User's unhide stands — auto-hide heuristic skipped this entry.
+    assert db_session.query(models.UserLibraryEntry).first().is_hidden is False
+
+
+def test_backfill_hidden_endpoint(client, db_session):
+    """The one-shot backfill applies the auto-hide heuristic across existing
+    library entries, skipping user_set ones."""
+    from backend.test_pages import _signup_and_login, _add_game
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # Soundtrack — should get auto-hidden
+    s = _add_game(db_session, user, title="Game OST")
+    # Regular game — should NOT
+    g = _add_game(db_session, user, title="Elden Ring")
+    # Soundtrack the user explicitly unhid — should be left alone
+    user_set = _add_game(db_session, user, title="Cool Game Soundtrack")
+    user_set.is_hidden_user_set = True
+    db_session.commit()
+
+    r = client.post("/library/backfill-hidden")
+    assert r.status_code == 200
+    assert b"1 entries hidden" in r.content
+
+    db_session.expire_all()
+    assert db_session.query(models.UserLibraryEntry).filter_by(id=s.id).first().is_hidden is True
+    assert db_session.query(models.UserLibraryEntry).filter_by(id=g.id).first().is_hidden is False
+    assert db_session.query(models.UserLibraryEntry).filter_by(id=user_set.id).first().is_hidden is False
