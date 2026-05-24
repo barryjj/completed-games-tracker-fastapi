@@ -238,6 +238,115 @@ def test_delete_completion_other_user(client, db_session):
     assert db_session.query(models.Completion).filter_by(id=completion_id).first() is not None
 
 
+def test_manual_add_marks_all_fields_user_set(client, db_session):
+    """Manually added games shouldn't be touched by any heuristic — every
+    user-set flag flips to True on create."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    r = client.post("/library/games", data={
+        "title": "Custom Title", "platform": "Switch",
+        "is_dlc": "false", "is_collection": "false",
+    })
+    assert r.status_code == 200
+    game = db_session.query(models.Game).filter_by(title="Custom Title").first()
+    assert game is not None
+    assert game.display_name == "Custom Title"
+    assert game.display_name_user_set is True
+    assert game.is_dlc_user_set is True
+    assert game.is_collection_user_set is True
+    assert game.parent_id_user_set is True
+
+
+def test_manual_add_separate_display_name(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    client.post("/library/games", data={
+        "title": "Resident Evil Village",
+        "display_name": "Resident Evil 8",
+        "platform": "Steam",
+    })
+    game = db_session.query(models.Game).filter_by(title="Resident Evil Village").first()
+    assert game.display_name == "Resident Evil 8"
+    assert game.display_name_user_set is True
+
+
+def test_edit_entry_sets_user_overrides(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # Seed a Steam entry where user_set flags are all False (simulating an
+    # auto-imported game we haven't edited yet)
+    game = models.Game(title="ELDEN RING")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="100")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+    db_session.refresh(entry)
+
+    r = client.patch(f"/library/entries/{entry.id}", data={
+        "title": "Elden Ring",
+        "display_name": "ER",
+        "is_dlc": "false",
+        "is_collection": "false",
+    })
+    assert r.status_code == 200
+    db_session.refresh(game)
+    assert game.title == "Elden Ring"
+    assert game.display_name == "ER"
+    assert game.display_name_user_set is True
+    assert game.is_dlc_user_set is True
+    assert game.is_collection_user_set is True
+    assert game.parent_id_user_set is True
+
+
+def test_library_hides_is_hidden_entries_by_default(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    visible = _add_game(db_session, user, title="Visible Game")
+    hidden = _add_game(db_session, user, title="Hidden Soundtrack")
+    hidden.is_hidden = True
+    db_session.commit()
+
+    r = client.get("/library")
+    assert b"Visible Game" in r.content
+    assert b"Hidden Soundtrack" not in r.content
+
+    # show_hidden=true reveals hidden entries
+    r2 = client.get("/library?show_hidden=true")
+    assert b"Visible Game" in r2.content
+    assert b"Hidden Soundtrack" in r2.content
+
+
+def test_hide_endpoint_sets_user_flag(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="X")
+    r = client.post(f"/library/entries/{entry.id}/hide")
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.is_hidden is True
+    assert entry.is_hidden_user_set is True
+
+
+def test_unhide_endpoint_locks_against_heuristic(client, db_session):
+    """Unhiding sets is_hidden_user_set=True so the auto-hide heuristic
+    won't re-hide it on the next enrichment pass."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Game OST")
+    entry.is_hidden = True  # pretend the heuristic auto-hid it
+    db_session.commit()
+
+    r = client.post(f"/library/entries/{entry.id}/unhide")
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.is_hidden is False
+    assert entry.is_hidden_user_set is True
+
+
 def test_update_completion(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()

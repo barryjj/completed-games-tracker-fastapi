@@ -13,7 +13,7 @@
   hx-target="#library-content"
   hx-select="#library-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view"
+  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view, change from:#lib-show-hidden"
 >
   <div class="col-md-4">
     <input
@@ -43,6 +43,20 @@
       <option value="manual"       {% if view == 'manual'        %}selected{% endif %}>Manually added</option>
       <option value="all"          {% if view == 'all'           %}selected{% endif %}>Everything</option>
     </select>
+  </div>
+  <div class="col-auto">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="lib-show-hidden" name="show_hidden" value="true" {% if show_hidden %}checked{% endif %}>
+      <label class="form-check-label text-secondary" for="lib-show-hidden"><small>Show hidden</small></label>
+    </div>
+  </div>
+  <div class="col-auto ms-auto">
+    <button type="button"
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/library/backfill-hidden"
+            hx-swap="none"
+            hx-confirm="Run the auto-hide heuristic over your library? Hides soundtracks, artbooks, cosmetic packs, etc. Skips any entries you've manually hidden or unhidden."
+            title="Hide soundtracks, artbooks, cosmetic packs, etc. across your library">Auto-hide non-games</button>
   </div>
 </form>
 
@@ -108,8 +122,20 @@
       <form id="edit-entry-form">
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">Display name <span class="text-secondary fw-normal">(leave blank to use the raw title)</span></label>
-            <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off">
+            <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
+            <input type="text" class="form-control" name="title" id="edit-title" autocomplete="off"
+                   oninput="syncEditDisplayFromTitle()">
+          </div>
+          <div class="mb-2 form-check">
+            <input class="form-check-input" type="checkbox" id="edit-display-same" checked
+                   onchange="toggleEditDisplaySame()">
+            <label class="form-check-label text-secondary" for="edit-display-same">
+              <small>Display name is the same as title</small>
+            </label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Display name <span class="text-secondary fw-normal">(what shows in the library)</span></label>
+            <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off" disabled>
           </div>
           <div class="mb-3">
             <div class="form-check">
@@ -174,8 +200,20 @@
             hx-on::after-request="if(event.detail.successful){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label">Title</label>
-            <input type="text" class="form-control" name="title" id="add-title-input" placeholder="e.g. Elden Ring" required oninput="hintIsCollection()">
+            <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
+            <input type="text" class="form-control" name="title" id="add-title-input" placeholder="e.g. Resident Evil Village" required
+                   oninput="hintIsCollection(); syncAddDisplayFromTitle();">
+          </div>
+          <div class="mb-2 form-check">
+            <input class="form-check-input" type="checkbox" id="add-display-same" checked
+                   onchange="toggleAddDisplaySame()">
+            <label class="form-check-label text-secondary" for="add-display-same">
+              <small>Display name is the same as title</small>
+            </label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Display name <span class="text-secondary fw-normal">(what shows in the library)</span></label>
+            <input type="text" class="form-control" name="display_name" id="add-display-name" placeholder="e.g. Resident Evil 8" autocomplete="off" disabled>
           </div>
           <div class="mb-3">
             <label class="form-label">Platform</label>
@@ -258,6 +296,37 @@ function resetAddGameForm() {
   document.getElementById('add-parent-game-id').value = '';
   document.getElementById('add-parent-selected').hidden = true;
   document.getElementById('add-parent-selected-label').textContent = '';
+  document.getElementById('add-display-same').checked = true;
+  document.getElementById('add-display-name').disabled = true;
+  document.getElementById('add-display-name').value = '';
+}
+
+// When "Display name is the same as title" is checked on the Add modal,
+// display_name mirrors title as the user types and the display field is disabled.
+// Unchecking lets the user enter a separate value.
+function syncAddDisplayFromTitle() {
+  if (document.getElementById('add-display-same').checked) {
+    document.getElementById('add-display-name').value = document.getElementById('add-title-input').value;
+  }
+}
+function toggleAddDisplaySame() {
+  var same = document.getElementById('add-display-same').checked;
+  var disp = document.getElementById('add-display-name');
+  disp.disabled = same;
+  if (same) disp.value = document.getElementById('add-title-input').value;
+}
+
+// Same pattern for the Edit modal.
+function syncEditDisplayFromTitle() {
+  if (document.getElementById('edit-display-same').checked) {
+    document.getElementById('edit-display-name').value = document.getElementById('edit-title').value;
+  }
+}
+function toggleEditDisplaySame() {
+  var same = document.getElementById('edit-display-same').checked;
+  var disp = document.getElementById('edit-display-name');
+  disp.disabled = same;
+  if (same) disp.value = document.getElementById('edit-title').value;
 }
 
 function updateAddGameParentRow() {
@@ -297,7 +366,14 @@ function updateEditParentRows() {
 
 function editLibraryEntry(ds) {
   _editEntryId = ds.entryId;
-  document.getElementById('edit-display-name').value = ds.displayName || '';
+  document.getElementById('edit-title').value = ds.title || '';
+  document.getElementById('edit-display-name').value = ds.displayName || ds.title || '';
+  // "Same as title" defaults checked if display_name is empty or equals title;
+  // otherwise (user has previously set a custom display) leave it unchecked so
+  // they can see and edit the separate value.
+  var same = !ds.displayName || ds.displayName === ds.title;
+  document.getElementById('edit-display-same').checked = same;
+  document.getElementById('edit-display-name').disabled = same;
 
   var isDlc = ds.isDlc === 'true';
   var isCollection = ds.isCollection === 'true';
@@ -335,7 +411,12 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
   if (!_editEntryId) return;
   var form = e.target;
   var body = new URLSearchParams();
-  body.append('display_name', form.display_name.value);
+  body.append('title', form.title.value);
+  // If "same as title" is checked, send empty display_name → backend stores
+  // display_name=NULL, display_title falls back to title. Otherwise send the
+  // user's distinct display name.
+  var sameDisplay = document.getElementById('edit-display-same').checked;
+  body.append('display_name', sameDisplay ? '' : form.display_name.value);
   body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
   body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
 
