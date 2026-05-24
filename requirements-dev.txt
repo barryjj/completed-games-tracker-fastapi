@@ -1,0 +1,4 @@
+# Dev-only dependencies. Install with:
+#   .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+# Production runtime deps live in requirements.txt.
+ruff==0.15.14

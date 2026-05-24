@@ -1,5 +1,3 @@
-import datetime
-import pytest
 from backend import models
 
 
@@ -27,6 +25,7 @@ def _add_game(db, user, title="Elden Ring", platform="Steam"):
 
 
 # --- login / logout ---
+
 
 def test_login_page_loads(client):
     r = client.get("/login", follow_redirects=False)
@@ -57,6 +56,7 @@ def test_logout_clears_cookie(client):
 
 # --- auth redirects ---
 
+
 def test_library_requires_auth(client):
     r = client.get("/library", follow_redirects=False)
     assert r.status_code == 302
@@ -76,6 +76,7 @@ def test_root_redirects_to_library(client):
 
 
 # --- library page ---
+
 
 def test_library_page_loads(client):
     _signup_and_login(client)
@@ -124,6 +125,7 @@ def test_collection_not_auto_detected_server_side(client):
 
 # --- completions page ---
 
+
 def test_completions_page_loads(client):
     _signup_and_login(client)
     r = client.get("/completions")
@@ -137,12 +139,15 @@ def test_log_completion(client, db_session):
     user = db_session.query(models.User).filter_by(api_token=token).first()
     entry = _add_game(db_session, user)
 
-    r = client.post("/completions/log", data={
-        "library_entry_id": entry.id,
-        "completed_at": "2026-01-15",
-        "playthroughs": "1",
-        "notes": "Platinum",
-    })
+    r = client.post(
+        "/completions/log",
+        data={
+            "library_entry_id": entry.id,
+            "completed_at": "2026-01-15",
+            "playthroughs": "1",
+            "notes": "Platinum",
+        },
+    )
     assert r.status_code == 200
     assert b"Elden Ring" in r.content
     assert b"Platinum" in r.content
@@ -153,12 +158,15 @@ def test_log_completion_appears_in_list(client, db_session):
     user = db_session.query(models.User).filter_by(api_token=token).first()
     entry = _add_game(db_session, user, title="Astro Bot", platform="PS5")
 
-    client.post("/completions/log", data={
-        "library_entry_id": entry.id,
-        "completed_at": "2026-01-04",
-        "playthroughs": "1",
-        "notes": "Platinum + DLC",
-    })
+    client.post(
+        "/completions/log",
+        data={
+            "library_entry_id": entry.id,
+            "completed_at": "2026-01-04",
+            "playthroughs": "1",
+            "notes": "Platinum + DLC",
+        },
+    )
     r = client.get("/completions")
     assert b"Astro Bot" in r.content
     assert b"PS5" in r.content
@@ -166,6 +174,7 @@ def test_log_completion_appears_in_list(client, db_session):
 
 
 # --- completion game search ---
+
 
 def test_completion_search_returns_match(client, db_session):
     token = _signup_and_login(client)
@@ -204,13 +213,17 @@ def test_completion_search_requires_auth(client):
 
 # --- completion edit / delete ---
 
+
 def _log_completion(client, entry_id, date="2026-01-15"):
-    return client.post("/completions/log", data={
-        "library_entry_id": entry_id,
-        "completed_at": date,
-        "playthroughs": "1",
-        "notes": "test note",
-    })
+    return client.post(
+        "/completions/log",
+        data={
+            "library_entry_id": entry_id,
+            "completed_at": date,
+            "playthroughs": "1",
+            "notes": "test note",
+        },
+    )
 
 
 def test_delete_completion(client, db_session):
@@ -243,10 +256,15 @@ def test_manual_add_marks_all_fields_user_set(client, db_session):
     user-set flag flips to True on create."""
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
-    r = client.post("/library/games", data={
-        "title": "Custom Title", "platform": "Switch",
-        "is_dlc": "false", "is_collection": "false",
-    })
+    r = client.post(
+        "/library/games",
+        data={
+            "title": "Custom Title",
+            "platform": "Switch",
+            "is_dlc": "false",
+            "is_collection": "false",
+        },
+    )
     assert r.status_code == 200
     game = db_session.query(models.Game).filter_by(title="Custom Title").first()
     assert game is not None
@@ -260,11 +278,14 @@ def test_manual_add_marks_all_fields_user_set(client, db_session):
 def test_manual_add_separate_display_name(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
-    client.post("/library/games", data={
-        "title": "Resident Evil Village",
-        "display_name": "Resident Evil 8",
-        "platform": "Steam",
-    })
+    client.post(
+        "/library/games",
+        data={
+            "title": "Resident Evil Village",
+            "display_name": "Resident Evil 8",
+            "platform": "Steam",
+        },
+    )
     game = db_session.query(models.Game).filter_by(title="Resident Evil Village").first()
     assert game.display_name == "Resident Evil 8"
     assert game.display_name_user_set is True
@@ -286,12 +307,15 @@ def test_edit_entry_sets_user_overrides(client, db_session):
     db_session.commit()
     db_session.refresh(entry)
 
-    r = client.patch(f"/library/entries/{entry.id}", data={
-        "title": "Elden Ring",
-        "display_name": "ER",
-        "is_dlc": "false",
-        "is_collection": "false",
-    })
+    r = client.patch(
+        f"/library/entries/{entry.id}",
+        data={
+            "title": "Elden Ring",
+            "display_name": "ER",
+            "is_dlc": "false",
+            "is_collection": "false",
+        },
+    )
     assert r.status_code == 200
     db_session.refresh(game)
     assert game.title == "Elden Ring"
@@ -354,13 +378,16 @@ def test_update_completion(client, db_session):
     _log_completion(client, entry.id)
     completion = db_session.query(models.Completion).filter_by(user_id=user.id).first()
 
-    r = client.post("/completions/log", data={
-        "completion_id": completion.id,
-        "library_entry_id": entry.id,
-        "completed_at": "2026-06-01",
-        "playthroughs": "2",
-        "notes": "updated note",
-    })
+    r = client.post(
+        "/completions/log",
+        data={
+            "completion_id": completion.id,
+            "library_entry_id": entry.id,
+            "completed_at": "2026-06-01",
+            "playthroughs": "2",
+            "notes": "updated note",
+        },
+    )
     assert r.status_code == 200
     assert b"updated note" in r.content
     assert r.headers.get("hx-retarget") == f"#completion-{completion.id}"
@@ -370,6 +397,7 @@ def test_update_completion(client, db_session):
 
 
 # ─── Library detail pane ─────────────────────────────────────────────────────
+
 
 def test_detail_pane_returns_content_for_owned_entry(client, db_session):
     token = _signup_and_login(client)
@@ -418,12 +446,14 @@ def test_detail_pane_shows_child_dlc_for_parent_game(client, db_session):
 
 def test_detail_pane_shows_completion_history(client, db_session):
     import datetime as _dt
+
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     entry = _add_game(db_session, user, title="Hades")
 
     comp = models.Completion(
-        user_id=user.id, library_entry_id=entry.id,
+        user_id=user.id,
+        library_entry_id=entry.id,
         completed_at=_dt.date(2026, 1, 15),
         notes="Beat the final boss on the 12th run",
     )
