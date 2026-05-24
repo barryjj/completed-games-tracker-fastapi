@@ -19,15 +19,81 @@ COLLECTION_KEYWORDS = [
     "archives", "legacy", "origins",
 ]
 
+# Explicit allowlist of acronyms and Roman numerals to preserve as uppercase
+# during title-case normalization. Length-based "looks like an acronym" rules
+# produced false positives (OF, OPS, etc. — short English words that happen to
+# render in all caps when shouting). Better to leave new acronyms title-cased
+# and let the user fix them manually (display_name_user_set protects the edit).
+_PRESERVE_UPPER = {
+    # Roman numerals I–XX
+    "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
+    "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX",
+    # Common gaming acronyms / franchise IDs
+    "GTA", "FTL", "RE", "MGS", "COD", "BFG", "FPS", "RPG", "MMO", "MMORPG",
+    "JRPG", "ARPG", "VR", "AR", "AI", "HD", "UHD", "DLC", "OST",
+    "GOTY", "NPC", "HUD", "UI", "PVE", "PVP", "PUBG", "TES", "GTAV",
+}
+
+
+def _is_loud_caps(s: str) -> bool:
+    """True when a string looks like SHOUTING that should be title-cased.
+    Single-word and short titles (DOOM, FTL) are left alone."""
+    if len(s) < 8 or " " not in s:
+        return False
+    letters = [c for c in s if c.isalpha()]
+    if not letters:
+        return False
+    return sum(1 for c in letters if c.isupper()) / len(letters) > 0.95
+
+
+def _smart_title_case(s: str) -> str:
+    """Title-case a string while preserving listed acronyms / Roman numerals
+    and apostrophe contractions ("Assassin's" not "Assassin'S"). Idempotent."""
+    out = []
+    for word in s.split(" "):
+        alpha = "".join(c for c in word if c.isalpha())
+        if word.isupper() and alpha and alpha in _PRESERVE_UPPER:
+            out.append(word)
+        else:
+            tc = word.title()
+            # str.title() does "Don'T" — lowercase the letter after apostrophe
+            tc = re.sub(r"'(\w)", lambda m: "'" + m.group(1).lower(), tc)
+            out.append(tc)
+    return " ".join(out)
+
 
 def _infer_is_collection(title: str) -> bool:
     t = title.lower()
     return any(kw in t for kw in COLLECTION_KEYWORDS)
 
 
+# Patterns that indicate "not really a game" — soundtracks, artbooks, cosmetic
+# packs, wallpapers. Used by the auto-hide heuristic in the enrichment worker.
+_AUTO_HIDE_RE = re.compile(
+    r"\b("
+    r"soundtrack|ost|original\s+sound|art\s*book|"
+    r"wallpaper|cosmetic\s*pack|emotes?\s*pack|"
+    r"season\s*pass\s*pre-?order"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _should_auto_hide(title: str, appdetails: dict | None) -> bool:
+    """True if this entry looks like a soundtrack / artbook / non-game DLC
+    that should be hidden from the default library view."""
+    if appdetails and appdetails.get("type") in {"music"}:
+        return True
+    return bool(_AUTO_HIDE_RE.search(title or ""))
+
+
 def _clean_title(title: str) -> str:
-    """Return title with trademark/copyright symbols stripped and whitespace normalised."""
-    return _JUNK_RE.sub("", title).strip()
+    """Return title with trademark/copyright symbols stripped, whitespace
+    normalised, and SHOUTING ALL CAPS multi-word titles title-cased. Idempotent."""
+    cleaned = _JUNK_RE.sub("", title).strip()
+    if _is_loud_caps(cleaned):
+        cleaned = _smart_title_case(cleaned)
+    return cleaned
 
 
 logger = logging.getLogger(__name__)
@@ -201,7 +267,8 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
 
             if existing_game is not None:
                 game = existing_game
-                if game.display_name is None and cleaned != title:
+                # Heuristic skip: respect user override on display_name.
+                if not game.display_name_user_set and game.display_name is None and cleaned != title:
                     game.display_name = cleaned
             else:
                 game = models.Game(
@@ -584,11 +651,17 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
             game = release.game
             app_type = details.get("type", "game")
 
-            if app_type == "dlc" and not game.is_dlc:
+            # Heuristic skip: respect user override on is_dlc.
+            if app_type == "dlc" and not game.is_dlc and not game.is_dlc_user_set:
                 game.is_dlc = True
 
-            # Link DLC to its base game if not already linked
-            if app_type == "dlc" and game.parent_id is None:
+            # Link DLC to its base game if not already linked — but respect
+            # user override on parent_id.
+            if (
+                app_type == "dlc"
+                and game.parent_id is None
+                and not game.parent_id_user_set
+            ):
                 fullgame = details.get("fullgame", {})
                 parent_appid = str(fullgame.get("appid", "")).strip()
                 if parent_appid:
@@ -599,6 +672,13 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                     )
                     if parent_release:
                         game.parent_id = parent_release.game_id
+
+            # Auto-hide soundtracks / artbooks / cosmetic packs etc. The
+            # heuristic skips entries the user has explicitly toggled.
+            if _should_auto_hide(game.title, details):
+                for entry in release.library_entries:
+                    if not entry.is_hidden and not entry.is_hidden_user_set:
+                        entry.is_hidden = True
 
         release.metadata_fetched_at = now
         db.commit()

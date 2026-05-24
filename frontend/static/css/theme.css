@@ -451,3 +451,6 @@ html[data-bs-theme="light"] .toast.toast-danger {
    so it remains visible against the tinted background. */
 html[data-bs-theme="light"] .toast .btn-close { filter: none; }
 html[data-bs-theme="dark"]  .toast .btn-close { filter: invert(1) grayscale(100%) brightness(2); }
+/* Render \n in toast messages as actual line breaks. Lets the server emit
+   simple "Header\nDelta\nTotals" strings instead of HTML. */
+.toast-body { white-space: pre-line; }

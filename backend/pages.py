@@ -250,6 +250,7 @@ def library_page(
     q: str = Query(""),
     platform: str = Query(""),
     view: str = Query("default"),
+    show_hidden: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -264,6 +265,10 @@ def library_page(
         .filter(models.UserLibraryEntry.user_id == current_user.id)
         .order_by(models.Game.title)
     )
+    # Hidden entries (soundtracks, artbooks, etc.) are excluded by default.
+    # The "Show hidden" toggle flips this off so the user can review or unhide.
+    if not show_hidden:
+        base_q = base_q.filter(models.UserLibraryEntry.is_hidden == False)
     q = q.strip()
     if q:
         base_q = base_q.filter(
@@ -314,6 +319,8 @@ def library_page(
         base_game_options = []
         collections = []
     else:
+        # Both dropdown lists exclude hidden entries — a hidden entry isn't
+        # something you'd pick as a parent for new DLC or a containing collection.
         base_game_options = (
             db.query(models.UserLibraryEntry)
             .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
@@ -321,6 +328,7 @@ def library_page(
             .join(models.Game)
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
+                models.UserLibraryEntry.is_hidden == False,
                 models.Game.is_dlc == False,
             )
             .order_by(models.Game.title)
@@ -333,6 +341,7 @@ def library_page(
             .join(models.Game)
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
+                models.UserLibraryEntry.is_hidden == False,
                 models.Game.is_collection == True,
             )
             .order_by(models.Game.title)
@@ -361,6 +370,8 @@ def library_page(
         filter_parts.append(f"platform={platform}")
     if view != "default":
         filter_parts.append(f"view={view}")
+    if show_hidden:
+        filter_parts.append("show_hidden=true")
     filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
 
     return templates.TemplateResponse(
@@ -378,6 +389,7 @@ def library_page(
             "q": q,
             "platform": platform,
             "view": view,
+            "show_hidden": show_hidden,
             "filter_qs": filter_qs,
             "lib_platforms": lib_platform_list,
         },
@@ -389,6 +401,7 @@ def add_game(
     request: Request,
     title: str = Form(...),
     platform: str = Form(...),
+    display_name: str = Form(""),
     is_dlc: bool = Form(False),
     is_collection: bool = Form(False),
     parent_game_id: int | None = Form(None),
@@ -404,11 +417,23 @@ def add_game(
         if parent_release:
             parent_id = parent_release.game_id
 
+    title_clean = title.strip()
+    # Manual entries: display_name defaults to title if user didn't specify a
+    # different one. Either way, the user typed this — mark display_name_user_set
+    # so no heuristic ever touches it.
+    display_clean = display_name.strip() or title_clean
+
     game = models.Game(
-        title=title.strip(),
+        title=title_clean,
+        display_name=display_clean,
         is_dlc=is_dlc,
         is_collection=is_collection,
         parent_id=parent_id,
+        # Manual entries are inherently user-set on every field we collect.
+        display_name_user_set=True,
+        is_dlc_user_set=True,
+        is_collection_user_set=True,
+        parent_id_user_set=True,
     )
     db.add(game)
     db.flush()
@@ -437,6 +462,7 @@ def add_game(
 def edit_library_entry(
     request: Request,
     entry_id: int,
+    title: str = Form(""),
     display_name: str = Form(""),
     is_dlc: bool = Form(False),
     is_collection: bool = Form(False),
@@ -454,10 +480,21 @@ def edit_library_entry(
 
     game = entry.release.game
 
-    # display_name: empty string means "use raw title"
+    # Saving the edit modal is a user override on every field it touches.
+    # All user_set flags flip to True so no heuristic ever undoes these edits.
+    title_clean = title.strip()
+    if title_clean:
+        game.title = title_clean
+
+    # display_name: empty string means "use raw title" (display_name stored as NULL)
     game.display_name = display_name.strip() or None
+    game.display_name_user_set = True
+
     game.is_dlc = is_dlc
+    game.is_dlc_user_set = True
+
     game.is_collection = is_collection
+    game.is_collection_user_set = True
 
     # Resolve parent_game_id (release id) → game.parent_id
     if parent_game_id:
@@ -465,6 +502,7 @@ def edit_library_entry(
         game.parent_id = parent_release.game_id if parent_release else None
     else:
         game.parent_id = None
+    game.parent_id_user_set = True
 
     db.commit()
     db.refresh(entry)
@@ -490,6 +528,90 @@ def delete_library_entry(
         db.delete(entry)
         db.commit()
     return Response(status_code=200)
+
+
+@router.post("/library/entries/{entry_id}/hide")
+def hide_library_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Hide a library entry from the default view. Sets is_hidden_user_set so
+    the auto-hide heuristic won't override the user's decision either way."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    entry.is_hidden = True
+    entry.is_hidden_user_set = True
+    db.commit()
+    return Response(status_code=200)
+
+
+@router.post("/library/entries/{entry_id}/unhide")
+def unhide_library_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Unhide a library entry. Sets is_hidden_user_set so the heuristic can't
+    re-hide it on the next enrichment pass."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    entry.is_hidden = False
+    entry.is_hidden_user_set = True
+    db.commit()
+    return Response(status_code=200)
+
+
+@router.post("/library/backfill-hidden")
+def backfill_hidden(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """One-shot: run the auto-hide heuristic across the user's existing library.
+    Skips entries where is_hidden_user_set = True. Uses appdetails from raw_data
+    when present (most entries should have it after the enrichment worker has
+    chewed through them); falls back to title-only matching otherwise."""
+    from . import steam
+    rows = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.UserLibraryEntry.is_hidden_user_set == False,
+            models.UserLibraryEntry.is_hidden == False,
+        )
+        .all()
+    )
+    hidden = 0
+    for entry in rows:
+        appdetails = (entry.release.raw_data or {}).get("appdetails")
+        if steam._should_auto_hide(entry.release.game.title, appdetails):
+            entry.is_hidden = True
+            hidden += 1
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={
+            "message": (
+                f"Auto-hide complete\n"
+                f"{hidden:,} entries hidden\n"
+                f"Use 'Show hidden' on the library to review"
+            ),
+        },
+    )
 
 
 @router.get("/library/games/search")

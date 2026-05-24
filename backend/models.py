@@ -41,6 +41,13 @@ class Game(Base):
     # DLC -> base game, or standalone game -> collection it belongs to
     parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True, index=True)
     igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    # User-override flags. When True, the corresponding field has been explicitly
+    # set by the user and no heuristic (sync's _clean_title, enrichment worker,
+    # backfills) is allowed to touch it. The user's edit is law.
+    display_name_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_dlc_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_collection_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    parent_id_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
 
     @property
@@ -105,6 +112,11 @@ class UserLibraryEntry(Base):
     last_played_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # single URL override for when the user wants different art than what was scraped
     cover_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    # True = entry hidden from the default library view (soundtracks, artbooks, etc.)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    # True when the user explicitly toggled is_hidden — the auto-hide heuristic
+    # must not touch this entry. Same pattern as the *_user_set flags on Game.
+    is_hidden_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # "steam_import" | "psn_import" | "manual"
     import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry

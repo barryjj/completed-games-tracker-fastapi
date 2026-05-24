@@ -17,7 +17,7 @@ document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {
 // quirks and OOB swap edge cases.
 //
 // Each toast also gets:
-// - A 10s autohide via Bootstrap.Toast options
+// - A 6s autohide via Bootstrap.Toast options
 // - A 'hidden.bs.toast' listener that removes the element from the DOM so
 //   the container doesn't accumulate stale toasts over a long session.
 function _initToast(el) {
@@ -27,7 +27,7 @@ function _initToast(el) {
     return;
   }
   el.dataset.cgtInited = '1';
-  var t = new bootstrap.Toast(el, { delay: 10000 });
+  var t = new bootstrap.Toast(el, { delay: 6000 });
   el.addEventListener('hidden.bs.toast', function() { el.remove(); });
   t.show();
 }
