@@ -367,3 +367,81 @@ def test_update_completion(client, db_session):
     db_session.refresh(completion)
     assert completion.notes == "updated note"
     assert str(completion.completed_at) == "2026-06-01"
+
+
+# ─── Library detail pane ─────────────────────────────────────────────────────
+
+def test_detail_pane_returns_content_for_owned_entry(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Elden Ring", platform="Steam")
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert r.status_code == 200
+    assert b"Elden Ring" in r.content
+    assert b"offcanvas-header" in r.content
+    assert b"offcanvas-body" in r.content
+
+
+def test_detail_pane_404_for_other_users_entry(client, db_session):
+    _signup_and_login(client, username="alice")
+    alice = db_session.query(models.User).filter_by(username="alice").first()
+    entry = _add_game(db_session, alice, title="Alice's Game")
+
+    _signup_and_login(client, username="bob")
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert r.status_code == 404
+
+
+def test_detail_pane_shows_child_dlc_for_parent_game(client, db_session):
+    """A base game's detail pane lists its DLC children with HTMX links."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    parent = _add_game(db_session, user, title="Elden Ring", platform="Steam")
+    # Manually create a DLC linked to the parent
+    dlc_game = models.Game(title="Shadow of the Erdtree", is_dlc=True, parent_id=parent.release.game.id)
+    db_session.add(dlc_game)
+    db_session.flush()
+    dlc_release = models.GameRelease(game_id=dlc_game.id, platform="Steam", source="manual")
+    db_session.add(dlc_release)
+    db_session.flush()
+    dlc_entry = models.UserLibraryEntry(user_id=user.id, release_id=dlc_release.id, import_source="manual")
+    db_session.add(dlc_entry)
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{parent.id}/detail")
+    assert r.status_code == 200
+    assert b"Shadow of the Erdtree" in r.content
+    # The child link should hit the same detail endpoint
+    assert f"/library/entries/{dlc_entry.id}/detail".encode() in r.content
+
+
+def test_detail_pane_shows_completion_history(client, db_session):
+    import datetime as _dt
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Hades")
+
+    comp = models.Completion(
+        user_id=user.id, library_entry_id=entry.id,
+        completed_at=_dt.date(2026, 1, 15),
+        notes="Beat the final boss on the 12th run",
+    )
+    db_session.add(comp)
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert r.status_code == 200
+    assert b"Completions" in r.content
+    assert b"12th run" in r.content
+
+
+def test_detail_pane_shows_description_from_appdetails(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Hades")
+    entry.release.raw_data = {"appdetails": {"short_description": "A roguelike from Supergiant Games."}}
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert b"A roguelike from Supergiant Games." in r.content

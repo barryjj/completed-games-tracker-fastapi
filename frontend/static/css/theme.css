@@ -454,3 +454,10 @@ html[data-bs-theme="dark"]  .toast .btn-close { filter: invert(1) grayscale(100%
 /* Render \n in toast messages as actual line breaks. Lets the server emit
    simple "Header\nDelta\nTotals" strings instead of HTML. */
 .toast-body { white-space: pre-line; }
+
+/* Library rows are clickable (open the detail offcanvas) — show a pointer
+   cursor and a subtle highlight on hover so it's obvious. The .row-actions
+   buttons inside have their own cursors and stop the click from bubbling. */
+tr.library-row-clickable { cursor: pointer; }
+tr.library-row-clickable:hover > td { background-color: var(--ctp-surface0); }
+html[data-bs-theme="light"] tr.library-row-clickable:hover > td { background-color: var(--ctp-mantle); }
