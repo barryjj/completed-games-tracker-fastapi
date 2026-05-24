@@ -3,7 +3,6 @@ import logging
 import os
 
 import httpx as _httpx
-
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
@@ -376,11 +375,7 @@ def steam_sync_dlc(
             name="partials/integrations_flash.html",
             context={"error": str(e)},
         )
-    msg = (
-        f"Checked {result['checked']} apps — "
-        f"found {result['found_dlc']} DLC, "
-        f"linked {result['linked']} to base games."
-    )
+    msg = f"Checked {result['checked']} apps — found {result['found_dlc']} DLC, linked {result['linked']} to base games."
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",

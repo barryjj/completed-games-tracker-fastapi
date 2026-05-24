@@ -1,13 +1,12 @@
-from pydantic import BaseModel, ConfigDict
-from fastapi import HTTPException
-from sqlalchemy.orm import Session
 import datetime
-from typing import List
+import secrets
+
+from fastapi import HTTPException
+from passlib.hash import pbkdf2_sha256
+from pydantic import BaseModel, ConfigDict
+from sqlalchemy.orm import Session
 
 from . import models
-import secrets
-from passlib.hash import pbkdf2_sha256
-from pydantic import Field
 
 
 class UserCreate(BaseModel):
@@ -34,7 +33,6 @@ class AuthRequest(BaseModel):
 
 class AuthResponse(BaseModel):
     token: str
-
 
 
 def create_user(db: Session, user: UserCreate) -> models.User:
@@ -83,7 +81,7 @@ def get_user(db: Session, id: int) -> models.User:
     return u
 
 
-def list_users(db: Session, limit: int = 100) -> List[models.User]:
+def list_users(db: Session, limit: int = 100) -> list[models.User]:
     return db.query(models.User).limit(limit).all()
 
 
@@ -117,10 +115,14 @@ def update_username(db: Session, user: models.User, new_username: str, current_p
     """Returns updated User or an error string."""
     if not pbkdf2_sha256.verify(current_password, user.password_hash):
         return "incorrect_password"
-    existing = db.query(models.User).filter(
-        models.User.username == new_username.strip(),
-        models.User.id != user.id,
-    ).first()
+    existing = (
+        db.query(models.User)
+        .filter(
+            models.User.username == new_username.strip(),
+            models.User.id != user.id,
+        )
+        .first()
+    )
     if existing:
         return "username_taken"
     user.username = new_username.strip()

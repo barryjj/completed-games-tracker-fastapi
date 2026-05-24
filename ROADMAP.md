@@ -40,17 +40,26 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Per-row Hide / Unhide actions (both set `is_hidden_user_set=True` so the heuristic stays out of the way)
 - One-shot `POST /library/backfill-hidden` endpoint to apply the heuristic across existing entries without waiting for the enrichment worker
 
-### Cross-platform game merging
-- Detect when a manually-added game matches an existing Steam/PSN entry (by display_name or title, fuzzy match)
-- Review dialog: side-by-side comparison ("you added 'Nier Automata' for Switch — looks like this matches 'NieR:Automata' you have on Steam. Merge?")
-- Merge action: keep both `GameRelease` rows, link them to the same `Game`, preserve playtime/last_played per-release
-- Manual override: "no, these are different" preserves them as separate Games
-- Triggered: on manual add (suggest before save), and as a bulk "find duplicates" tool from the library page
+### Library detail pane ✅ (this PR)
+- Click a library row → slide-out (Bootstrap offcanvas) detail pane via HTMX
+- Single place for cover art + appdetails description + parent navigation + completion history
+- Child DLC list with click-through to swap the pane to the child's detail
+- Edit / Hide / Unhide / Remove actions inside the pane (Edit still opens the existing modal for now)
+- Reduces the need for inline nesting/grouping — clicking a parent reveals its children in the pane
 
-### Library detail pane
-- Click a library row → slide-out detail pane showing metadata, edit controls, completion history, child DLC
-- Single place for cover art + appdetails description + parent navigation
-- Reduces the need for inline nesting/grouping (clicking a parent already reveals children)
+### Sync match review (same platform, NOT cross-platform)
+- Case: user manually adds "RE8" on Steam → later syncs Steam library → sync sees `Resident Evil Village` (appid 1196590) on the same platform with a similar title
+- Dedicated **review page** (not toast-based — could be overwhelming with bulk matches if user did heavy manual setup before syncing)
+- Side-by-side per match: manual entry vs. detected Steam/PSN game; user picks Merge / Keep Separate / Always Separate (suppresses the pair from future review)
+- Merge: same `UserLibraryEntry` survives (preserves any logged completions), release row gets the platform's `external_id`, `raw_data`, artwork; `source` flips from `"manual"` to `"steam_import"` / `"psn_import"`; `display_name_user_set` already True from manual add means the cleanup heuristic still won't touch the user's display name
+- Triggered: sync queues matches for review (doesn't block sync completion); also accessible from a "Review possible duplicates" link
+
+### Library display grouping by game (cosmetic only — NOT a merge)
+- User owns RE8 on PS4, PS5, AND Steam → library shows ONE row with three platform badges
+- DB rows stay separate (per-platform completion data preserved)
+- Schema already supports it — multiple `GameRelease` rows can point to one `Game.id`; this is a query + template change only
+- Toggle: "Group by game" checkbox in library filter row (default on)
+- Detail pane shows per-platform breakdown with separate completion history per release
 
 ### Library nesting / grouping (after detail pane)
 - Default view: parent collapsed with `[N DLC] ▸` indicator, expandable inline

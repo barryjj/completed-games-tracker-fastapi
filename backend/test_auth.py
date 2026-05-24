@@ -1,9 +1,13 @@
 def _signup(client, username, password):
-    return client.post("/signup", data={
-        "username": username,
-        "password": password,
-        "password_confirm": password,
-    }, follow_redirects=False)
+    return client.post(
+        "/signup",
+        data={
+            "username": username,
+            "password": password,
+            "password_confirm": password,
+        },
+        follow_redirects=False,
+    )
 
 
 def test_signup_signin_me_flow(client):

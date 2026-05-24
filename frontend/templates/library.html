@@ -185,6 +185,13 @@
   </div>
 </div>
 
+<!-- Library entry detail pane (slide-out from right).
+     The wrapper stays in the DOM permanently; clicking a library row triggers
+     an HTMX GET that swaps the inner content. -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="library-detail" aria-labelledby="library-detail-label">
+  <!-- Inner content is populated by /library/entries/{id}/detail -->
+</div>
+
 <!-- Add Game Modal -->
 <div class="modal fade" id="addGameModal" tabindex="-1" aria-labelledby="addGameModalLabel" aria-hidden="true">
   <div class="modal-dialog">
@@ -277,6 +284,39 @@ var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","com
 var _editEntryId = null;
 var _editModal = null;
 var _addGameModal = null;
+var _libraryDetailOffcanvas = null;
+
+// Delegated click handler on the tbody: clicking anywhere on a row opens its
+// detail pane, EXCEPT clicks inside .row-actions (Edit / Hide / Remove buttons),
+// which should run their own behavior. Survives HTMX swaps that rebuild rows.
+document.addEventListener('click', function(e) {
+  var actions = e.target.closest('.row-actions');
+  if (actions) return;
+  var row = e.target.closest('tr.library-row-clickable');
+  if (!row || !row.dataset.entryId) return;
+  openLibraryDetail(row.dataset.entryId);
+});
+
+// Open the detail pane for the given entry. Click handler on each library row.
+function openLibraryDetail(entryId) {
+  if (!_libraryDetailOffcanvas) {
+    _libraryDetailOffcanvas = new bootstrap.Offcanvas(document.getElementById('library-detail'));
+  }
+  // Show the offcanvas immediately (with whatever was last loaded, or empty);
+  // HTMX fetches fresh content into the inner div.
+  _libraryDetailOffcanvas.show();
+  htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+    target: '#library-detail',
+    swap: 'innerHTML',
+  });
+}
+
+// "Edit" button inside the detail pane: close the pane, then open the existing
+// edit modal pre-populated from the data-* attrs we stamped on the button.
+function closeDetailAndEdit(ds) {
+  if (_libraryDetailOffcanvas) _libraryDetailOffcanvas.hide();
+  editLibraryEntry(ds);
+}
 
 function openAddGameModal() {
   if (!_addGameModal) {

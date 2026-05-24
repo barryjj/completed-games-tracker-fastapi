@@ -1,9 +1,10 @@
 import datetime
+
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy.exc import IntegrityError
 
 from backend import models
 
@@ -27,6 +28,7 @@ def db():
 
 
 # --- helpers ---
+
 
 def make_user(db, username="player1"):
     u = models.User(name=username, username=username, password_hash="x", api_token=f"tok-{username}")
@@ -62,6 +64,7 @@ def make_library_entry(db, user, release, import_source="steam_import"):
 
 # --- Game ---
 
+
 def test_create_game(db):
     g = make_game(db)
     assert g.id is not None
@@ -94,6 +97,7 @@ def test_collection_parent_relationship(db):
 
 
 # --- GameRelease ---
+
 
 def test_create_game_release(db):
     g = make_game(db)
@@ -135,10 +139,13 @@ def test_release_raw_data(db):
 
 # --- GameArtwork ---
 
+
 def test_create_artwork(db):
     g = make_game(db)
     r = make_release(db, g)
-    art = models.GameArtwork(release_id=r.id, artwork_type="cover", source="steam", url="https://example.com/cover.jpg", width=600, height=900)
+    art = models.GameArtwork(
+        release_id=r.id, artwork_type="cover", source="steam", url="https://example.com/cover.jpg", width=600, height=900
+    )
     db.add(art)
     db.commit()
     db.refresh(art)
@@ -185,6 +192,7 @@ def test_artwork_unique_constraint(db):
 
 # --- UserLibraryEntry ---
 
+
 def test_create_library_entry(db):
     user = make_user(db)
     game = make_game(db)
@@ -214,8 +222,10 @@ def test_collection_item_parent_entry(db):
 
     collection_entry = make_library_entry(db, user, collection_release)
     super_c_entry = models.UserLibraryEntry(
-        user_id=user.id, release_id=super_c_release.id,
-        import_source="manual", parent_entry_id=collection_entry.id,
+        user_id=user.id,
+        release_id=super_c_release.id,
+        import_source="manual",
+        parent_entry_id=collection_entry.id,
     )
     db.add(super_c_entry)
     db.commit()
@@ -227,6 +237,7 @@ def test_collection_item_parent_entry(db):
 
 
 # --- UserAchievement ---
+
 
 def test_create_achievement(db):
     user = make_user(db)
@@ -240,7 +251,7 @@ def test_create_achievement(db):
         name="Elden Lord",
         description="Reached the Elden Throne",
         unlocked=True,
-        unlocked_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.timezone.utc),
+        unlocked_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
     )
     db.add(ach)
     db.commit()
@@ -281,7 +292,11 @@ def test_achievements_platform_separation(db):
     ps5_entry = make_library_entry(db, user, ps5_release, import_source="psn_import")
 
     db.add(models.UserAchievement(library_entry_id=steam_entry.id, external_id="ACH_1", name="Steam Achievement", unlocked=True))
-    db.add(models.UserAchievement(library_entry_id=ps5_entry.id, external_id="trophy_1", name="PS5 Trophy", unlocked=False, extra={"trophy_type": "gold"}))
+    db.add(
+        models.UserAchievement(
+            library_entry_id=ps5_entry.id, external_id="trophy_1", name="PS5 Trophy", unlocked=False, extra={"trophy_type": "gold"}
+        )
+    )
     db.commit()
     db.refresh(steam_entry)
     db.refresh(ps5_entry)
@@ -305,6 +320,7 @@ def test_achievement_unique_per_entry(db):
 
 # --- Completion ---
 
+
 def test_create_completion(db):
     user = make_user(db)
     game = make_game(db)
@@ -312,9 +328,11 @@ def test_create_completion(db):
     entry = make_library_entry(db, user, release, import_source="psn_import")
 
     c = models.Completion(
-        user_id=user.id, library_entry_id=entry.id,
+        user_id=user.id,
+        library_entry_id=entry.id,
         completed_at=datetime.date(2026, 1, 15),
-        playthroughs="1", notes="Platinum",
+        playthroughs="1",
+        notes="Platinum",
     )
     db.add(c)
     db.commit()

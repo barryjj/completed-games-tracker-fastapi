@@ -9,16 +9,17 @@ itself is idempotent (existing entries get updated, not duplicated).
 Concurrency: protected by a single module-level Lock since FastAPI sync routes
 run in a thread pool. Reads/writes are short, so contention is a non-issue.
 """
+
 from __future__ import annotations
 
 import dataclasses
 import datetime
 import uuid
-from enum import Enum
+from enum import StrEnum
 from threading import Lock
 
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
     DONE = "done"
@@ -34,9 +35,7 @@ class Job:
     message: str | None = None
     error: str | None = None
     notified: bool = False  # client has seen the completion toast for this job
-    created_at: datetime.datetime = dataclasses.field(
-        default_factory=lambda: datetime.datetime.now(datetime.timezone.utc)
-    )
+    created_at: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     finished_at: datetime.datetime | None = None
 
     @property
@@ -75,7 +74,7 @@ def mark_done(job_id: str, message: str) -> Job | None:
         job_id,
         status=JobStatus.DONE,
         message=message,
-        finished_at=datetime.datetime.now(datetime.timezone.utc),
+        finished_at=datetime.datetime.now(datetime.UTC),
     )
 
 
@@ -84,26 +83,20 @@ def mark_failed(job_id: str, error: str) -> Job | None:
         job_id,
         status=JobStatus.FAILED,
         error=error,
-        finished_at=datetime.datetime.now(datetime.timezone.utc),
+        finished_at=datetime.datetime.now(datetime.UTC),
     )
 
 
 def active_jobs_for(user_id: int) -> list[Job]:
     """Jobs currently queued or running for this user."""
     with _lock:
-        return [
-            j for j in _jobs.values()
-            if j.user_id == user_id and j.status in (JobStatus.QUEUED, JobStatus.RUNNING)
-        ]
+        return [j for j in _jobs.values() if j.user_id == user_id and j.status in (JobStatus.QUEUED, JobStatus.RUNNING)]
 
 
 def pending_notifications_for(user_id: int) -> list[Job]:
     """Terminal jobs the user hasn't been notified about yet. Marks them notified."""
     with _lock:
-        pending = [
-            j for j in _jobs.values()
-            if j.user_id == user_id and j.is_terminal and not j.notified
-        ]
+        pending = [j for j in _jobs.values() if j.user_id == user_id and j.is_terminal and not j.notified]
         for j in pending:
             j.notified = True
         return pending

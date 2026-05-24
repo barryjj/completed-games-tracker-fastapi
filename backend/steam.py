@@ -14,9 +14,17 @@ from . import models
 _JUNK_RE = re.compile(r"[™®©]+")
 
 COLLECTION_KEYWORDS = [
-    "collection", "anthology", "trilogy", "compilation",
-    "complete edition", "complete pack", "bundle", "chronicles",
-    "archives", "legacy", "origins",
+    "collection",
+    "anthology",
+    "trilogy",
+    "compilation",
+    "complete edition",
+    "complete pack",
+    "bundle",
+    "chronicles",
+    "archives",
+    "legacy",
+    "origins",
 ]
 
 # Explicit allowlist of acronyms and Roman numerals to preserve as uppercase
@@ -26,12 +34,55 @@ COLLECTION_KEYWORDS = [
 # and let the user fix them manually (display_name_user_set protects the edit).
 _PRESERVE_UPPER = {
     # Roman numerals I–XX
-    "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X",
-    "XI", "XII", "XIII", "XIV", "XV", "XVI", "XVII", "XVIII", "XIX", "XX",
+    "I",
+    "II",
+    "III",
+    "IV",
+    "V",
+    "VI",
+    "VII",
+    "VIII",
+    "IX",
+    "X",
+    "XI",
+    "XII",
+    "XIII",
+    "XIV",
+    "XV",
+    "XVI",
+    "XVII",
+    "XVIII",
+    "XIX",
+    "XX",
     # Common gaming acronyms / franchise IDs
-    "GTA", "FTL", "RE", "MGS", "COD", "BFG", "FPS", "RPG", "MMO", "MMORPG",
-    "JRPG", "ARPG", "VR", "AR", "AI", "HD", "UHD", "DLC", "OST",
-    "GOTY", "NPC", "HUD", "UI", "PVE", "PVP", "PUBG", "TES", "GTAV",
+    "GTA",
+    "FTL",
+    "RE",
+    "MGS",
+    "COD",
+    "BFG",
+    "FPS",
+    "RPG",
+    "MMO",
+    "MMORPG",
+    "JRPG",
+    "ARPG",
+    "VR",
+    "AR",
+    "AI",
+    "HD",
+    "UHD",
+    "DLC",
+    "OST",
+    "GOTY",
+    "NPC",
+    "HUD",
+    "UI",
+    "PVE",
+    "PVP",
+    "PUBG",
+    "TES",
+    "GTAV",
 }
 
 
@@ -140,7 +191,7 @@ def get_app_list(api_key: str) -> dict[int, str]:
     Page size cap is 50,000; the full catalog is ~200k apps so this is ~4 calls.
     """
     global _app_list_memory, _app_list_cached_at
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     # Memory hit
     if _app_list_memory and _app_list_cached_at and (now - _app_list_cached_at) < _APP_LIST_CACHE_TTL:
@@ -239,17 +290,9 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
         title = g.get("name", f"App {appid}")
         playtime = g.get("playtime_forever", 0)
         last_played_ts = g.get("rtime_last_played")
-        last_played = (
-            datetime.datetime.fromtimestamp(last_played_ts, tz=datetime.timezone.utc)
-            if last_played_ts
-            else None
-        )
+        last_played = datetime.datetime.fromtimestamp(last_played_ts, tz=datetime.UTC) if last_played_ts else None
 
-        release = (
-            db.query(models.GameRelease)
-            .filter_by(source="steam", external_id=appid)
-            .first()
-        )
+        release = db.query(models.GameRelease).filter_by(source="steam", external_id=appid).first()
 
         if release is None:
             cleaned = _clean_title(title)
@@ -293,22 +336,20 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
             for artwork_type in ("header", "cover", "hero"):
                 url = _artwork_url(int(appid), artwork_type)
                 if url:
-                    db.add(models.GameArtwork(
-                        release_id=release.id,
-                        artwork_type=artwork_type,
-                        source="steam",
-                        url=url,
-                    ))
+                    db.add(
+                        models.GameArtwork(
+                            release_id=release.id,
+                            artwork_type=artwork_type,
+                            source="steam",
+                            url=url,
+                        )
+                    )
         else:
             raw = dict(release.raw_data or {})
             raw.update(g)
             release.raw_data = raw
 
-        entry = (
-            db.query(models.UserLibraryEntry)
-            .filter_by(user_id=user.id, release_id=release.id)
-            .first()
-        )
+        entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=release.id).first()
 
         if entry is None:
             existing_entry = (
@@ -323,21 +364,23 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
             if existing_entry is not None:
                 existing_entry.playtime_minutes = playtime
                 existing_entry.last_played_at = last_played
-                existing_entry.updated_at = datetime.datetime.now(datetime.timezone.utc)
+                existing_entry.updated_at = datetime.datetime.now(datetime.UTC)
                 updated += 1
             else:
-                db.add(models.UserLibraryEntry(
-                    user_id=user.id,
-                    release_id=release.id,
-                    playtime_minutes=playtime,
-                    last_played_at=last_played,
-                    import_source="steam_import",
-                ))
+                db.add(
+                    models.UserLibraryEntry(
+                        user_id=user.id,
+                        release_id=release.id,
+                        playtime_minutes=playtime,
+                        last_played_at=last_played,
+                        import_source="steam_import",
+                    )
+                )
                 added += 1
         else:
             entry.playtime_minutes = playtime
             entry.last_played_at = last_played
-            entry.updated_at = datetime.datetime.now(datetime.timezone.utc)
+            entry.updated_at = datetime.datetime.now(datetime.UTC)
             updated += 1
 
     return {"games_added": added, "games_updated": updated, "games_total": len(games)}
@@ -361,10 +404,7 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
 
     # Bulk-load user's existing library entry release IDs
     user_release_ids: set[int] = {
-        row[0]
-        for row in db.query(models.UserLibraryEntry.release_id)
-        .filter(models.UserLibraryEntry.user_id == user.id)
-        .all()
+        row[0] for row in db.query(models.UserLibraryEntry.release_id).filter(models.UserLibraryEntry.user_id == user.id).all()
     }
 
     newly_marked = 0
@@ -380,11 +420,13 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
                 release.game.is_dlc = True
                 newly_marked += 1
             if release.id not in user_release_ids:
-                db.add(models.UserLibraryEntry(
-                    user_id=user.id,
-                    release_id=release.id,
-                    import_source="steam_import",
-                ))
+                db.add(
+                    models.UserLibraryEntry(
+                        user_id=user.id,
+                        release_id=release.id,
+                        import_source="steam_import",
+                    )
+                )
                 user_release_ids.add(release.id)
                 newly_added += 1
         else:
@@ -412,18 +454,22 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
             for artwork_type in ("header", "cover", "hero"):
                 url = _artwork_url(appid, artwork_type)
                 if url:
-                    db.add(models.GameArtwork(
-                        release_id=release.id,
-                        artwork_type=artwork_type,
-                        source="steam",
-                        url=url,
-                    ))
+                    db.add(
+                        models.GameArtwork(
+                            release_id=release.id,
+                            artwork_type=artwork_type,
+                            source="steam",
+                            url=url,
+                        )
+                    )
 
-            db.add(models.UserLibraryEntry(
-                user_id=user.id,
-                release_id=release.id,
-                import_source="steam_import",
-            ))
+            db.add(
+                models.UserLibraryEntry(
+                    user_id=user.id,
+                    release_id=release.id,
+                    import_source="steam_import",
+                )
+            )
             existing_releases[appid_str] = release
             user_release_ids.add(release.id)
             newly_added += 1
@@ -445,7 +491,7 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
 
     games = get_owned_games(user.steam_api_key, user.steam_id64)
     result = _import_owned_games(db, user, games)
-    user.steam_last_synced_at = datetime.datetime.now(datetime.timezone.utc)
+    user.steam_last_synced_at = datetime.datetime.now(datetime.UTC)
     db.commit()
 
     # Map old keys for backward compat
@@ -501,7 +547,7 @@ def sync_full_library(db: Session, user: models.User) -> dict:
     # 4. Import DLC
     dlc_result = _import_dlc(db, user, dlc_appids, app_names)
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
     user.steam_last_synced_at = now
     user.steam_last_dlc_synced_at = now
     db.commit()
@@ -542,7 +588,7 @@ def sync_dlc_only(db: Session, user: models.User) -> dict:
     app_names = get_app_list(user.steam_api_key)
     dlc_result = _import_dlc(db, user, dlc_appids, app_names)
 
-    user.steam_last_dlc_synced_at = datetime.datetime.now(datetime.timezone.utc)
+    user.steam_last_dlc_synced_at = datetime.datetime.now(datetime.UTC)
     db.commit()
 
     return dlc_result
@@ -590,8 +636,8 @@ def _fetch_appdetails(appid: int) -> dict | None:
 # Sleep durations for the enrichment worker. Steam's appdetails endpoint is
 # documented at roughly 200 requests per 5 minutes (~1 request every 1.5s).
 # We use a safety-margined steady-state sleep and a much longer backoff on 429.
-_ENRICH_SLEEP_OK = 2.0       # normal pace between successful requests
-_ENRICH_SLEEP_429 = 60.0     # how long to wait when Steam rate-limits us
+_ENRICH_SLEEP_OK = 2.0  # normal pace between successful requests
+_ENRICH_SLEEP_429 = 60.0  # how long to wait when Steam rate-limits us
 
 
 def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
@@ -615,7 +661,7 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
         .all()
     )
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    now = datetime.datetime.now(datetime.UTC)
 
     for release in entries:
         try:
@@ -624,20 +670,23 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
             if e.response.status_code == 429:
                 logger.warning(
                     "Steam rate-limited (429) for appid %s — backing off %.0fs",
-                    release.external_id, _ENRICH_SLEEP_429,
+                    release.external_id,
+                    _ENRICH_SLEEP_429,
                 )
                 time.sleep(_ENRICH_SLEEP_429)
                 return _pending_count(db)  # bail out of this batch; loop again later
             logger.warning(
                 "appdetails fetch failed for appid %s (transient, will retry): %s",
-                release.external_id, e,
+                release.external_id,
+                e,
             )
             time.sleep(_ENRICH_SLEEP_OK)
             continue
         except Exception as e:
             logger.warning(
                 "appdetails fetch failed for appid %s (transient, will retry): %s",
-                release.external_id, e,
+                release.external_id,
+                e,
             )
             time.sleep(_ENRICH_SLEEP_OK)
             continue
@@ -657,19 +706,11 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
 
             # Link DLC to its base game if not already linked — but respect
             # user override on parent_id.
-            if (
-                app_type == "dlc"
-                and game.parent_id is None
-                and not game.parent_id_user_set
-            ):
+            if app_type == "dlc" and game.parent_id is None and not game.parent_id_user_set:
                 fullgame = details.get("fullgame", {})
                 parent_appid = str(fullgame.get("appid", "")).strip()
                 if parent_appid:
-                    parent_release = (
-                        db.query(models.GameRelease)
-                        .filter_by(source="steam", external_id=parent_appid)
-                        .first()
-                    )
+                    parent_release = db.query(models.GameRelease).filter_by(source="steam", external_id=parent_appid).first()
                     if parent_release:
                         game.parent_id = parent_release.game_id
 
@@ -752,15 +793,11 @@ def sync_dlc_flags(db: Session, user: models.User) -> dict:
         fullgame = details.get("fullgame", {})
         parent_appid = str(fullgame.get("appid", "")).strip()
         if parent_appid:
-            parent_release = (
-                db.query(models.GameRelease)
-                .filter_by(source="steam", external_id=parent_appid)
-                .first()
-            )
+            parent_release = db.query(models.GameRelease).filter_by(source="steam", external_id=parent_appid).first()
             if parent_release:
                 game.parent_id = parent_release.game_id
                 linked += 1
 
-    user.steam_last_dlc_synced_at = datetime.datetime.now(datetime.timezone.utc)
+    user.steam_last_dlc_synced_at = datetime.datetime.now(datetime.UTC)
     db.commit()
     return {"checked": checked, "found_dlc": found_dlc, "linked": linked}
