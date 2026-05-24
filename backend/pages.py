@@ -649,6 +649,81 @@ def search_library_games(
     )
 
 
+@router.get("/library/entries/{entry_id}/detail")
+def library_entry_detail(
+    request: Request,
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Render the slide-out detail pane for a library entry. Loaded via HTMX
+    when a row is clicked. Returns just the inner content of an offcanvas body
+    so it can be swapped without re-rendering the wrapper."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.completions),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    game = entry.release.game
+
+    # Child DLC / collection members: other Game rows where parent_id == this
+    # game.id AND the current user owns at least one of their releases.
+    child_entries = []
+    if not game.is_dlc:  # only base games / collections show children
+        child_entries = (
+            db.query(models.UserLibraryEntry)
+            .options(
+                joinedload(models.UserLibraryEntry.release)
+                .joinedload(models.GameRelease.game)
+            )
+            .join(models.GameRelease)
+            .join(models.Game)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.parent_id == game.id,
+            )
+            .order_by(models.Game.title)
+            .all()
+        )
+
+    # Pick a header artwork URL: prefer "header" type from Steam, fall back to
+    # cover_url_override on the user's entry, else None.
+    header_url = None
+    if entry.cover_url_override:
+        header_url = entry.cover_url_override
+    else:
+        for art in entry.release.artwork:
+            if art.artwork_type == "header":
+                header_url = art.url
+                break
+
+    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/library_detail.html",
+        context={
+            "entry": entry,
+            "game": game,
+            "release": entry.release,
+            "header_url": header_url,
+            "appdetails": appdetails,
+            "child_entries": child_entries,
+            "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
+        },
+    )
+
+
 # --- Completions ---
 
 @router.get("/completions")
