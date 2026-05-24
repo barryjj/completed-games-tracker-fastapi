@@ -29,11 +29,23 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - New `steam.sync_dlc_only()` (cookie-based DLC refresh using already-synced games as the baseline)
 - New `steam.refresh_app_catalog()` (force re-fetch the 200k Steam app catalog when the 7-day cache misses something new)
 
-### Hidden flag + auto-hide heuristic
-- `is_hidden: bool` on `UserLibraryEntry` (per-user, not per-game)
-- Library default view filters `is_hidden=false`; "Show hidden" toggle reveals them
-- Enrichment worker auto-flags entries when `appdetails` indicates soundtrack/artbook/OST etc. (categories or `type=music`, plus title heuristics)
-- Manual hide/unhide from the row's action menu
+### User-override flags + auto-hide for non-games ✅ (this PR)
+- `display_name_user_set`, `is_dlc_user_set`, `is_collection_user_set`, `parent_id_user_set` on `Game`; `is_hidden` + `is_hidden_user_set` on `UserLibraryEntry`
+- Pattern: any time a heuristic could stomp a user-editable field, the `_user_set` flag is checked first. True means "the user said so; don't touch."
+- Existing edit modal sets all four `Game` flags on save
+- Manual add: every Game flag is True from creation (the user typed every field, so they own them all)
+- New ALL CAPS → Title Case normalization in `_clean_title` with explicit acronym/Roman-numeral preservation list (idempotent, respects user override)
+- `_should_auto_hide` heuristic flags soundtracks / artbooks / cosmetic packs based on `appdetails.type=="music"` or title patterns; enrichment worker applies it (respecting `is_hidden_user_set`)
+- Library: default query filters `is_hidden=false`; "Show hidden" checkbox toggles
+- Per-row Hide / Unhide actions (both set `is_hidden_user_set=True` so the heuristic stays out of the way)
+- One-shot `POST /library/backfill-hidden` endpoint to apply the heuristic across existing entries without waiting for the enrichment worker
+
+### Cross-platform game merging
+- Detect when a manually-added game matches an existing Steam/PSN entry (by display_name or title, fuzzy match)
+- Review dialog: side-by-side comparison ("you added 'Nier Automata' for Switch — looks like this matches 'NieR:Automata' you have on Steam. Merge?")
+- Merge action: keep both `GameRelease` rows, link them to the same `Game`, preserve playtime/last_played per-release
+- Manual override: "no, these are different" preserves them as separate Games
+- Triggered: on manual add (suggest before save), and as a bulk "find duplicates" tool from the library page
 
 ### Library detail pane
 - Click a library row → slide-out detail pane showing metadata, edit controls, completion history, child DLC
