@@ -58,6 +58,24 @@ STATIC_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "fro
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
+def _compute_static_version() -> str:
+    """Hash of the mtimes of files under static/ — used as a cache-bust query
+    string on <link> / <script> tags so browsers always fetch the freshest CSS
+    and JS without us having to bump a manual version number on every change."""
+    try:
+        latest = max(
+            os.path.getmtime(os.path.join(root, f))
+            for root, _, files in os.walk(STATIC_DIR)
+            for f in files
+        )
+        return str(int(latest))
+    except (ValueError, OSError):
+        return "dev"
+
+
+STATIC_VERSION = _compute_static_version()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if not os.environ.get("TESTING"):
@@ -90,6 +108,10 @@ async def requires_login_handler(request: Request, exc: RequiresLoginException):
 
 # Import and register the pages router after app is created to avoid circular imports
 from . import pages, integrations  # noqa: E402
+# Share the static cache-bust version across every Jinja2Templates instance so
+# {{ static_version }} works in base.html no matter which router rendered the page.
+for _t in (templates, pages.templates, integrations.templates):
+    _t.env.globals["static_version"] = STATIC_VERSION
 app.include_router(pages.router)
 app.include_router(integrations.router)
 

@@ -3,10 +3,12 @@
      - kind:  "success" or "danger"
      - body:  message text
    Renders a single toast element with OOB swap into #toast-container. #}
-<div class="toast toast-{{ kind }} align-items-center"
+<div class="toast toast-{{ kind }} align-items-center show"
      role="alert"
      aria-live="{{ 'assertive' if kind == 'danger' else 'polite' }}"
      aria-atomic="true"
+     data-bs-autohide="true"
+     data-bs-delay="10000"
      hx-swap-oob="beforeend:#toast-container">
   <div class="d-flex">
     <div class="toast-body">{{ body }}</div>
