@@ -1,0 +1,135 @@
+{# Inner content for the library detail offcanvas. The wrapper #library-detail
+   in library.html stays in the DOM; this partial replaces its inner via
+   hx-target="#library-detail" hx-swap="innerHTML". #}
+
+<div class="offcanvas-header border-bottom">
+  <h5 class="offcanvas-title">{{ game.display_title }}</h5>
+  <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+</div>
+
+<div class="offcanvas-body">
+  {% if header_url %}
+  <div class="mb-3 text-center">
+    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy">
+  </div>
+  {% endif %}
+
+  {# Title / display name — show both if they differ, so the user can see the
+     canonical title vs their display preference at a glance. #}
+  <div class="mb-3">
+    {% if game.display_name and game.display_name != game.title %}
+    <div><small class="text-secondary">Title</small></div>
+    <div class="mb-1">{{ game.title }}</div>
+    <div><small class="text-secondary">Display name</small></div>
+    <div>{{ game.display_name }}</div>
+    {% endif %}
+  </div>
+
+  {# Badges row: platform + flags. Matches the row badges so it feels consistent. #}
+  <div class="mb-3 d-flex flex-wrap gap-1">
+    <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
+    {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
+    {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
+    {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
+    {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
+  </div>
+
+  {# Timestamps. Both server-rendered as UTC; the local-time JS in app.js
+     reformats data-utc into the user's locale on page load. #}
+  <dl class="row mb-3 small">
+    <dt class="col-5 text-secondary fw-normal">Added</dt>
+    <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.imported_at.isoformat() }}">{{ entry.imported_at.strftime("%Y-%m-%d") }}</span></dd>
+
+    {% if entry.last_played_at %}
+    <dt class="col-5 text-secondary fw-normal">Last played</dt>
+    <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%Y-%m-%d") }}</span></dd>
+    {% endif %}
+
+    {% if entry.playtime_minutes %}
+    <dt class="col-5 text-secondary fw-normal">Playtime</dt>
+    <dd class="col-7 mb-1">{{ "{:,}".format(entry.playtime_minutes) }} min</dd>
+    {% endif %}
+
+    {% if release.external_id %}
+    <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
+    <dd class="col-7 mb-1"><code>{{ release.external_id }}</code></dd>
+    {% endif %}
+  </dl>
+
+  {% if appdetails.short_description %}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>Description</small></div>
+    <p class="mb-0">{{ appdetails.short_description }}</p>
+  </div>
+  {% endif %}
+
+  {% if child_entries %}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>
+      {% if game.is_collection %}Games in this collection{% else %}DLC{% endif %}
+      ({{ child_entries | length }})
+    </small></div>
+    <ul class="list-unstyled mb-0">
+      {% for child in child_entries %}
+      <li class="mb-1">
+        <a href="#" class="text-decoration-none"
+           hx-get="/library/entries/{{ child.id }}/detail"
+           hx-target="#library-detail"
+           hx-swap="innerHTML">{{ child.release.game.display_title }}</a>
+        {% if child.is_hidden %}<small class="text-secondary">(hidden)</small>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {% if completions %}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>Completions ({{ completions | length }})</small></div>
+    <ul class="list-unstyled mb-0">
+      {% for c in completions %}
+      <li class="mb-2">
+        <div><strong>{{ c.completed_at.strftime("%b %d, %Y") }}</strong>
+          {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+        </div>
+        {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# Actions block — inline edit comes in a later PR, but Hide/Unhide/Remove
+     live here so the user has everything in one place. Edit still routes to
+     the existing modal for now. #}
+  <div class="border-top pt-3 d-flex flex-wrap gap-2">
+    <button class="btn btn-outline-secondary btn-sm"
+            onclick="closeDetailAndEdit(this.dataset)"
+            data-entry-id="{{ entry.id }}"
+            data-title="{{ game.title | e }}"
+            data-display-name="{{ (game.display_name or '') | e }}"
+            data-is-dlc="{{ 'true' if game.is_dlc else 'false' }}"
+            data-is-collection="{{ 'true' if game.is_collection else 'false' }}"
+            data-is-part-of-collection="{{ 'true' if (game.parent_id and not game.is_dlc) else 'false' }}"
+            data-parent-id="{{ game.parent_id or '' }}"
+            data-label="{{ game.display_title | e }}">Edit</button>
+
+    {% if entry.is_hidden %}
+    <button class="btn btn-outline-secondary btn-sm"
+            hx-post="/library/entries/{{ entry.id }}/unhide"
+            hx-swap="none"
+            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Unhide</button>
+    {% else %}
+    <button class="btn btn-outline-secondary btn-sm"
+            hx-post="/library/entries/{{ entry.id }}/hide"
+            hx-swap="none"
+            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Hide</button>
+    {% endif %}
+
+    <button class="btn btn-danger btn-sm ms-auto"
+            hx-delete="/library/entries/{{ entry.id }}"
+            hx-swap="none"
+            hx-confirm="Remove {{ game.display_title | e }} from your library?"
+            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Remove</button>
+  </div>
+</div>
