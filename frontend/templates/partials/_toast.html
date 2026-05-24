@@ -2,16 +2,22 @@
    Expected context:
      - kind:  "success" or "danger"
      - body:  message text
-   Renders a single toast element with OOB swap into #toast-container. #}
-<div class="toast toast-{{ kind }} align-items-center show"
-     role="alert"
-     aria-live="{{ 'assertive' if kind == 'danger' else 'polite' }}"
-     aria-atomic="true"
-     data-bs-autohide="true"
-     data-bs-delay="10000"
-     hx-swap-oob="beforeend:#toast-container">
-  <div class="d-flex">
-    <div class="toast-body">{{ body }}</div>
-    <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+
+   The outer <div hx-swap-oob="beforeend:#toast-container"> is a wrapper that
+   HTMX strips. HTMX's OOB swap with a non-outerHTML mode (here "beforeend")
+   appends the OOB element's CHILDREN to the target — not the element itself.
+   So the toast itself is the wrapper's child, and ends up inside
+   #toast-container with all its classes intact. #}
+<div hx-swap-oob="beforeend:#toast-container">
+  <div class="toast toast-{{ kind }} align-items-center show"
+       role="alert"
+       aria-live="{{ 'assertive' if kind == 'danger' else 'polite' }}"
+       aria-atomic="true"
+       data-bs-autohide="true"
+       data-bs-delay="10000">
+    <div class="d-flex">
+      <div class="toast-body">{{ body }}</div>
+      <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+    </div>
   </div>
 </div>
