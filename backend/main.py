@@ -1,22 +1,21 @@
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Depends, HTTPException
-from fastapi.responses import FileResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from starlette.requests import Request
 
 from alembic.config import Config
-from alembic import command
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.responses import RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-import os
+from starlette.requests import Request
 
-from . import models
-from . import users
-from . import worker_state
-from .models import get_db, SessionLocal
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from alembic import command
+
+from . import models, users, worker_state
+from .models import SessionLocal, get_db
 
 _worker_logger = logging.getLogger("steam.enrichment")
 
@@ -39,6 +38,7 @@ async def _enrichment_worker():
             db = SessionLocal()
             try:
                 from . import steam
+
                 pending = await asyncio.to_thread(steam.enrich_next_batch, db)
                 if pending == 0:
                     await asyncio.sleep(300)  # fully caught up, check again in 5 min
@@ -50,6 +50,7 @@ async def _enrichment_worker():
         except Exception as e:
             _worker_logger.warning("Enrichment worker error: %s", e)
             await asyncio.sleep(30)
+
 
 security = HTTPBearer()
 
@@ -63,11 +64,7 @@ def _compute_static_version() -> str:
     string on <link> / <script> tags so browsers always fetch the freshest CSS
     and JS without us having to bump a manual version number on every change."""
     try:
-        latest = max(
-            os.path.getmtime(os.path.join(root, f))
-            for root, _, files in os.walk(STATIC_DIR)
-            for f in files
-        )
+        latest = max(os.path.getmtime(os.path.join(root, f)) for root, _, files in os.walk(STATIC_DIR) for f in files)
         return str(int(latest))
     except (ValueError, OSError):
         return "dev"
@@ -107,7 +104,8 @@ async def requires_login_handler(request: Request, exc: RequiresLoginException):
 
 
 # Import and register the pages router after app is created to avoid circular imports
-from . import pages, integrations  # noqa: E402
+from . import integrations, pages  # noqa: E402
+
 # Share the static cache-bust version across every Jinja2Templates instance so
 # {{ static_version }} works in base.html no matter which router rendered the page.
 for _t in (templates, pages.templates, integrations.templates):

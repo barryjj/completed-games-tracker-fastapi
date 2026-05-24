@@ -1,9 +1,10 @@
-from sqlalchemy import create_engine, Integer, String, DateTime, Date, Text, Boolean, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import declarative_base, sessionmaker, Mapped, mapped_column, relationship
-from sqlalchemy.types import JSON
-from typing import Iterator
 import datetime
 import os
+from collections.abc import Iterator
+
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column, relationship, sessionmaker
+from sqlalchemy.types import JSON
 
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///backend/app.db")
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
@@ -24,7 +25,7 @@ class User(Base):
     steam_last_dlc_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     steam_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_login_secure: Mapped[str | None] = mapped_column(String, nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 
 class Game(Base):
@@ -48,7 +49,7 @@ class Game(Base):
     is_dlc_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_collection_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     parent_id_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     @property
     def display_title(self) -> str:
@@ -61,6 +62,7 @@ class Game(Base):
 
 class GameRelease(Base):
     """One row per game+platform combination. Holds platform-specific metadata and the raw API payload."""
+
     __tablename__ = "game_releases"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False, index=True)
@@ -75,7 +77,7 @@ class GameRelease(Base):
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # set when appdetails enrichment has run for this entry (null = never enriched)
     metadata_fetched_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     game: Mapped["Game"] = relationship("Game", back_populates="releases")
     artwork: Mapped[list["GameArtwork"]] = relationship("GameArtwork", back_populates="release")
@@ -86,6 +88,7 @@ class GameRelease(Base):
 
 class GameArtwork(Base):
     """All visual assets for a game release. Multiple rows per release, one per type+source combo."""
+
     __tablename__ = "game_artwork"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False)
@@ -104,6 +107,7 @@ class GameArtwork(Base):
 
 class UserLibraryEntry(Base):
     """User's ownership of a specific game release. One row per user+release combo."""
+
     __tablename__ = "user_library"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
@@ -121,12 +125,16 @@ class UserLibraryEntry(Base):
     import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry
     parent_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True)
-    imported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc), onupdate=lambda: datetime.datetime.now(datetime.timezone.utc))
+    imported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC), onupdate=lambda: datetime.datetime.now(datetime.UTC)
+    )
 
     user: Mapped["User"] = relationship("User")
     release: Mapped["GameRelease"] = relationship("GameRelease", back_populates="library_entries")
-    parent_entry: Mapped["UserLibraryEntry | None"] = relationship("UserLibraryEntry", remote_side="UserLibraryEntry.id", back_populates="child_entries")
+    parent_entry: Mapped["UserLibraryEntry | None"] = relationship(
+        "UserLibraryEntry", remote_side="UserLibraryEntry.id", back_populates="child_entries"
+    )
     child_entries: Mapped[list["UserLibraryEntry"]] = relationship("UserLibraryEntry", back_populates="parent_entry")
     achievements: Mapped[list["UserAchievement"]] = relationship("UserAchievement", back_populates="library_entry")
     completions: Mapped[list["Completion"]] = relationship("Completion", back_populates="library_entry")
@@ -137,6 +145,7 @@ class UserLibraryEntry(Base):
 class UserAchievement(Base):
     """Trophy/achievement progress per user per game release. Platform-agnostic row — the
     library_entry_id already encodes which platform this belongs to."""
+
     __tablename__ = "user_achievements"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=False)
@@ -164,13 +173,13 @@ class Completion(Base):
     # stored as string to handle "1", "1+", "2", "3+" etc.
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.timezone.utc))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     user: Mapped["User"] = relationship("User")
     library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="completions")
 
 
-def get_db() -> Iterator["Session"]:
+def get_db() -> Iterator[Session]:
     db = SessionLocal()
     try:
         yield db

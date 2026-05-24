@@ -1,5 +1,5 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from backend import models
 
 
@@ -26,10 +26,13 @@ def test_steam_page_loads(client):
 
 def test_save_steam_credentials(client, db_session):
     token = _signup_and_login(client)
-    r = client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "TESTAPIKEY123",
-        "steam_id64": "76561197960287930",
-    })
+    r = client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "TESTAPIKEY123",
+            "steam_id64": "76561197960287930",
+        },
+    )
     assert r.status_code == 200
     assert b"saved" in r.content.lower()
 
@@ -41,14 +44,20 @@ def test_save_steam_credentials(client, db_session):
 
 def test_save_steam_credentials_clears_on_empty(client, db_session):
     token = _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "KEY",
-        "steam_id64": "123",
-    })
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "",
-        "steam_id64": "",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "KEY",
+            "steam_id64": "123",
+        },
+    )
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "",
+            "steam_id64": "",
+        },
+    )
     user = db_session.query(models.User).filter_by(api_token=token).first()
     db_session.refresh(user)
     assert user.steam_api_key is None
@@ -66,13 +75,17 @@ def test_sync_kickoff_returns_started_toast_and_creates_job(client, db_session):
     """The POST returns immediately with a 'started' toast and a Job is registered.
     The actual sync mechanics are covered by test_run_sync_job_full below."""
     from backend import jobs
+
     jobs.clear_all()
 
     _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "FAKEKEY",
-        "steam_id64": "76561197960287930",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "FAKEKEY",
+            "steam_id64": "76561197960287930",
+        },
+    )
 
     # Patch the sync function so even if the background task starts running, it doesn't
     # try to hit Steam. We're testing the kickoff response, not the sync itself.
@@ -92,12 +105,17 @@ def test_sync_kickoff_returns_started_toast_and_creates_job(client, db_session):
 def test_sync_kickoff_rejects_concurrent_run(client, db_session):
     """If a sync is already active for the user, kickoff returns 409."""
     from backend import jobs
+
     jobs.clear_all()
 
     _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "FAKEKEY", "steam_id64": "76561197960287930",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "FAKEKEY",
+            "steam_id64": "76561197960287930",
+        },
+    )
     user = db_session.query(models.User).first()
     # Pretend a sync is already running
     jobs.create(user_id=user.id, kind="steam_sync_games")
@@ -112,14 +130,21 @@ def test_run_sync_job_full_imports_games_and_dlc(db_session):
     """End-to-end test of the background runner: mocks Steam, runs the async
     job directly, verifies the DB state and job completion message."""
     import asyncio
+
     from backend import jobs
     from backend.integrations import _run_sync_job
+
     jobs.clear_all()
 
     user = models.User(
-        name="t", username="t", password_hash="x", api_token="tok",
-        steam_api_key="FAKEKEY", steam_id64="76561197960287930",
-        steam_session_id="sess", steam_login_secure="login",
+        name="t",
+        username="t",
+        password_hash="x",
+        api_token="tok",
+        steam_api_key="FAKEKEY",
+        steam_id64="76561197960287930",
+        steam_session_id="sess",
+        steam_login_secure="login",
     )
     db_session.add(user)
     db_session.commit()
@@ -135,10 +160,12 @@ def test_run_sync_job_full_imports_games_and_dlc(db_session):
 
     job = jobs.create(user_id=user.id, kind="steam_sync_full")
 
-    with patch("backend.steam.get_owned_games", return_value=fake_games), \
-         patch("backend.steam.httpx.get", return_value=fake_userdata), \
-         patch("backend.steam.get_app_list", return_value=fake_app_names), \
-         patch("backend.integrations.SessionLocal", return_value=db_session):
+    with (
+        patch("backend.steam.get_owned_games", return_value=fake_games),
+        patch("backend.steam.httpx.get", return_value=fake_userdata),
+        patch("backend.steam.get_app_list", return_value=fake_app_names),
+        patch("backend.integrations.SessionLocal", return_value=db_session),
+    ):
         # Stop SessionLocal-as-context-manager from closing our test session
         db_session.close = lambda: None
         asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_full"))
@@ -159,14 +186,21 @@ def test_run_sync_job_full_imports_games_and_dlc(db_session):
 def test_run_sync_job_dlc_only(db_session):
     """DLC-only sync uses already-synced games as the baseline (no GetOwnedGames call)."""
     import asyncio
-    from backend import jobs, steam
+
+    from backend import jobs
     from backend.integrations import _run_sync_job
+
     jobs.clear_all()
 
     user = models.User(
-        name="t", username="t", password_hash="x", api_token="tok-dlc",
-        steam_api_key="FAKEKEY", steam_id64="76561197960287930",
-        steam_session_id="sess", steam_login_secure="login",
+        name="t",
+        username="t",
+        password_hash="x",
+        api_token="tok-dlc",
+        steam_api_key="FAKEKEY",
+        steam_id64="76561197960287930",
+        steam_session_id="sess",
+        steam_login_secure="login",
     )
     db_session.add(user)
     db_session.flush()
@@ -188,9 +222,11 @@ def test_run_sync_job_dlc_only(db_session):
 
     job = jobs.create(user_id=user.id, kind="steam_sync_dlc")
 
-    with patch("backend.steam.httpx.get", return_value=fake_userdata), \
-         patch("backend.steam.get_app_list", return_value=fake_app_names), \
-         patch("backend.integrations.SessionLocal", return_value=db_session):
+    with (
+        patch("backend.steam.httpx.get", return_value=fake_userdata),
+        patch("backend.steam.get_app_list", return_value=fake_app_names),
+        patch("backend.integrations.SessionLocal", return_value=db_session),
+    ):
         db_session.close = lambda: None
         asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_dlc"))
 
@@ -206,21 +242,29 @@ def test_run_sync_job_dlc_only(db_session):
 def test_run_sync_job_refresh_catalog(db_session):
     """Catalog refresh invalidates caches and re-fetches; toast reports count."""
     import asyncio
+
     from backend import jobs
     from backend.integrations import _run_sync_job
+
     jobs.clear_all()
 
     user = models.User(
-        name="t", username="t", password_hash="x", api_token="tok-cat",
-        steam_api_key="FAKEKEY", steam_id64="76561197960287930",
+        name="t",
+        username="t",
+        password_hash="x",
+        api_token="tok-cat",
+        steam_api_key="FAKEKEY",
+        steam_id64="76561197960287930",
     )
     db_session.add(user)
     db_session.commit()
 
     job = jobs.create(user_id=user.id, kind="steam_refresh_catalog")
 
-    with patch("backend.steam.get_app_list", return_value={1: "A", 2: "B", 3: "C"}), \
-         patch("backend.integrations.SessionLocal", return_value=db_session):
+    with (
+        patch("backend.steam.get_app_list", return_value={1: "A", 2: "B", 3: "C"}),
+        patch("backend.integrations.SessionLocal", return_value=db_session),
+    ):
         db_session.close = lambda: None
         asyncio.run(_run_sync_job(job.id, user.id, "steam_refresh_catalog"))
 
@@ -232,8 +276,10 @@ def test_run_sync_job_refresh_catalog(db_session):
 
 def test_run_sync_job_unknown_kind_marks_failed(db_session):
     import asyncio
+
     from backend import jobs
     from backend.integrations import _run_sync_job
+
     jobs.clear_all()
 
     user = models.User(name="t", username="t", password_hash="x", api_token="tok-bad")
@@ -251,12 +297,17 @@ def test_run_sync_job_unknown_kind_marks_failed(db_session):
 def test_sync_kickoff_concurrent_runs_blocked_across_kinds(client, db_session):
     """Catalog refresh and library sync share the same active-job lock."""
     from backend import jobs
+
     jobs.clear_all()
 
     _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "K", "steam_id64": "1",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "K",
+            "steam_id64": "1",
+        },
+    )
     user = db_session.query(models.User).first()
     # Pretend a catalog refresh is in progress
     j = jobs.create(user_id=user.id, kind="steam_refresh_catalog")
@@ -270,6 +321,7 @@ def test_jobs_poll_returns_completed_toasts_once(client, db_session):
     """A completed job appears in the next poll, then is suppressed on
     subsequent polls (notified flag prevents repeat toasts)."""
     from backend import jobs
+
     jobs.clear_all()
 
     _signup_and_login(client)
@@ -292,6 +344,7 @@ def test_jobs_poll_returns_completed_toasts_once(client, db_session):
 
 def test_jobs_poll_failure_toast_is_danger(client, db_session):
     from backend import jobs
+
     jobs.clear_all()
 
     _signup_and_login(client)
@@ -307,9 +360,13 @@ def test_jobs_poll_failure_toast_is_danger(client, db_session):
 
 def test_enrichment_status_returns_counts(client, db_session):
     _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "K", "steam_id64": "1",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "K",
+            "steam_id64": "1",
+        },
+    )
     r = client.get("/integrations/steam/enrichment-status")
     assert r.status_code == 200
     # Empty library — both numbers are zero
@@ -319,10 +376,15 @@ def test_enrichment_status_returns_counts(client, db_session):
 def test_enrichment_refresh_nulls_timestamps(client, db_session):
     """The bug we just fixed: this endpoint used to 500 on a join+update."""
     from backend import steam
+
     _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "FAKEKEY", "steam_id64": "76561197960287930",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "FAKEKEY",
+            "steam_id64": "76561197960287930",
+        },
+    )
     user = db_session.query(models.User).first()
     fake_games = [{"appid": 100, "name": "G", "playtime_forever": 0, "rtime_last_played": 0}]
     # Seed a Steam release directly (used to go through the HTTP sync endpoint,
@@ -332,8 +394,9 @@ def test_enrichment_refresh_nulls_timestamps(client, db_session):
 
     # Pretend the worker has enriched it
     import datetime
+
     release = db_session.query(models.GameRelease).first()
-    release.metadata_fetched_at = datetime.datetime.now(datetime.timezone.utc)
+    release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
     db_session.commit()
 
     r = client.post("/integrations/steam/enrichment-refresh")
@@ -361,8 +424,10 @@ def test_enrichment_transient_failure_leaves_entry_unstamped(db_session):
     db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
     db_session.commit()
 
-    with patch("backend.steam._fetch_appdetails", side_effect=Exception("network down")), \
-         patch("backend.steam.time.sleep", return_value=None):
+    with (
+        patch("backend.steam._fetch_appdetails", side_effect=Exception("network down")),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
@@ -387,8 +452,7 @@ def test_enrichment_permanent_failure_stamps_entry(db_session):
     db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
     db_session.commit()
 
-    with patch("backend.steam._fetch_appdetails", return_value=None), \
-         patch("backend.steam.time.sleep", return_value=None):
+    with patch("backend.steam._fetch_appdetails", return_value=None), patch("backend.steam.time.sleep", return_value=None):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
@@ -399,6 +463,7 @@ def test_enrichment_permanent_failure_stamps_entry(db_session):
 def test_enrichment_429_triggers_backoff_and_unstamps(db_session):
     """A 429 from Steam must trigger long backoff AND not stamp the entry as done."""
     import httpx
+
     from backend import steam
 
     user = models.User(name="t", username="t", password_hash="x", api_token="tok429")
@@ -417,8 +482,7 @@ def test_enrichment_429_triggers_backoff_and_unstamps(db_session):
     err = httpx.HTTPStatusError("429", request=MagicMock(), response=fake_resp)
     sleep_mock = MagicMock()
 
-    with patch("backend.steam._fetch_appdetails", side_effect=err), \
-         patch("backend.steam.time.sleep", sleep_mock):
+    with patch("backend.steam._fetch_appdetails", side_effect=err), patch("backend.steam.time.sleep", sleep_mock):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
@@ -426,8 +490,9 @@ def test_enrichment_429_triggers_backoff_and_unstamps(db_session):
     # 429 must NOT stamp — Steam was rate-limiting, not confirming the app is gone
     assert release.metadata_fetched_at is None
     # And we should have slept at least once for the long backoff window
-    assert any(call.args[0] >= 30 for call in sleep_mock.call_args_list), \
+    assert any(call.args[0] >= 30 for call in sleep_mock.call_args_list), (
         f"Expected a >=30s backoff sleep, got: {[c.args[0] for c in sleep_mock.call_args_list]}"
+    )
 
 
 def test_get_app_list_paginates(monkeypatch, tmp_path):
@@ -440,17 +505,21 @@ def test_get_app_list_paginates(monkeypatch, tmp_path):
     monkeypatch.setattr(steam, "_app_list_cached_at", None)
 
     page1 = MagicMock()
-    page1.json.return_value = {"response": {
-        "apps": [{"appid": 1, "name": "A"}, {"appid": 2, "name": "B"}],
-        "have_more_results": True,
-        "last_appid": 2,
-    }}
+    page1.json.return_value = {
+        "response": {
+            "apps": [{"appid": 1, "name": "A"}, {"appid": 2, "name": "B"}],
+            "have_more_results": True,
+            "last_appid": 2,
+        }
+    }
     page1.raise_for_status.return_value = None
     page2 = MagicMock()
-    page2.json.return_value = {"response": {
-        "apps": [{"appid": 3, "name": "C"}],
-        "have_more_results": False,
-    }}
+    page2.json.return_value = {
+        "response": {
+            "apps": [{"appid": 3, "name": "C"}],
+            "have_more_results": False,
+        }
+    }
     page2.raise_for_status.return_value = None
 
     with patch("backend.steam.httpx.get", side_effect=[page1, page2]) as get_mock:
@@ -469,11 +538,15 @@ def test_sync_updates_playtime_on_resync(client, db_session):
     queues a background task; the underlying sync function is what actually
     upserts the data)."""
     from backend import steam
+
     _signup_and_login(client)
-    client.post("/integrations/steam/credentials", data={
-        "steam_api_key": "FAKEKEY",
-        "steam_id64": "76561197960287930",
-    })
+    client.post(
+        "/integrations/steam/credentials",
+        data={
+            "steam_api_key": "FAKEKEY",
+            "steam_id64": "76561197960287930",
+        },
+    )
     user = db_session.query(models.User).first()
 
     game_v1 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 100, "rtime_last_played": 0}]
@@ -492,14 +565,17 @@ def test_sync_updates_playtime_on_resync(client, db_session):
 
 # ─── Heuristic / user-override tests ─────────────────────────────────────────
 
+
 def test_clean_title_strips_trademark_symbols():
     from backend.steam import _clean_title
+
     assert _clean_title("ELDEN RING™") == "Elden Ring"
     assert _clean_title("Halo®: Combat Evolved") == "Halo: Combat Evolved"
 
 
 def test_clean_title_all_caps_normalizes():
     from backend.steam import _clean_title
+
     assert _clean_title("ELDEN RING") == "Elden Ring"
     assert _clean_title("RESIDENT EVIL 4") == "Resident Evil 4"
     assert _clean_title("DEAD CELLS") == "Dead Cells"
@@ -507,6 +583,7 @@ def test_clean_title_all_caps_normalizes():
 
 def test_clean_title_preserves_roman_numerals_and_acronyms():
     from backend.steam import _clean_title
+
     assert _clean_title("GRAND THEFT AUTO V") == "Grand Theft Auto V"
     assert _clean_title("DARK SOULS III") == "Dark Souls III"
     assert _clean_title("FINAL FANTASY VII REMAKE") == "Final Fantasy VII Remake"
@@ -516,11 +593,13 @@ def test_clean_title_preserves_roman_numerals_and_acronyms():
 
 def test_clean_title_handles_apostrophes():
     from backend.steam import _clean_title
+
     assert _clean_title("ASSASSIN'S CREED II") == "Assassin's Creed II"
 
 
 def test_clean_title_leaves_short_or_single_word_alone():
     from backend.steam import _clean_title
+
     assert _clean_title("DOOM") == "DOOM"
     assert _clean_title("FTL") == "FTL"
     assert _clean_title("GTA V") == "GTA V"  # too short for the heuristic to trigger
@@ -528,6 +607,7 @@ def test_clean_title_leaves_short_or_single_word_alone():
 
 def test_clean_title_is_idempotent():
     from backend.steam import _clean_title
+
     # Running on already-cleaned title should be a no-op.
     assert _clean_title("Elden Ring") == "Elden Ring"
     assert _clean_title("Dark Souls III") == "Dark Souls III"
@@ -535,6 +615,7 @@ def test_clean_title_is_idempotent():
 
 def test_should_auto_hide():
     from backend.steam import _should_auto_hide
+
     # Title-based matches
     assert _should_auto_hide("Elden Ring - Soundtrack", None) is True
     assert _should_auto_hide("Game OST", None) is True
@@ -552,6 +633,7 @@ def test_enrichment_respects_is_dlc_user_set(db_session):
     """If the user has manually marked a game as not-DLC, the worker must
     not re-promote it to DLC on enrichment."""
     from unittest.mock import patch
+
     from backend import steam
 
     user = models.User(name="t", username="t", password_hash="x", api_token="tok-user-set")
@@ -569,8 +651,7 @@ def test_enrichment_respects_is_dlc_user_set(db_session):
     db_session.commit()
 
     # Steam says this is DLC. User says no. User wins.
-    with patch("backend.steam._fetch_appdetails", return_value={"type": "dlc"}), \
-         patch("backend.steam.time.sleep", return_value=None):
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "dlc"}), patch("backend.steam.time.sleep", return_value=None):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
@@ -579,6 +660,7 @@ def test_enrichment_respects_is_dlc_user_set(db_session):
 
 def test_enrichment_auto_hides_soundtrack_but_respects_user_unhide(db_session):
     from unittest.mock import patch
+
     from backend import steam
 
     user = models.User(name="t", username="t", password_hash="x", api_token="tok-hide")
@@ -592,14 +674,16 @@ def test_enrichment_auto_hides_soundtrack_but_respects_user_unhide(db_session):
     db_session.flush()
     # User has explicitly UNHID this (they actually want the soundtrack visible)
     entry = models.UserLibraryEntry(
-        user_id=user.id, release_id=release.id, import_source="steam_import",
-        is_hidden=False, is_hidden_user_set=True,
+        user_id=user.id,
+        release_id=release.id,
+        import_source="steam_import",
+        is_hidden=False,
+        is_hidden_user_set=True,
     )
     db_session.add(entry)
     db_session.commit()
 
-    with patch("backend.steam._fetch_appdetails", return_value={"type": "music"}), \
-         patch("backend.steam.time.sleep", return_value=None):
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "music"}), patch("backend.steam.time.sleep", return_value=None):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
@@ -610,7 +694,7 @@ def test_enrichment_auto_hides_soundtrack_but_respects_user_unhide(db_session):
 def test_backfill_hidden_endpoint(client, db_session):
     """The one-shot backfill applies the auto-hide heuristic across existing
     library entries, skipping user_set ones."""
-    from backend.test_pages import _signup_and_login, _add_game
+    from backend.test_pages import _add_game, _signup_and_login
 
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()

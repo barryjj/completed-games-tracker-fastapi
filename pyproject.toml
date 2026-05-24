@@ -1,0 +1,32 @@
+[tool.ruff]
+# Match the Python version targeted by the rest of the project.
+target-version = "py312"
+line-length = 140
+extend-exclude = [
+    # Alembic auto-generates these and we shouldn't fight its style.
+    "alembic/versions",
+    "alembic/env.py",
+]
+
+[tool.ruff.lint]
+# Selected rule sets:
+#  E/W  — pycodestyle (style)
+#  F    — pyflakes (unused imports, undefined names, etc.)
+#  I    — isort (import ordering)
+#  UP   — pyupgrade (modern Python syntax)
+#  B    — flake8-bugbear (common gotchas)
+select = ["E", "W", "F", "I", "UP", "B"]
+ignore = [
+    # SQLAlchemy column filters require `Column == None` / `Column == False` to
+    # generate `IS NULL` / `= 0` in SQL — `is None` / `not Column` produce wrong
+    # behavior or AttributeErrors. Disabling project-wide is the standard fix.
+    "E711",
+    "E712",
+    # B008 "do not perform function call in argument default" — FastAPI's
+    # Depends(...) idiom triggers this constantly, and it's correct usage.
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test files use a lot of "assigned but never used" via fixtures and setup.
+"backend/test_*.py" = ["F841"]

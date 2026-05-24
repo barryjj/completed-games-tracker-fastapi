@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import or_
-from sqlalchemy.orm import Session, joinedload, contains_eager
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from . import models, users
 from .models import get_db
@@ -38,10 +38,19 @@ templates.env.filters["platform_color"] = _platform_color_class
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
 
 COLLECTION_KEYWORDS = [
-    "collection", "anthology", "trilogy", "compilation",
-    "complete edition", "complete pack", "bundle", "chronicles",
-    "archives", "legacy", "origins",
+    "collection",
+    "anthology",
+    "trilogy",
+    "compilation",
+    "complete edition",
+    "complete pack",
+    "bundle",
+    "chronicles",
+    "archives",
+    "legacy",
+    "origins",
 ]
+
 
 def infer_is_collection(title: str) -> bool:
     """Auto-detect collections by title keyword — for import-time use only."""
@@ -52,6 +61,7 @@ def infer_is_collection(title: str) -> bool:
 def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User:
     """Dependency for page routes — raises RequiresLoginException instead of 401."""
     from .main import RequiresLoginException
+
     token = request.cookies.get("session")
     user = users.get_user_by_token(db, token) if token else None
     if not user:
@@ -60,6 +70,7 @@ def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User
 
 
 # --- Auth ---
+
 
 @router.get("/login")
 def login_page(request: Request):
@@ -127,6 +138,7 @@ def logout():
 
 
 # --- Account ---
+
 
 @router.get("/account")
 def account_page(
@@ -243,6 +255,7 @@ PAGE_SIZE = 100
 
 VIEW_OPTIONS = ["default", "dlc", "collections", "in_collection", "manual", "all"]
 
+
 @router.get("/library")
 def library_page(
     request: Request,
@@ -258,10 +271,7 @@ def library_page(
         db.query(models.UserLibraryEntry)
         .join(models.UserLibraryEntry.release)
         .join(models.GameRelease.game)
-        .options(
-            contains_eager(models.UserLibraryEntry.release)
-            .contains_eager(models.GameRelease.game)
-        )
+        .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
         .filter(models.UserLibraryEntry.user_id == current_user.id)
         .order_by(models.Game.title)
     )
@@ -411,9 +421,7 @@ def add_game(
     # Resolve parent release_id → game_id
     parent_id: int | None = None
     if parent_game_id:
-        parent_release = db.query(models.GameRelease).filter(
-            models.GameRelease.id == parent_game_id
-        ).first()
+        parent_release = db.query(models.GameRelease).filter(models.GameRelease.id == parent_game_id).first()
         if parent_release:
             parent_id = parent_release.game_id
 
@@ -470,11 +478,7 @@ def edit_library_entry(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    entry = (
-        db.query(models.UserLibraryEntry)
-        .filter_by(id=entry_id, user_id=current_user.id)
-        .first()
-    )
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
 
@@ -519,11 +523,7 @@ def delete_library_entry(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    entry = (
-        db.query(models.UserLibraryEntry)
-        .filter_by(id=entry_id, user_id=current_user.id)
-        .first()
-    )
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if entry:
         db.delete(entry)
         db.commit()
@@ -538,11 +538,7 @@ def hide_library_entry(
 ):
     """Hide a library entry from the default view. Sets is_hidden_user_set so
     the auto-hide heuristic won't override the user's decision either way."""
-    entry = (
-        db.query(models.UserLibraryEntry)
-        .filter_by(id=entry_id, user_id=current_user.id)
-        .first()
-    )
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
     entry.is_hidden = True
@@ -559,11 +555,7 @@ def unhide_library_entry(
 ):
     """Unhide a library entry. Sets is_hidden_user_set so the heuristic can't
     re-hide it on the next enrichment pass."""
-    entry = (
-        db.query(models.UserLibraryEntry)
-        .filter_by(id=entry_id, user_id=current_user.id)
-        .first()
-    )
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
     entry.is_hidden = False
@@ -583,6 +575,7 @@ def backfill_hidden(
     when present (most entries should have it after the enrichment worker has
     chewed through them); falls back to title-only matching otherwise."""
     from . import steam
+
     rows = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
@@ -605,11 +598,7 @@ def backfill_hidden(
         request=request,
         name="partials/integrations_flash.html",
         context={
-            "message": (
-                f"Auto-hide complete\n"
-                f"{hidden:,} entries hidden\n"
-                f"Use 'Show hidden' on the library to review"
-            ),
+            "message": (f"Auto-hide complete\n{hidden:,} entries hidden\nUse 'Show hidden' on the library to review"),
         },
     )
 
@@ -662,10 +651,8 @@ def library_entry_detail(
     entry = (
         db.query(models.UserLibraryEntry)
         .options(
-            joinedload(models.UserLibraryEntry.release)
-            .joinedload(models.GameRelease.game),
-            joinedload(models.UserLibraryEntry.release)
-            .joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
             joinedload(models.UserLibraryEntry.completions),
         )
         .filter_by(id=entry_id, user_id=current_user.id)
@@ -682,10 +669,7 @@ def library_entry_detail(
     if not game.is_dlc:  # only base games / collections show children
         child_entries = (
             db.query(models.UserLibraryEntry)
-            .options(
-                joinedload(models.UserLibraryEntry.release)
-                .joinedload(models.GameRelease.game)
-            )
+            .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
             .join(models.GameRelease)
             .join(models.Game)
             .filter(
@@ -726,6 +710,7 @@ def library_entry_detail(
 
 # --- Completions ---
 
+
 @router.get("/completions")
 def completions_page(
     request: Request,
@@ -760,16 +745,12 @@ def completions_page(
         completions_q = completions_q.filter(models.GameRelease.platform == platform)
     if completed_from:
         try:
-            completions_q = completions_q.filter(
-                models.Completion.completed_at >= datetime.date.fromisoformat(completed_from)
-            )
+            completions_q = completions_q.filter(models.Completion.completed_at >= datetime.date.fromisoformat(completed_from))
         except ValueError:
             pass
     if completed_to:
         try:
-            completions_q = completions_q.filter(
-                models.Completion.completed_at <= datetime.date.fromisoformat(completed_to)
-            )
+            completions_q = completions_q.filter(models.Completion.completed_at <= datetime.date.fromisoformat(completed_to))
         except ValueError:
             pass
     completions = completions_q.order_by(models.Completion.id.desc()).all()
@@ -817,10 +798,7 @@ def search_completion_games(
         db.query(models.UserLibraryEntry)
         .join(models.UserLibraryEntry.release)
         .join(models.GameRelease.game)
-        .options(
-            contains_eager(models.UserLibraryEntry.release)
-            .contains_eager(models.GameRelease.game)
-        )
+        .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             or_(
@@ -860,10 +838,14 @@ def log_completion(
     current_user: models.User = Depends(get_web_user),
 ):
     if completion_id:
-        completion = db.query(models.Completion).filter(
-            models.Completion.id == completion_id,
-            models.Completion.user_id == current_user.id,
-        ).first()
+        completion = (
+            db.query(models.Completion)
+            .filter(
+                models.Completion.id == completion_id,
+                models.Completion.user_id == current_user.id,
+            )
+            .first()
+        )
         if not completion:
             return templates.TemplateResponse(
                 request=request,
@@ -910,10 +892,14 @@ def delete_completion(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    completion = db.query(models.Completion).filter(
-        models.Completion.id == completion_id,
-        models.Completion.user_id == current_user.id,
-    ).first()
+    completion = (
+        db.query(models.Completion)
+        .filter(
+            models.Completion.id == completion_id,
+            models.Completion.user_id == current_user.id,
+        )
+        .first()
+    )
     if completion:
         db.delete(completion)
         db.commit()
