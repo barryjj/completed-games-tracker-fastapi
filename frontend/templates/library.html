@@ -50,6 +50,22 @@
       <label class="form-check-label text-secondary" for="lib-show-hidden"><small>Show hidden</small></label>
     </div>
   </div>
+
+  {# View-mode toggle + grid spacing slider. Hidden value submits the chosen
+     mode so the server renders the right partial. The slider is only relevant
+     in grid modes; CSS hides it when view_mode=list. #}
+  <div class="col-auto ms-auto d-flex align-items-center gap-2">
+    <input type="hidden" name="view_mode" id="lib-view-mode" value="{{ view_mode }}">
+    <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+      <button type="button" class="btn btn-outline-secondary {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
+      <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
+      <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
+    </div>
+    <input type="range" id="lib-grid-gap" min="4" max="32" step="2" value="16"
+           class="form-range cgt-grid-gap-slider"
+           {% if view_mode == 'list' %}hidden{% endif %}
+           title="Card spacing">
+  </div>
 </form>
 
 <div id="library-content">
@@ -67,6 +83,7 @@
   {% endif %}
 </div>
 
+{% if view_mode == 'list' %}
 <table class="table table-striped table-borderless">
   <thead>
     <tr>
@@ -83,6 +100,15 @@
     {% endfor %}
   </tbody>
 </table>
+{% else %}
+{# Grid view. Cards render via library_card.html. CSS class chooses portrait
+   vs landscape sizing; --cgt-grid-gap is controlled by the slider. #}
+<div class="cgt-library-grid cgt-library-grid--{{ view_mode }}" id="library-tbody">
+  {% for entry in entries %}
+  {% include "partials/library_card.html" %}
+  {% endfor %}
+</div>
+{% endif %}
 
 {% if not entries %}
 <p id="library-empty" class="text-secondary"><em>No games in your library yet. Add one above.</em></p>
@@ -279,6 +305,66 @@
 
 {% block scripts %}
 <script>
+// ─── Grid view: view-mode toggle + spacing slider ─────────────────────────
+//
+// View mode is server-rendered (the URL query param decides which template
+// branch is used), so toggle clicks navigate to a new URL with the chosen
+// mode. localStorage saves the preference so the next visit lands on the
+// same mode (a one-time JS redirect handles the URL-less initial load).
+//
+// Grid gap is purely client-side: a CSS variable on the .cgt-library-grid
+// container is updated as the slider moves; the value is also saved to
+// localStorage so it persists across sessions.
+
+(function libraryGridControls() {
+  var VIEW_MODE_KEY = 'cgt-library-view-mode';
+  var GRID_GAP_KEY = 'cgt-library-grid-gap';
+
+  // Apply saved gap immediately on load so the user's preferred spacing is
+  // in place from the first paint (no flicker as the slider initializes).
+  var savedGap = parseInt(localStorage.getItem(GRID_GAP_KEY), 10);
+  if (savedGap) {
+    document.documentElement.style.setProperty('--cgt-grid-gap', savedGap + 'px');
+  }
+
+  // If the URL has no explicit view_mode but the user has a saved preference
+  // that differs from "list" (the server default), navigate once to apply it.
+  // Skip on HTMX requests so swap-in-place still works.
+  var params = new URLSearchParams(window.location.search);
+  if (!params.has('view_mode')) {
+    var savedMode = localStorage.getItem(VIEW_MODE_KEY);
+    if (savedMode && savedMode !== 'list') {
+      params.set('view_mode', savedMode);
+      window.location.replace(window.location.pathname + '?' + params.toString());
+      return;  // navigation will reload — don't bother binding handlers
+    }
+  }
+
+  // View-mode toggle: any [data-view-mode] button rewrites the URL's
+  // view_mode param and reloads. Same path keeps filters intact.
+  document.querySelectorAll('[data-view-mode]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var mode = btn.dataset.viewMode;
+      localStorage.setItem(VIEW_MODE_KEY, mode);
+      var p = new URLSearchParams(window.location.search);
+      if (mode === 'list') p.delete('view_mode'); else p.set('view_mode', mode);
+      var qs = p.toString();
+      window.location.assign(window.location.pathname + (qs ? '?' + qs : ''));
+    });
+  });
+
+  // Grid gap slider: live update + persist.
+  var slider = document.getElementById('lib-grid-gap');
+  if (slider) {
+    if (savedGap) slider.value = savedGap;
+    slider.addEventListener('input', function() {
+      var px = parseInt(slider.value, 10);
+      document.documentElement.style.setProperty('--cgt-grid-gap', px + 'px');
+      localStorage.setItem(GRID_GAP_KEY, String(px));
+    });
+  }
+})();
+
 var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","complete edition","complete pack","bundle","chronicles","archives","legacy","origins"];
 var _editEntryId = null;
 var _editModal = null;
@@ -291,7 +377,9 @@ var _libraryDetailOffcanvas = null;
 document.addEventListener('click', function(e) {
   var actions = e.target.closest('.row-actions');
   if (actions) return;
-  var row = e.target.closest('tr.library-row-clickable');
+  // Matches both table rows (list view) and grid cards. The card div has the
+  // same .library-row-clickable class so we don't need a separate handler.
+  var row = e.target.closest('.library-row-clickable');
   if (!row || !row.dataset.entryId) return;
   openLibraryDetail(row.dataset.entryId);
 });
