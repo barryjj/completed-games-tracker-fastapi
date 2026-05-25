@@ -464,3 +464,35 @@ tr.library-row-clickable:hover > td,
 tr.completion-row-clickable:hover > td { background-color: var(--ctp-surface0); }
 html[data-bs-theme="light"] tr.library-row-clickable:hover > td,
 html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-color: var(--ctp-mantle); }
+
+/* Detail offcanvas: thin drag handle on the left edge for resizing.
+   JS persists the width to localStorage. Positioned absolutely so it sits
+   on the left edge of the offcanvas without affecting content layout. */
+.offcanvas-end .offcanvas-resize-handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 2;
+  background-color: transparent;
+  transition: background-color 0.15s ease;
+}
+.offcanvas-end .offcanvas-resize-handle:hover,
+.offcanvas-end .offcanvas-resize-handle.cgt-resizing { background-color: var(--ctp-mauve); }
+
+/* Bounded, scrollable list inside the detail pane (DLC list for games with
+   60+ DLC like Dead by Daylight). Scrolls inside the pane instead of pushing
+   the pane to viewport height. Subtle border so the scroll boundary is clear. */
+.cgt-detail-scroll-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 4px;
+}
+/* Child DLC rows inside the detail pane: clickable, hover hint. */
+.cgt-detail-child-row { cursor: pointer; }
+.cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
+html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
+

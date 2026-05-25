@@ -492,7 +492,12 @@ def edit_library_entry(
     # Saving the edit modal is a user override on every field it touches.
     # All user_set flags flip to True so no heuristic ever undoes these edits.
     title_clean = title.strip()
-    if title_clean:
+    # Title is editable ONLY for fully-manual games. If any release on this game
+    # came from a platform sync (Steam/PSN/etc.), the title is the platform's
+    # canonical name and changing it could break future re-sync matching.
+    # display_name remains freely editable either way.
+    is_fully_manual = all(r.source == "manual" for r in game.releases)
+    if title_clean and is_fully_manual:
         game.title = title_clean
 
     # display_name: empty string means "use raw title" (display_name stored as NULL)
@@ -696,6 +701,24 @@ def library_entry_detail(
                 header_url = art.url
                 break
 
+    # Fallback to the parent game's header art when this entry is a DLC whose
+    # own header is missing or 404s. Steam's CDN doesn't host header.jpg for
+    # every DLC appid; falling back to the base game's cover beats a blank
+    # space in the pane.
+    fallback_header_url = None
+    if game.parent_id:
+        parent_release = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork))
+            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
+            .first()
+        )
+        if parent_release:
+            for art in parent_release.artwork:
+                if art.artwork_type == "header":
+                    fallback_header_url = art.url
+                    break
+
     appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
 
     return templates.TemplateResponse(
@@ -706,10 +729,105 @@ def library_entry_detail(
             "game": game,
             "release": entry.release,
             "header_url": header_url,
+            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
         },
+    )
+
+
+@router.post("/library/entries/{entry_id}/refresh-metadata")
+def refresh_entry_metadata(
+    request: Request,
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """One-off appdetails refresh for a single library entry — lets the user
+    bypass the background worker's queue for a specific entry they noticed
+    needs fixing. Re-runs the same post-fetch logic as enrich_next_batch:
+    promote/demote is_dlc, link parent_id, apply auto-hide. All gated on
+    *_user_set flags so manual overrides stick."""
+    from . import steam as _steam
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    release = entry.release
+    if release.source != "steam" or not release.external_id:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Refresh metadata is only available for Steam entries."},
+            status_code=400,
+        )
+
+    # Single sync fetch. Wrapped to handle 429 / transient errors gracefully.
+    try:
+        details = _steam._fetch_appdetails(int(release.external_id))
+    except Exception as e:
+        # Look for 429 specifically so the toast can tell the user it's a rate
+        # limit (which is recoverable) vs an unknown failure.
+        msg = str(e)
+        if "429" in msg:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={
+                    "error": (
+                        "Steam is rate-limiting right now.\nTry again in a minute, or wait for the background worker to catch this entry."
+                    ),
+                },
+                status_code=429,
+            )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Refresh failed: {e}"},
+            status_code=502,
+        )
+
+    # Apply the same post-fetch logic the worker uses.
+    game = release.game
+    if details is not None:
+        raw = dict(release.raw_data or {})
+        raw["appdetails"] = details
+        raw["appdetails_type"] = details.get("type", "game")
+        release.raw_data = raw
+
+        app_type = details.get("type", "game")
+
+        if not game.is_dlc_user_set:
+            if app_type == "dlc" and not game.is_dlc:
+                game.is_dlc = True
+            elif app_type == "game" and game.is_dlc:
+                game.is_dlc = False
+
+        if app_type == "dlc" and game.parent_id is None and not game.parent_id_user_set:
+            fullgame = details.get("fullgame", {})
+            parent_appid = str(fullgame.get("appid", "")).strip()
+            if parent_appid:
+                parent_release = db.query(models.GameRelease).filter_by(source="steam", external_id=parent_appid).first()
+                if parent_release:
+                    game.parent_id = parent_release.game_id
+
+        if _steam._should_auto_hide(game.title, details, game.is_dlc):
+            if not entry.is_hidden and not entry.is_hidden_user_set:
+                entry.is_hidden = True
+
+    release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"Refreshed metadata for {game.display_title}."},
     )
 
 
@@ -955,6 +1073,22 @@ def completion_detail(
                 header_url = art.url
                 break
 
+    # Same parent-fallback chain as the library pane — useful when a DLC
+    # completion's own header is missing.
+    fallback_header_url = None
+    if game.parent_id:
+        parent_release = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork))
+            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
+            .first()
+        )
+        if parent_release:
+            for art in parent_release.artwork:
+                if art.artwork_type == "header":
+                    fallback_header_url = art.url
+                    break
+
     appdetails = (release.raw_data or {}).get("appdetails") or {}
 
     return templates.TemplateResponse(
@@ -966,6 +1100,7 @@ def completion_detail(
             "release": release,
             "game": game,
             "header_url": header_url,
+            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
         },

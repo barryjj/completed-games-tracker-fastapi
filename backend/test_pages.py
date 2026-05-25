@@ -310,7 +310,9 @@ def test_edit_entry_sets_user_overrides(client, db_session):
     r = client.patch(
         f"/library/entries/{entry.id}",
         data={
-            "title": "Elden Ring",
+            # Title submission is ignored for imported (non-manual) entries.
+            # See test_edit_title_ignored_for_imported_entry for that behavior.
+            "title": "ELDEN RING",
             "display_name": "ER",
             "is_dlc": "false",
             "is_collection": "false",
@@ -318,7 +320,8 @@ def test_edit_entry_sets_user_overrides(client, db_session):
     )
     assert r.status_code == 200
     db_session.refresh(game)
-    assert game.title == "Elden Ring"
+    # Title untouched (imported), display_name updated.
+    assert game.title == "ELDEN RING"
     assert game.display_name == "ER"
     assert game.display_name_user_set is True
     assert game.is_dlc_user_set is True
@@ -561,3 +564,210 @@ def test_completion_detail_single_completion_no_others_section(client, db_sessio
 
     r = client.get(f"/completions/{comp.id}/detail")
     assert b"Other completions of this game" not in r.content
+
+
+def test_edit_title_ignored_for_imported_entry(client, db_session):
+    """Title is read-only for entries with any non-manual release. The server
+    drops the incoming title; everything else (display_name, flags) saves."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="ELDEN RING")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1245620")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.patch(
+        f"/library/entries/{entry.id}",
+        data={
+            "title": "Hacked Title",  # imported game — server should ignore this
+            "display_name": "Elden Ring",  # but this saves normally
+            "is_dlc": "false",
+            "is_collection": "false",
+        },
+    )
+    assert r.status_code == 200
+    db_session.refresh(game)
+    # Title untouched — sync's canonical name preserved
+    assert game.title == "ELDEN RING"
+    # display_name still updates
+    assert game.display_name == "Elden Ring"
+    assert game.display_name_user_set is True
+
+
+def test_edit_title_saves_for_fully_manual_entry(client, db_session):
+    """A game whose every release is source='manual' lets the user rename the
+    title field freely."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # _add_game creates a release with source='manual' by default
+    entry = _add_game(db_session, user, title="Original Title", platform="Switch")
+
+    r = client.patch(
+        f"/library/entries/{entry.id}",
+        data={
+            "title": "Renamed Title",
+            "display_name": "Renamed Display",
+            "is_dlc": "false",
+            "is_collection": "false",
+        },
+    )
+    assert r.status_code == 200
+    db_session.refresh(entry.release.game)
+    assert entry.release.game.title == "Renamed Title"
+    assert entry.release.game.display_name == "Renamed Display"
+
+
+def test_detail_pane_provides_parent_cover_fallback_for_dlc(client, db_session):
+    """When a DLC's pane is rendered, fallback_header_url points at the parent
+    game's Steam header. The template uses this as the cover img onerror swap."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    # Parent game with a Steam release + header artwork
+    parent = models.Game(title="Elden Ring Nightreign")
+    db_session.add(parent)
+    db_session.flush()
+    parent_rel = models.GameRelease(game_id=parent.id, platform="Steam", source="steam", external_id="3000000")
+    db_session.add(parent_rel)
+    db_session.flush()
+    parent_art = models.GameArtwork(
+        release_id=parent_rel.id,
+        artwork_type="header",
+        source="steam",
+        url="https://cdn.akamai.steamstatic.com/steam/apps/3000000/header.jpg",
+    )
+    db_session.add(parent_art)
+
+    # DLC linked to that parent, plus its own (broken) header
+    dlc = models.Game(title="The Forsaken Hollows", is_dlc=True, parent_id=parent.id)
+    db_session.add(dlc)
+    db_session.flush()
+    dlc_rel = models.GameRelease(game_id=dlc.id, platform="Steam", source="steam", external_id="3000001")
+    db_session.add(dlc_rel)
+    db_session.flush()
+    db_session.add(
+        models.GameArtwork(
+            release_id=dlc_rel.id,
+            artwork_type="header",
+            source="steam",
+            url="https://cdn.akamai.steamstatic.com/steam/apps/3000001/header.jpg",
+        )
+    )
+    dlc_entry = models.UserLibraryEntry(user_id=user.id, release_id=dlc_rel.id, import_source="steam_import")
+    db_session.add(dlc_entry)
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{dlc_entry.id}/detail")
+    assert r.status_code == 200
+    # Own header rendered as src
+    assert b"3000001/header.jpg" in r.content
+    # Parent's header surfaced as data-fallback so onerror can swap to it
+    assert b"3000000/header.jpg" in r.content
+    assert b"data-fallback=" in r.content
+
+
+def test_detail_pane_omits_fallback_when_no_parent(client, db_session):
+    """Standalone games (no parent_id) get an empty data-fallback — there's
+    nothing meaningful to fall back to."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Doom Eternal")
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert r.status_code == 200
+    # The fallback attribute is rendered as empty since fallback_header_url is None
+    # (also no cover at all for manual entries by default — just checking the
+    # attribute machinery is sane)
+    if b"data-fallback" in r.content:
+        assert b'data-fallback=""' in r.content
+
+
+def test_refresh_metadata_demotes_misclassified_dlc(client, db_session):
+    """Single-entry refresh re-runs the same post-fetch logic as the worker —
+    appdetails type=game on an entry currently is_dlc=True → demote."""
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="1 Screen Platformer", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="791180")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "short_description": "A platformer."}):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 200
+    assert b"Refreshed metadata" in r.content
+
+    db_session.refresh(game)
+    db_session.refresh(release)
+    assert game.is_dlc is False
+    assert release.raw_data["appdetails"]["type"] == "game"
+    assert release.metadata_fetched_at is not None
+
+
+def test_refresh_metadata_respects_user_set_flag(client, db_session):
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Manual override", is_dlc=True, is_dlc_user_set=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="500")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game"}):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 200
+
+    db_session.refresh(game)
+    assert game.is_dlc is True
+
+
+def test_refresh_metadata_rejects_non_steam_entry(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Pen and Paper RPG")  # source="manual"
+
+    r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 400
+    assert b"only available for Steam" in r.content
+
+
+def test_refresh_metadata_handles_rate_limit_gracefully(client, db_session):
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Some Game", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="100")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", side_effect=Exception("Client error '429 Too Many Requests' for url …")):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 429
+    assert b"rate-limiting" in r.content
+
+    db_session.refresh(release)
+    assert release.metadata_fetched_at is None

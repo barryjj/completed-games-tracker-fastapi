@@ -26,6 +26,7 @@
         data-is-collection="{{ 'true' if entry.release.game.is_collection else 'false' }}"
         data-is-part-of-collection="{{ 'true' if (entry.release.game.parent_id and not entry.release.game.is_dlc) else 'false' }}"
         data-parent-id="{{ entry.release.game.parent_id or '' }}"
+        data-source="{{ entry.release.source }}"
         data-label="{{ entry.release.game.display_title | e }}"
       >Edit</button>
       {% if entry.is_hidden %}
