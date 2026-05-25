@@ -11,7 +11,8 @@
 <div class="offcanvas-body">
   {% if header_url %}
   <div class="mb-3 text-center">
-    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy">
+    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy"
+         onerror="this.parentElement.style.display='none'">
   </div>
   {% endif %}
 
@@ -85,7 +86,7 @@
       <li class="mb-1">
         <a href="#" class="text-decoration-none"
            hx-get="/completions/{{ c.id }}/detail"
-           hx-target="#completion-detail"
+           hx-target="#completion-detail-content"
            hx-swap="innerHTML">
           {{ c.completed_at.strftime("%b %d, %Y") }}
           {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}

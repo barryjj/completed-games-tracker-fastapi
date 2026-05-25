@@ -1,6 +1,7 @@
 {# Inner content for the library detail offcanvas. The wrapper #library-detail
-   in library.html stays in the DOM; this partial replaces its inner via
-   hx-target="#library-detail" hx-swap="innerHTML". #}
+   in library.html stays in the DOM with a persistent resize handle; this
+   partial replaces #library-detail-content (a sibling div under the wrapper)
+   via hx-target="#library-detail-content" hx-swap="innerHTML". #}
 
 <div class="offcanvas-header border-bottom">
   <h5 class="offcanvas-title">{{ game.display_title }}</h5>
@@ -10,20 +11,10 @@
 <div class="offcanvas-body">
   {% if header_url %}
   <div class="mb-3 text-center">
-    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy">
+    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy"
+         onerror="this.parentElement.style.display='none'">
   </div>
   {% endif %}
-
-  {# Title / display name — show both if they differ, so the user can see the
-     canonical title vs their display preference at a glance. #}
-  <div class="mb-3">
-    {% if game.display_name and game.display_name != game.title %}
-    <div><small class="text-secondary">Title</small></div>
-    <div class="mb-1">{{ game.title }}</div>
-    <div><small class="text-secondary">Display name</small></div>
-    <div>{{ game.display_name }}</div>
-    {% endif %}
-  </div>
 
   {# Badges row: platform + flags. Matches the row badges so it feels consistent. #}
   <div class="mb-3 d-flex flex-wrap gap-1">
@@ -73,19 +64,29 @@
   <div class="mb-3">
     <div class="text-secondary mb-1"><small>
       {% if game.is_collection %}Games in this collection{% else %}DLC{% endif %}
-      ({{ child_entries | length }})
     </small></div>
-    <ul class="list-unstyled mb-0">
-      {% for child in child_entries %}
-      <li class="mb-1">
-        <a href="#" class="text-decoration-none"
-           hx-get="/library/entries/{{ child.id }}/detail"
-           hx-target="#library-detail"
-           hx-swap="innerHTML">{{ child.release.game.display_title }}</a>
-        {% if child.is_hidden %}<small class="text-secondary">(hidden)</small>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
+    {# Bounded scroll for long DLC lists (Dead by Daylight has 60+).
+       Striped table matches the library/completions main-table look. #}
+    <div class="cgt-detail-scroll-list">
+      <table class="table table-striped table-sm table-hover mb-0 align-middle">
+        <tbody>
+          {% for child in child_entries %}
+          <tr class="cgt-detail-child-row"
+              hx-get="/library/entries/{{ child.id }}/detail"
+              hx-target="#library-detail-content"
+              hx-swap="innerHTML">
+            <td>
+              {{ child.release.game.display_title }}
+              {% if child.is_hidden %}<small class="text-secondary ms-1">(hidden)</small>{% endif %}
+            </td>
+            <td class="text-end text-nowrap">
+              <span class="tag-badge {{ child.release.platform | platform_color }}">{{ child.release.platform }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
   </div>
   {% endif %}
 
@@ -118,6 +119,7 @@
             data-is-collection="{{ 'true' if game.is_collection else 'false' }}"
             data-is-part-of-collection="{{ 'true' if (game.parent_id and not game.is_dlc) else 'false' }}"
             data-parent-id="{{ game.parent_id or '' }}"
+            data-source="{{ release.source }}"
             data-label="{{ game.display_title | e }}">Edit</button>
 
     {% if entry.is_hidden %}
