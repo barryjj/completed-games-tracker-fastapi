@@ -12,7 +12,8 @@
   {% if header_url %}
   <div class="mb-3 text-center">
     <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy"
-         onerror="this.parentElement.style.display='none'">
+         data-fallback="{{ fallback_header_url or '' }}"
+         onerror="cgtCoverFallback(this)">
   </div>
   {% endif %}
 

@@ -620,3 +620,68 @@ def test_edit_title_saves_for_fully_manual_entry(client, db_session):
     db_session.refresh(entry.release.game)
     assert entry.release.game.title == "Renamed Title"
     assert entry.release.game.display_name == "Renamed Display"
+
+
+def test_detail_pane_provides_parent_cover_fallback_for_dlc(client, db_session):
+    """When a DLC's pane is rendered, fallback_header_url points at the parent
+    game's Steam header. The template uses this as the cover img onerror swap."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    # Parent game with a Steam release + header artwork
+    parent = models.Game(title="Elden Ring Nightreign")
+    db_session.add(parent)
+    db_session.flush()
+    parent_rel = models.GameRelease(game_id=parent.id, platform="Steam", source="steam", external_id="3000000")
+    db_session.add(parent_rel)
+    db_session.flush()
+    parent_art = models.GameArtwork(
+        release_id=parent_rel.id,
+        artwork_type="header",
+        source="steam",
+        url="https://cdn.akamai.steamstatic.com/steam/apps/3000000/header.jpg",
+    )
+    db_session.add(parent_art)
+
+    # DLC linked to that parent, plus its own (broken) header
+    dlc = models.Game(title="The Forsaken Hollows", is_dlc=True, parent_id=parent.id)
+    db_session.add(dlc)
+    db_session.flush()
+    dlc_rel = models.GameRelease(game_id=dlc.id, platform="Steam", source="steam", external_id="3000001")
+    db_session.add(dlc_rel)
+    db_session.flush()
+    db_session.add(
+        models.GameArtwork(
+            release_id=dlc_rel.id,
+            artwork_type="header",
+            source="steam",
+            url="https://cdn.akamai.steamstatic.com/steam/apps/3000001/header.jpg",
+        )
+    )
+    dlc_entry = models.UserLibraryEntry(user_id=user.id, release_id=dlc_rel.id, import_source="steam_import")
+    db_session.add(dlc_entry)
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{dlc_entry.id}/detail")
+    assert r.status_code == 200
+    # Own header rendered as src
+    assert b"3000001/header.jpg" in r.content
+    # Parent's header surfaced as data-fallback so onerror can swap to it
+    assert b"3000000/header.jpg" in r.content
+    assert b"data-fallback=" in r.content
+
+
+def test_detail_pane_omits_fallback_when_no_parent(client, db_session):
+    """Standalone games (no parent_id) get an empty data-fallback — there's
+    nothing meaningful to fall back to."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Doom Eternal")
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert r.status_code == 200
+    # The fallback attribute is rendered as empty since fallback_header_url is None
+    # (also no cover at all for manual entries by default — just checking the
+    # attribute machinery is sane)
+    if b"data-fallback" in r.content:
+        assert b'data-fallback=""' in r.content

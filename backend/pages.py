@@ -701,6 +701,24 @@ def library_entry_detail(
                 header_url = art.url
                 break
 
+    # Fallback to the parent game's header art when this entry is a DLC whose
+    # own header is missing or 404s. Steam's CDN doesn't host header.jpg for
+    # every DLC appid; falling back to the base game's cover beats a blank
+    # space in the pane.
+    fallback_header_url = None
+    if game.parent_id:
+        parent_release = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork))
+            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
+            .first()
+        )
+        if parent_release:
+            for art in parent_release.artwork:
+                if art.artwork_type == "header":
+                    fallback_header_url = art.url
+                    break
+
     appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
 
     return templates.TemplateResponse(
@@ -711,6 +729,7 @@ def library_entry_detail(
             "game": game,
             "release": entry.release,
             "header_url": header_url,
+            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
@@ -960,6 +979,22 @@ def completion_detail(
                 header_url = art.url
                 break
 
+    # Same parent-fallback chain as the library pane — useful when a DLC
+    # completion's own header is missing.
+    fallback_header_url = None
+    if game.parent_id:
+        parent_release = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork))
+            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
+            .first()
+        )
+        if parent_release:
+            for art in parent_release.artwork:
+                if art.artwork_type == "header":
+                    fallback_header_url = art.url
+                    break
+
     appdetails = (release.raw_data or {}).get("appdetails") or {}
 
     return templates.TemplateResponse(
@@ -971,6 +1006,7 @@ def completion_detail(
             "release": release,
             "game": game,
             "header_url": header_url,
+            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
         },
