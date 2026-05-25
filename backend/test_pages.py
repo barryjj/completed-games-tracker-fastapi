@@ -685,3 +685,89 @@ def test_detail_pane_omits_fallback_when_no_parent(client, db_session):
     # attribute machinery is sane)
     if b"data-fallback" in r.content:
         assert b'data-fallback=""' in r.content
+
+
+def test_refresh_metadata_demotes_misclassified_dlc(client, db_session):
+    """Single-entry refresh re-runs the same post-fetch logic as the worker —
+    appdetails type=game on an entry currently is_dlc=True → demote."""
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="1 Screen Platformer", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="791180")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "short_description": "A platformer."}):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 200
+    assert b"Refreshed metadata" in r.content
+
+    db_session.refresh(game)
+    db_session.refresh(release)
+    assert game.is_dlc is False
+    assert release.raw_data["appdetails"]["type"] == "game"
+    assert release.metadata_fetched_at is not None
+
+
+def test_refresh_metadata_respects_user_set_flag(client, db_session):
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Manual override", is_dlc=True, is_dlc_user_set=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="500")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game"}):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 200
+
+    db_session.refresh(game)
+    assert game.is_dlc is True
+
+
+def test_refresh_metadata_rejects_non_steam_entry(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Pen and Paper RPG")  # source="manual"
+
+    r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 400
+    assert b"only available for Steam" in r.content
+
+
+def test_refresh_metadata_handles_rate_limit_gracefully(client, db_session):
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Some Game", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="100")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", side_effect=Exception("Client error '429 Too Many Requests' for url …")):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 429
+    assert b"rate-limiting" in r.content
+
+    db_session.refresh(release)
+    assert release.metadata_fetched_at is None

@@ -54,6 +54,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Edit reuses existing edit-completion modal
 - "View in library ↗" link navigates to `/library?detail={entry_id}` which auto-opens the library pane for that game
 
+### Per-entry refresh metadata + dropdown actions menu ✅ (this PR)
+- New `POST /library/entries/{id}/refresh-metadata` — synchronous one-off appdetails fetch for a single Steam entry, bypasses the background worker's queue
+- Re-runs the worker's post-fetch logic (promote/demote `is_dlc`, link `parent_id`, auto-hide) so a misclassified entry self-corrects in one click
+- Handles 429 gracefully with a "rate-limiting, try again" toast — no DB writes on failure
+- Both detail panes get a **More ▾** dropdown footer: secondary actions (Refresh, Hide/Unhide, Remove on library; Refresh, Delete on completion) move into the dropdown, primary actions (Edit, View in library) stay visible
+- Pattern scales for future actions: "Add to completions" on a library entry, IGDB lookup, etc.
+
+### Bulk re-apply heuristics (deferred — when we change heuristic logic without re-fetching)
+- One-shot endpoint that walks every Steam release with cached `raw_data["appdetails"]` and re-runs the post-fetch classification logic
+- No network calls — uses already-cached data. Useful when we fix a heuristic bug and don't want to spend 10 hours re-enriching
+- Parked because per-entry refresh covers the immediate need; bulk re-apply is a "we changed classification logic" fix, not a daily-use tool
+
 ### Library polish round A ✅ (PR #66)
 - Library sort: `COALESCE(display_name, title) COLLATE NOCASE` so display order matches what you see (fixes "Influent DLC" landing before number-prefixed entries)
 - DLC reconciliation now goes both ways: appdetails `type=game` + currently `is_dlc=True` + not user-set → demote to False. Catches misclassifications from the rgOwnedApps subtraction.
