@@ -1,3 +1,17 @@
+// Cover image fallback: when a detail-pane cover image fails to load (Steam's
+// CDN occasionally 404s for DLC appids), try the parent game's header URL if
+// one was provided via data-fallback. If THAT also fails, hide the container.
+// Exposed as a global because inline onerror handlers (templated) call it.
+window.cgtCoverFallback = function(img) {
+  var fb = img.dataset.fallback;
+  if (fb && img.src !== fb) {
+    img.src = fb;
+    img.dataset.fallback = '';  // prevent loop if the parent also 404s
+    return;
+  }
+  if (img.parentElement) img.parentElement.style.display = 'none';
+};
+
 // Local-time helper: render any element with [data-utc] in the browser's locale.
 document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {
   var d = new Date(el.dataset.utc + 'Z');
