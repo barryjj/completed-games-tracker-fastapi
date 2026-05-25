@@ -1,0 +1,122 @@
+{# Inner content for the completion detail offcanvas. Sibling to library_detail.html
+   but focused on the completion (date, playthroughs, notes) rather than the
+   library entry. Includes a "View library entry" link that navigates back to
+   /library and opens that game's library detail pane. #}
+
+<div class="offcanvas-header border-bottom">
+  <h5 class="offcanvas-title">{{ game.display_title }}</h5>
+  <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+</div>
+
+<div class="offcanvas-body">
+  {% if header_url %}
+  <div class="mb-3 text-center">
+    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy">
+  </div>
+  {% endif %}
+
+  {# Platform + DLC/Collection badges to match the library pane shape #}
+  <div class="mb-3 d-flex flex-wrap gap-1">
+    <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
+    {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
+    {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
+  </div>
+
+  {# THIS completion's facts — date, playthroughs, notes #}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>This completion</small></div>
+    <dl class="row small mb-0">
+      <dt class="col-5 text-secondary fw-normal">Completed</dt>
+      <dd class="col-7 mb-1">{{ completion.completed_at.strftime("%b %d, %Y") }}</dd>
+
+      {% if completion.playthroughs %}
+      <dt class="col-5 text-secondary fw-normal">Playthroughs</dt>
+      <dd class="col-7 mb-1">{{ completion.playthroughs }}</dd>
+      {% endif %}
+
+      <dt class="col-5 text-secondary fw-normal">Logged</dt>
+      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%Y-%m-%d") }}</span></dd>
+    </dl>
+    {% if completion.notes %}
+    <div class="mt-2">
+      <div class="text-secondary mb-1"><small>Notes</small></div>
+      <p class="mb-0">{{ completion.notes }}</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Cross-link to the library detail for context: external_id + store + parent #}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>Library entry</small></div>
+    <dl class="row small mb-0">
+      {% if entry.playtime_minutes %}
+      <dt class="col-5 text-secondary fw-normal">Playtime</dt>
+      <dd class="col-7 mb-1">{{ "{:,}".format(entry.playtime_minutes) }} min</dd>
+      {% endif %}
+
+      {% if release.external_id %}
+      <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
+      <dd class="col-7 mb-1">
+        <code>{{ release.external_id }}</code>
+        {% if release.source == "steam" %}
+        <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
+           target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+        {% endif %}
+      </dd>
+      {% endif %}
+    </dl>
+  </div>
+
+  {% if appdetails.short_description %}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>Description</small></div>
+    <p class="mb-0">{{ appdetails.short_description }}</p>
+  </div>
+  {% endif %}
+
+  {# Other completions of the same game, if any. Helpful when the user has
+     played through something multiple times. Excludes the current one. #}
+  {% set others = sibling_completions | rejectattr("id", "equalto", completion.id) | list %}
+  {% if others %}
+  <div class="mb-3">
+    <div class="text-secondary mb-1"><small>Other completions of this game ({{ others | length }})</small></div>
+    <ul class="list-unstyled mb-0">
+      {% for c in others %}
+      <li class="mb-1">
+        <a href="#" class="text-decoration-none"
+           hx-get="/completions/{{ c.id }}/detail"
+           hx-target="#completion-detail"
+           hx-swap="innerHTML">
+          {{ c.completed_at.strftime("%b %d, %Y") }}
+          {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+        </a>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  <div class="border-top pt-3 d-flex flex-wrap gap-2">
+    {# Edit reuses the existing edit completion modal (same data attrs the row's
+       Edit button uses). Closes the offcanvas first to avoid stacking. #}
+    <button class="btn btn-outline-secondary btn-sm"
+            onclick="closeCompletionDetailAndEdit(this.dataset)"
+            data-completion-id="{{ completion.id }}"
+            data-entry-id="{{ entry.id }}"
+            data-label="{{ (game.display_title ~ ' (' ~ release.platform ~ ')') | e }}"
+            data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
+            data-playthroughs="{{ (completion.playthroughs or '') | e }}"
+            data-notes="{{ (completion.notes or '') | e }}">Edit</button>
+
+    {# Jump to the library pane for the same game. ?detail=N is parsed on load
+       to auto-open that entry's pane on the library page. #}
+    <a class="btn btn-outline-secondary btn-sm"
+       href="/library?detail={{ entry.id }}">View in library ↗</a>
+
+    <button class="btn btn-danger btn-sm ms-auto"
+            hx-delete="/completions/{{ completion.id }}"
+            hx-swap="none"
+            hx-confirm="Delete this completion?"
+            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Delete</button>
+  </div>
+</div>

@@ -65,6 +65,33 @@
 {% block scripts %}
 <script>
 var _logCompletionModal = null;
+var _completionDetailOffcanvas = null;
+
+// Open the completion detail pane. Mirrors the library pane pattern.
+function openCompletionDetail(completionId) {
+  if (!_completionDetailOffcanvas) {
+    _completionDetailOffcanvas = new bootstrap.Offcanvas(document.getElementById('completion-detail'));
+  }
+  _completionDetailOffcanvas.show();
+  htmx.ajax('GET', '/completions/' + completionId + '/detail', {
+    target: '#completion-detail',
+    swap: 'innerHTML',
+  });
+}
+
+function closeCompletionDetailAndEdit(ds) {
+  if (_completionDetailOffcanvas) _completionDetailOffcanvas.hide();
+  editCompletion(ds);
+}
+
+// Delegated row click: any tr.completion-row-clickable opens its detail pane,
+// EXCEPT clicks inside .row-actions (Edit / Delete buttons keep their behavior).
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.row-actions')) return;
+  var row = e.target.closest('tr.completion-row-clickable');
+  if (!row || !row.dataset.completionId) return;
+  openCompletionDetail(row.dataset.completionId);
+});
 
 function openLogCompletionModal() {
   if (!_logCompletionModal) {
@@ -185,6 +212,12 @@ function resetCompletionForm() {
   {% if not completions %}
   <p class="text-secondary"><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
   {% endif %}
+</div>
+
+<!-- Completion detail pane (slide-out from right). Empty wrapper stays in the
+     DOM; clicking a row triggers an HTMX GET that swaps the inner. -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="completion-detail" aria-labelledby="completion-detail-label">
+  <!-- Inner content is populated by /completions/{id}/detail -->
 </div>
 
 {% endblock %}

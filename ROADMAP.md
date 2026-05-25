@@ -47,7 +47,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Edit / Hide / Unhide / Remove actions inside the pane (Edit still opens the existing modal for now)
 - Reduces the need for inline nesting/grouping — clicking a parent reveals its children in the pane
 
-### Library polish round A ✅ (this PR)
+### Completion detail pane ✅ (this PR)
+- Click a completion row → slide-out offcanvas mirroring the library detail pane
+- Cover art, platform badge, **completion-specific** facts (date, playthroughs, notes), library context (playtime, store link)
+- Lists other completions of the same game with HTMX click-through to swap the pane
+- Edit reuses existing edit-completion modal
+- "View in library ↗" link navigates to `/library?detail={entry_id}` which auto-opens the library pane for that game
+
+### Library polish round A ✅ (PR #66)
 - Library sort: `COALESCE(display_name, title) COLLATE NOCASE` so display order matches what you see (fixes "Influent DLC" landing before number-prefixed entries)
 - DLC reconciliation now goes both ways: appdetails `type=game` + currently `is_dlc=True` + not user-set → demote to False. Catches misclassifications from the rgOwnedApps subtraction.
 - Auto-hide regex expanded with patterns from real-world fighting-game DLC: character/season/ultimate/stage/kombat pass, skin/costume/outfit/cinematic/customization pack, add-on bundle, avatar skin/costume, DLC playable character, Deluxe upgrade
