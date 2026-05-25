@@ -909,3 +909,64 @@ def delete_completion(
         db.delete(completion)
         db.commit()
     return Response(status_code=200)
+
+
+@router.get("/completions/{completion_id}/detail")
+def completion_detail(
+    request: Request,
+    completion_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Slide-out detail pane for a Completion. Mirrors the library detail pane
+    but focused on the completion (date, playthroughs, notes) rather than the
+    library entry, with a link to view the parent library entry's pane."""
+    completion = (
+        db.query(models.Completion)
+        .options(
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+        )
+        .filter_by(id=completion_id, user_id=current_user.id)
+        .first()
+    )
+    if not completion:
+        return Response(status_code=404)
+
+    entry = completion.library_entry
+    release = entry.release
+    game = release.game
+
+    # All this user's completions for the same library entry, so the pane can
+    # show "this is your 2nd of 3 logged completions" context.
+    sibling_completions = (
+        db.query(models.Completion)
+        .filter_by(library_entry_id=entry.id, user_id=current_user.id)
+        .order_by(models.Completion.completed_at.desc())
+        .all()
+    )
+
+    header_url = None
+    if entry.cover_url_override:
+        header_url = entry.cover_url_override
+    else:
+        for art in release.artwork:
+            if art.artwork_type == "header":
+                header_url = art.url
+                break
+
+    appdetails = (release.raw_data or {}).get("appdetails") or {}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/completion_detail.html",
+        context={
+            "completion": completion,
+            "entry": entry,
+            "release": release,
+            "game": game,
+            "header_url": header_url,
+            "appdetails": appdetails,
+            "sibling_completions": sibling_completions,
+        },
+    )

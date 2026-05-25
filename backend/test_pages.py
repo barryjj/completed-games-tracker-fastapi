@@ -475,3 +475,89 @@ def test_detail_pane_shows_description_from_appdetails(client, db_session):
 
     r = client.get(f"/library/entries/{entry.id}/detail")
     assert b"A roguelike from Supergiant Games." in r.content
+
+
+# ─── Completion detail pane ─────────────────────────────────────────────────
+
+
+def test_completion_detail_returns_content(client, db_session):
+    import datetime as _dt
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Hades")
+    completion = models.Completion(
+        user_id=user.id,
+        library_entry_id=entry.id,
+        completed_at=_dt.date(2026, 3, 14),
+        playthroughs="3+",
+        notes="Cleared on the third escape",
+    )
+    db_session.add(completion)
+    db_session.commit()
+
+    r = client.get(f"/completions/{completion.id}/detail")
+    assert r.status_code == 200
+    assert b"Hades" in r.content
+    assert b"Cleared on the third escape" in r.content
+    assert b"3+" in r.content
+    # Cross-link back to the library entry pane
+    assert f"/library?detail={entry.id}".encode() in r.content
+
+
+def test_completion_detail_404_for_other_users(client, db_session):
+    import datetime as _dt
+
+    _signup_and_login(client, username="alice")
+    alice = db_session.query(models.User).filter_by(username="alice").first()
+    entry = _add_game(db_session, alice, title="Alice Game")
+    comp = models.Completion(
+        user_id=alice.id,
+        library_entry_id=entry.id,
+        completed_at=_dt.date(2026, 1, 1),
+    )
+    db_session.add(comp)
+    db_session.commit()
+
+    _signup_and_login(client, username="bob")
+    r = client.get(f"/completions/{comp.id}/detail")
+    assert r.status_code == 404
+
+
+def test_completion_detail_shows_sibling_completions(client, db_session):
+    """If the user has logged the same game multiple times, the pane lists
+    the OTHER completions (excludes the one currently displayed)."""
+    import datetime as _dt
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Spelunky 2")
+
+    c1 = models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=_dt.date(2026, 1, 5))
+    c2 = models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=_dt.date(2026, 2, 14))
+    c3 = models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=_dt.date(2026, 3, 22))
+    db_session.add_all([c1, c2, c3])
+    db_session.commit()
+
+    # Viewing c2's detail should list c1 and c3 in "other completions"
+    r = client.get(f"/completions/{c2.id}/detail")
+    assert r.status_code == 200
+    assert b"Other completions of this game" in r.content
+    assert f"/completions/{c1.id}/detail".encode() in r.content
+    assert f"/completions/{c3.id}/detail".encode() in r.content
+    # c2 itself shouldn't be in the others list
+    assert f"/completions/{c2.id}/detail".encode() not in r.content
+
+
+def test_completion_detail_single_completion_no_others_section(client, db_session):
+    import datetime as _dt
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="One Shot")
+    comp = models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=_dt.date(2026, 1, 1))
+    db_session.add(comp)
+    db_session.commit()
+
+    r = client.get(f"/completions/{comp.id}/detail")
+    assert b"Other completions of this game" not in r.content
