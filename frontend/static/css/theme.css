@@ -496,3 +496,87 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
+/* ─── Library grid view ─────────────────────────────────────────────────── */
+/* Cover-art grid. Two orientations: vertical (library_600x900) and horizontal
+   (header). Cards without matching artwork render a clean placeholder rather
+   than borrowing from the other orientation (squished/stretched looks worse).
+   The --cgt-grid-gap variable is controlled by the spacing slider; JS reads
+   the value back from the slider on input and persists to localStorage. */
+.cgt-library-grid {
+  display: grid;
+  gap: var(--cgt-grid-gap, 16px);
+}
+.cgt-library-grid--grid_v {
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+}
+.cgt-library-grid--grid_h {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.cgt-library-card {
+  display: flex;
+  flex-direction: column;
+  background-color: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+.cgt-library-card:hover {
+  border-color: var(--ctp-mauve);
+  transform: translateY(-2px);
+}
+.cgt-library-card__cover {
+  width: 100%;
+  background-color: var(--ctp-crust);
+  /* Image scales to fit. Aspect ratio enforced by the container CSS below. */
+}
+.cgt-library-card__cover img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* Aspect ratios match Steam's cover sizes — 600x900 portrait, 460x215 landscape. */
+.cgt-library-grid--grid_v .cgt-library-card__cover { aspect-ratio: 600 / 900; }
+.cgt-library-grid--grid_h .cgt-library-card__cover { aspect-ratio: 460 / 215; }
+
+/* Placeholder cards (no artwork of the chosen orientation): reserve the same
+   aspect ratio area as a cover would have, fill with a subtle gradient. */
+.cgt-library-card--no-art .cgt-library-card__cover {
+  background: linear-gradient(135deg, var(--ctp-surface0), var(--ctp-mantle));
+}
+.cgt-library-grid--grid_v .cgt-library-card--no-art::before,
+.cgt-library-grid--grid_h .cgt-library-card--no-art::before {
+  content: "";
+  display: block;
+  background: linear-gradient(135deg, var(--ctp-surface0), var(--ctp-mantle));
+}
+.cgt-library-grid--grid_v .cgt-library-card--no-art::before { aspect-ratio: 600 / 900; }
+.cgt-library-grid--grid_h .cgt-library-card--no-art::before { aspect-ratio: 460 / 215; }
+
+.cgt-library-card__meta {
+  padding: 0.5rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-height: 0;
+}
+.cgt-library-card__title {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ctp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cgt-library-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+/* Grid-gap slider styling: thin and tucked-in. */
+.cgt-grid-gap-slider { width: 100px; }
+
