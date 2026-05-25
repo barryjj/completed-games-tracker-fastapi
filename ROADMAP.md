@@ -54,7 +54,23 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Edit reuses existing edit-completion modal
 - "View in library ↗" link navigates to `/library?detail={entry_id}` which auto-opens the library pane for that game
 
-### Library grid view ✅ (this PR)
+### Grid view polish round 2 ✅ (this PR)
+- **Borderless toggle** — flips `.cgt-library-grid--borderless` to strip borders, radius, and hover lift for a true Steam-library edge-to-edge mosaic
+- **Cover-size slider** — second range input controls `--cgt-grid-card-min` driving `grid-template-columns: repeat(auto-fill, minmax(...))`. Range and default scale with orientation (100-320 vertical, 200-480 horizontal). Per-orientation localStorage keys so portrait/landscape have independent preferences.
+- **Catppuccin-styled sliders** — rectangular thumb in mauve, matches the rest of the design's hard-edged controls. `.cgt-range` class applies anywhere.
+- **Cover-only cards by default** — dropped title/badges below the cover for a clean mosaic look. Placeholder cards (no matching-orientation art) show centered title + platform inside the card itself.
+- **DLC stripe indicator** — 3px peach stripe at the top of DLC cards. Quiet in default-view, useful in DLC/Everything views.
+- **Hidden indicator** — small em-dash badge top-right of hidden entries (visible when Show hidden is on).
+- **List view row thumbnails** — small 64×30 header.jpg thumbnail in the title cell. Manual entries without artwork get no thumbnail rather than a blank rectangle.
+- Placeholder fallback chain: cover image renders alongside an always-present placeholder div; CSS hides the placeholder while the cover is present, so a cover img onerror that removes the cover automatically reveals the placeholder. No JS state machine needed.
+
+### Mosaic export (future)
+- "Export mosaic" button that picks N covers (filter-aware? completion-aware? user-selectable?) and stitches them into a single image
+- Use case: theme image for Steam library, social-media shareable
+- Server-side: PIL or similar; offer multiple aspect ratios + grid dimensions
+- Roadmap-only for now
+
+### Library grid view ✅ (PR #70)
 - Three-way toggle in the library header: List / Grid (vertical covers) / Grid (horizontal covers)
 - View mode is server-rendered via `?view_mode=...` query param; localStorage persists the preference across visits (one-time JS redirect when URL lacks the param)
 - Spacing slider in the header controls `--cgt-grid-gap` CSS variable; persisted to localStorage
