@@ -771,3 +771,92 @@ def test_refresh_metadata_handles_rate_limit_gracefully(client, db_session):
 
     db_session.refresh(release)
     assert release.metadata_fetched_at is None
+
+
+def test_library_grid_view_renders_cards(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Elden Ring", platform="Steam")
+
+    r = client.get("/library?view_mode=grid_v")
+    assert r.status_code == 200
+    assert b"cgt-library-grid--grid_v" in r.content
+    assert b"cgt-library-card" in r.content
+    # List view markup should NOT appear
+    assert b"table-striped" not in r.content
+
+
+def test_library_horizontal_grid_view_uses_grid_h_class(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _add_game(db_session, user, title="Game", platform="Steam")
+
+    r = client.get("/library?view_mode=grid_h")
+    assert r.status_code == 200
+    assert b"cgt-library-grid--grid_h" in r.content
+
+
+def test_library_invalid_view_mode_falls_back_to_list(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _add_game(db_session, user, title="Game", platform="Steam")
+
+    r = client.get("/library?view_mode=garbage")
+    assert r.status_code == 200
+    # List markup wins. Checking for the table + absence of cards rather than
+    # absence of the string "cgt-library-grid" — that substring appears in JS
+    # comments and localStorage keys regardless of view mode.
+    assert b"table-striped" in r.content
+    assert b'class="cgt-library-grid' not in r.content
+    assert b"cgt-library-card" not in r.content
+
+
+def test_grid_vertical_uses_library_cover_url(client, db_session):
+    """In grid_v mode the card pulls the vertical library_600x900 art only;
+    no header.jpg fallback (cross-orientation borrowing looks bad)."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Cover Test")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="100")
+    db_session.add(release)
+    db_session.flush()
+    # Add BOTH artworks; the card should only show the vertical one
+    db_session.add(
+        models.GameArtwork(
+            release_id=release.id,
+            artwork_type="cover",
+            source="steam",
+            url="https://example.com/100/library_600x900.jpg",
+        )
+    )
+    db_session.add(
+        models.GameArtwork(
+            release_id=release.id,
+            artwork_type="header",
+            source="steam",
+            url="https://example.com/100/header.jpg",
+        )
+    )
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    r = client.get("/library?view_mode=grid_v")
+    assert b"100/library_600x900.jpg" in r.content
+    assert b"100/header.jpg" not in r.content
+
+    r = client.get("/library?view_mode=grid_h")
+    assert b"100/header.jpg" in r.content
+    assert b"100/library_600x900.jpg" not in r.content
+
+
+def test_card_without_matching_artwork_gets_placeholder(client, db_session):
+    """Manual entry (no Steam artwork) in grid view renders the placeholder
+    class instead of trying to use a header from another orientation."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _add_game(db_session, user, title="Manual Game", platform="Switch")
+
+    r = client.get("/library?view_mode=grid_v")
+    assert b"cgt-library-card--no-art" in r.content
