@@ -613,20 +613,95 @@ def test_clean_title_is_idempotent():
     assert _clean_title("Dark Souls III") == "Dark Souls III"
 
 
-def test_should_auto_hide():
+def test_should_auto_hide_only_fires_for_dlc():
+    """Auto-hide is gated on is_dlc=True. A game can never be auto-hidden by
+    the heuristic — even if its title accidentally contains a pattern word."""
     from backend.steam import _should_auto_hide
 
-    # Title-based matches
-    assert _should_auto_hide("Elden Ring - Soundtrack", None) is True
-    assert _should_auto_hide("Game OST", None) is True
-    assert _should_auto_hide("Game Artbook", None) is True
-    assert _should_auto_hide("Cosmetic Pack", None) is True
-    assert _should_auto_hide("Wallpaper Set", None) is True
-    # appdetails-based match
-    assert _should_auto_hide("Music Pack", {"type": "music"}) is True
-    # Negative: real games shouldn't match
-    assert _should_auto_hide("Elden Ring", None) is False
-    assert _should_auto_hide("Doom Eternal", None) is False
+    # is_dlc=True + matching title → hide
+    assert _should_auto_hide("Elden Ring - Soundtrack", None, is_dlc=True) is True
+    assert _should_auto_hide("Game OST", None, is_dlc=True) is True
+    assert _should_auto_hide("Game Artbook", None, is_dlc=True) is True
+    assert _should_auto_hide("Cosmetic Pack", None, is_dlc=True) is True
+    assert _should_auto_hide("Wallpaper Set", None, is_dlc=True) is True
+    # New DLC patterns from the user's screenshots
+    assert _should_auto_hide("TEKKEN 8 - Season 1 Character Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("TEKKEN 8 - Season 2 Character & Stage Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Street Fighter 6 - Year 1 Ultimate Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Mortal Kombat 11 Klassic Skin Pack", None, is_dlc=True) is True
+    assert _should_auto_hide("Mortal Kombat 11 Cinematic Pack", None, is_dlc=True) is True
+    assert _should_auto_hide("MK11 Ultimate Add-On Bundle", None, is_dlc=True) is True
+    assert _should_auto_hide("Blaster Master Zero 2 - DLC Playable Character: Copen", None, is_dlc=True) is True
+    assert _should_auto_hide("TEKKEN 8 - Avatar Skin: Tetsujin", None, is_dlc=True) is True
+    assert _should_auto_hide("Game - Digital Deluxe Edition Upgrade", None, is_dlc=True) is True
+    # appdetails type=music → hide regardless of title (still requires is_dlc)
+    assert _should_auto_hide("Anything", {"type": "music"}, is_dlc=True) is True
+
+    # is_dlc=False → NEVER hide, even if title matches a pattern
+    assert _should_auto_hide("Elden Ring - Soundtrack", None, is_dlc=False) is False
+    assert _should_auto_hide("Cosmetic Pack", None, is_dlc=False) is False
+    # type=music without is_dlc still doesn't hide — sync's rgOwnedApps
+    # subtraction lands actual music products in is_dlc=True anyway.
+    assert _should_auto_hide("Some Soundtrack", {"type": "music"}, is_dlc=False) is False
+
+    # Real games shouldn't match (even when is_dlc=True, no pattern word)
+    assert _should_auto_hide("Elden Ring", None, is_dlc=True) is False
+    assert _should_auto_hide("Doom Eternal", None, is_dlc=True) is False
+
+
+def test_enrichment_demotes_is_dlc_when_appdetails_says_game(db_session):
+    """rgOwnedApps subtraction can misclassify; when appdetails explicitly says
+    'game' and the user hasn't overridden, demote is_dlc to False."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-demote")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="1 Screen Platformer", is_dlc=True)  # imported as DLC, wrongly
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="791180")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    # Steam says it's a game. We should demote.
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game"}), patch("backend.steam.time.sleep", return_value=None):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    assert db_session.query(models.Game).first().is_dlc is False
+
+
+def test_enrichment_demotion_respects_user_override(db_session):
+    """Even if appdetails says 'game', a user who manually marked is_dlc=True
+    sticks — their is_dlc_user_set flag blocks the demotion."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-demote-block")
+    db_session.add(user)
+    db_session.flush()
+    # User has explicitly said "this IS DLC" — for some reason
+    game = models.Game(title="Weirdo Entry", is_dlc=True, is_dlc_user_set=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="999")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game"}), patch("backend.steam.time.sleep", return_value=None):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    # User's True wins.
+    assert db_session.query(models.Game).first().is_dlc is True
 
 
 def test_enrichment_respects_is_dlc_user_set(db_session):
@@ -666,7 +741,9 @@ def test_enrichment_auto_hides_soundtrack_but_respects_user_unhide(db_session):
     user = models.User(name="t", username="t", password_hash="x", api_token="tok-hide")
     db_session.add(user)
     db_session.flush()
-    game = models.Game(title="Elden Ring Soundtrack")
+    # is_dlc=True because soundtracks come in as DLC from the rgOwnedApps
+    # subtraction during sync. Auto-hide is gated on is_dlc=True.
+    game = models.Game(title="Elden Ring Soundtrack", is_dlc=True)
     db_session.add(game)
     db_session.flush()
     release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="700")
@@ -698,12 +775,15 @@ def test_backfill_hidden_endpoint(client, db_session):
 
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
-    # Soundtrack — should get auto-hidden
+    # Soundtrack — should get auto-hidden (is_dlc=True is required for the
+    # heuristic gate; in real sync, soundtracks land in is_dlc=True naturally)
     s = _add_game(db_session, user, title="Game OST")
-    # Regular game — should NOT
+    s.release.game.is_dlc = True
+    # Regular game — should NOT auto-hide even if its title happened to match
     g = _add_game(db_session, user, title="Elden Ring")
     # Soundtrack the user explicitly unhid — should be left alone
     user_set = _add_game(db_session, user, title="Cool Game Soundtrack")
+    user_set.release.game.is_dlc = True
     user_set.is_hidden_user_set = True
     db_session.commit()
 
