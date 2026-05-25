@@ -497,25 +497,25 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
 /* ─── Library grid view ─────────────────────────────────────────────────── */
-/* Cover-art grid. Two orientations: vertical (library_600x900) and horizontal
-   (header). Cards without matching artwork render a clean placeholder rather
-   than borrowing from the other orientation (squished/stretched looks worse).
-   The --cgt-grid-gap variable is controlled by the spacing slider; JS reads
-   the value back from the slider on input and persists to localStorage. */
+/* Cover-art mosaic. Three CSS variables drive the layout:
+     --cgt-grid-gap      — space between cards (px), driven by the Gap slider
+     --cgt-grid-card-min — min card width (px), driven by the Size slider
+   Both set on the .cgt-library-grid element by JS; persisted to localStorage.
+   Steam-library default: cover-only cards, no labels below. Placeholder
+   cards (no matching-orientation art) show their title inside the card. */
 .cgt-library-grid {
   display: grid;
   gap: var(--cgt-grid-gap, 16px);
 }
 .cgt-library-grid--grid_v {
-  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--cgt-grid-card-min, 170px), 1fr));
 }
 .cgt-library-grid--grid_h {
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--cgt-grid-card-min, 280px), 1fr));
 }
 
 .cgt-library-card {
-  display: flex;
-  flex-direction: column;
+  position: relative;
   background-color: var(--ctp-mantle);
   border: 1px solid var(--ctp-surface1);
   border-radius: 6px;
@@ -526,11 +526,24 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
 .cgt-library-card:hover {
   border-color: var(--ctp-mauve);
   transform: translateY(-2px);
+  z-index: 1;  /* keep the lifted card above neighbors */
 }
+
+/* Borderless / mosaic mode: strip borders, radius, and hover lift for the
+   true edge-to-edge Steam-library look. Toggle .cgt-library-grid--borderless
+   on the container. */
+.cgt-library-grid--borderless .cgt-library-card {
+  border: none;
+  border-radius: 0;
+}
+.cgt-library-grid--borderless .cgt-library-card:hover {
+  border: none;
+  transform: none;
+}
+
 .cgt-library-card__cover {
   width: 100%;
   background-color: var(--ctp-crust);
-  /* Image scales to fit. Aspect ratio enforced by the container CSS below. */
 }
 .cgt-library-card__cover img {
   display: block;
@@ -539,44 +552,128 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   object-fit: cover;
 }
 /* Aspect ratios match Steam's cover sizes — 600x900 portrait, 460x215 landscape. */
-.cgt-library-grid--grid_v .cgt-library-card__cover { aspect-ratio: 600 / 900; }
-.cgt-library-grid--grid_h .cgt-library-card__cover { aspect-ratio: 460 / 215; }
+.cgt-library-grid--grid_v .cgt-library-card__cover,
+.cgt-library-grid--grid_v .cgt-library-card__placeholder { aspect-ratio: 600 / 900; }
+.cgt-library-grid--grid_h .cgt-library-card__cover,
+.cgt-library-grid--grid_h .cgt-library-card__placeholder { aspect-ratio: 460 / 215; }
 
-/* Placeholder cards (no artwork of the chosen orientation): reserve the same
-   aspect ratio area as a cover would have, fill with a subtle gradient. */
-.cgt-library-card--no-art .cgt-library-card__cover {
-  background: linear-gradient(135deg, var(--ctp-surface0), var(--ctp-mantle));
-}
-.cgt-library-grid--grid_v .cgt-library-card--no-art::before,
-.cgt-library-grid--grid_h .cgt-library-card--no-art::before {
-  content: "";
-  display: block;
-  background: linear-gradient(135deg, var(--ctp-surface0), var(--ctp-mantle));
-}
-.cgt-library-grid--grid_v .cgt-library-card--no-art::before { aspect-ratio: 600 / 900; }
-.cgt-library-grid--grid_h .cgt-library-card--no-art::before { aspect-ratio: 460 / 215; }
-
-.cgt-library-card__meta {
-  padding: 0.5rem 0.75rem;
+/* Placeholder card body: centered title + platform on a subtle gradient.
+   Always rendered alongside the cover so it can auto-show if the cover img
+   fails to load and removes itself. Hidden by default when a cover is also
+   present (cover then placeholder = placeholder is NOT :only-child). */
+.cgt-library-card__placeholder:not(:only-child) { display: none; }
+.cgt-library-card__placeholder {
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  min-height: 0;
+  justify-content: center;
+  align-items: center;
+  padding: 0.75rem;
+  text-align: center;
+  background: linear-gradient(135deg, var(--ctp-surface0), var(--ctp-mantle));
 }
-.cgt-library-card__title {
+.cgt-library-card__placeholder-title {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--ctp-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  margin-bottom: 0.25rem;
+  word-break: break-word;
 }
-.cgt-library-card__badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
+.cgt-library-card__placeholder-platform {
+  font-size: 0.75rem;
+  color: var(--ctp-subtext);
 }
 
-/* Grid-gap slider styling: thin and tucked-in. */
-.cgt-grid-gap-slider { width: 100px; }
+/* DLC indicator: 3px peach stripe across the top of the card. Subtle in the
+   default view (which filters DLC out anyway), useful in DLC / Everything views. */
+.cgt-library-card--dlc::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background-color: var(--ctp-peach);
+  z-index: 2;
+}
+
+/* Hidden indicator: small em-dash badge top-right. Only relevant when
+   "Show hidden" is on (otherwise the row is filtered out of the query). */
+.cgt-library-card--hidden::after {
+  content: "—";
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ctp-text);
+  background-color: rgba(0, 0, 0, 0.55);
+  padding: 1px 6px;
+  border-radius: 2px;
+  z-index: 2;
+}
+
+/* ─── List view: row thumbnail ──────────────────────────────────────────── */
+/* Small horizontal thumbnail in the first cell of each library row. Visual
+   scan vastly improves; rows get a few px taller. No fallback for entries
+   without artwork — empty space rather than a blank rectangle. */
+.cgt-list-row-thumb {
+  display: inline-block;
+  width: 64px;
+  height: 30px;
+  margin-right: 0.5rem;
+  vertical-align: middle;
+  background-color: var(--ctp-crust);
+  border-radius: 3px;
+  object-fit: cover;
+}
+
+/* Catppuccin-themed range slider. Rectangular thumb matches the rest of the
+   design (we haven't leaned into rounded controls anywhere else). Apply by
+   adding .cgt-range to any <input type="range">. */
+.cgt-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 110px;
+  height: 18px;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+}
+/* Track */
+.cgt-range::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--ctp-surface1);
+  border-radius: 2px;
+}
+.cgt-range::-moz-range-track {
+  height: 4px;
+  background: var(--ctp-surface1);
+  border-radius: 2px;
+}
+/* Thumb — rectangular, Catppuccin mauve */
+.cgt-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 16px;
+  background: var(--ctp-mauve);
+  border: 1px solid var(--ctp-crust);
+  border-radius: 1px;
+  margin-top: -6px;  /* center on track */
+  transition: background-color 0.1s ease;
+}
+.cgt-range::-moz-range-thumb {
+  width: 10px;
+  height: 16px;
+  background: var(--ctp-mauve);
+  border: 1px solid var(--ctp-crust);
+  border-radius: 1px;
+}
+.cgt-range:hover::-webkit-slider-thumb,
+.cgt-range:focus::-webkit-slider-thumb { background: var(--ctp-lavender); }
+.cgt-range:hover::-moz-range-thumb,
+.cgt-range:focus::-moz-range-thumb { background: var(--ctp-lavender); }
+.cgt-range:focus { outline: none; }
 
