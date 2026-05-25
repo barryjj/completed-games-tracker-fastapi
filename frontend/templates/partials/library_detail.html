@@ -52,7 +52,13 @@
 
     {% if release.external_id %}
     <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
-    <dd class="col-7 mb-1"><code>{{ release.external_id }}</code></dd>
+    <dd class="col-7 mb-1">
+      <code>{{ release.external_id }}</code>
+      {% if release.source == "steam" %}
+      <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
+         target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+      {% endif %}
+    </dd>
     {% endif %}
   </dl>
 

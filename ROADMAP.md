@@ -40,12 +40,28 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Per-row Hide / Unhide actions (both set `is_hidden_user_set=True` so the heuristic stays out of the way)
 - One-shot `POST /library/backfill-hidden` endpoint to apply the heuristic across existing entries without waiting for the enrichment worker
 
-### Library detail pane ✅ (this PR)
+### Library detail pane ✅ (PR #64)
 - Click a library row → slide-out (Bootstrap offcanvas) detail pane via HTMX
 - Single place for cover art + appdetails description + parent navigation + completion history
 - Child DLC list with click-through to swap the pane to the child's detail
 - Edit / Hide / Unhide / Remove actions inside the pane (Edit still opens the existing modal for now)
 - Reduces the need for inline nesting/grouping — clicking a parent reveals its children in the pane
+
+### Library polish round A ✅ (this PR)
+- Library sort: `COALESCE(display_name, title) COLLATE NOCASE` so display order matches what you see (fixes "Influent DLC" landing before number-prefixed entries)
+- DLC reconciliation now goes both ways: appdetails `type=game` + currently `is_dlc=True` + not user-set → demote to False. Catches misclassifications from the rgOwnedApps subtraction.
+- Auto-hide regex expanded with patterns from real-world fighting-game DLC: character/season/ultimate/stage/kombat pass, skin/costume/outfit/cinematic/customization pack, add-on bundle, avatar skin/costume, DLC playable character, Deluxe upgrade
+- Auto-hide is now hard-gated on `is_dlc=True` — games never get auto-hidden by any heuristic
+- Steam store link in the detail pane (Steam entries only, opens new tab)
+- "Auto-hide non-games" button moved off the library page → Steam configure page (under "More sync options" with the other backfills)
+
+### External store / cross-reference links
+- Detail pane links to canonical sources for each entry
+- Steam: store URL (done in polish round A)
+- PSN: store URL once PSN integration lands
+- IGDB: link when `igdb_id` is set
+- SteamGridDB: artwork browser link for cover-art lookup once cover override is wired up
+- Possibly: HowLongToBeat link once we have title-based search
 
 ### Sync match review (same platform, NOT cross-platform)
 - Case: user manually adds "RE8" on Steam → later syncs Steam library → sync sees `Resident Evil Village` (appid 1196590) on the same platform with a similar title

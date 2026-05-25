@@ -183,6 +183,17 @@
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
           >Refresh Metadata</button>
         </div>
+        <div>
+          <p class="text-secondary mb-1"><small>Run the auto-hide heuristic across your library — hides soundtracks, artbooks, cosmetic packs, character/season passes, etc. Only touches DLC; never games. Skips any entries you've manually hidden or unhidden.</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/library/backfill-hidden"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-confirm="Run the auto-hide heuristic across your library?"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Auto-hide non-games</button>
+        </div>
         {% if current_user.steam_session_id and current_user.steam_login_secure %}
         <div>
           <p class="text-secondary mb-1"><small>Sanity-check your saved cookies by hitting Steam's owned-app endpoint.</small></p>
