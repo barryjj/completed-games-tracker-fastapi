@@ -4,7 +4,7 @@ import os
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from . import models, users
@@ -273,7 +273,12 @@ def library_page(
         .join(models.GameRelease.game)
         .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
         .filter(models.UserLibraryEntry.user_id == current_user.id)
-        .order_by(models.Game.title)
+        # Sort on what's actually shown (display_name with title as fallback),
+        # case-insensitive so "Apple"/"apple" cluster together. Sorting by raw
+        # title caused rows like "Influent DLC…" to land before number-prefixed
+        # games because of how ALL CAPS / leading-symbol titles compare to
+        # cleaned display names.
+        .order_by(func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE"))
     )
     # Hidden entries (soundtracks, artbooks, etc.) are excluded by default.
     # The "Show hidden" toggle flips this off so the user can review or unhide.
@@ -590,7 +595,7 @@ def backfill_hidden(
     hidden = 0
     for entry in rows:
         appdetails = (entry.release.raw_data or {}).get("appdetails")
-        if steam._should_auto_hide(entry.release.game.title, appdetails):
+        if steam._should_auto_hide(entry.release.game.title, appdetails, entry.release.game.is_dlc):
             entry.is_hidden = True
             hidden += 1
     db.commit()

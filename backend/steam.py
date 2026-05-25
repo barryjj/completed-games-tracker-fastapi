@@ -118,22 +118,46 @@ def _infer_is_collection(title: str) -> bool:
     return any(kw in t for kw in COLLECTION_KEYWORDS)
 
 
-# Patterns that indicate "not really a game" — soundtracks, artbooks, cosmetic
-# packs, wallpapers. Used by the auto-hide heuristic in the enrichment worker.
+# Patterns that indicate "DLC the user almost certainly can't 'complete'":
+# soundtracks, artbooks, cosmetic / character / costume packs, season passes,
+# avatar items, deluxe-edition upgrades. Auto-hide is intentionally GATED on
+# is_dlc=True — a real game won't have "Skin Pack" or "Season Pass" in its
+# title in a way we'd want to hide. Trying to detect individual character names
+# ("Mileena", "Armor King") is too brittle; we leave those for manual hide.
 _AUTO_HIDE_RE = re.compile(
     r"\b("
-    r"soundtrack|ost|original\s+sound|art\s*book|"
-    r"wallpaper|cosmetic\s*pack|emotes?\s*pack|"
-    r"season\s*pass\s*pre-?order"
+    # Audio / book / wallpaper content
+    r"soundtrack|ost|original\s+sound(track)?|"
+    r"art\s*book|wallpapers?(\s*set)?|"
+    # Generic DLC pack suffixes
+    r"cosmetic\s*pack|emotes?\s*pack|customization(\s+item)?\s*pack|"
+    r"(skin|costume|outfit)\s*pack|cinematic\s*pack|"
+    # Pass-suffix DLC (heavy in fighting games)
+    r"(season|character|ultimate|stage|kombat)\s*pass|"
+    r"character\s*\&\s*stage\s*pass|"
+    # Avatar / profile cosmetics
+    r"avatar\s*(skin|costume)|"
+    # "DLC Playable Character" (Inti Creates pattern)
+    r"dlc\s*playable\s*character|"
+    # "Ultimate Add-On Bundle" (MK11 etc.)
+    r"add[- ]?on\s*bundle|"
+    # "Deluxe Edition Upgrade" pattern
+    r"deluxe.*upgrade"
     r")\b",
     re.IGNORECASE,
 )
 
 
-def _should_auto_hide(title: str, appdetails: dict | None) -> bool:
-    """True if this entry looks like a soundtrack / artbook / non-game DLC
-    that should be hidden from the default library view."""
-    if appdetails and appdetails.get("type") in {"music"}:
+def _should_auto_hide(title: str, appdetails: dict | None, is_dlc: bool) -> bool:
+    """True if this entry is DLC the user almost certainly can't 'complete'.
+
+    Hard rule: auto-hide ONLY fires for is_dlc=True. Games are never auto-hidden
+    by any heuristic — if Steam tagged something as a game, it stays visible.
+    Soundtracks etc. land in is_dlc=True from the sync's rgOwnedApps subtraction
+    already, so this gate doesn't lose them."""
+    if not is_dlc:
+        return False
+    if appdetails and appdetails.get("type") == "music":
         return True
     return bool(_AUTO_HIDE_RE.search(title or ""))
 
@@ -700,9 +724,18 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
             game = release.game
             app_type = details.get("type", "game")
 
-            # Heuristic skip: respect user override on is_dlc.
-            if app_type == "dlc" and not game.is_dlc and not game.is_dlc_user_set:
-                game.is_dlc = True
+            # is_dlc reconciliation in BOTH directions:
+            #   appdetails type=dlc  + is_dlc=False → promote True
+            #   appdetails type=game + is_dlc=True  → demote False
+            # Either direction respects is_dlc_user_set so manual overrides win.
+            if not game.is_dlc_user_set:
+                if app_type == "dlc" and not game.is_dlc:
+                    game.is_dlc = True
+                elif app_type == "game" and game.is_dlc:
+                    # Steam's rgOwnedApps subtraction can misclassify edge cases
+                    # (e.g. games owned via paths GetOwnedGames doesn't return).
+                    # Trust appdetails when it explicitly says "game".
+                    game.is_dlc = False
 
             # Link DLC to its base game if not already linked — but respect
             # user override on parent_id.
@@ -714,9 +747,9 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                     if parent_release:
                         game.parent_id = parent_release.game_id
 
-            # Auto-hide soundtracks / artbooks / cosmetic packs etc. The
-            # heuristic skips entries the user has explicitly toggled.
-            if _should_auto_hide(game.title, details):
+            # Auto-hide soundtracks / artbooks / cosmetic packs etc.
+            # GATED on is_dlc=True — games are never auto-hidden.
+            if _should_auto_hide(game.title, details, game.is_dlc):
                 for entry in release.library_entries:
                     if not entry.is_hidden and not entry.is_hidden_user_set:
                         entry.is_hidden = True
