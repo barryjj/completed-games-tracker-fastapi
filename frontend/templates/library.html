@@ -310,6 +310,21 @@ function closeDetailAndEdit(ds) {
   editLibraryEntry(ds);
 }
 
+// Deep-link support: /library?detail=N auto-opens entry N's pane on load.
+// Used by the completion pane's "View in library ↗" link so a user can jump
+// from a completion straight to the library entry's context.
+(function autoOpenFromQueryParam() {
+  var params = new URLSearchParams(window.location.search);
+  var entryId = params.get('detail');
+  if (!entryId) return;
+  // Defer until htmx + bootstrap are guaranteed loaded.
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { openLibraryDetail(entryId); });
+  } else {
+    openLibraryDetail(entryId);
+  }
+})();
+
 function openAddGameModal() {
   if (!_addGameModal) {
     _addGameModal = new bootstrap.Modal(document.getElementById('addGameModal'));
