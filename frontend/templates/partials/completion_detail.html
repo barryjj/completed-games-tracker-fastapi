@@ -98,7 +98,7 @@
   </div>
   {% endif %}
 
-  <div class="border-top pt-3 d-flex flex-wrap gap-2">
+  <div class="border-top pt-3 d-flex flex-wrap gap-2 align-items-center">
     {# Edit reuses the existing edit completion modal (same data attrs the row's
        Edit button uses). Closes the offcanvas first to avoid stacking. #}
     <button class="btn btn-outline-secondary btn-sm"
@@ -115,10 +115,25 @@
     <a class="btn btn-outline-secondary btn-sm"
        href="/library?detail={{ entry.id }}">View in library ↗</a>
 
-    <button class="btn btn-danger btn-sm ms-auto"
-            hx-delete="/completions/{{ completion.id }}"
-            hx-swap="none"
-            hx-confirm="Delete this completion?"
-            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Delete</button>
+    <div class="dropdown ms-auto">
+      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+              data-bs-toggle="dropdown" aria-expanded="false">More</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        {% if release.source == "steam" %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Refresh game metadata
+           </a></li>
+        <li><hr class="dropdown-divider"></li>
+        {% endif %}
+        <li><a class="dropdown-item text-danger" href="#"
+               hx-delete="/completions/{{ completion.id }}"
+               hx-swap="none"
+               hx-confirm="Delete this completion?"
+               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Delete</a></li>
+      </ul>
+    </div>
   </div>
 </div>
