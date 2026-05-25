@@ -492,7 +492,12 @@ def edit_library_entry(
     # Saving the edit modal is a user override on every field it touches.
     # All user_set flags flip to True so no heuristic ever undoes these edits.
     title_clean = title.strip()
-    if title_clean:
+    # Title is editable ONLY for fully-manual games. If any release on this game
+    # came from a platform sync (Steam/PSN/etc.), the title is the platform's
+    # canonical name and changing it could break future re-sync matching.
+    # display_name remains freely editable either way.
+    is_fully_manual = all(r.source == "manual" for r in game.releases)
+    if title_clean and is_fully_manual:
         game.title = title_clean
 
     # display_name: empty string means "use raw title" (display_name stored as NULL)
