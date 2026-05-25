@@ -1,0 +1,25 @@
+{# Grid card for the library view. Shows cover (if available for the chosen
+   orientation) and title. Click anywhere on the card → opens the detail pane
+   via the same delegated row click handler — that handler matches anything
+   with [data-entry-id], so cards work the same as table rows. #}
+{% set cover_url = entry.release | grid_cover_url(view_mode) %}
+<div class="cgt-library-card library-row-clickable {% if not cover_url %}cgt-library-card--no-art{% endif %}"
+     id="library-entry-{{ entry.id }}"
+     data-entry-id="{{ entry.id }}">
+  {% if cover_url %}
+  <div class="cgt-library-card__cover">
+    <img src="{{ cover_url }}" alt="" loading="lazy"
+         onerror="this.parentElement.parentElement.classList.add('cgt-library-card--no-art'); this.parentElement.remove();">
+  </div>
+  {% endif %}
+  <div class="cgt-library-card__meta">
+    <div class="cgt-library-card__title" title="{{ entry.release.game.display_title | e }}">
+      {{ entry.release.game.display_title }}
+    </div>
+    <div class="cgt-library-card__badges">
+      <span class="tag-badge {{ entry.release.platform | platform_color }}">{{ entry.release.platform }}</span>
+      {% if entry.release.game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
+      {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
+    </div>
+  </div>
+</div>

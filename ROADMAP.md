@@ -54,7 +54,22 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Edit reuses existing edit-completion modal
 - "View in library ↗" link navigates to `/library?detail={entry_id}` which auto-opens the library pane for that game
 
-### Per-entry refresh metadata + dropdown actions menu ✅ (this PR)
+### Library grid view ✅ (this PR)
+- Three-way toggle in the library header: List / Grid (vertical covers) / Grid (horizontal covers)
+- View mode is server-rendered via `?view_mode=...` query param; localStorage persists the preference across visits (one-time JS redirect when URL lacks the param)
+- Spacing slider in the header controls `--cgt-grid-gap` CSS variable; persisted to localStorage
+- Vertical grid uses Steam `library_600x900.jpg`; horizontal uses `header.jpg`. **No cross-orientation borrowing** — entries without the matching artwork get a clean gradient placeholder card rather than a stretched/squished image.
+- Cards click straight through to the existing detail pane (same delegated handler matches both `tr` and `div` with `.library-row-clickable`)
+- Library list query eager-loads `GameArtwork` via `contains_eager(release).selectinload(artwork)` so cards don't N+1
+- Reusable across other pages later (completions grid is its own roadmap item)
+- SteamGridDB integration placeholder card added to /integrations as a foundation for the later cover-art lookup feature
+
+### Custom cover art (manual upload + SteamGridDB lookup)
+- Per-entry cover upload UI on the detail pane (writes to `cover_url_override` on `UserLibraryEntry` — column already exists)
+- SteamGridDB lookup integration: hit their API for art candidates by appid/title, let the user pick one
+- Especially important for manual entries (no Steam artwork available) and PSN entries (different art catalog)
+
+### Per-entry refresh metadata + dropdown actions menu ✅ (PR #69)
 - New `POST /library/entries/{id}/refresh-metadata` — synchronous one-off appdetails fetch for a single Steam entry, bypasses the background worker's queue
 - Re-runs the worker's post-fetch logic (promote/demote `is_dlc`, link `parent_id`, auto-hide) so a misclassified entry self-corrects in one click
 - Handles 429 gracefully with a "rate-limiting, try again" toast — no DB writes on failure

@@ -35,6 +35,24 @@ def _platform_color_class(platform: str) -> str:
 
 templates.env.filters["platform_color"] = _platform_color_class
 
+
+def _grid_cover_url(release, orientation: str) -> str | None:
+    """Pick the right cover URL for the grid view's orientation. Returns None
+    when the entry doesn't have an artwork of the matching kind — no cross-
+    orientation borrowing (stretched/squished art looks worse than a clean
+    placeholder card).
+
+    Vertical mode wants library_600x900.jpg (Steam's portrait library art).
+    Horizontal mode wants header.jpg (Steam's landscape header)."""
+    wanted = "cover" if orientation == "grid_v" else "header"
+    for art in release.artwork:
+        if art.artwork_type == wanted:
+            return art.url
+    return None
+
+
+templates.env.filters["grid_cover_url"] = _grid_cover_url
+
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
 
 COLLECTION_KEYWORDS = [
@@ -256,6 +274,9 @@ PAGE_SIZE = 100
 VIEW_OPTIONS = ["default", "dlc", "collections", "in_collection", "manual", "all"]
 
 
+VIEW_MODES = {"list", "grid_v", "grid_h"}
+
+
 @router.get("/library")
 def library_page(
     request: Request,
@@ -263,15 +284,27 @@ def library_page(
     q: str = Query(""),
     platform: str = Query(""),
     view: str = Query("default"),
+    view_mode: str = Query("list"),
     show_hidden: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    # view_mode controls list-vs-grid presentation; defaults to list, persisted
+    # by JS in localStorage and reapplied via the same query param.
+    if view_mode not in VIEW_MODES:
+        view_mode = "list"
+
     base_q = (
         db.query(models.UserLibraryEntry)
         .join(models.UserLibraryEntry.release)
         .join(models.GameRelease.game)
-        .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
+        .options(
+            # Both branches start with contains_eager(release) — same strategy
+            # on the shared path prefix, then diverge. Adding a separate
+            # joinedload(release) would conflict.
+            contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game),
+            contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+        )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
         # Sort on what's actually shown (display_name with title as fallback),
         # case-insensitive so "Apple"/"apple" cluster together. Sorting by raw
@@ -387,6 +420,8 @@ def library_page(
         filter_parts.append(f"view={view}")
     if show_hidden:
         filter_parts.append("show_hidden=true")
+    if view_mode != "list":
+        filter_parts.append(f"view_mode={view_mode}")
     filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
 
     return templates.TemplateResponse(
@@ -404,6 +439,7 @@ def library_page(
             "q": q,
             "platform": platform,
             "view": view,
+            "view_mode": view_mode,
             "show_hidden": show_hidden,
             "filter_qs": filter_qs,
             "lib_platforms": lib_platform_list,
