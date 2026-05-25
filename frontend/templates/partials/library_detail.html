@@ -107,10 +107,11 @@
   </div>
   {% endif %}
 
-  {# Actions block — inline edit comes in a later PR, but Hide/Unhide/Remove
-     live here so the user has everything in one place. Edit still routes to
-     the existing modal for now. #}
-  <div class="border-top pt-3 d-flex flex-wrap gap-2">
+  {# Actions block. Edit stays as the primary visible button; secondary actions
+     (Refresh / Hide / Remove) live in a "More ▾" dropdown so the footer scales
+     as we add more without piling up buttons. Inline edit comes in a later PR;
+     Edit still opens the existing modal for now. #}
+  <div class="border-top pt-3 d-flex flex-wrap gap-2 align-items-center">
     <button class="btn btn-outline-secondary btn-sm"
             onclick="closeDetailAndEdit(this.dataset)"
             data-entry-id="{{ entry.id }}"
@@ -123,22 +124,37 @@
             data-source="{{ release.source }}"
             data-label="{{ game.display_title | e }}">Edit</button>
 
-    {% if entry.is_hidden %}
-    <button class="btn btn-outline-secondary btn-sm"
-            hx-post="/library/entries/{{ entry.id }}/unhide"
-            hx-swap="none"
-            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Unhide</button>
-    {% else %}
-    <button class="btn btn-outline-secondary btn-sm"
-            hx-post="/library/entries/{{ entry.id }}/hide"
-            hx-swap="none"
-            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Hide</button>
-    {% endif %}
-
-    <button class="btn btn-danger btn-sm ms-auto"
-            hx-delete="/library/entries/{{ entry.id }}"
-            hx-swap="none"
-            hx-confirm="Remove {{ game.display_title | e }} from your library?"
-            hx-on::after-request="if(event.detail.successful){ location.reload(); }">Remove</button>
+    <div class="dropdown ms-auto">
+      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+              data-bs-toggle="dropdown" aria-expanded="false">More</button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        {% if release.source == "steam" %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+             Refresh metadata
+           </a></li>
+        <li><hr class="dropdown-divider"></li>
+        {% endif %}
+        {% if entry.is_hidden %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/unhide"
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Unhide</a></li>
+        {% else %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/hide"
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Hide</a></li>
+        {% endif %}
+        <li><hr class="dropdown-divider"></li>
+        <li><a class="dropdown-item text-danger" href="#"
+               hx-delete="/library/entries/{{ entry.id }}"
+               hx-swap="none"
+               hx-confirm="Remove {{ game.display_title | e }} from your library?"
+               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Remove</a></li>
+      </ul>
+    </div>
   </div>
 </div>
