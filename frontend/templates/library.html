@@ -113,21 +113,26 @@
       </div>
       <form id="edit-entry-form">
         <div class="modal-body">
-          <div class="mb-3">
-            <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
-            <input type="text" class="form-control" name="title" id="edit-title" autocomplete="off"
-                   oninput="syncEditDisplayFromTitle()">
-          </div>
-          <div class="mb-2 form-check">
-            <input class="form-check-input" type="checkbox" id="edit-display-same" checked
-                   onchange="toggleEditDisplaySame()">
-            <label class="form-check-label text-secondary" for="edit-display-same">
-              <small>Display name is the same as title</small>
-            </label>
+          {# Title field + "same as title" checkbox are hidden for imported
+             entries — only manually-added games allow title editing (it's the
+             platform's canonical name for sync matching otherwise). #}
+          <div id="edit-title-section">
+            <div class="mb-3">
+              <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
+              <input type="text" class="form-control" name="title" id="edit-title" autocomplete="off"
+                     oninput="syncEditDisplayFromTitle()">
+            </div>
+            <div class="mb-2 form-check">
+              <input class="form-check-input" type="checkbox" id="edit-display-same" checked
+                     onchange="toggleEditDisplaySame()">
+              <label class="form-check-label text-secondary" for="edit-display-same">
+                <small>Display name is the same as title</small>
+              </label>
+            </div>
           </div>
           <div class="mb-3">
             <label class="form-label">Display name <span class="text-secondary fw-normal">(what shows in the library)</span></label>
-            <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off" disabled>
+            <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off">
           </div>
           <div class="mb-3">
             <div class="form-check">
@@ -178,10 +183,12 @@
 </div>
 
 <!-- Library entry detail pane (slide-out from right).
-     The wrapper stays in the DOM permanently; clicking a library row triggers
-     an HTMX GET that swaps the inner content. -->
-<div class="offcanvas offcanvas-end" tabindex="-1" id="library-detail" aria-labelledby="library-detail-label">
-  <!-- Inner content is populated by /library/entries/{id}/detail -->
+     The wrapper stays in the DOM permanently. The handle child is also
+     persistent (survives HTMX swaps) — clicking a library row swaps content
+     into #library-detail-content, leaving the handle in place. -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="library-detail" data-cgt-resize-key="cgt-library-pane-width" aria-labelledby="library-detail-label">
+  <div class="offcanvas-resize-handle" title="Drag to resize"></div>
+  <div id="library-detail-content"></div>
 </div>
 
 <!-- Add Game Modal -->
@@ -298,7 +305,7 @@ function openLibraryDetail(entryId) {
   // HTMX fetches fresh content into the inner div.
   _libraryDetailOffcanvas.show();
   htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
-    target: '#library-detail',
+    target: '#library-detail-content',
     swap: 'innerHTML',
   });
 }
@@ -413,14 +420,32 @@ function updateEditParentRows() {
 
 function editLibraryEntry(ds) {
   _editEntryId = ds.entryId;
-  document.getElementById('edit-title').value = ds.title || '';
-  document.getElementById('edit-display-name').value = ds.displayName || ds.title || '';
-  // "Same as title" defaults checked if display_name is empty or equals title;
-  // otherwise (user has previously set a custom display) leave it unchecked so
-  // they can see and edit the separate value.
-  var same = !ds.displayName || ds.displayName === ds.title;
-  document.getElementById('edit-display-same').checked = same;
-  document.getElementById('edit-display-name').disabled = same;
+  var isManual = ds.source === 'manual';
+
+  // Imported entries (Steam/PSN/etc.): hide the title field + the "same as
+  // title" checkbox entirely. The canonical title is what the platform's
+  // sync matches against — letting users rename it could break future
+  // re-syncs. Only display_name is editable. The server enforces this too.
+  var titleSection = document.getElementById('edit-title-section');
+  var displayInput = document.getElementById('edit-display-name');
+
+  if (isManual) {
+    titleSection.hidden = false;
+    document.getElementById('edit-title').value = ds.title || '';
+    displayInput.value = ds.displayName || ds.title || '';
+    // "Same as title" defaults checked if display_name is empty or equals title.
+    var same = !ds.displayName || ds.displayName === ds.title;
+    document.getElementById('edit-display-same').checked = same;
+    displayInput.disabled = same;
+  } else {
+    titleSection.hidden = true;
+    // Display name always editable; pre-fill with current value (falling back
+    // to the canonical title when no custom display is set).
+    displayInput.value = ds.displayName || ds.title || '';
+    displayInput.disabled = false;
+    // Reset checkbox state so it doesn't bleed into a manual entry edited later
+    document.getElementById('edit-display-same').checked = false;
+  }
 
   var isDlc = ds.isDlc === 'true';
   var isCollection = ds.isCollection === 'true';
@@ -458,12 +483,20 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
   if (!_editEntryId) return;
   var form = e.target;
   var body = new URLSearchParams();
-  body.append('title', form.title.value);
-  // If "same as title" is checked, send empty display_name → backend stores
-  // display_name=NULL, display_title falls back to title. Otherwise send the
-  // user's distinct display name.
-  var sameDisplay = document.getElementById('edit-display-same').checked;
-  body.append('display_name', sameDisplay ? '' : form.display_name.value);
+  // For imported entries the title section is hidden — don't send a title
+  // (the server would ignore it anyway). For manual entries, send it.
+  var titleHidden = document.getElementById('edit-title-section').hidden;
+  if (!titleHidden) {
+    body.append('title', form.title.value);
+    // "Same as title" checkbox is only meaningful when title is visible.
+    // Checked → send empty display_name (backend stores NULL, display_title
+    // falls back to title). Unchecked → send the user's distinct value.
+    var sameDisplay = document.getElementById('edit-display-same').checked;
+    body.append('display_name', sameDisplay ? '' : form.display_name.value);
+  } else {
+    // Imported entry: only display_name was editable. Send what the user typed.
+    body.append('display_name', form.display_name.value);
+  }
   body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
   body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
 

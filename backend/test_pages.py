@@ -310,7 +310,9 @@ def test_edit_entry_sets_user_overrides(client, db_session):
     r = client.patch(
         f"/library/entries/{entry.id}",
         data={
-            "title": "Elden Ring",
+            # Title submission is ignored for imported (non-manual) entries.
+            # See test_edit_title_ignored_for_imported_entry for that behavior.
+            "title": "ELDEN RING",
             "display_name": "ER",
             "is_dlc": "false",
             "is_collection": "false",
@@ -318,7 +320,8 @@ def test_edit_entry_sets_user_overrides(client, db_session):
     )
     assert r.status_code == 200
     db_session.refresh(game)
-    assert game.title == "Elden Ring"
+    # Title untouched (imported), display_name updated.
+    assert game.title == "ELDEN RING"
     assert game.display_name == "ER"
     assert game.display_name_user_set is True
     assert game.is_dlc_user_set is True
@@ -561,3 +564,59 @@ def test_completion_detail_single_completion_no_others_section(client, db_sessio
 
     r = client.get(f"/completions/{comp.id}/detail")
     assert b"Other completions of this game" not in r.content
+
+
+def test_edit_title_ignored_for_imported_entry(client, db_session):
+    """Title is read-only for entries with any non-manual release. The server
+    drops the incoming title; everything else (display_name, flags) saves."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="ELDEN RING")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1245620")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.patch(
+        f"/library/entries/{entry.id}",
+        data={
+            "title": "Hacked Title",  # imported game — server should ignore this
+            "display_name": "Elden Ring",  # but this saves normally
+            "is_dlc": "false",
+            "is_collection": "false",
+        },
+    )
+    assert r.status_code == 200
+    db_session.refresh(game)
+    # Title untouched — sync's canonical name preserved
+    assert game.title == "ELDEN RING"
+    # display_name still updates
+    assert game.display_name == "Elden Ring"
+    assert game.display_name_user_set is True
+
+
+def test_edit_title_saves_for_fully_manual_entry(client, db_session):
+    """A game whose every release is source='manual' lets the user rename the
+    title field freely."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # _add_game creates a release with source='manual' by default
+    entry = _add_game(db_session, user, title="Original Title", platform="Switch")
+
+    r = client.patch(
+        f"/library/entries/{entry.id}",
+        data={
+            "title": "Renamed Title",
+            "display_name": "Renamed Display",
+            "is_dlc": "false",
+            "is_collection": "false",
+        },
+    )
+    assert r.status_code == 200
+    db_session.refresh(entry.release.game)
+    assert entry.release.game.title == "Renamed Title"
+    assert entry.release.game.display_name == "Renamed Display"

@@ -58,3 +58,74 @@ if (document.readyState === 'loading') {
 } else {
   _initToastContainer();
 }
+
+// Resizable offcanvas detail pane.
+//
+// Any .offcanvas[data-cgt-resize-key] gets a left-edge drag handle. Dragging
+// updates the offcanvas width via the Bootstrap CSS variable; on mouseup the
+// new width is persisted to localStorage under the data-attribute's key.
+// On open, the saved width is restored before show() so the pane appears at
+// the user's preferred size from the first frame.
+//
+// Width is clamped to [300px, 80% of viewport] to keep the pane usable on
+// small screens and prevent off-screen drags.
+function _initOffcanvasResize(offcanvasEl) {
+  if (!offcanvasEl || offcanvasEl.dataset.cgtResizeInited) return;
+  offcanvasEl.dataset.cgtResizeInited = '1';
+
+  var key = offcanvasEl.dataset.cgtResizeKey;
+  var handle = offcanvasEl.querySelector('.offcanvas-resize-handle');
+  if (!key || !handle) return;
+
+  function clampWidth(px) {
+    var min = 300;
+    var max = Math.floor(window.innerWidth * 0.8);
+    return Math.max(min, Math.min(max, px));
+  }
+
+  function applyWidth(px) {
+    offcanvasEl.style.setProperty('--bs-offcanvas-width', clampWidth(px) + 'px');
+  }
+
+  // Restore saved width on init AND every time the offcanvas opens (the user
+  // might resize one pane while the other is closed).
+  var saved = parseInt(localStorage.getItem(key), 10);
+  if (saved) applyWidth(saved);
+  offcanvasEl.addEventListener('show.bs.offcanvas', function() {
+    var s = parseInt(localStorage.getItem(key), 10);
+    if (s) applyWidth(s);
+  });
+
+  var dragging = false;
+  handle.addEventListener('mousedown', function(e) {
+    dragging = true;
+    handle.classList.add('cgt-resizing');
+    // Prevent text selection during drag.
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    // Pane is anchored to the right edge — new width = viewport width minus
+    // the mouse X position.
+    applyWidth(window.innerWidth - e.clientX);
+  });
+  document.addEventListener('mouseup', function() {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('cgt-resizing');
+    document.body.style.userSelect = '';
+    var currentWidth = parseInt(offcanvasEl.style.getPropertyValue('--bs-offcanvas-width'), 10);
+    if (currentWidth) localStorage.setItem(key, String(currentWidth));
+  });
+}
+
+function _initAllOffcanvasResize() {
+  document.querySelectorAll('.offcanvas[data-cgt-resize-key]').forEach(_initOffcanvasResize);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initAllOffcanvasResize);
+} else {
+  _initAllOffcanvasResize();
+}

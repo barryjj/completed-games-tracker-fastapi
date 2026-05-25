@@ -74,7 +74,7 @@ function openCompletionDetail(completionId) {
   }
   _completionDetailOffcanvas.show();
   htmx.ajax('GET', '/completions/' + completionId + '/detail', {
-    target: '#completion-detail',
+    target: '#completion-detail-content',
     swap: 'innerHTML',
   });
 }
@@ -214,10 +214,11 @@ function resetCompletionForm() {
   {% endif %}
 </div>
 
-<!-- Completion detail pane (slide-out from right). Empty wrapper stays in the
-     DOM; clicking a row triggers an HTMX GET that swaps the inner. -->
-<div class="offcanvas offcanvas-end" tabindex="-1" id="completion-detail" aria-labelledby="completion-detail-label">
-  <!-- Inner content is populated by /completions/{id}/detail -->
+<!-- Completion detail pane (slide-out from right). Wrapper + resize handle
+     are persistent; HTMX swaps into #completion-detail-content. -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="completion-detail" data-cgt-resize-key="cgt-completion-pane-width" aria-labelledby="completion-detail-label">
+  <div class="offcanvas-resize-handle" title="Drag to resize"></div>
+  <div id="completion-detail-content"></div>
 </div>
 
 {% endblock %}
