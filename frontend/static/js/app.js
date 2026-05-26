@@ -12,6 +12,41 @@ window.cgtCoverFallback = function(img) {
   if (img.parentElement) img.parentElement.style.display = 'none';
 };
 
+// Collapsible toolbar drawer helpers. Used by library + completions toolbars
+// so the user can hide the Filters / View groups once they're dialed in and
+// pull them back out as needed. State is persisted per-drawer in localStorage.
+//
+// `cgtToggleDrawer` is wired to button onclick — flips the drawer's hidden
+// state, saves the new state, and toggles `.active` on the button.
+// `cgtInitDrawer` runs on page load to restore the saved state. First-time
+// users (no saved key) see drawers open by default.
+window.cgtToggleDrawer = function(drawerId, storageKey, btn) {
+  var el = document.getElementById(drawerId);
+  if (!el) return;
+  var willOpen = el.hidden;
+  el.hidden = !willOpen;
+  try { localStorage.setItem(storageKey, willOpen ? '1' : '0'); } catch (e) {}
+  if (btn) {
+    btn.classList.toggle('active', willOpen);
+    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+  }
+};
+window.cgtInitDrawer = function(drawerId, storageKey, btnId) {
+  var el = document.getElementById(drawerId);
+  if (!el) return;
+  var saved = null;
+  try { saved = localStorage.getItem(storageKey); } catch (e) {}
+  // Default open for first-time users; only collapse when the user has
+  // explicitly closed the drawer at some point.
+  var open = saved === null ? true : saved === '1';
+  el.hidden = !open;
+  var btn = btnId ? document.getElementById(btnId) : null;
+  if (btn) {
+    btn.classList.toggle('active', open);
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+  }
+};
+
 // Local-time helper: render any element with [data-utc] in the browser's locale.
 document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {
   var d = new Date(el.dataset.utc + 'Z');

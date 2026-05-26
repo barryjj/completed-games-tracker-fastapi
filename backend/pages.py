@@ -958,18 +958,27 @@ def completions_page(
     platform: str = Query(""),
     completed_from: str = Query(""),
     completed_to: str = Query(""),
+    view_mode: str = Query("list"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    # Mirror library: view_mode chooses list / grid_v / grid_h. Anything else
+    # falls back to list so a junked query param can't blow up the template.
+    if view_mode not in ("list", "grid_v", "grid_h"):
+        view_mode = "list"
     completions_q = (
         db.query(models.Completion)
         .join(models.Completion.library_entry)
         .join(models.UserLibraryEntry.release)
         .join(models.GameRelease.game)
         .options(
+            # selectinload on artwork so the grid view + list-row thumbs don't N+1.
             contains_eager(models.Completion.library_entry)
             .contains_eager(models.UserLibraryEntry.release)
-            .contains_eager(models.GameRelease.game)
+            .contains_eager(models.GameRelease.game),
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .selectinload(models.GameRelease.artwork),
         )
         .filter(models.Completion.user_id == current_user.id)
     )
@@ -1016,6 +1025,7 @@ def completions_page(
             "completed_from": completed_from,
             "completed_to": completed_to,
             "comp_platforms": comp_platform_list,
+            "view_mode": view_mode,
         },
     )
 
