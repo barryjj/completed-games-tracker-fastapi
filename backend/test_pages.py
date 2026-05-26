@@ -860,3 +860,107 @@ def test_card_without_matching_artwork_gets_placeholder(client, db_session):
 
     r = client.get("/library?view_mode=grid_v")
     assert b"cgt-library-card--no-art" in r.content
+
+
+def test_cover_url_override_h_takes_precedence_in_detail_pane(client, db_session):
+    """When cover_url_override_h is set, the detail pane uses it as the header."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Cover Override Test")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="900")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(
+        models.GameArtwork(
+            release_id=release.id,
+            artwork_type="header",
+            source="steam",
+            url="https://cdn.example.com/steam-header.jpg",
+        )
+    )
+    entry = models.UserLibraryEntry(
+        user_id=user.id,
+        release_id=release.id,
+        import_source="steam_import",
+        cover_url_override_h="https://sgdb.example.com/custom-header.jpg",
+    )
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert r.status_code == 200
+    assert b"sgdb.example.com/custom-header.jpg" in r.content
+    assert b"cdn.example.com/steam-header.jpg" not in r.content
+
+
+def test_grid_cover_url_v_override_wins(client, db_session):
+    """In grid_v view, cover_url_override_v wins over GameArtwork."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Vertical Override Test")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="901")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(
+        models.GameArtwork(
+            release_id=release.id,
+            artwork_type="cover",
+            source="steam",
+            url="https://cdn.example.com/steam-600x900.jpg",
+        )
+    )
+    entry = models.UserLibraryEntry(
+        user_id=user.id,
+        release_id=release.id,
+        import_source="steam_import",
+        cover_url_override_v="https://sgdb.example.com/custom-600x900.jpg",
+    )
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.get("/library?view_mode=grid_v")
+    assert b"sgdb.example.com/custom-600x900.jpg" in r.content
+    assert b"cdn.example.com/steam-600x900.jpg" not in r.content
+
+
+def test_clear_cover_override_v(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user)
+    entry.cover_url_override_v = "https://example.com/custom.jpg"
+    entry.cover_url_override_h = "https://example.com/custom_h.jpg"
+    db_session.commit()
+
+    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "v"})
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v is None
+    # _h untouched
+    assert entry.cover_url_override_h == "https://example.com/custom_h.jpg"
+
+
+def test_clear_cover_override_h(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user)
+    entry.cover_url_override_v = "https://example.com/custom.jpg"
+    entry.cover_url_override_h = "https://example.com/custom_h.jpg"
+    db_session.commit()
+
+    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "h"})
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.cover_url_override_h is None
+    assert entry.cover_url_override_v == "https://example.com/custom.jpg"
+
+
+def test_clear_cover_override_rejects_bad_orientation(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user)
+    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "x"})
+    assert r.status_code == 400

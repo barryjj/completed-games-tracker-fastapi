@@ -36,16 +36,28 @@ def _platform_color_class(platform: str) -> str:
 templates.env.filters["platform_color"] = _platform_color_class
 
 
-def _grid_cover_url(release, orientation: str) -> str | None:
+def _grid_cover_url(entry, orientation: str) -> str | None:
     """Pick the right cover URL for the grid view's orientation. Returns None
-    when the entry doesn't have an artwork of the matching kind — no cross-
-    orientation borrowing (stretched/squished art looks worse than a clean
-    placeholder card).
+    when neither the user's override nor the release's artwork has a matching-
+    orientation cover — no cross-orientation borrowing (stretched/squished
+    art looks worse than a clean placeholder card).
+
+    Resolution order:
+      1. User override (cover_url_override_v / cover_url_override_h) — explicit
+         choice from SGDB lookup, manual upload, etc.
+      2. Release's GameArtwork — Steam CDN URLs populated at sync / enrichment.
 
     Vertical mode wants library_600x900.jpg (Steam's portrait library art).
     Horizontal mode wants header.jpg (Steam's landscape header)."""
-    wanted = "cover" if orientation == "grid_v" else "header"
-    for art in release.artwork:
+    if orientation == "grid_v":
+        if entry.cover_url_override_v:
+            return entry.cover_url_override_v
+        wanted = "cover"
+    else:
+        if entry.cover_url_override_h:
+            return entry.cover_url_override_h
+        wanted = "header"
+    for art in entry.release.artwork:
         if art.artwork_type == wanted:
             return art.url
     return None
@@ -726,11 +738,11 @@ def library_entry_detail(
             .all()
         )
 
-    # Pick a header artwork URL: prefer "header" type from Steam, fall back to
-    # cover_url_override on the user's entry, else None.
+    # Pick a header artwork URL: prefer the user's horizontal override, then
+    # "header" type from Steam artwork, else None.
     header_url = None
-    if entry.cover_url_override:
-        header_url = entry.cover_url_override
+    if entry.cover_url_override_h:
+        header_url = entry.cover_url_override_h
     else:
         for art in entry.release.artwork:
             if art.artwork_type == "header":
@@ -869,6 +881,36 @@ def refresh_entry_metadata(
         request=request,
         name="partials/integrations_flash.html",
         context={"message": f"Refreshed metadata for {game.display_title}."},
+    )
+
+
+@router.post("/library/entries/{entry_id}/clear-cover-override")
+def clear_cover_override(
+    request: Request,
+    entry_id: int,
+    orientation: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Clear a custom cover override on a library entry. The pane / grid then
+    falls back to whatever the release's GameArtwork has (Steam CDN art).
+    orientation is "v" (vertical / library card) or "h" (horizontal / header)."""
+    if orientation not in ("v", "h"):
+        return Response(status_code=400)
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
+    if not entry:
+        return Response(status_code=404)
+    if orientation == "v":
+        entry.cover_url_override_v = None
+        msg = "Custom vertical cover cleared."
+    else:
+        entry.cover_url_override_h = None
+        msg = "Custom horizontal cover cleared."
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": msg},
     )
 
 
@@ -1106,8 +1148,8 @@ def completion_detail(
     )
 
     header_url = None
-    if entry.cover_url_override:
-        header_url = entry.cover_url_override
+    if entry.cover_url_override_h:
+        header_url = entry.cover_url_override_h
     else:
         for art in release.artwork:
             if art.artwork_type == "header":
