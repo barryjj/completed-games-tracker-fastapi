@@ -496,6 +496,23 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
+/* ─── Active nav indicator ──────────────────────────────────────────────── */
+/* Replaces the dropped <h1>Library</h1>/<h1>Completions</h1> page titles.
+   Subtle mauve underline marks the current page in the navbar. */
+.cgt-nav-active {
+  color: var(--ctp-text) !important;
+  position: relative;
+}
+.cgt-nav-active::after {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: -1px;  /* sit right on top of the navbar's border-bottom */
+  height: 2px;
+  background-color: var(--ctp-mauve);
+}
+
 /* ─── Library grid view ─────────────────────────────────────────────────── */
 /* Cover-art mosaic. Three CSS variables drive the layout:
      --cgt-grid-gap      — space between cards (px), driven by the Gap slider
