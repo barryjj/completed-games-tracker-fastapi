@@ -2,19 +2,19 @@
 {% block title %}Library{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4">
-  <h1 class="mb-0">Library</h1>
-  <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
-</div>
-
+{# Unified toolbar: Add button, filters, and view controls all on one row.
+   No <h1> — the active nav link in the header already indicates the page. #}
 <form
-  class="row g-2 mb-3 align-items-center"
+  class="cgt-library-toolbar row g-2 mb-3 align-items-center"
   hx-get="/library"
   hx-target="#library-content"
   hx-select="#library-content"
   hx-push-url="true"
   hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view, change from:#lib-show-hidden"
 >
+  <div class="col-auto">
+    <button type="button" class="btn btn-primary btn-sm" onclick="openAddGameModal()">+ Add Game</button>
+  </div>
   <div class="col-md-4">
     <input
       type="text"
