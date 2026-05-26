@@ -12,13 +12,18 @@
   <script src="/static/js/app.js?v={{ static_version }}" defer></script>
 </head>
 <body>
+  {# Active nav highlighting: match by URL path prefix so /library?foo=bar and
+     /library/entries/123/... both light up the Library link. request.url.path
+     is available because every authenticated page passes the Jinja request
+     context. #}
+  {% set _path = request.url.path %}
   <nav class="navbar border-bottom sticky-top">
     <div class="container">
       <a class="navbar-brand" href="/">Completed Games Tracker</a>
       <div class="d-flex align-items-center gap-1">
-        <a class="nav-link px-3" href="/library">Library</a>
-        <a class="nav-link px-3" href="/completions">Completions</a>
-        <a class="nav-link px-3" href="/integrations">Integrations</a>
+        <a class="nav-link px-3 {% if _path.startswith('/library') %}cgt-nav-active{% endif %}" href="/library">Library</a>
+        <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
+        <a class="nav-link px-3 {% if _path.startswith('/integrations') %}cgt-nav-active{% endif %}" href="/integrations">Integrations</a>
         <div class="dropdown">
           <button class="nav-link px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
             {{ current_user.name }}

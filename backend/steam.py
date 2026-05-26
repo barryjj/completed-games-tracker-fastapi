@@ -634,6 +634,31 @@ def refresh_app_catalog(api_key: str) -> dict:
     return {"app_count": len(app_dict)}
 
 
+def _sync_header_artwork_from_appdetails(db: Session, release: "models.GameRelease", details: dict) -> None:
+    """If appdetails contains a header_image URL, persist it as the release's
+    'header' GameArtwork row (creating or updating as needed). This fixes
+    coverage gaps for DLC entries whose legacy CDN URL 404s on the new
+    hashed-path Steam assets."""
+    header_url = (details or {}).get("header_image")
+    if not header_url:
+        return
+    for art in release.artwork:
+        if art.artwork_type == "header":
+            if art.url != header_url:
+                art.url = header_url
+                art.source = "steam"
+            return
+    # No header row yet — create one
+    db.add(
+        models.GameArtwork(
+            release_id=release.id,
+            artwork_type="header",
+            source="steam",
+            url=header_url,
+        )
+    )
+
+
 def _fetch_appdetails(appid: int) -> dict | None:
     """
     Fetch app metadata from the Steam store API.
@@ -753,6 +778,13 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                 for entry in release.library_entries:
                     if not entry.is_hidden and not entry.is_hidden_user_set:
                         entry.is_hidden = True
+
+            # Use appdetails' header_image URL when available — Steam migrated
+            # some assets (newer DLC especially) to hashed paths on
+            # shared.fastly.steamstatic.com that our legacy constructed
+            # cdn.akamai.steamstatic.com URL doesn't match. appdetails returns
+            # the actual current URL.
+            _sync_header_artwork_from_appdetails(db, release, details)
 
         release.metadata_fetched_at = now
         db.commit()

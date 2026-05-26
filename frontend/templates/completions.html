@@ -2,10 +2,7 @@
 {% block title %}Completions{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-4">
-  <h1 class="mb-0">Completions</h1>
-  <button type="button" class="btn btn-primary" onclick="openLogCompletionModal()">+ Log Completion</button>
-</div>
+{# No <h1> — the active nav link in the header is the page indicator. #}
 
 <!-- Log / Edit Completion Modal -->
 <div class="modal fade" id="logCompletionModal" tabindex="-1" aria-labelledby="logCompletionModalLabel" aria-hidden="true">
@@ -141,13 +138,16 @@ function resetCompletionForm() {
 {% endblock %}
 
 <form
-  class="row g-2 mb-3"
+  class="cgt-library-toolbar row g-2 mb-3 align-items-center"
   hx-get="/completions"
   hx-target="#completions-content"
   hx-select="#completions-content"
   hx-push-url="true"
   hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to"
 >
+  <div class="col-auto">
+    <button type="button" class="btn btn-primary btn-sm" onclick="openLogCompletionModal()">+ Log Completion</button>
+  </div>
   <div class="col-md-4">
     <input
       type="text"

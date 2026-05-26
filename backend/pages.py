@@ -857,6 +857,11 @@ def refresh_entry_metadata(
             if not entry.is_hidden and not entry.is_hidden_user_set:
                 entry.is_hidden = True
 
+        # Pull the canonical header image URL from appdetails — covers the
+        # case where Steam serves the asset from a hashed path our legacy
+        # constructed CDN URL doesn't match (common on newer DLC).
+        _steam._sync_header_artwork_from_appdetails(db, release, details)
+
     release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
     db.commit()
 

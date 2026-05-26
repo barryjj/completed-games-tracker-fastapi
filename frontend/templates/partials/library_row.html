@@ -1,5 +1,10 @@
 <tr id="library-entry-{{ entry.id }}" class="library-row-clickable" data-entry-id="{{ entry.id }}">
   <td>
+    {# Small horizontal thumbnail. Only renders if the release has a "header"
+       artwork — entries without (manual / future PSN) get no thumbnail rather
+       than a placeholder rectangle. onerror hides the broken image. #}
+    {% set _thumb = entry.release | grid_cover_url('grid_h') %}
+    {% if _thumb %}<img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}
     {{ entry.release.game.display_title }}
     {% if entry.is_hidden %}<span class="tag-badge tag-in-collection ms-1">Hidden</span>{% endif %}
   </td>
