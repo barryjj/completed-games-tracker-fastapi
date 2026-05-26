@@ -795,3 +795,78 @@ def test_backfill_hidden_endpoint(client, db_session):
     assert db_session.query(models.UserLibraryEntry).filter_by(id=s.id).first().is_hidden is True
     assert db_session.query(models.UserLibraryEntry).filter_by(id=g.id).first().is_hidden is False
     assert db_session.query(models.UserLibraryEntry).filter_by(id=user_set.id).first().is_hidden is False
+
+
+def test_enrichment_syncs_header_url_from_appdetails(db_session):
+    """When appdetails returns header_image, store it as the release's header
+    artwork. Newer DLC assets live on hashed paths our legacy constructed CDN
+    URL doesn't match — using the appdetails URL fixes this."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-hdr")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Test DLC", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="3531720")
+    db_session.add(release)
+    db_session.flush()
+    # Pre-existing artwork with the old legacy CDN URL (as sync would create it)
+    db_session.add(
+        models.GameArtwork(
+            release_id=release.id,
+            artwork_type="header",
+            source="steam",
+            url="https://cdn.akamai.steamstatic.com/steam/apps/3531720/header.jpg",
+        )
+    )
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    new_url = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/3531720/HASH/header.jpg"
+    with (
+        patch("backend.steam._fetch_appdetails", return_value={"type": "dlc", "header_image": new_url}),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
+    assert art is not None
+    assert art.url == new_url
+
+
+def test_enrichment_creates_header_artwork_if_missing(db_session):
+    """Entry imported without a header GameArtwork row gets one created from
+    appdetails on first enrichment."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-hdr2")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="No Art Yet", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="999")
+    db_session.add(release)
+    db_session.flush()
+    # Intentionally NO header artwork yet
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import"))
+    db_session.commit()
+
+    url = "https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/999/HASH/header.jpg"
+    with (
+        patch("backend.steam._fetch_appdetails", return_value={"type": "dlc", "header_image": url}),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
+    assert art is not None
+    assert art.url == url
