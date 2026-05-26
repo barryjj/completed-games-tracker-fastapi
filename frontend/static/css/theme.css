@@ -721,3 +721,40 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
 .cgt-range:focus::-moz-range-thumb { background: var(--ctp-lavender); }
 .cgt-range:focus { outline: none; }
 
+
+/* ─── Completion grid card: date strip ──────────────────────────────────── */
+/* Bottom caption with the completion date. Completions are date-driven so
+   the date earns visible space in the grid view (unlike library cards which
+   are cover-only). Pinned to the bottom of the card, dark translucent bg
+   so it stays readable over any cover. */
+.cgt-library-card {
+  display: flex;
+  flex-direction: column;
+}
+.cgt-completion-card__date {
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--ctp-text);
+  padding: 4px 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  margin-top: auto;  /* pin to bottom even if card content is short */
+}
+.cgt-library-grid--borderless .cgt-completion-card__date {
+  /* In borderless / mosaic mode, sit the date strip directly on top of the
+     bottom of the cover instead of as a separate row — keeps the mosaic feel. */
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+}
+
+/* ─── Toolbar drawer chevron ────────────────────────────────────────────── */
+/* The Filters / View drawer-toggle buttons in the library + completions
+   toolbars. .active means the drawer is open; chevron points up to invite
+   collapsing. */
+.cgt-chevron {
+  display: inline-block;
+  transition: transform 0.15s ease;
+  font-size: 0.8em;
+}
+.btn.active .cgt-chevron { transform: rotate(180deg); }

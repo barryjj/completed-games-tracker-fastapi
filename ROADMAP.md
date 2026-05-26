@@ -103,10 +103,13 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Credentials form no longer accepts `steam_id64`; "Clear Credentials" only wipes API key + cookies
 - Integrations hub Steam card surfaces the avatar + a compact enrichment status line (lazily loads the existing `/integrations/steam/enrichment-status` partial)
 
-### Toolbar collapse + completions grid port (next)
-- Library page: collapse Filters / View into independent icon-toggled drawers (persisted to localStorage). Fixes the cluttered double-row toolbar.
-- Completions page: port view-mode toggle, size/gap sliders, borderless toggle, list-view thumbnails, and the same collapse pattern
-- Grid card for completion: bottom-strip caption with completion date so the grid is scannable at a glance
+### Toolbar collapse + completions grid port ✅ (this PR)
+- Both library and completions toolbars now have a slim top strip (primary action + Filters / View toggle buttons) over two independently-collapsible drawers
+- Drawer state is persisted in localStorage per page (`cgt-lib-*-open`, `cgt-comp-*-open`); first-time users land with both open
+- Completions page got the full grid treatment: view-mode toggle (List / Grid v / Grid h), size + gap sliders, borderless toggle, list-view thumbnails
+- New `completion_card.html` partial reuses the library's `.cgt-library-grid` classes so size / gap / borderless controls drive it via the same CSS variables
+- Grid completion card has a bottom date strip — completions are date-driven, so the date earns visible space (unlike library cards which are cover-only)
+- Drawer toggle helpers (`cgtToggleDrawer` / `cgtInitDrawer`) live in `app.js` and are shared across pages
 
 ### Navbar avatar (future)
 - Today the navbar shows the app username (`corrosivefrost`) as plain text; would be nicer with a small profile picture
@@ -211,6 +214,16 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 ### Historical import
 - Import completions from Google Sheets / CSV
 - Map columns to game title, platform, date completed
+
+### Achievements / trophies
+- Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
+- New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
+- New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
+- Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
+- Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
+- Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
+- Filter / sort by achievement progress (e.g. "show games close to 100%")
+- Phases TBD — at minimum: schema + Steam fetch, then UI surfaces, then PSN trophy mapping when PSN integration exists
 
 ---
 

@@ -2,19 +2,36 @@
 {% block title %}Library{% endblock %}
 
 {% block content %}
-{# Unified toolbar: Add button, filters, and view controls all on one row.
-   No <h1> — the active nav link in the header already indicates the page. #}
+{# Toolbar layout: a top strip with the primary action + two drawer toggles
+   (Filters / View). Each drawer collapses independently and remembers its
+   state in localStorage. The filters drawer IS the HTMX form; the view
+   drawer is a sibling. The hidden view_mode input lives inside the filters
+   form so it travels with HTMX filter submits — its visible buttons are in
+   the view drawer and write to that same hidden input. #}
+<div class="d-flex align-items-center gap-2 mb-2">
+  <button type="button" class="btn btn-primary btn-sm" onclick="openAddGameModal()">+ Add Game</button>
+  <div class="ms-auto d-flex gap-1">
+    <button type="button" id="lib-toggle-filters"
+            class="btn btn-outline-secondary btn-sm"
+            onclick="cgtToggleDrawer('lib-filters-drawer', 'cgt-lib-filters-open', this)"
+            aria-expanded="true">Filters <span class="cgt-chevron">▾</span></button>
+    <button type="button" id="lib-toggle-view"
+            class="btn btn-outline-secondary btn-sm"
+            onclick="cgtToggleDrawer('lib-view-drawer', 'cgt-lib-view-open', this)"
+            aria-expanded="true">View <span class="cgt-chevron">▾</span></button>
+  </div>
+</div>
+
 <form
-  class="cgt-library-toolbar row g-2 mb-3 align-items-center"
+  id="lib-filters-drawer"
+  class="row g-2 mb-2 align-items-center"
   hx-get="/library"
   hx-target="#library-content"
   hx-select="#library-content"
   hx-push-url="true"
   hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view, change from:#lib-show-hidden"
 >
-  <div class="col-auto">
-    <button type="button" class="btn btn-primary btn-sm" onclick="openAddGameModal()">+ Add Game</button>
-  </div>
+  <input type="hidden" name="view_mode" id="lib-view-mode" value="{{ view_mode }}">
   <div class="col-md-4">
     <input
       type="text"
@@ -50,33 +67,29 @@
       <label class="form-check-label text-secondary" for="lib-show-hidden"><small>Show hidden</small></label>
     </div>
   </div>
+</form>
 
-  {# View-mode toggle + grid controls. The size + spacing sliders and the
-     borderless toggle are only relevant in grid modes; they're hidden in
-     list mode. JS persists all of these to localStorage. #}
-  <div class="col-auto ms-auto d-flex align-items-center gap-2 flex-wrap">
-    <input type="hidden" name="view_mode" id="lib-view-mode" value="{{ view_mode }}">
-    <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
-      <button type="button" class="btn btn-outline-secondary {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
-      <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
-      <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
-    </div>
-    {# Grid-only controls. Hidden in list mode via the [hidden] attribute. #}
-    <div class="cgt-grid-controls d-flex align-items-center gap-2"
-         {% if view_mode == 'list' %}hidden{% endif %}>
-      <label class="text-secondary mb-0" for="lib-grid-size"><small>Size</small></label>
-      <input type="range" id="lib-grid-size" min="100" max="320" step="10" value="170"
-             class="cgt-range" title="Card size">
-      <label class="text-secondary mb-0" for="lib-grid-gap"><small>Gap</small></label>
-      <input type="range" id="lib-grid-gap" min="0" max="32" step="2" value="16"
-             class="cgt-range" title="Card spacing">
-      <div class="form-check mb-0">
-        <input class="form-check-input" type="checkbox" id="lib-grid-borderless">
-        <label class="form-check-label text-secondary" for="lib-grid-borderless"><small>Borderless</small></label>
-      </div>
+<div id="lib-view-drawer" class="d-flex align-items-center gap-2 flex-wrap mb-3">
+  <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+    <button type="button" class="btn btn-outline-secondary {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
+    <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
+    <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
+  </div>
+  {# Grid-only sliders / borderless. Hidden in list mode via [hidden]. #}
+  <div class="cgt-grid-controls d-flex align-items-center gap-2 flex-wrap"
+       {% if view_mode == 'list' %}hidden{% endif %}>
+    <label class="text-secondary mb-0" for="lib-grid-size"><small>Size</small></label>
+    <input type="range" id="lib-grid-size" min="100" max="320" step="10" value="170"
+           class="cgt-range" title="Card size">
+    <label class="text-secondary mb-0" for="lib-grid-gap"><small>Gap</small></label>
+    <input type="range" id="lib-grid-gap" min="0" max="32" step="2" value="16"
+           class="cgt-range" title="Card spacing">
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" id="lib-grid-borderless">
+      <label class="form-check-label text-secondary" for="lib-grid-borderless"><small>Borderless</small></label>
     </div>
   </div>
-</form>
+</div>
 
 <div id="library-content">
 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -336,6 +349,10 @@
 
 {% block scripts %}
 <script>
+// Restore Filters / View drawer collapsed state.
+cgtInitDrawer('lib-filters-drawer', 'cgt-lib-filters-open', 'lib-toggle-filters');
+cgtInitDrawer('lib-view-drawer',    'cgt-lib-view-open',    'lib-toggle-view');
+
 // ─── SteamGridDB cover picker ─────────────────────────────────────────────
 //
 // Opens a modal, fires off a search against /integrations/steamgriddb/search,

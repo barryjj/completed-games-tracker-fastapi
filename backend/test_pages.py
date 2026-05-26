@@ -133,6 +133,22 @@ def test_completions_page_loads(client):
     assert b"Completions" in r.content
 
 
+def test_completions_grid_view_renders(client):
+    _signup_and_login(client)
+    r = client.get("/completions?view_mode=grid_v")
+    assert r.status_code == 200
+    # Grid class on the container — list view uses a <table> instead.
+    assert b"cgt-library-grid--grid_v" in r.content
+
+
+def test_completions_invalid_view_mode_falls_back_to_list(client):
+    _signup_and_login(client)
+    r = client.get("/completions?view_mode=diagonal")
+    assert r.status_code == 200
+    # Falls back to list — no grid container.
+    assert b"cgt-library-grid--grid" not in r.content
+
+
 def test_log_completion(client, db_session):
     token = _signup_and_login(client)
     user = models.User.__new__(models.User)

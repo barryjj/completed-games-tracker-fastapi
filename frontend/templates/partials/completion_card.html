@@ -1,0 +1,26 @@
+{# Completion grid card. Same skeleton as library_card.html, plus a bottom
+   date strip — completions are date-driven, so the date earns visible space.
+   Click anywhere → completion detail pane via the delegated handler in
+   completions.html. #}
+{% set _entry = completion.library_entry %}
+{% set cover_url = _entry | grid_cover_url(view_mode) %}
+<div class="cgt-library-card completion-row-clickable
+            {% if not cover_url %}cgt-library-card--no-art{% endif %}
+            {% if _entry.release.game.is_dlc %}cgt-library-card--dlc{% endif %}"
+     id="completion-{{ completion.id }}"
+     data-completion-id="{{ completion.id }}"
+     title="{{ _entry.release.game.display_title | e }} — {{ completion.completed_at.strftime('%Y-%m-%d') }}">
+  {% if cover_url %}
+  <div class="cgt-library-card__cover">
+    <img src="{{ cover_url }}" alt="" loading="lazy"
+         onerror="this.closest('.cgt-library-card__cover').remove()">
+  </div>
+  {% endif %}
+  <div class="cgt-library-card__placeholder">
+    <div class="cgt-library-card__placeholder-title">{{ _entry.release.game.display_title }}</div>
+    <div class="cgt-library-card__placeholder-platform">{{ _entry.release.platform }}</div>
+  </div>
+  <div class="cgt-completion-card__date">
+    <small>{{ completion.completed_at.strftime("%Y-%m-%d") }}</small>
+  </div>
+</div>
