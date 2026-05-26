@@ -111,6 +111,25 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Grid completion card has a bottom date strip — completions are date-driven, so the date earns visible space (unlike library cards which are cover-only)
 - Drawer toggle helpers (`cgtToggleDrawer` / `cgtInitDrawer`) live in `app.js` and are shared across pages
 
+### Polish bugs + sticky bottom toolbar + stale-only auto-refresh ✅ (this PR)
+- **JS load-order fix.** Toolbar drawer helpers (`cgtToggleDrawer` / `cgtInitDrawer`) now defined inline in `base.html` instead of in `app.js` (which is deferred and wasn't ready when per-page inline scripts ran). View-mode buttons + grid sliders work again.
+- **Catppuccin checkbox styling.** Native `accent-color: var(--ctp-mauve)` plus checked/focus overrides so Borderless / Show hidden / form modal checkboxes match the theme.
+- **DLC cover fallback chain extended to list/grid.** Server-side batched query attaches parent-game artwork URLs to each DLC entry as `_fallback_v` / `_fallback_h` (no N+1). Templates emit them as `data-fallback`; new `cgtCoverFallback` enhancements handle list-row thumbs and grid card covers separately.
+- **Dedicated thumbnail column** in library + completion list views — fixed 80px width so titles don't wrap around the image.
+- **Sticky bottom toolbar.** + Add Game and + Log Completion moved out of the top toolbar into a fixed-position bottom bar. Body gets bottom-padding so content scrolls past it. Removes the "jarring top button" and the FAB-overlapping-covers problem in one move.
+- **Stale-only auto-refresh on detail-pane open.** Detail endpoints check `_needs_metadata_refresh` (Steam + null-or-7+-days-old). If stale, the rendered partial includes a hidden HTMX trigger that fires the refresh endpoint in the background. Current data shows immediately; the next pane open picks up the refresh.
+- Enrichment status messaging on the integrations hub updated to describe the new per-pane auto-refresh behavior instead of a stale "X enriched" count.
+
+### Periodic TTL metadata refresh (future)
+- Companion to the detail-pane auto-refresh: a background worker pass that re-queues Steam entries older than ~30 days even if the user hasn't opened their detail pane
+- Keeps cold entries from going stale indefinitely
+- Lower priority than the on-demand version — most metadata doesn't change that often
+
+### Steam news / announcements in detail pane (future)
+- `ISteamNews/GetNewsForApp` returns dated announcements per appid; cached and shown in the library detail pane as a "Latest news" section
+- Each item has a date so we can also show a "this game had news posted since you last viewed it" indicator
+- Follow-on to the achievements work; same neighborhood (extra per-game data sources)
+
 ### Navbar avatar (future)
 - Today the navbar shows the app username (`corrosivefrost`) as plain text; would be nicer with a small profile picture
 - Blocked on building an avatar-source picker: which integration wins (Steam / PSN / uploaded), what's the default when no integrations are connected, fallback for users with multiple connected services

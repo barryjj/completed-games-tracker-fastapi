@@ -17,9 +17,12 @@
      data-entry-id="{{ entry.id }}"
      title="{{ entry.release.game.display_title | e }} ({{ entry.release.platform }})">
   {% if cover_url %}
+  {% set _fallback = (entry._fallback_v if view_mode == 'grid_v' else entry._fallback_h) %}
   <div class="cgt-library-card__cover">
     <img src="{{ cover_url }}" alt="" loading="lazy"
-         onerror="this.closest('.cgt-library-card__cover').remove()">
+         data-fallback="{{ _fallback or '' }}"
+         data-cover-fallback-container=".cgt-library-card__cover"
+         onerror="cgtCoverFallback(this)">
   </div>
   {% endif %}
   <div class="cgt-library-card__placeholder">

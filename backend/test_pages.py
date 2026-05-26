@@ -980,3 +980,46 @@ def test_clear_cover_override_rejects_bad_orientation(client, db_session):
     entry = _add_game(db_session, user)
     r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "x"})
     assert r.status_code == 400
+
+
+# --- metadata staleness helper / detail-pane auto-refresh ---
+
+
+def test_needs_metadata_refresh_for_never_fetched_steam():
+    from backend.pages import _needs_metadata_refresh
+
+    release = models.GameRelease(source="steam", external_id="220", metadata_fetched_at=None)
+    assert _needs_metadata_refresh(release) is True
+
+
+def test_needs_metadata_refresh_for_fresh_steam():
+    import datetime as dt
+
+    from backend.pages import _needs_metadata_refresh
+
+    release = models.GameRelease(
+        source="steam",
+        external_id="220",
+        metadata_fetched_at=dt.datetime.now(dt.UTC) - dt.timedelta(days=2),
+    )
+    assert _needs_metadata_refresh(release) is False
+
+
+def test_needs_metadata_refresh_for_stale_steam():
+    import datetime as dt
+
+    from backend.pages import _needs_metadata_refresh
+
+    release = models.GameRelease(
+        source="steam",
+        external_id="220",
+        metadata_fetched_at=dt.datetime.now(dt.UTC) - dt.timedelta(days=14),
+    )
+    assert _needs_metadata_refresh(release) is True
+
+
+def test_needs_metadata_refresh_skips_non_steam():
+    from backend.pages import _needs_metadata_refresh
+
+    release = models.GameRelease(source="manual", external_id=None, metadata_fetched_at=None)
+    assert _needs_metadata_refresh(release) is False

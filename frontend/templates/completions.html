@@ -233,7 +233,6 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
 {# Toolbar: same drawer pattern as library — top strip (primary action +
    Filters / View toggles), then two independently-collapsible drawer rows. #}
 <div class="d-flex align-items-center gap-2 mb-2">
-  <button type="button" class="btn btn-primary btn-sm" onclick="openLogCompletionModal()">+ Log Completion</button>
   <div class="ms-auto d-flex gap-1">
     <button type="button" id="comp-toggle-filters"
             class="btn btn-outline-secondary btn-sm"
@@ -325,6 +324,7 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
     <thead>
       <tr>
         <th>#</th>
+        <th class="cgt-list-thumb-cell"></th>
         <th>Game</th>
         <th>Platform</th>
         <th>Date</th>
@@ -352,6 +352,11 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
   {% if not completions %}
   <p class="text-secondary"><em>No completions logged yet. Add a game to your library first, then log it here.</em></p>
   {% endif %}
+</div>
+
+{# Sticky bottom action bar — see library.html for design notes. #}
+<div class="cgt-sticky-actions">
+  <button type="button" class="btn btn-primary" onclick="openLogCompletionModal()">+ Log Completion</button>
 </div>
 
 <!-- Completion detail pane (slide-out from right). Wrapper + resize handle

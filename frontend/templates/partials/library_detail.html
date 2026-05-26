@@ -3,6 +3,18 @@
    partial replaces #library-detail-content (a sibling div under the wrapper)
    via hx-target="#library-detail-content" hx-swap="innerHTML". #}
 
+{# Stale-metadata auto-refresh: if the server flagged this entry's metadata
+   as ≥7 days old (or never fetched), fire a background refresh. We don't
+   re-render the pane on completion — that would interrupt the user reading
+   what's currently shown. The freshly-fetched data appears next time they
+   open the pane. #}
+{% if needs_refresh %}
+<div hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
+     hx-trigger="load delay:500ms"
+     hx-swap="none"
+     style="display: none;"></div>
+{% endif %}
+
 <div class="offcanvas-header border-bottom">
   <h5 class="offcanvas-title">{{ game.display_title }}</h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>

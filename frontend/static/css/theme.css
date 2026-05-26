@@ -758,3 +758,60 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   font-size: 0.8em;
 }
 .btn.active .cgt-chevron { transform: rotate(180deg); }
+
+/* ─── Catppuccin checkbox + radio ───────────────────────────────────────── */
+/* Bootstrap's default checkbox is bright blue, which clashes with the
+   Catppuccin palette everywhere it appears (toolbar "Borderless" toggle,
+   "Show hidden", form modals, etc.). accent-color is the modern one-liner
+   that recolors the native control to match the theme. */
+.form-check-input {
+  accent-color: var(--ctp-mauve);
+}
+/* When checked, Bootstrap also sets a background-color + border-color via
+   .form-check-input:checked — override those so checked state stays mauve
+   instead of falling back to Bootstrap's primary blue. */
+.form-check-input:checked {
+  background-color: var(--ctp-mauve);
+  border-color: var(--ctp-mauve);
+}
+.form-check-input:focus {
+  border-color: var(--ctp-mauve);
+  box-shadow: 0 0 0 0.2rem rgba(203, 166, 247, 0.25);  /* mauve at 25% */
+}
+
+/* Dedicated thumbnail column in list views. Fixed-width so titles in the
+   next column don't wrap around the image. */
+.cgt-list-thumb-cell {
+  width: 80px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.cgt-list-thumb-cell .cgt-list-row-thumb {
+  margin-right: 0;  /* no need for spacer margin now that it's in its own cell */
+  vertical-align: middle;
+}
+
+/* ─── Sticky bottom action bar ──────────────────────────────────────────── */
+/* Houses the primary action ("+ Add Game" / "+ Log Completion") at a
+   reachable spot without crowding the top toolbar or floating over content.
+   Position fixed to bottom of viewport; body gets bottom padding so content
+   above can scroll past it without being hidden. */
+.cgt-sticky-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 1.5rem;
+  background: var(--ctp-mantle);
+  border-top: 1px solid var(--ctp-surface1);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  z-index: 1030;  /* above modal-backdrop reach but below open modals (1050+) */
+}
+/* Reserve scroll-past space so the last library/completion row isn't hidden
+   under the sticky bar. Applied to body so it doesn't matter which page has
+   a sticky bar — affects all of them uniformly. */
+body:has(.cgt-sticky-actions) {
+  padding-bottom: 5rem;
+}
