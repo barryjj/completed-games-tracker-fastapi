@@ -870,3 +870,139 @@ def test_enrichment_creates_header_artwork_if_missing(db_session):
     art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
     assert art is not None
     assert art.url == url
+
+
+# ─── Steam OpenID ─────────────────────────────────────────────────────────
+
+
+def test_openid_start_redirects_to_steam(client):
+    _signup_and_login(client)
+    r = client.get("/integrations/steam/openid/start", follow_redirects=False)
+    assert r.status_code == 302
+    location = r.headers["location"]
+    assert location.startswith("https://steamcommunity.com/openid/login?")
+    # Required OpenID params
+    assert "openid.mode=checkid_setup" in location
+    assert "openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select" in location
+    # Our callback URL is in there
+    assert "openid.return_to=" in location
+    assert "%2Fintegrations%2Fsteam%2Fopenid%2Freturn" in location
+
+
+def test_openid_return_persists_steam_id_on_valid_signature(client, db_session):
+    """Valid signature: Steam responds 'is_valid:true', we parse SteamID from
+    claimed_id and save it. No persona name lookup if no API key is set."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    assert user.steam_id64 is None
+
+    fake_verify = MagicMock()
+    fake_verify.text = "ns:http://specs.openid.net/auth/2.0\nis_valid:true\n"
+    fake_verify.raise_for_status.return_value = None
+
+    with patch("backend.integrations._httpx.post", return_value=fake_verify):
+        r = client.get(
+            "/integrations/steam/openid/return",
+            params={
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.identity": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.mode": "id_res",
+                "openid.sig": "fake-signature",
+                "openid.signed": "signed,op_endpoint,claimed_id,identity,return_to,response_nonce,assoc_handle",
+                "openid.response_nonce": "fake-nonce",
+                "openid.assoc_handle": "fake-handle",
+                "openid.return_to": "http://testserver/integrations/steam/openid/return",
+                "openid.op_endpoint": "https://steamcommunity.com/openid/login",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    assert "openid=ok" in r.headers["location"]
+
+    db_session.refresh(user)
+    assert user.steam_id64 == "76561197960287930"
+
+
+def test_openid_return_rejects_bad_claimed_id(client, db_session):
+    """Garbage claimed_id → redirect with error flag, no DB writes."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    r = client.get(
+        "/integrations/steam/openid/return",
+        params={"openid.claimed_id": "https://evil.example.com/openid/id/123"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 302
+    assert "openid=bad_claim" in r.headers["location"]
+    db_session.refresh(user)
+    assert user.steam_id64 is None
+
+
+def test_openid_return_rejects_invalid_signature(client, db_session):
+    """Steam responds is_valid:false → don't save anything."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    fake_verify = MagicMock()
+    fake_verify.text = "ns:http://specs.openid.net/auth/2.0\nis_valid:false\n"
+    fake_verify.raise_for_status.return_value = None
+
+    with patch("backend.integrations._httpx.post", return_value=fake_verify):
+        r = client.get(
+            "/integrations/steam/openid/return",
+            params={
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.mode": "id_res",
+                "openid.sig": "tampered-sig",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    assert "openid=invalid_sig" in r.headers["location"]
+    db_session.refresh(user)
+    assert user.steam_id64 is None
+
+
+def test_openid_return_fetches_persona_when_api_key_set(client, db_session):
+    """If the user has an API key on file, the return handler also fetches
+    their Steam persona name and stores it for the UI."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    # Pre-set an API key
+    client.post(
+        "/integrations/steam/credentials",
+        data={"steam_api_key": "FAKEKEY", "steam_id64": ""},
+    )
+
+    fake_verify = MagicMock()
+    fake_verify.text = "is_valid:true\n"
+    fake_verify.raise_for_status.return_value = None
+
+    fake_personas = MagicMock()
+    fake_personas.json.return_value = {"response": {"players": [{"personaname": "corrosivefrost"}]}}
+    fake_personas.raise_for_status.return_value = None
+
+    with (
+        patch("backend.integrations._httpx.post", return_value=fake_verify),
+        patch("backend.integrations._httpx.get", return_value=fake_personas),
+    ):
+        r = client.get(
+            "/integrations/steam/openid/return",
+            params={
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.mode": "id_res",
+                "openid.sig": "ok",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    user = db_session.query(models.User).first()
+    db_session.refresh(user)
+    assert user.steam_persona_name == "corrosivefrost"
+    assert user.steam_id64 == "76561197960287930"

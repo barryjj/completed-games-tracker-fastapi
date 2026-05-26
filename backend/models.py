@@ -21,6 +21,9 @@ class User(Base):
     api_token: Mapped[str] = mapped_column(String, unique=True, nullable=True, index=True)
     steam_id64: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Steam's display name from the OpenID flow. Stored only for "Signed in
+    # as <name>" UI affordance — not used in any lookup or auth decision.
+    steam_persona_name: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     steam_last_dlc_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     steam_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
