@@ -300,6 +300,33 @@ html[data-bs-theme="dark"]  .badge.bg-success { color: var(--ctp-crust); }
 /* Light: match the alert-success subtle palette so badge and flash feel like the same green */
 html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !important; color: #0a3622 !important; border: 1px solid #a3cfbb !important; font-weight: 600 !important; }
 
+/* ─── Inline alerts (Catppuccin) ─────────────────────────────────────────── */
+/* Tinted surface + colored left accent stripe — matches the toast look so
+   inline status banners feel like the same vocabulary. Body text stays at
+   --ctp-text for readability in both themes. */
+.alert-success,
+.alert-danger,
+.alert-warning {
+  color: var(--ctp-text);
+  border: 1px solid var(--ctp-surface1);
+  border-left-width: 4px;
+}
+.alert-success {
+  background-color: color-mix(in srgb, var(--ctp-green) 12%, var(--ctp-mantle));
+  border-left-color: var(--ctp-green);
+}
+.alert-danger {
+  background-color: color-mix(in srgb, var(--ctp-red) 12%, var(--ctp-mantle));
+  border-left-color: var(--ctp-red);
+}
+.alert-warning {
+  background-color: color-mix(in srgb, var(--ctp-yellow) 12%, var(--ctp-mantle));
+  border-left-color: var(--ctp-yellow);
+}
+html[data-bs-theme="light"] .alert-success { background-color: color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base)); }
+html[data-bs-theme="light"] .alert-danger  { background-color: color-mix(in srgb, var(--ctp-red)   18%, var(--ctp-base)); }
+html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb, var(--ctp-yellow) 18%, var(--ctp-base)); }
+
 /* ─── Tags / Badges ──────────────────────────────────────────────────────── */
 .tag-badge {
   display: inline-block;
