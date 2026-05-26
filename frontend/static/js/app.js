@@ -1,7 +1,15 @@
-// Cover image fallback: when a detail-pane cover image fails to load (Steam's
-// CDN occasionally 404s for DLC appids), try the parent game's header URL if
-// one was provided via data-fallback. If THAT also fails, hide the container.
+// Cover image fallback: when a cover image fails to load (Steam's CDN often
+// 404s DLC header/cover URLs), try the parent game's URL if one was provided
+// via data-fallback. If THAT also fails, remove the cover element entirely
+// (so a sibling placeholder div can take over its space — see library_card.html).
 // Exposed as a global because inline onerror handlers (templated) call it.
+//
+// The element removed on terminal failure depends on context:
+//   - If [data-cover-fallback-container] is set (e.g. ".cgt-library-card__cover"),
+//     we remove the closest matching ancestor. Lets grid cards collapse to
+//     their placeholder.
+//   - Otherwise we hide the immediate parent (detail-pane behavior).
+//   - For [class*="thumb"] list rows, we just remove the img.
 window.cgtCoverFallback = function(img) {
   var fb = img.dataset.fallback;
   if (fb && img.src !== fb) {
@@ -9,43 +17,21 @@ window.cgtCoverFallback = function(img) {
     img.dataset.fallback = '';  // prevent loop if the parent also 404s
     return;
   }
+  var containerSel = img.dataset.coverFallbackContainer;
+  if (containerSel) {
+    var container = img.closest(containerSel);
+    if (container) { container.remove(); return; }
+  }
+  if (img.classList.contains('cgt-list-row-thumb')) {
+    img.remove();
+    return;
+  }
   if (img.parentElement) img.parentElement.style.display = 'none';
 };
 
-// Collapsible toolbar drawer helpers. Used by library + completions toolbars
-// so the user can hide the Filters / View groups once they're dialed in and
-// pull them back out as needed. State is persisted per-drawer in localStorage.
-//
-// `cgtToggleDrawer` is wired to button onclick — flips the drawer's hidden
-// state, saves the new state, and toggles `.active` on the button.
-// `cgtInitDrawer` runs on page load to restore the saved state. First-time
-// users (no saved key) see drawers open by default.
-window.cgtToggleDrawer = function(drawerId, storageKey, btn) {
-  var el = document.getElementById(drawerId);
-  if (!el) return;
-  var willOpen = el.hidden;
-  el.hidden = !willOpen;
-  try { localStorage.setItem(storageKey, willOpen ? '1' : '0'); } catch (e) {}
-  if (btn) {
-    btn.classList.toggle('active', willOpen);
-    btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
-  }
-};
-window.cgtInitDrawer = function(drawerId, storageKey, btnId) {
-  var el = document.getElementById(drawerId);
-  if (!el) return;
-  var saved = null;
-  try { saved = localStorage.getItem(storageKey); } catch (e) {}
-  // Default open for first-time users; only collapse when the user has
-  // explicitly closed the drawer at some point.
-  var open = saved === null ? true : saved === '1';
-  el.hidden = !open;
-  var btn = btnId ? document.getElementById(btnId) : null;
-  if (btn) {
-    btn.classList.toggle('active', open);
-    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
-  }
-};
+// Toolbar drawer helpers (cgtToggleDrawer / cgtInitDrawer) live inline in
+// base.html so they're defined before per-page inline scripts run — app.js
+// is `defer`red and wouldn't be ready in time otherwise.
 
 // Local-time helper: render any element with [data-utc] in the browser's locale.
 document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {

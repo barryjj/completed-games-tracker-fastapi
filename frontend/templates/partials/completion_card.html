@@ -11,9 +11,12 @@
      data-completion-id="{{ completion.id }}"
      title="{{ _entry.release.game.display_title | e }} — {{ completion.completed_at.strftime('%Y-%m-%d') }}">
   {% if cover_url %}
+  {% set _fallback = (_entry._fallback_v if view_mode == 'grid_v' else _entry._fallback_h) %}
   <div class="cgt-library-card__cover">
     <img src="{{ cover_url }}" alt="" loading="lazy"
-         onerror="this.closest('.cgt-library-card__cover').remove()">
+         data-fallback="{{ _fallback or '' }}"
+         data-cover-fallback-container=".cgt-library-card__cover"
+         onerror="cgtCoverFallback(this)">
   </div>
   {% endif %}
   <div class="cgt-library-card__placeholder">
