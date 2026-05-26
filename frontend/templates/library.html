@@ -9,7 +9,6 @@
    form so it travels with HTMX filter submits — its visible buttons are in
    the view drawer and write to that same hidden input. #}
 <div class="d-flex align-items-center gap-2 mb-2">
-  <button type="button" class="btn btn-primary btn-sm" onclick="openAddGameModal()">+ Add Game</button>
   <div class="ms-auto d-flex gap-1">
     <button type="button" id="lib-toggle-filters"
             class="btn btn-outline-secondary btn-sm"
@@ -110,6 +109,7 @@
 <table class="table table-striped table-borderless">
   <thead>
     <tr>
+      <th class="cgt-list-thumb-cell"></th>
       <th>Title</th>
       <th>Platform</th>
       <th></th>
@@ -150,6 +150,14 @@
   </div>
 </div>
 {% endif %}
+</div>
+
+{# Sticky bottom action bar — primary action lives here so it's reachable
+   without scrolling and doesn't crowd the toolbar at the top. Has padding
+   that pushes #library-content above the bar so the last row isn't hidden
+   behind it (see .cgt-sticky-actions in theme.css). #}
+<div class="cgt-sticky-actions">
+  <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
 </div>
 
 <!-- Library entry edit modal -->

@@ -10,6 +10,36 @@
   <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
   <script src="/static/vendor/bootstrap.bundle.min.js?v={{ static_version }}" defer></script>
   <script src="/static/js/app.js?v={{ static_version }}" defer></script>
+  {# Toolbar drawer helpers defined inline (NOT deferred) so per-page script
+     blocks at the bottom of body can call them during parsing. Mirror of the
+     same functions in app.js — kept in sync there so non-template callers
+     also work. Tiny enough to duplicate. #}
+  <script>
+    window.cgtToggleDrawer = function(drawerId, storageKey, btn) {
+      var el = document.getElementById(drawerId);
+      if (!el) return;
+      var willOpen = el.hidden;
+      el.hidden = !willOpen;
+      try { localStorage.setItem(storageKey, willOpen ? '1' : '0'); } catch (e) {}
+      if (btn) {
+        btn.classList.toggle('active', willOpen);
+        btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      }
+    };
+    window.cgtInitDrawer = function(drawerId, storageKey, btnId) {
+      var el = document.getElementById(drawerId);
+      if (!el) return;
+      var saved = null;
+      try { saved = localStorage.getItem(storageKey); } catch (e) {}
+      var open = saved === null ? true : saved === '1';
+      el.hidden = !open;
+      var btn = btnId ? document.getElementById(btnId) : null;
+      if (btn) {
+        btn.classList.toggle('active', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      }
+    };
+  </script>
 </head>
 <body>
   {# Active nav highlighting: match by URL path prefix so /library?foo=bar and
