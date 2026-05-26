@@ -14,9 +14,9 @@
        doesn't issue API keys via OpenID, and capturing session cookies
        requires Tauri). #}
     <h5 class="mb-3">Sign in</h5>
-    {% if openid_status == "ok" %}
-    <div class="alert alert-success py-2 mb-3"><small>Signed in through Steam.</small></div>
-    {% elif openid_status == "bad_claim" %}
+    {# Drop the success alert — the "Signed in as <persona>" line below conveys
+       the same info without the extra chrome. Error states still need a flash. #}
+    {% if openid_status == "bad_claim" %}
     <div class="alert alert-danger py-2 mb-3"><small>Steam returned an unexpected response. Try again.</small></div>
     {% elif openid_status == "verify_failed" %}
     <div class="alert alert-danger py-2 mb-3"><small>Could not reach Steam to verify the sign-in. Try again.</small></div>
