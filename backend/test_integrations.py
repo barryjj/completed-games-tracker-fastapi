@@ -1155,3 +1155,184 @@ def test_set_cover_override_rejects_bad_orientation(client, db_session):
         data={"orientation": "diagonal", "url": "https://x/y.png"},
     )
     assert r.status_code == 400
+
+
+def test_sgdb_bulk_fill_skips_entries_with_existing_artwork(db_session):
+    """An entry with a release-level GameArtwork cover row of the right type
+    should be skipped — we don't want to stomp Steam CDN art that works."""
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Half-Life 2")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="220")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.GameArtwork(release_id=release.id, artwork_type="cover", source="steam", url="https://steam/cover.jpg"))
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result == {"filled": 0, "no_candidate": 0, "skipped": 1, "errored": 0}
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v is None
+
+
+def test_sgdb_bulk_fill_applies_top_candidate(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Bloodborne")
+    db_session.add(game)
+    db_session.flush()
+    # Manual entry, no artwork → eligible for fill
+    release = models.GameRelease(game_id=game.id, platform="PS4", source="manual", external_id=None)
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [{"id": 555, "name": "Bloodborne"}])
+    monkeypatch.setattr(
+        steamgriddb,
+        "get_grids_for_game",
+        lambda k, gid, o: [{"url": "https://sgdb/top.png", "thumb": "https://sgdb/t.png"}],
+    )
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result["filled"] == 1
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v == "https://sgdb/top.png"
+
+
+def test_sgdb_bulk_fill_counts_no_candidate(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="ObscureUnknownGame")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="99999999")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lambda k, a: None)
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [])
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result["no_candidate"] == 1
+    assert result["filled"] == 0
+
+
+def test_sgdb_bulk_fill_one_error_doesnt_abort_run(db_session, monkeypatch):
+    """If SGDB blows up on one entry, the rest of the library should still
+    get processed."""
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    games = [models.Game(title=f"G{i}") for i in range(3)]
+    for g in games:
+        db_session.add(g)
+    db_session.flush()
+    entries = []
+    for i, g in enumerate(games):
+        r = models.GameRelease(game_id=g.id, platform="Steam", source="steam", external_id=str(100 + i))
+        db_session.add(r)
+        db_session.flush()
+        e = models.UserLibraryEntry(user_id=user.id, release_id=r.id, import_source="steam_import")
+        db_session.add(e)
+        entries.append(e)
+    db_session.commit()
+
+    calls = {"n": 0}
+
+    def lookup(api_key, appid):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("SGDB 500")
+        return {"id": int(appid) * 10}
+
+    monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lookup)
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o: [{"url": f"https://sgdb/{gid}.png"}])
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result["filled"] == 2
+    assert result["errored"] == 1
+
+
+def test_sgdb_bulk_fill_skips_hidden_entries(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="HiddenGame")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="42")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import", is_hidden=True)
+    db_session.add(entry)
+    db_session.commit()
+
+    called = {"yes": False}
+
+    def lookup(api_key, appid):
+        called["yes"] = True
+        return {"id": 1}
+
+    monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lookup)
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert called["yes"] is False
+    assert result == {"filled": 0, "no_candidate": 0, "skipped": 0, "errored": 0}
+
+
+def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatch):
+    """The endpoint should create a job and return a started toast — it
+    shouldn't run the fill synchronously."""
+    import asyncio
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    db_session.commit()
+
+    created_tasks = []
+
+    def fake_create_task(coro):
+        # Don't actually run the background coroutine in the test — we just
+        # care that the endpoint queued one. Close it to suppress the
+        # "coroutine was never awaited" warning.
+        coro.close()
+        created_tasks.append(True)
+        return None
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    assert r.status_code == 200
+    assert "started" in r.text.lower()
+    assert created_tasks == [True]
+
+
+def test_sgdb_fill_missing_endpoint_requires_api_key(client, db_session):
+    _signup_and_login(client)
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    assert r.status_code == 422
+    assert "API key" in r.text
