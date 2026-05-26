@@ -52,7 +52,34 @@
       <li><small><strong>Find vertical cover</strong> — picks from 600&times;900 portrait candidates (library card art).</small></li>
       <li><small><strong>Find horizontal cover</strong> — picks from 460&times;215 landscape candidates (header art).</small></li>
     </ul>
-    <p class="text-secondary mb-0"><small>For Steam entries, the lookup uses the appid directly. For other sources, it falls back to a title search.</small></p>
+    <p class="text-secondary mb-3"><small>For Steam entries, the lookup uses the appid directly. For other sources, it falls back to a title search.</small></p>
+
+    {% if current_user.steamgriddb_api_key %}
+    <h5 class="mb-2 mt-4">Bulk fill</h5>
+    <p class="text-secondary mb-3"><small>Walk your library and apply the top SGDB candidate to every entry that's missing a cover for the chosen orientation. Skips entries that already have Steam-CDN art or a custom override. Runs in the background; you'll get a toast when it finishes.</small></p>
+    <div class="d-flex flex-wrap gap-2">
+      <button
+        class="btn btn-outline-primary btn-sm"
+        hx-post="/integrations/steamgriddb/fill-missing"
+        hx-vals='{"orientation": "v"}'
+        hx-target="#sgdb-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-confirm="Fill in missing vertical covers across your library?"
+        hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+      >Fill missing vertical covers</button>
+      <button
+        class="btn btn-outline-primary btn-sm"
+        hx-post="/integrations/steamgriddb/fill-missing"
+        hx-vals='{"orientation": "h"}'
+        hx-target="#sgdb-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-confirm="Fill in missing horizontal covers across your library?"
+        hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+      >Fill missing horizontal covers</button>
+    </div>
+    {% endif %}
   </div>
 </div>
 

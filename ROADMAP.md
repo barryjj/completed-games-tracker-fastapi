@@ -88,10 +88,17 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Clicking a candidate POSTs to `/library/entries/{id}/cover-override` → writes URL to `cover_url_override_v` or `_h` → grid/detail render the new cover on next load
 - Especially important for manual entries (no Steam artwork available) and PSN entries (different art catalog)
 
-### Bulk SGDB "fill in the gaps" job (next)
-- One-shot endpoint that walks every library entry missing matching-orientation artwork, runs SGDB lookup, applies the top candidate
-- User-triggered from the SGDB configure page; reports counts (filled / no-candidate / skipped) when done
-- Skips entries that already have an override or matching-orientation `GameArtwork`
+### Bulk SGDB "fill in the gaps" job ✅ (this PR)
+- `POST /integrations/steamgriddb/fill-missing` with `orientation=v|h`
+- Walks every visible library entry; for each one missing a matching-orientation cover (no override AND no `GameArtwork` row of the right type), looks it up on SGDB and writes the top candidate to `cover_url_override_v` or `_h`
+- Runs through the job system — started toast on click, completion toast with counts (filled / no_candidate / skipped / errored) when done
+- Single errored entry doesn't abort the whole run; logged and counted
+- Two buttons on the SGDB configure page (vertical / horizontal), only shown when an API key is saved
+
+### Toolbar collapse + completions grid port (next)
+- Library page: collapse Filters / View into independent icon-toggled drawers (persisted to localStorage). Fixes the cluttered double-row toolbar.
+- Completions page: port view-mode toggle, size/gap sliders, borderless toggle, list-view thumbnails, and the same collapse pattern
+- Grid card for completion: bottom-strip caption with completion date so the grid is scannable at a glance
 
 ### Per-entry refresh metadata + dropdown actions menu ✅ (PR #69)
 - New `POST /library/entries/{id}/refresh-metadata` — synchronous one-off appdetails fetch for a single Steam entry, bypasses the background worker's queue
