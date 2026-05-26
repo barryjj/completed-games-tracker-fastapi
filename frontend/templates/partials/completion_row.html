@@ -1,6 +1,13 @@
 <tr id="completion-{{ completion.id }}" class="completion-row-clickable" data-completion-id="{{ completion.id }}">
   <td class="row-num"></td>
-  <td>{{ completion.library_entry.release.game.display_title }}</td>
+  <td>
+    {# Small landscape thumbnail in the title cell, matching the library list
+       view. Only renders when the release has a header artwork — manual
+       entries get no thumb rather than a placeholder rectangle. #}
+    {% set _thumb = completion.library_entry | grid_cover_url('grid_h') %}
+    {% if _thumb %}<img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy" onerror="this.remove()">{% endif %}
+    {{ completion.library_entry.release.game.display_title }}
+  </td>
   <td><span class="tag-badge {{ completion.library_entry.release.platform | platform_color }}">{{ completion.library_entry.release.platform }}</span></td>
   <td>{{ completion.completed_at.strftime("%Y-%m-%d") }}</td>
   <td>{{ completion.playthroughs or "" }}</td>
