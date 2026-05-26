@@ -3,6 +3,15 @@
    library entry. Includes a "View library entry" link that navigates back to
    /library and opens that game's library detail pane. #}
 
+{# Stale-metadata auto-refresh: same pattern as library_detail.html. Fires a
+   background refresh if the entry's Steam metadata is ≥7 days old. #}
+{% if needs_refresh %}
+<div hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
+     hx-trigger="load delay:500ms"
+     hx-swap="none"
+     style="display: none;"></div>
+{% endif %}
+
 <div class="offcanvas-header border-bottom">
   <h5 class="offcanvas-title">{{ game.display_title }}</h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>

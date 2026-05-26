@@ -65,6 +65,61 @@ def _grid_cover_url(entry, orientation: str) -> str | None:
 
 templates.env.filters["grid_cover_url"] = _grid_cover_url
 
+
+# How long Steam appdetails can sit before we consider it stale enough to
+# auto-refresh on next detail-pane open. 7 days balances "user sees current
+# data when they actually look" against burning API calls on every click.
+_METADATA_STALENESS_DAYS = 7
+
+
+def _needs_metadata_refresh(release) -> bool:
+    """True when a Steam release's cached appdetails is missing or older than
+    the staleness threshold. Used by the detail-pane endpoints to decide
+    whether to fire a background refresh. Only Steam — other sources don't
+    have an appdetails endpoint to refresh against."""
+    if release.source != "steam" or not release.external_id:
+        return False
+    if release.metadata_fetched_at is None:
+        return True
+    age = datetime.datetime.now(datetime.UTC) - release.metadata_fetched_at
+    return age.days >= _METADATA_STALENESS_DAYS
+
+
+def _attach_parent_fallbacks(db: Session, entries) -> None:
+    """For each entry whose game has a parent (DLC -> base game), look up the
+    parent's Steam artwork and stamp `_fallback_v` / `_fallback_h` URLs onto
+    the entry as transient attributes. Templates read these and emit them as
+    `data-fallback` so cgtCoverFallback() can degrade to parent art when the
+    DLC's own cover/header 404s.
+
+    One batched query for all parents in the page — avoids N+1 across long
+    lists. Entries without a parent get None on both attributes."""
+    parent_ids = {e.release.game.parent_id for e in entries if e.release.game.parent_id}
+    parent_art: dict[int, dict[str, str | None]] = {}
+    if parent_ids:
+        rows = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork))
+            .filter(
+                models.GameRelease.game_id.in_(parent_ids),
+                models.GameRelease.source == "steam",
+            )
+            .all()
+        )
+        for r in rows:
+            d: dict[str, str | None] = {"cover": None, "header": None}
+            for art in r.artwork:
+                if art.artwork_type in d and not d[art.artwork_type]:
+                    d[art.artwork_type] = art.url
+            parent_art[r.game_id] = d
+
+    for e in entries:
+        parent_id = e.release.game.parent_id
+        p = parent_art.get(parent_id) if parent_id else None
+        e._fallback_v = (p or {}).get("cover")
+        e._fallback_h = (p or {}).get("header")
+
+
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
 
 COLLECTION_KEYWORDS = [
@@ -369,6 +424,13 @@ def library_page(
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
     entries = base_q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+
+    # Attach parent-game artwork fallbacks to each DLC entry. The list/grid
+    # cover img uses these via data-fallback + cgtCoverFallback() so a DLC
+    # whose own header/cover URL 404s degrades to the base game's art instead
+    # of vanishing. Done as a single batched query (vs. per-row joinedload) to
+    # avoid N+1 across long pages.
+    _attach_parent_fallbacks(db, entries)
 
     # base_game_options and collections are only needed to populate the add-form
     # and edit-modal dropdowns, which live outside #library-content and are never
@@ -769,6 +831,13 @@ def library_entry_detail(
 
     appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
 
+    # Stale-only auto-refresh: if this is a Steam entry and its metadata is
+    # either never-fetched or older than the staleness threshold, the template
+    # will emit a hidden HTMX trigger that fires the refresh in the background
+    # when the pane opens. Current data shows immediately; the next open picks
+    # up the refresh. Avoids hammering Steam on every pane open.
+    needs_refresh = _needs_metadata_refresh(entry.release)
+
     return templates.TemplateResponse(
         request=request,
         name="partials/library_detail.html",
@@ -782,6 +851,7 @@ def library_entry_detail(
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
+            "needs_refresh": needs_refresh,
         },
     )
 
@@ -1003,6 +1073,10 @@ def completions_page(
         except ValueError:
             pass
     completions = completions_q.order_by(models.Completion.id.desc()).all()
+    # Reuse the library fallback helper — it expects a list of UserLibraryEntry
+    # objects, so pass each completion's library_entry. Dedupe on entry.id so
+    # entries with multiple completions don't get processed twice.
+    _attach_parent_fallbacks(db, list({c.library_entry.id: c.library_entry for c in completions}.values()))
     comp_platforms = (
         db.query(models.GameRelease.platform)
         .join(models.UserLibraryEntry, models.GameRelease.id == models.UserLibraryEntry.release_id)
@@ -1230,5 +1304,6 @@ def completion_detail(
             "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
+            "needs_refresh": _needs_metadata_refresh(release),
         },
     )
