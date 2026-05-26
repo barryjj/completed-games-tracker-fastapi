@@ -137,11 +137,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Grid toggle on library page using Steam CDN cover art (already stored in `GameArtwork` table)
 - Completions page: cover thumbnails alongside game titles
 
-### Steam OAuth / "Sign in through Steam"
-- Replace manual API key + cookie fields with OpenID "Sign in through Steam" flow
-- Captures session cookies automatically after login — no manual DevTools copy-paste
-- API key still needed for GetOwnedGames; long-term goal is to eliminate it too
-- Depends on Tauri for proper cookie capture (desktop) or a redirect flow (web)
+### Steam OpenID identity ✅ (this PR)
+- "Sign in through Steam" button on the configure page
+- OpenID 2.0 redirect → Steam → return with signed params → POST back for verification
+- SteamID parsed from `claimed_id`; persona name fetched via GetPlayerSummaries when API key is set
+- API key + cookies still require manual paste (Steam doesn't issue API keys via OpenID, and session-cookie capture needs Tauri)
+- Pure web — no Tauri prerequisite for this part
+
+### Steam cookie capture (Tauri-only)
+- Eliminates the `steamLoginSecure` / `sessionid` manual paste step
+- Requires the Tauri desktop wrapper to host a WebView that can intercept Steam's response cookies after login
+- Pair with the existing OpenID identity flow: one "Sign in through Steam" click → SteamID + persona + cookies all captured at once
+- Web-only build keeps the manual cookie fields as a fallback
 
 ---
 

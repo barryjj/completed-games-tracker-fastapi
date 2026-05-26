@@ -1,9 +1,12 @@
 import asyncio
 import logging
 import os
+import re
+from urllib.parse import urlencode
 
 import httpx as _httpx
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -60,12 +63,15 @@ def integrations_hub(
 @router.get("/steam")
 def steam_page(
     request: Request,
+    openid: str = "",
     current_user: models.User = Depends(get_web_user),
 ):
+    # ?openid=ok|bad_claim|verify_failed|invalid_sig — set by the OpenID return
+    # handler so the page can show a result toast/flash on the next render.
     return templates.TemplateResponse(
         request=request,
         name="integrations_steam.html",
-        context={"current_user": current_user},
+        context={"current_user": current_user, "openid_status": openid},
     )
 
 
@@ -92,6 +98,106 @@ def save_steam_credentials(
     )
     response.headers["HX-Refresh"] = "true"
     return response
+
+
+# ─── Steam OpenID ("Sign in through Steam") ───────────────────────────────
+# Steam still uses OpenID 2.0, not OAuth 2. The flow:
+#   1. Redirect user to https://steamcommunity.com/openid/login?... with our
+#      callback URL in openid.return_to.
+#   2. User signs in on Steam's site.
+#   3. Steam redirects back to our callback with signed params.
+#   4. We POST those params back to Steam with mode=check_authentication to
+#      verify the signature.
+#   5. Parse SteamID from claimed_id (URL of the form .../openid/id/<steamid64>).
+# What this DOES: gets the user's verified SteamID + persona name, no paste.
+# What it DOES NOT: capture session cookies (would need Tauri) or issue an
+# API key (Steam doesn't via OpenID). API key + cookies stay manual for now.
+
+_STEAM_OPENID_URL = "https://steamcommunity.com/openid/login"
+_OPENID_NS = "http://specs.openid.net/auth/2.0"
+_OPENID_IDENTIFIER = "http://specs.openid.net/auth/2.0/identifier_select"
+_CLAIMED_ID_RE = re.compile(r"https?://steamcommunity\.com/openid/id/(\d+)/?$")
+
+
+def _openid_return_url(request: Request) -> str:
+    """Absolute URL of our callback endpoint — Steam requires it to match
+    exactly between the redirect and the verification round-trip."""
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/integrations/steam/openid/return"
+
+
+def _openid_realm(request: Request) -> str:
+    """OpenID realm — the scope of URLs the auth applies to. Use the app root."""
+    return str(request.base_url).rstrip("/") + "/"
+
+
+@router.get("/steam/openid/start")
+def steam_openid_start(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Kick off the OpenID flow by redirecting to Steam's login page."""
+    params = {
+        "openid.ns": _OPENID_NS,
+        "openid.mode": "checkid_setup",
+        "openid.return_to": _openid_return_url(request),
+        "openid.realm": _openid_realm(request),
+        "openid.identity": _OPENID_IDENTIFIER,
+        "openid.claimed_id": _OPENID_IDENTIFIER,
+    }
+    url = _STEAM_OPENID_URL + "?" + urlencode(params)
+    return RedirectResponse(url, status_code=302)
+
+
+@router.get("/steam/openid/return")
+def steam_openid_return(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Validate Steam's signed response and persist the SteamID + persona name."""
+    # Steam responded with all the openid.* params in the query string. We
+    # echo them straight back to Steam with mode=check_authentication.
+    payload = dict(request.query_params)
+    claimed_id = payload.get("openid.claimed_id", "")
+    match = _CLAIMED_ID_RE.match(claimed_id)
+    if not match:
+        return RedirectResponse("/integrations/steam?openid=bad_claim", status_code=302)
+    steam_id64 = match.group(1)
+
+    payload["openid.mode"] = "check_authentication"
+    try:
+        verify = _httpx.post(_STEAM_OPENID_URL, data=payload, timeout=15)
+        verify.raise_for_status()
+    except Exception as e:
+        _logger.warning("Steam OpenID verify request failed: %s", e)
+        return RedirectResponse("/integrations/steam?openid=verify_failed", status_code=302)
+
+    if "is_valid:true" not in verify.text:
+        _logger.warning("Steam OpenID signature did not validate")
+        return RedirectResponse("/integrations/steam?openid=invalid_sig", status_code=302)
+
+    # Best-effort persona name fetch (uses the user's existing API key if set).
+    # If we don't have a key yet, we just leave persona_name unset — the UI
+    # falls back to the SteamID.
+    persona_name = None
+    if current_user.steam_api_key:
+        try:
+            r = _httpx.get(
+                f"{steam.STEAM_API_BASE}/ISteamUser/GetPlayerSummaries/v2/",
+                params={"key": current_user.steam_api_key, "steamids": steam_id64},
+                timeout=10,
+            )
+            r.raise_for_status()
+            players = r.json().get("response", {}).get("players", [])
+            if players:
+                persona_name = players[0].get("personaname")
+        except Exception as e:
+            _logger.info("Persona name fetch failed (non-fatal): %s", e)
+
+    current_user.steam_id64 = steam_id64
+    if persona_name:
+        current_user.steam_persona_name = persona_name
+    db.commit()
+
+    return RedirectResponse("/integrations/steam?openid=ok", status_code=302)
 
 
 @router.post("/steam/test-cookies")
