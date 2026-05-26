@@ -679,3 +679,66 @@ def steamgriddb_search(
             "orientation": orientation,
         },
     )
+
+
+async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, orientation: str) -> None:
+    """Background runner for the SGDB bulk-fill job. Mirrors _run_sync_job's
+    shape but doesn't pause enrichment — SGDB writes to cover_url_override_*,
+    which enrichment never touches."""
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user is None:
+            jobs.mark_failed(job_id, "User no longer exists.")
+            return
+        result = await asyncio.to_thread(sgdb.bulk_fill_missing, db, user, orientation)
+        label = "vertical" if orientation == "v" else "horizontal"
+        header = f"SteamGridDB {label} cover fill complete"
+        delta = f"+{result['filled']:,} filled · {result['no_candidate']:,} no match · {result['skipped']:,} already had art"
+        if result["errored"]:
+            delta += f" · {result['errored']:,} errored"
+        jobs.mark_done(job_id, f"{header}\n{delta}")
+    except ValueError as e:
+        jobs.mark_failed(job_id, str(e))
+    except Exception as e:
+        _logger.exception("SGDB bulk fill job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Job failed: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/steamgriddb/fill-missing")
+async def steamgriddb_fill_missing(
+    request: Request,
+    orientation: str = Form(...),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Kick off the bulk fill job. Walks the user's library and SGDB-fills
+    every entry that's missing a cover of the requested orientation."""
+    if orientation not in ("v", "h"):
+        return Response(status_code=400)
+    if not current_user.steamgriddb_api_key:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Set your SteamGridDB API key first."},
+            status_code=422,
+        )
+    active = jobs.active_jobs_for(current_user.id)
+    if active:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Another job is already running — please wait for it to finish."},
+            status_code=409,
+        )
+    kind = f"sgdb_fill_{orientation}"
+    job = jobs.create(user_id=current_user.id, kind=kind)
+    asyncio.create_task(_run_sgdb_bulk_fill_job(job.id, current_user.id, orientation))
+    label = "vertical" if orientation == "v" else "horizontal"
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"SteamGridDB {label} cover fill started — you'll see a toast when it finishes."},
+    )
