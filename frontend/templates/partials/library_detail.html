@@ -137,6 +137,30 @@
            </a></li>
         <li><hr class="dropdown-divider"></li>
         {% endif %}
+        {# Clear-cover-override items only appear when there's an override
+           to clear. Posting falls back to whatever Steam CDN art is on
+           the GameArtwork rows, then re-renders the pane. #}
+        {% if entry.cover_url_override_v or entry.cover_url_override_h %}
+          {% if entry.cover_url_override_v %}
+          <li><a class="dropdown-item" href="#"
+                 hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+                 hx-vals='{"orientation": "v"}'
+                 hx-swap="none"
+                 hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               Reset vertical cover
+             </a></li>
+          {% endif %}
+          {% if entry.cover_url_override_h %}
+          <li><a class="dropdown-item" href="#"
+                 hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+                 hx-vals='{"orientation": "h"}'
+                 hx-swap="none"
+                 hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               Reset horizontal cover
+             </a></li>
+          {% endif %}
+        <li><hr class="dropdown-divider"></li>
+        {% endif %}
         {% if entry.is_hidden %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/unhide"

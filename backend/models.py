@@ -114,8 +114,13 @@ class UserLibraryEntry(Base):
     release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False, index=True)
     playtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_played_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # single URL override for when the user wants different art than what was scraped
-    cover_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Per-orientation cover overrides. Set to non-NULL when the user has picked
+    # custom art (SGDB lookup, manual upload, etc.). Falls through to the
+    # release's GameArtwork when NULL. Two orientations because vertical and
+    # horizontal art are different aspect ratios (600x900 vs 460x215-ish) and
+    # the right one to show depends on the grid view orientation / detail pane.
+    cover_url_override_v: Mapped[str | None] = mapped_column(String, nullable=True)  # 600x900 portrait
+    cover_url_override_h: Mapped[str | None] = mapped_column(String, nullable=True)  # 460x215 landscape header
     # True = entry hidden from the default library view (soundtracks, artbooks, etc.)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
