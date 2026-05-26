@@ -10,6 +10,18 @@ def _signup_and_login(client, username="testuser", password="testpass"):
     return r.cookies["session"]
 
 
+def _setup_steam_connected(client, db_session, api_key="FAKEKEY", steam_id="76561197960287930"):
+    """Test helper: sign up + log in + set Steam credentials and identity to a
+    "fully connected" state. SteamID is set directly on the User row because
+    after the OpenID rework, the credentials form doesn't accept it."""
+    _signup_and_login(client)
+    client.post("/integrations/steam/credentials", data={"steam_api_key": api_key})
+    user = db_session.query(models.User).first()
+    user.steam_id64 = steam_id
+    db_session.commit()
+    return user
+
+
 def test_integrations_hub_loads(client):
     _signup_and_login(client)
     r = client.get("/integrations")
@@ -25,13 +37,12 @@ def test_steam_page_loads(client):
 
 
 def test_save_steam_credentials(client, db_session):
+    """Credentials form persists API key + cookies. SteamID is owned by the
+    OpenID flow and is no longer accepted via this endpoint."""
     token = _signup_and_login(client)
     r = client.post(
         "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "TESTAPIKEY123",
-            "steam_id64": "76561197960287930",
-        },
+        data={"steam_api_key": "TESTAPIKEY123"},
     )
     assert r.status_code == 200
     assert b"saved" in r.content.lower()
@@ -39,29 +50,50 @@ def test_save_steam_credentials(client, db_session):
     user = db_session.query(models.User).filter_by(api_token=token).first()
     db_session.refresh(user)
     assert user.steam_api_key == "TESTAPIKEY123"
-    assert user.steam_id64 == "76561197960287930"
 
 
 def test_save_steam_credentials_clears_on_empty(client, db_session):
+    """Saving empty values clears API key + cookies. SteamID survives —
+    use the openid/forget endpoint to drop the sign-in itself."""
     token = _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "KEY",
-            "steam_id64": "123",
-        },
-    )
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "",
-            "steam_id64": "",
-        },
-    )
+    # Pretend OpenID already populated SteamID — should survive a credentials clear.
     user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_id64 = "76561197960287930"
+    user.steam_api_key = "KEY"
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "login"
+    db_session.commit()
+
+    client.post(
+        "/integrations/steam/credentials",
+        data={"steam_api_key": "", "steam_session_id": "", "steam_login_secure": ""},
+    )
     db_session.refresh(user)
     assert user.steam_api_key is None
+    assert user.steam_session_id is None
+    assert user.steam_login_secure is None
+    # SteamID untouched — only the openid/forget endpoint can drop it.
+    assert user.steam_id64 == "76561197960287930"
+
+
+def test_openid_forget_clears_identity_but_not_credentials(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_id64 = "76561197960287930"
+    user.steam_persona_name = "corrosivefrost"
+    user.steam_avatar_url = "https://avatars.example/x.jpg"
+    user.steam_api_key = "KEEP-ME"
+    db_session.commit()
+
+    r = client.post("/integrations/steam/openid/forget")
+    assert r.status_code == 200
+
+    db_session.refresh(user)
     assert user.steam_id64 is None
+    assert user.steam_persona_name is None
+    assert user.steam_avatar_url is None
+    # Credentials untouched
+    assert user.steam_api_key == "KEEP-ME"
 
 
 def test_sync_requires_credentials(client):
@@ -78,14 +110,7 @@ def test_sync_kickoff_returns_started_toast_and_creates_job(client, db_session):
 
     jobs.clear_all()
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
+    _setup_steam_connected(client, db_session)
 
     # Patch the sync function so even if the background task starts running, it doesn't
     # try to hit Steam. We're testing the kickoff response, not the sync itself.
@@ -108,15 +133,7 @@ def test_sync_kickoff_rejects_concurrent_run(client, db_session):
 
     jobs.clear_all()
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session)
     # Pretend a sync is already running
     jobs.create(user_id=user.id, kind="steam_sync_games")
     jobs.update(list(jobs._jobs.keys())[0], status=jobs.JobStatus.RUNNING)
@@ -300,15 +317,7 @@ def test_sync_kickoff_concurrent_runs_blocked_across_kinds(client, db_session):
 
     jobs.clear_all()
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "K",
-            "steam_id64": "1",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session, api_key="K", steam_id="1")
     # Pretend a catalog refresh is in progress
     j = jobs.create(user_id=user.id, kind="steam_refresh_catalog")
     jobs.update(j.id, status=jobs.JobStatus.RUNNING)
@@ -377,15 +386,7 @@ def test_enrichment_refresh_nulls_timestamps(client, db_session):
     """The bug we just fixed: this endpoint used to 500 on a join+update."""
     from backend import steam
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session)
     fake_games = [{"appid": 100, "name": "G", "playtime_forever": 0, "rtime_last_played": 0}]
     # Seed a Steam release directly (used to go through the HTTP sync endpoint,
     # but that's now async and the import happens in a background task)
@@ -539,15 +540,7 @@ def test_sync_updates_playtime_on_resync(client, db_session):
     upserts the data)."""
     from backend import steam
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session)
 
     game_v1 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 100, "rtime_last_played": 0}]
     game_v2 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 250, "rtime_last_played": 0}]

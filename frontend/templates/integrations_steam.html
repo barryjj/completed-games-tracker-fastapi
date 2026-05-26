@@ -25,12 +25,24 @@
     {% endif %}
 
     {% if current_user.steam_id64 %}
-    <p class="text-secondary mb-2">
-      <small>
-        Signed in as <strong>{{ current_user.steam_persona_name or current_user.steam_id64 }}</strong>
-        {% if current_user.steam_persona_name %}<code class="ms-2">{{ current_user.steam_id64 }}</code>{% endif %}
-      </small>
-    </p>
+    {# Compact identity row: avatar + persona name on top line, SteamID below
+       in monospace. Avatar only renders if we managed to fetch it (requires
+       an API key at OpenID time) — falls back to a Steam-logo placeholder. #}
+    <div class="d-flex align-items-center gap-3 mb-3">
+      {% if current_user.steam_avatar_url %}
+      <img src="{{ current_user.steam_avatar_url }}" alt=""
+           width="48" height="48"
+           style="border-radius: 4px; flex-shrink: 0;">
+      {% else %}
+      <div style="width: 48px; height: 48px; border-radius: 4px; background: var(--bs-secondary-bg); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        <small class="text-secondary">?</small>
+      </div>
+      {% endif %}
+      <div>
+        <div class="fw-semibold">{{ current_user.steam_persona_name or "Steam user" }}</div>
+        <small class="text-secondary font-monospace">{{ current_user.steam_id64 }}</small>
+      </div>
+    </div>
     <a href="/integrations/steam/openid/start" class="btn btn-outline-secondary btn-sm mb-4">Re-sign in through Steam</a>
     {% else %}
     <a href="/integrations/steam/openid/start" class="btn btn-primary mb-2">Sign in through Steam</a>
@@ -54,18 +66,6 @@
           autocomplete="off"
         >
         <div class="form-text">Get yours at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a></div>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Steam ID64</label>
-        <input
-          type="text"
-          class="form-control font-monospace"
-          name="steam_id64"
-          value="{{ current_user.steam_id64 or '' }}"
-          placeholder="e.g. 76561197960287930"
-          autocomplete="off"
-        >
-        <div class="form-text">Find yours at <a href="https://www.steamidfinder.com/" target="_blank" rel="noopener">steamidfinder.com</a></div>
       </div>
       <hr class="my-3">
       <h6 class="mb-1">Browser Cookies <span class="text-secondary fw-normal">(optional — enables faster DLC detection)</span></h6>
@@ -92,18 +92,28 @@
           autocomplete="off"
         >
       </div>
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 flex-wrap">
         <button type="submit" class="btn btn-primary">Save Credentials</button>
-        {% if current_user.steam_api_key or current_user.steam_id64 or current_user.steam_session_id or current_user.steam_login_secure %}
+        {% if current_user.steam_api_key or current_user.steam_session_id or current_user.steam_login_secure %}
         <button
           type="button"
           class="btn btn-outline-danger"
           hx-post="/integrations/steam/credentials"
-          hx-vals='{"steam_api_key": "", "steam_id64": "", "steam_session_id": "", "steam_login_secure": ""}'
+          hx-vals='{"steam_api_key": "", "steam_session_id": "", "steam_login_secure": ""}'
           hx-target="#steam-flash"
           hx-swap="innerHTML"
-          hx-confirm="Clear your saved Steam credentials?"
+          hx-confirm="Clear your saved Steam API key and cookies? (Steam sign-in is kept — use 'Forget Steam sign-in' to drop that too.)"
         >Clear Credentials</button>
+        {% endif %}
+        {% if current_user.steam_id64 %}
+        <button
+          type="button"
+          class="btn btn-outline-danger btn-sm align-self-center"
+          hx-post="/integrations/steam/openid/forget"
+          hx-target="#steam-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Forget your Steam sign-in? You'll need to Sign in through Steam again to sync."
+        >Forget Steam sign-in</button>
         {% endif %}
       </div>
     </form>
