@@ -1,0 +1,24 @@
+{# SteamGridDB cover candidates. Rendered into #sgdb-picker-results inside
+   the picker modal. Each thumbnail is a click-target that calls
+   applySgdbCover(entry_id, orientation, url) to POST the override. #}
+
+{% if error %}
+<div class="alert alert-warning py-2 mb-0"><small>{{ error }}</small></div>
+{% elif not candidates %}
+<p class="text-secondary mb-0"><small>No candidates found on SteamGridDB. The game may not be catalogued, or the orientation may have no uploads.</small></p>
+{% else %}
+<div class="d-flex flex-wrap gap-3">
+  {% for c in candidates %}
+  <div class="text-center" style="cursor: pointer;"
+       onclick="applySgdbCover({{ entry_id }}, '{{ orientation }}', '{{ c.url }}')"
+       title="Click to apply">
+    <img src="{{ c.thumb or c.url }}" alt=""
+         style="{% if orientation == 'v' %}max-width: 150px; max-height: 225px;{% else %}max-width: 230px; max-height: 107px;{% endif %} border-radius: 4px; display: block;"
+         loading="lazy">
+    {% if c.author and c.author.name %}
+    <small class="text-secondary d-block mt-1">by {{ c.author.name }}</small>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

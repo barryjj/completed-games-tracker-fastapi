@@ -80,10 +80,39 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Reusable across other pages later (completions grid is its own roadmap item)
 - SteamGridDB integration placeholder card added to /integrations as a foundation for the later cover-art lookup feature
 
-### Custom cover art (manual upload + SteamGridDB lookup)
-- Per-entry cover upload UI on the detail pane (writes to `cover_url_override` on `UserLibraryEntry` — column already exists)
-- SteamGridDB lookup integration: hit their API for art candidates by appid/title, let the user pick one
+### Custom cover art via SteamGridDB ✅ (this PR)
+- Per-user SGDB API key on `/integrations/steamgriddb` configure page
+- "Find vertical cover" / "Find horizontal cover" entries in the library detail pane's More dropdown (only shown when a key is saved)
+- Steam entries look up by appid via `/games/steam/{appid}`; non-Steam entries fall back to title autocomplete
+- Picker modal shows up to 20 candidates filtered to the matching aspect ratio (600x900 or 460x215/920x430)
+- Clicking a candidate POSTs to `/library/entries/{id}/cover-override` → writes URL to `cover_url_override_v` or `_h` → grid/detail render the new cover on next load
 - Especially important for manual entries (no Steam artwork available) and PSN entries (different art catalog)
+
+### Bulk SGDB "fill in the gaps" job ✅ (this PR)
+- `POST /integrations/steamgriddb/fill-missing` with `orientation=v|h`
+- Walks every visible library entry; for each one missing a matching-orientation cover (no override AND no `GameArtwork` row of the right type), looks it up on SGDB and writes the top candidate to `cover_url_override_v` or `_h`
+- Runs through the job system — started toast on click, completion toast with counts (filled / no_candidate / skipped / errored) when done
+- Single errored entry doesn't abort the whole run; logged and counted
+- Two buttons on the SGDB configure page (vertical / horizontal), only shown when an API key is saved
+
+### Steam integration polish (avatar + ID64 cleanup + hub enrichment) ✅ (this PR)
+- Drop the Steam ID64 input field from the configure page — OpenID owns the SteamID now; manual paste is no longer an option
+- New `steam_avatar_url` column on User, populated from `GetPlayerSummaries` (`avatarmedium`) at OpenID return time
+- Configure page shows the avatar + persona + SteamID in a single tight identity row
+- New "Forget Steam sign-in" button that clears SteamID + persona + avatar without touching API key / cookies
+- Credentials form no longer accepts `steam_id64`; "Clear Credentials" only wipes API key + cookies
+- Integrations hub Steam card surfaces the avatar + a compact enrichment status line (lazily loads the existing `/integrations/steam/enrichment-status` partial)
+
+### Toolbar collapse + completions grid port (next)
+- Library page: collapse Filters / View into independent icon-toggled drawers (persisted to localStorage). Fixes the cluttered double-row toolbar.
+- Completions page: port view-mode toggle, size/gap sliders, borderless toggle, list-view thumbnails, and the same collapse pattern
+- Grid card for completion: bottom-strip caption with completion date so the grid is scannable at a glance
+
+### Navbar avatar (future)
+- Today the navbar shows the app username (`corrosivefrost`) as plain text; would be nicer with a small profile picture
+- Blocked on building an avatar-source picker: which integration wins (Steam / PSN / uploaded), what's the default when no integrations are connected, fallback for users with multiple connected services
+- Steam avatar URL is already captured (see "Steam integration polish" above), so once the picker exists, Steam users get a freebie
+- Roadmap-only for now
 
 ### Per-entry refresh metadata + dropdown actions menu ✅ (PR #69)
 - New `POST /library/entries/{id}/refresh-metadata` — synchronous one-off appdetails fetch for a single Steam entry, bypasses the background worker's queue
@@ -137,11 +166,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Grid toggle on library page using Steam CDN cover art (already stored in `GameArtwork` table)
 - Completions page: cover thumbnails alongside game titles
 
-### Steam OAuth / "Sign in through Steam"
-- Replace manual API key + cookie fields with OpenID "Sign in through Steam" flow
-- Captures session cookies automatically after login — no manual DevTools copy-paste
-- API key still needed for GetOwnedGames; long-term goal is to eliminate it too
-- Depends on Tauri for proper cookie capture (desktop) or a redirect flow (web)
+### Steam OpenID identity ✅ (this PR)
+- "Sign in through Steam" button on the configure page
+- OpenID 2.0 redirect → Steam → return with signed params → POST back for verification
+- SteamID parsed from `claimed_id`; persona name fetched via GetPlayerSummaries when API key is set
+- API key + cookies still require manual paste (Steam doesn't issue API keys via OpenID, and session-cookie capture needs Tauri)
+- Pure web — no Tauri prerequisite for this part
+
+### Steam cookie capture (Tauri-only)
+- Eliminates the `steamLoginSecure` / `sessionid` manual paste step
+- Requires the Tauri desktop wrapper to host a WebView that can intercept Steam's response cookies after login
+- Pair with the existing OpenID identity flow: one "Sign in through Steam" click → SteamID + persona + cookies all captured at once
+- Web-only build keeps the manual cookie fields as a fallback
 
 ---
 
@@ -166,11 +202,6 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Twitch Client Credentials OAuth (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` env vars)
 - IGDB search on manual game add: typeahead lookup, select result, auto-fill title, store `igdb_id`
 - Cover art via IGDB → `GameArtwork`
-
-### SteamGridDB
-- Cover art fallback for games missing Steam/IGDB images
-- "Get cover options" on game detail/edit pane — fetches options, user picks one
-- API key stored in user settings
 
 ### Stats & dashboard / home page
 - Customizable widget-based home page

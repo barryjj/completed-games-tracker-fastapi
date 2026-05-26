@@ -8,7 +8,7 @@
        and is loading (:not(:only-child)). If the cover errors and removes
        itself, the placeholder becomes :only-child and shows automatically.
    Click anywhere → detail pane via the delegated handler in library.html. #}
-{% set cover_url = entry.release | grid_cover_url(view_mode) %}
+{% set cover_url = entry | grid_cover_url(view_mode) %}
 <div class="cgt-library-card library-row-clickable
             {% if not cover_url %}cgt-library-card--no-art{% endif %}
             {% if entry.release.game.is_dlc %}cgt-library-card--dlc{% endif %}

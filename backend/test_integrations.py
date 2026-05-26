@@ -10,6 +10,18 @@ def _signup_and_login(client, username="testuser", password="testpass"):
     return r.cookies["session"]
 
 
+def _setup_steam_connected(client, db_session, api_key="FAKEKEY", steam_id="76561197960287930"):
+    """Test helper: sign up + log in + set Steam credentials and identity to a
+    "fully connected" state. SteamID is set directly on the User row because
+    after the OpenID rework, the credentials form doesn't accept it."""
+    _signup_and_login(client)
+    client.post("/integrations/steam/credentials", data={"steam_api_key": api_key})
+    user = db_session.query(models.User).first()
+    user.steam_id64 = steam_id
+    db_session.commit()
+    return user
+
+
 def test_integrations_hub_loads(client):
     _signup_and_login(client)
     r = client.get("/integrations")
@@ -25,13 +37,12 @@ def test_steam_page_loads(client):
 
 
 def test_save_steam_credentials(client, db_session):
+    """Credentials form persists API key + cookies. SteamID is owned by the
+    OpenID flow and is no longer accepted via this endpoint."""
     token = _signup_and_login(client)
     r = client.post(
         "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "TESTAPIKEY123",
-            "steam_id64": "76561197960287930",
-        },
+        data={"steam_api_key": "TESTAPIKEY123"},
     )
     assert r.status_code == 200
     assert b"saved" in r.content.lower()
@@ -39,29 +50,50 @@ def test_save_steam_credentials(client, db_session):
     user = db_session.query(models.User).filter_by(api_token=token).first()
     db_session.refresh(user)
     assert user.steam_api_key == "TESTAPIKEY123"
-    assert user.steam_id64 == "76561197960287930"
 
 
 def test_save_steam_credentials_clears_on_empty(client, db_session):
+    """Saving empty values clears API key + cookies. SteamID survives —
+    use the openid/forget endpoint to drop the sign-in itself."""
     token = _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "KEY",
-            "steam_id64": "123",
-        },
-    )
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "",
-            "steam_id64": "",
-        },
-    )
+    # Pretend OpenID already populated SteamID — should survive a credentials clear.
     user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_id64 = "76561197960287930"
+    user.steam_api_key = "KEY"
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "login"
+    db_session.commit()
+
+    client.post(
+        "/integrations/steam/credentials",
+        data={"steam_api_key": "", "steam_session_id": "", "steam_login_secure": ""},
+    )
     db_session.refresh(user)
     assert user.steam_api_key is None
+    assert user.steam_session_id is None
+    assert user.steam_login_secure is None
+    # SteamID untouched — only the openid/forget endpoint can drop it.
+    assert user.steam_id64 == "76561197960287930"
+
+
+def test_openid_forget_clears_identity_but_not_credentials(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_id64 = "76561197960287930"
+    user.steam_persona_name = "corrosivefrost"
+    user.steam_avatar_url = "https://avatars.example/x.jpg"
+    user.steam_api_key = "KEEP-ME"
+    db_session.commit()
+
+    r = client.post("/integrations/steam/openid/forget")
+    assert r.status_code == 200
+
+    db_session.refresh(user)
     assert user.steam_id64 is None
+    assert user.steam_persona_name is None
+    assert user.steam_avatar_url is None
+    # Credentials untouched
+    assert user.steam_api_key == "KEEP-ME"
 
 
 def test_sync_requires_credentials(client):
@@ -78,14 +110,7 @@ def test_sync_kickoff_returns_started_toast_and_creates_job(client, db_session):
 
     jobs.clear_all()
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
+    _setup_steam_connected(client, db_session)
 
     # Patch the sync function so even if the background task starts running, it doesn't
     # try to hit Steam. We're testing the kickoff response, not the sync itself.
@@ -108,15 +133,7 @@ def test_sync_kickoff_rejects_concurrent_run(client, db_session):
 
     jobs.clear_all()
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session)
     # Pretend a sync is already running
     jobs.create(user_id=user.id, kind="steam_sync_games")
     jobs.update(list(jobs._jobs.keys())[0], status=jobs.JobStatus.RUNNING)
@@ -300,15 +317,7 @@ def test_sync_kickoff_concurrent_runs_blocked_across_kinds(client, db_session):
 
     jobs.clear_all()
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "K",
-            "steam_id64": "1",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session, api_key="K", steam_id="1")
     # Pretend a catalog refresh is in progress
     j = jobs.create(user_id=user.id, kind="steam_refresh_catalog")
     jobs.update(j.id, status=jobs.JobStatus.RUNNING)
@@ -377,15 +386,7 @@ def test_enrichment_refresh_nulls_timestamps(client, db_session):
     """The bug we just fixed: this endpoint used to 500 on a join+update."""
     from backend import steam
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session)
     fake_games = [{"appid": 100, "name": "G", "playtime_forever": 0, "rtime_last_played": 0}]
     # Seed a Steam release directly (used to go through the HTTP sync endpoint,
     # but that's now async and the import happens in a background task)
@@ -539,15 +540,7 @@ def test_sync_updates_playtime_on_resync(client, db_session):
     upserts the data)."""
     from backend import steam
 
-    _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "FAKEKEY",
-            "steam_id64": "76561197960287930",
-        },
-    )
-    user = db_session.query(models.User).first()
+    user = _setup_steam_connected(client, db_session)
 
     game_v1 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 100, "rtime_last_played": 0}]
     game_v2 = [{"appid": 1245620, "name": "Elden Ring", "playtime_forever": 250, "rtime_last_played": 0}]
@@ -870,3 +863,469 @@ def test_enrichment_creates_header_artwork_if_missing(db_session):
     art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
     assert art is not None
     assert art.url == url
+
+
+# ─── Steam OpenID ─────────────────────────────────────────────────────────
+
+
+def test_openid_start_redirects_to_steam(client):
+    _signup_and_login(client)
+    r = client.get("/integrations/steam/openid/start", follow_redirects=False)
+    assert r.status_code == 302
+    location = r.headers["location"]
+    assert location.startswith("https://steamcommunity.com/openid/login?")
+    # Required OpenID params
+    assert "openid.mode=checkid_setup" in location
+    assert "openid.identity=http%3A%2F%2Fspecs.openid.net%2Fauth%2F2.0%2Fidentifier_select" in location
+    # Our callback URL is in there
+    assert "openid.return_to=" in location
+    assert "%2Fintegrations%2Fsteam%2Fopenid%2Freturn" in location
+
+
+def test_openid_return_persists_steam_id_on_valid_signature(client, db_session):
+    """Valid signature: Steam responds 'is_valid:true', we parse SteamID from
+    claimed_id and save it. No persona name lookup if no API key is set."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    assert user.steam_id64 is None
+
+    fake_verify = MagicMock()
+    fake_verify.text = "ns:http://specs.openid.net/auth/2.0\nis_valid:true\n"
+    fake_verify.raise_for_status.return_value = None
+
+    with patch("backend.integrations._httpx.post", return_value=fake_verify):
+        r = client.get(
+            "/integrations/steam/openid/return",
+            params={
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.identity": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.mode": "id_res",
+                "openid.sig": "fake-signature",
+                "openid.signed": "signed,op_endpoint,claimed_id,identity,return_to,response_nonce,assoc_handle",
+                "openid.response_nonce": "fake-nonce",
+                "openid.assoc_handle": "fake-handle",
+                "openid.return_to": "http://testserver/integrations/steam/openid/return",
+                "openid.op_endpoint": "https://steamcommunity.com/openid/login",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    assert "openid=ok" in r.headers["location"]
+
+    db_session.refresh(user)
+    assert user.steam_id64 == "76561197960287930"
+
+
+def test_openid_return_rejects_bad_claimed_id(client, db_session):
+    """Garbage claimed_id → redirect with error flag, no DB writes."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    r = client.get(
+        "/integrations/steam/openid/return",
+        params={"openid.claimed_id": "https://evil.example.com/openid/id/123"},
+        follow_redirects=False,
+    )
+    assert r.status_code == 302
+    assert "openid=bad_claim" in r.headers["location"]
+    db_session.refresh(user)
+    assert user.steam_id64 is None
+
+
+def test_openid_return_rejects_invalid_signature(client, db_session):
+    """Steam responds is_valid:false → don't save anything."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    fake_verify = MagicMock()
+    fake_verify.text = "ns:http://specs.openid.net/auth/2.0\nis_valid:false\n"
+    fake_verify.raise_for_status.return_value = None
+
+    with patch("backend.integrations._httpx.post", return_value=fake_verify):
+        r = client.get(
+            "/integrations/steam/openid/return",
+            params={
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.mode": "id_res",
+                "openid.sig": "tampered-sig",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    assert "openid=invalid_sig" in r.headers["location"]
+    db_session.refresh(user)
+    assert user.steam_id64 is None
+
+
+def test_openid_return_fetches_persona_when_api_key_set(client, db_session):
+    """If the user has an API key on file, the return handler also fetches
+    their Steam persona name and stores it for the UI."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    # Pre-set an API key
+    client.post(
+        "/integrations/steam/credentials",
+        data={"steam_api_key": "FAKEKEY", "steam_id64": ""},
+    )
+
+    fake_verify = MagicMock()
+    fake_verify.text = "is_valid:true\n"
+    fake_verify.raise_for_status.return_value = None
+
+    fake_personas = MagicMock()
+    fake_personas.json.return_value = {"response": {"players": [{"personaname": "corrosivefrost"}]}}
+    fake_personas.raise_for_status.return_value = None
+
+    with (
+        patch("backend.integrations._httpx.post", return_value=fake_verify),
+        patch("backend.integrations._httpx.get", return_value=fake_personas),
+    ):
+        r = client.get(
+            "/integrations/steam/openid/return",
+            params={
+                "openid.claimed_id": "https://steamcommunity.com/openid/id/76561197960287930",
+                "openid.mode": "id_res",
+                "openid.sig": "ok",
+            },
+            follow_redirects=False,
+        )
+    assert r.status_code == 302
+    user = db_session.query(models.User).first()
+    db_session.refresh(user)
+    assert user.steam_persona_name == "corrosivefrost"
+    assert user.steam_id64 == "76561197960287930"
+
+
+# ─── SteamGridDB ──────────────────────────────────────────────────────────
+
+
+def test_sgdb_credentials_save_and_clear(client, db_session):
+    _signup_and_login(client)
+    r = client.post("/integrations/steamgriddb/credentials", data={"steamgriddb_api_key": "sgdb-key-123"})
+    assert r.status_code == 200
+    user = db_session.query(models.User).first()
+    db_session.refresh(user)
+    assert user.steamgriddb_api_key == "sgdb-key-123"
+
+    # Clear
+    client.post("/integrations/steamgriddb/credentials", data={"steamgriddb_api_key": ""})
+    db_session.refresh(user)
+    assert user.steamgriddb_api_key is None
+
+
+def test_sgdb_search_requires_api_key(client, db_session):
+    """No SGDB key set → returns an error message via the partial, not a 401."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="42")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steamgriddb.lookup_by_steam_appid") as m:
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+        assert r.status_code == 200
+        assert "SteamGridDB API key" in r.text
+        m.assert_not_called()
+
+
+def test_sgdb_search_uses_steam_appid_when_available(client, db_session):
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    game = models.Game(title="Half-Life 2")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="220")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with (
+        patch("backend.steamgriddb.lookup_by_steam_appid", return_value={"id": 999}) as m_lookup,
+        patch(
+            "backend.steamgriddb.get_grids_for_game",
+            return_value=[{"url": "https://cdn.sgdb/full.png", "thumb": "https://cdn.sgdb/t.png", "id": 1}],
+        ) as m_grids,
+    ):
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+    assert r.status_code == 200
+    m_lookup.assert_called_once_with("sgdb-key", "220")
+    m_grids.assert_called_once_with("sgdb-key", 999, "v")
+    assert "https://cdn.sgdb/t.png" in r.text
+
+
+def test_sgdb_search_falls_back_to_title_for_non_steam(client, db_session):
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    game = models.Game(title="Bloodborne")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="PS4", source="manual", external_id=None)
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    with (
+        patch("backend.steamgriddb.lookup_by_steam_appid") as m_lookup,
+        patch("backend.steamgriddb.search_games", return_value=[{"id": 555, "name": "Bloodborne"}]) as m_search,
+        patch("backend.steamgriddb.get_grids_for_game", return_value=[]) as m_grids,
+    ):
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=h")
+    assert r.status_code == 200
+    m_lookup.assert_not_called()
+    m_search.assert_called_once_with("sgdb-key", "Bloodborne")
+    m_grids.assert_called_once_with("sgdb-key", 555, "h")
+
+
+def test_set_cover_override_applies_to_correct_orientation(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.post(
+        f"/library/entries/{entry.id}/cover-override",
+        data={"orientation": "v", "url": "https://cdn.sgdb/cover-v.png"},
+    )
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v == "https://cdn.sgdb/cover-v.png"
+    assert entry.cover_url_override_h is None
+
+    r = client.post(
+        f"/library/entries/{entry.id}/cover-override",
+        data={"orientation": "h", "url": "https://cdn.sgdb/cover-h.png"},
+    )
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.cover_url_override_h == "https://cdn.sgdb/cover-h.png"
+
+
+def test_set_cover_override_rejects_bad_orientation(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.post(
+        f"/library/entries/{entry.id}/cover-override",
+        data={"orientation": "diagonal", "url": "https://x/y.png"},
+    )
+    assert r.status_code == 400
+
+
+def test_sgdb_bulk_fill_skips_entries_with_existing_artwork(db_session):
+    """An entry with a release-level GameArtwork cover row of the right type
+    should be skipped — we don't want to stomp Steam CDN art that works."""
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Half-Life 2")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="220")
+    db_session.add(release)
+    db_session.flush()
+    db_session.add(models.GameArtwork(release_id=release.id, artwork_type="cover", source="steam", url="https://steam/cover.jpg"))
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result == {"filled": 0, "no_candidate": 0, "skipped": 1, "errored": 0}
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v is None
+
+
+def test_sgdb_bulk_fill_applies_top_candidate(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Bloodborne")
+    db_session.add(game)
+    db_session.flush()
+    # Manual entry, no artwork → eligible for fill
+    release = models.GameRelease(game_id=game.id, platform="PS4", source="manual", external_id=None)
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [{"id": 555, "name": "Bloodborne"}])
+    monkeypatch.setattr(
+        steamgriddb,
+        "get_grids_for_game",
+        lambda k, gid, o: [{"url": "https://sgdb/top.png", "thumb": "https://sgdb/t.png"}],
+    )
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result["filled"] == 1
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v == "https://sgdb/top.png"
+
+
+def test_sgdb_bulk_fill_counts_no_candidate(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="ObscureUnknownGame")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="99999999")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lambda k, a: None)
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [])
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result["no_candidate"] == 1
+    assert result["filled"] == 0
+
+
+def test_sgdb_bulk_fill_one_error_doesnt_abort_run(db_session, monkeypatch):
+    """If SGDB blows up on one entry, the rest of the library should still
+    get processed."""
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    games = [models.Game(title=f"G{i}") for i in range(3)]
+    for g in games:
+        db_session.add(g)
+    db_session.flush()
+    entries = []
+    for i, g in enumerate(games):
+        r = models.GameRelease(game_id=g.id, platform="Steam", source="steam", external_id=str(100 + i))
+        db_session.add(r)
+        db_session.flush()
+        e = models.UserLibraryEntry(user_id=user.id, release_id=r.id, import_source="steam_import")
+        db_session.add(e)
+        entries.append(e)
+    db_session.commit()
+
+    calls = {"n": 0}
+
+    def lookup(api_key, appid):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("SGDB 500")
+        return {"id": int(appid) * 10}
+
+    monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lookup)
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o: [{"url": f"https://sgdb/{gid}.png"}])
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert result["filled"] == 2
+    assert result["errored"] == 1
+
+
+def test_sgdb_bulk_fill_skips_hidden_entries(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="HiddenGame")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="42")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import", is_hidden=True)
+    db_session.add(entry)
+    db_session.commit()
+
+    called = {"yes": False}
+
+    def lookup(api_key, appid):
+        called["yes"] = True
+        return {"id": 1}
+
+    monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lookup)
+
+    result = steamgriddb.bulk_fill_missing(db_session, user, "v")
+    assert called["yes"] is False
+    assert result == {"filled": 0, "no_candidate": 0, "skipped": 0, "errored": 0}
+
+
+def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatch):
+    """The endpoint should create a job and return a started toast — it
+    shouldn't run the fill synchronously."""
+    import asyncio
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    db_session.commit()
+
+    created_tasks = []
+
+    def fake_create_task(coro):
+        # Don't actually run the background coroutine in the test — we just
+        # care that the endpoint queued one. Close it to suppress the
+        # "coroutine was never awaited" warning.
+        coro.close()
+        created_tasks.append(True)
+        return None
+
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
+
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    assert r.status_code == 200
+    assert "started" in r.text.lower()
+    assert created_tasks == [True]
+
+
+def test_sgdb_fill_missing_endpoint_requires_api_key(client, db_session):
+    _signup_and_login(client)
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    assert r.status_code == 422
+    assert "API key" in r.text
