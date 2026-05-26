@@ -80,10 +80,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Reusable across other pages later (completions grid is its own roadmap item)
 - SteamGridDB integration placeholder card added to /integrations as a foundation for the later cover-art lookup feature
 
-### Custom cover art (manual upload + SteamGridDB lookup)
-- Per-entry cover upload UI on the detail pane (writes to `cover_url_override` on `UserLibraryEntry` — column already exists)
-- SteamGridDB lookup integration: hit their API for art candidates by appid/title, let the user pick one
+### Custom cover art via SteamGridDB ✅ (this PR)
+- Per-user SGDB API key on `/integrations/steamgriddb` configure page
+- "Find vertical cover" / "Find horizontal cover" entries in the library detail pane's More dropdown (only shown when a key is saved)
+- Steam entries look up by appid via `/games/steam/{appid}`; non-Steam entries fall back to title autocomplete
+- Picker modal shows up to 20 candidates filtered to the matching aspect ratio (600x900 or 460x215/920x430)
+- Clicking a candidate POSTs to `/library/entries/{id}/cover-override` → writes URL to `cover_url_override_v` or `_h` → grid/detail render the new cover on next load
 - Especially important for manual entries (no Steam artwork available) and PSN entries (different art catalog)
+
+### Bulk SGDB "fill in the gaps" job (next)
+- One-shot endpoint that walks every library entry missing matching-orientation artwork, runs SGDB lookup, applies the top candidate
+- User-triggered from the SGDB configure page; reports counts (filled / no-candidate / skipped) when done
+- Skips entries that already have an override or matching-orientation `GameArtwork`
 
 ### Per-entry refresh metadata + dropdown actions menu ✅ (PR #69)
 - New `POST /library/entries/{id}/refresh-metadata` — synchronous one-off appdetails fetch for a single Steam entry, bypasses the background worker's queue
@@ -173,11 +181,6 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Twitch Client Credentials OAuth (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` env vars)
 - IGDB search on manual game add: typeahead lookup, select result, auto-fill title, store `igdb_id`
 - Cover art via IGDB → `GameArtwork`
-
-### SteamGridDB
-- Cover art fallback for games missing Steam/IGDB images
-- "Get cover options" on game detail/edit pane — fetches options, user picks one
-- API key stored in user settings
 
 ### Stats & dashboard / home page
 - Customizable widget-based home page

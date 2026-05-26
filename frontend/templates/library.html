@@ -313,8 +313,68 @@
   </div>
 </div>
 
+<!-- SteamGridDB cover picker modal -->
+<div class="modal fade" id="sgdbPickerModal" tabindex="-1" aria-labelledby="sgdbPickerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="sgdbPickerModalLabel">Find Cover Art</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary mb-3"><small>Click a cover to apply it. The image is hot-linked from SteamGridDB.</small></p>
+        <div id="sgdb-picker-results">
+          <p class="text-secondary"><small>Loading&hellip;</small></p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 {% block scripts %}
 <script>
+// ─── SteamGridDB cover picker ─────────────────────────────────────────────
+//
+// Opens a modal, fires off a search against /integrations/steamgriddb/search,
+// renders candidate thumbnails. Clicking a candidate POSTs the URL back to
+// /library/entries/{id}/cover-override, then closes the modal and reloads
+// the detail pane to show the new cover.
+var _sgdbModal = null;
+function openSgdbPicker(entryId, orientation) {
+  if (!_sgdbModal) {
+    _sgdbModal = new bootstrap.Modal(document.getElementById('sgdbPickerModal'));
+  }
+  var label = orientation === 'v' ? 'vertical' : 'horizontal';
+  document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label + ' cover art';
+  var results = document.getElementById('sgdb-picker-results');
+  results.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
+  _sgdbModal.show();
+  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&orientation=' + orientation, {
+    target: '#sgdb-picker-results',
+    swap: 'innerHTML',
+  });
+}
+function applySgdbCover(entryId, orientation, url) {
+  var body = new URLSearchParams();
+  body.append('orientation', orientation);
+  body.append('url', url);
+  fetch('/library/entries/' + entryId + '/cover-override', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body.toString(),
+  }).then(function(r) {
+    if (r.ok) {
+      _sgdbModal.hide();
+      // Reload so the grid/list row and the detail pane both pick up the
+      // new cover override.
+      location.reload();
+    }
+  });
+}
+
 // ─── Grid view: view-mode toggle + spacing slider ─────────────────────────
 //
 // View mode is server-rendered (the URL query param decides which template
