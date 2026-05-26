@@ -28,6 +28,9 @@ class User(Base):
     steam_last_dlc_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     steam_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_login_secure: Mapped[str | None] = mapped_column(String, nullable=True)
+    # SteamGridDB API key — used to look up community cover art for manual
+    # entries, PSN entries, or any DLC/game whose Steam art is missing/ugly.
+    steamgriddb_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 

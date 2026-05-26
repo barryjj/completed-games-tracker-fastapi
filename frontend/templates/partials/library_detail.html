@@ -137,6 +137,17 @@
            </a></li>
         <li><hr class="dropdown-divider"></li>
         {% endif %}
+        {% if current_user and current_user.steamgriddb_api_key %}
+        <li><a class="dropdown-item" href="#"
+               onclick="openSgdbPicker({{ entry.id }}, 'v'); return false;">
+             Find vertical cover
+           </a></li>
+        <li><a class="dropdown-item" href="#"
+               onclick="openSgdbPicker({{ entry.id }}, 'h'); return false;">
+             Find horizontal cover
+           </a></li>
+        <li><hr class="dropdown-divider"></li>
+        {% endif %}
         {# Clear-cover-override items only appear when there's an override
            to clear. Posting falls back to whatever Steam CDN art is on
            the GameArtwork rows, then re-renders the pane. #}

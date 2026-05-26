@@ -781,6 +781,7 @@ def library_entry_detail(
             "appdetails": appdetails,
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
+            "current_user": current_user,
         },
     )
 
@@ -881,6 +882,39 @@ def refresh_entry_metadata(
         request=request,
         name="partials/integrations_flash.html",
         context={"message": f"Refreshed metadata for {game.display_title}."},
+    )
+
+
+@router.post("/library/entries/{entry_id}/cover-override")
+def set_cover_override(
+    request: Request,
+    entry_id: int,
+    orientation: str = Form(...),
+    url: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Apply a custom cover override URL (typically a SteamGridDB pick) to a
+    library entry. orientation is "v" (600x900) or "h" (460x215)."""
+    if orientation not in ("v", "h"):
+        return Response(status_code=400)
+    url = url.strip()
+    if not url:
+        return Response(status_code=400)
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
+    if not entry:
+        return Response(status_code=404)
+    if orientation == "v":
+        entry.cover_url_override_v = url
+        msg = "Custom vertical cover applied."
+    else:
+        entry.cover_url_override_h = url
+        msg = "Custom horizontal cover applied."
+    db.commit()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": msg},
     )
 
 

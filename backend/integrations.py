@@ -6,12 +6,13 @@ from urllib.parse import urlencode
 
 import httpx as _httpx
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from . import jobs, models, steam, worker_state
+from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
 from .pages import get_web_user
 
@@ -583,4 +584,98 @@ def backfill_steam_display_names(
         request=request,
         name="partials/integrations_flash.html",
         context={"message": f"Backfill complete — {updated} game{'s' if updated != 1 else ''} updated."},
+    )
+
+
+# ─── SteamGridDB ──────────────────────────────────────────────────────────
+
+
+@router.get("/steamgriddb")
+def steamgriddb_page(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="integrations_steamgriddb.html",
+        context={"current_user": current_user},
+    )
+
+
+@router.post("/steamgriddb/credentials")
+def save_steamgriddb_credentials(
+    request: Request,
+    steamgriddb_api_key: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    current_user.steamgriddb_api_key = steamgriddb_api_key.strip() or None
+    db.commit()
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "SteamGridDB API key saved."},
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@router.get("/steamgriddb/search")
+def steamgriddb_search(
+    request: Request,
+    entry_id: int,
+    orientation: str,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return cover-art candidates for a library entry. Used by the "Find cover"
+    modal. Looks up by Steam appid when the entry came from Steam (better hit
+    rate); falls back to title search otherwise."""
+    if orientation not in ("v", "h"):
+        return Response(status_code=400)
+    if not current_user.steamgriddb_api_key:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/sgdb_cover_results.html",
+            context={"error": "Set your SteamGridDB API key on the integrations page first.", "candidates": []},
+        )
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    release = entry.release
+    game = release.game
+
+    try:
+        sgdb_game = None
+        if release.source == "steam" and release.external_id:
+            sgdb_game = sgdb.lookup_by_steam_appid(current_user.steamgriddb_api_key, release.external_id)
+        if not sgdb_game:
+            results = sgdb.search_games(current_user.steamgriddb_api_key, game.display_title)
+            sgdb_game = results[0] if results else None
+        if not sgdb_game:
+            candidates = []
+        else:
+            candidates = sgdb.get_grids_for_game(current_user.steamgriddb_api_key, sgdb_game["id"], orientation)
+    except Exception as e:
+        _logger.warning("SteamGridDB search failed: %s", e)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/sgdb_cover_results.html",
+            context={"error": f"SteamGridDB lookup failed: {e}", "candidates": []},
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/sgdb_cover_results.html",
+        context={
+            "candidates": candidates,
+            "entry_id": entry_id,
+            "orientation": orientation,
+        },
     )
