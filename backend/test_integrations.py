@@ -1006,3 +1006,152 @@ def test_openid_return_fetches_persona_when_api_key_set(client, db_session):
     db_session.refresh(user)
     assert user.steam_persona_name == "corrosivefrost"
     assert user.steam_id64 == "76561197960287930"
+
+
+# ─── SteamGridDB ──────────────────────────────────────────────────────────
+
+
+def test_sgdb_credentials_save_and_clear(client, db_session):
+    _signup_and_login(client)
+    r = client.post("/integrations/steamgriddb/credentials", data={"steamgriddb_api_key": "sgdb-key-123"})
+    assert r.status_code == 200
+    user = db_session.query(models.User).first()
+    db_session.refresh(user)
+    assert user.steamgriddb_api_key == "sgdb-key-123"
+
+    # Clear
+    client.post("/integrations/steamgriddb/credentials", data={"steamgriddb_api_key": ""})
+    db_session.refresh(user)
+    assert user.steamgriddb_api_key is None
+
+
+def test_sgdb_search_requires_api_key(client, db_session):
+    """No SGDB key set → returns an error message via the partial, not a 401."""
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="42")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steamgriddb.lookup_by_steam_appid") as m:
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+        assert r.status_code == 200
+        assert "SteamGridDB API key" in r.text
+        m.assert_not_called()
+
+
+def test_sgdb_search_uses_steam_appid_when_available(client, db_session):
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    game = models.Game(title="Half-Life 2")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="220")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with (
+        patch("backend.steamgriddb.lookup_by_steam_appid", return_value={"id": 999}) as m_lookup,
+        patch(
+            "backend.steamgriddb.get_grids_for_game",
+            return_value=[{"url": "https://cdn.sgdb/full.png", "thumb": "https://cdn.sgdb/t.png", "id": 1}],
+        ) as m_grids,
+    ):
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+    assert r.status_code == 200
+    m_lookup.assert_called_once_with("sgdb-key", "220")
+    m_grids.assert_called_once_with("sgdb-key", 999, "v")
+    assert "https://cdn.sgdb/t.png" in r.text
+
+
+def test_sgdb_search_falls_back_to_title_for_non_steam(client, db_session):
+    from unittest.mock import patch
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    game = models.Game(title="Bloodborne")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="PS4", source="manual", external_id=None)
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    with (
+        patch("backend.steamgriddb.lookup_by_steam_appid") as m_lookup,
+        patch("backend.steamgriddb.search_games", return_value=[{"id": 555, "name": "Bloodborne"}]) as m_search,
+        patch("backend.steamgriddb.get_grids_for_game", return_value=[]) as m_grids,
+    ):
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=h")
+    assert r.status_code == 200
+    m_lookup.assert_not_called()
+    m_search.assert_called_once_with("sgdb-key", "Bloodborne")
+    m_grids.assert_called_once_with("sgdb-key", 555, "h")
+
+
+def test_set_cover_override_applies_to_correct_orientation(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.post(
+        f"/library/entries/{entry.id}/cover-override",
+        data={"orientation": "v", "url": "https://cdn.sgdb/cover-v.png"},
+    )
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.cover_url_override_v == "https://cdn.sgdb/cover-v.png"
+    assert entry.cover_url_override_h is None
+
+    r = client.post(
+        f"/library/entries/{entry.id}/cover-override",
+        data={"orientation": "h", "url": "https://cdn.sgdb/cover-h.png"},
+    )
+    assert r.status_code == 200
+    db_session.refresh(entry)
+    assert entry.cover_url_override_h == "https://cdn.sgdb/cover-h.png"
+
+
+def test_set_cover_override_rejects_bad_orientation(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    game = models.Game(title="G")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.post(
+        f"/library/entries/{entry.id}/cover-override",
+        data={"orientation": "diagonal", "url": "https://x/y.png"},
+    )
+    assert r.status_code == 400

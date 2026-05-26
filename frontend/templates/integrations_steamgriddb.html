@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}SteamGridDB Integration{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <a href="/integrations" class="text-secondary text-decoration-none">&larr; Integrations</a>
+</div>
+<h1 class="mb-4">SteamGridDB</h1>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <h5 class="mb-3">Credentials</h5>
+    <p class="text-secondary mb-3"><small>SteamGridDB hosts community-uploaded cover art. The key is used to look up candidate covers when you click "Find cover" on a library entry.</small></p>
+    <form
+      hx-post="/integrations/steamgriddb/credentials"
+      hx-target="#sgdb-flash"
+      hx-swap="innerHTML"
+    >
+      <div class="mb-3">
+        <label class="form-label">SteamGridDB API Key</label>
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="steamgriddb_api_key"
+          value="{{ current_user.steamgriddb_api_key or '' }}"
+          placeholder="Your SteamGridDB API key"
+          autocomplete="off"
+        >
+        <div class="form-text">Get yours at <a href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noopener">steamgriddb.com/profile/preferences/api</a></div>
+      </div>
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-primary">Save Credentials</button>
+        {% if current_user.steamgriddb_api_key %}
+        <button
+          type="button"
+          class="btn btn-outline-danger"
+          hx-post="/integrations/steamgriddb/credentials"
+          hx-vals='{"steamgriddb_api_key": ""}'
+          hx-target="#sgdb-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Clear your saved SteamGridDB API key?"
+        >Clear Credentials</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-6">
+    <h5 class="mb-3">How it works</h5>
+    <p class="text-secondary mb-2"><small>Once your API key is saved, the More menu on each library entry's detail pane gains two options:</small></p>
+    <ul class="text-secondary mb-3">
+      <li><small><strong>Find vertical cover</strong> — picks from 600&times;900 portrait candidates (library card art).</small></li>
+      <li><small><strong>Find horizontal cover</strong> — picks from 460&times;215 landscape candidates (header art).</small></li>
+    </ul>
+    <p class="text-secondary mb-0"><small>For Steam entries, the lookup uses the appid directly. For other sources, it falls back to a title search.</small></p>
+  </div>
+</div>
+
+<div id="sgdb-flash" class="mt-4"></div>
+{% endblock %}
