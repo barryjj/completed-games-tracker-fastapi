@@ -18,6 +18,21 @@
         </div>
 
         {% if current_user.steam_id64 %}
+        {# Identity row — avatar + persona. Matches the configure page's
+           treatment so the hub feels like the at-a-glance status surface. #}
+        {% if current_user.steam_persona_name or current_user.steam_avatar_url %}
+        <div class="d-flex align-items-center gap-2 mb-2">
+          {% if current_user.steam_avatar_url %}
+          <img src="{{ current_user.steam_avatar_url }}" alt=""
+               width="32" height="32"
+               style="border-radius: 3px; flex-shrink: 0;">
+          {% endif %}
+          <div class="small">
+            <div class="fw-semibold">{{ current_user.steam_persona_name or "Steam user" }}</div>
+          </div>
+        </div>
+        {% endif %}
+
         <p class="text-secondary mb-1"><small>
           {% if current_user.steam_last_synced_at %}
           Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
@@ -26,12 +41,21 @@
           {% endif %}
         </small></p>
         {% if steam_counts is not none %}
-        <p class="text-secondary mb-3"><small>
+        <p class="text-secondary mb-2"><small>
           {{ "{:,}".format(steam_counts.games) }} game{{ 's' if steam_counts.games != 1 }} ·
           {{ "{:,}".format(steam_counts.dlc) }} DLC ·
           {{ "{:,}".format(steam_counts.total) }} total
         </small></p>
         {% endif %}
+        {# Enrichment status — lazily loads the same partial the configure
+           page uses, so the at-a-glance card surfaces "still running" or
+           "all caught up" without needing a separate query. #}
+        <div class="mb-3"
+             hx-get="/integrations/steam/enrichment-status"
+             hx-trigger="load"
+             hx-swap="innerHTML">
+          <p class="text-secondary mb-0"><small>Loading enrichment status&hellip;</small></p>
+        </div>
         {% else %}
         <p class="card-text text-secondary mb-3">Import your Steam library and playtime.</p>
         {% endif %}

@@ -95,10 +95,24 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Single errored entry doesn't abort the whole run; logged and counted
 - Two buttons on the SGDB configure page (vertical / horizontal), only shown when an API key is saved
 
+### Steam integration polish (avatar + ID64 cleanup + hub enrichment) ✅ (this PR)
+- Drop the Steam ID64 input field from the configure page — OpenID owns the SteamID now; manual paste is no longer an option
+- New `steam_avatar_url` column on User, populated from `GetPlayerSummaries` (`avatarmedium`) at OpenID return time
+- Configure page shows the avatar + persona + SteamID in a single tight identity row
+- New "Forget Steam sign-in" button that clears SteamID + persona + avatar without touching API key / cookies
+- Credentials form no longer accepts `steam_id64`; "Clear Credentials" only wipes API key + cookies
+- Integrations hub Steam card surfaces the avatar + a compact enrichment status line (lazily loads the existing `/integrations/steam/enrichment-status` partial)
+
 ### Toolbar collapse + completions grid port (next)
 - Library page: collapse Filters / View into independent icon-toggled drawers (persisted to localStorage). Fixes the cluttered double-row toolbar.
 - Completions page: port view-mode toggle, size/gap sliders, borderless toggle, list-view thumbnails, and the same collapse pattern
 - Grid card for completion: bottom-strip caption with completion date so the grid is scannable at a glance
+
+### Navbar avatar (future)
+- Today the navbar shows the app username (`corrosivefrost`) as plain text; would be nicer with a small profile picture
+- Blocked on building an avatar-source picker: which integration wins (Steam / PSN / uploaded), what's the default when no integrations are connected, fallback for users with multiple connected services
+- Steam avatar URL is already captured (see "Steam integration polish" above), so once the picker exists, Steam users get a freebie
+- Roadmap-only for now
 
 ### Per-entry refresh metadata + dropdown actions menu ✅ (PR #69)
 - New `POST /library/entries/{id}/refresh-metadata` — synchronous one-off appdetails fetch for a single Steam entry, bypasses the background worker's queue

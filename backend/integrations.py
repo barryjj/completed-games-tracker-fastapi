@@ -79,14 +79,16 @@ def steam_page(
 @router.post("/steam/credentials")
 def save_steam_credentials(
     request: Request,
-    steam_id64: str = Form(""),
     steam_api_key: str = Form(""),
     steam_session_id: str = Form(""),
     steam_login_secure: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    current_user.steam_id64 = steam_id64.strip() or None
+    # SteamID is owned by the OpenID flow — not exposed as a form field. The
+    # "Clear Credentials" button below only clears the things you'd want to
+    # rotate (API key + cookies); to forget your Steam sign-in entirely, use
+    # the "Forget Steam sign-in" link.
     current_user.steam_api_key = steam_api_key.strip() or None
     current_user.steam_session_id = steam_session_id.strip() or None
     current_user.steam_login_secure = steam_login_secure.strip() or None
@@ -175,10 +177,11 @@ def steam_openid_return(
         _logger.warning("Steam OpenID signature did not validate")
         return RedirectResponse("/integrations/steam?openid=invalid_sig", status_code=302)
 
-    # Best-effort persona name fetch (uses the user's existing API key if set).
-    # If we don't have a key yet, we just leave persona_name unset — the UI
-    # falls back to the SteamID.
+    # Best-effort persona name + avatar fetch (uses the user's existing API
+    # key if set). If we don't have a key yet, we just leave them unset — the
+    # UI falls back to the SteamID and a placeholder icon.
     persona_name = None
+    avatar_url = None
     if current_user.steam_api_key:
         try:
             r = _httpx.get(
@@ -190,15 +193,43 @@ def steam_openid_return(
             players = r.json().get("response", {}).get("players", [])
             if players:
                 persona_name = players[0].get("personaname")
+                # `avatarmedium` is 64x64 — right size for the configure-page
+                # icon without forcing the browser to scale a 184x184 down.
+                avatar_url = players[0].get("avatarmedium") or players[0].get("avatar")
         except Exception as e:
-            _logger.info("Persona name fetch failed (non-fatal): %s", e)
+            _logger.info("Persona/avatar fetch failed (non-fatal): %s", e)
 
     current_user.steam_id64 = steam_id64
     if persona_name:
         current_user.steam_persona_name = persona_name
+    if avatar_url:
+        current_user.steam_avatar_url = avatar_url
     db.commit()
 
     return RedirectResponse("/integrations/steam?openid=ok", status_code=302)
+
+
+@router.post("/steam/openid/forget")
+def steam_openid_forget(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Drop the user's Steam identity (SteamID + persona name + avatar). API
+    key and cookies are NOT touched — those are managed by the credentials
+    form. Returns HX-Refresh so the page re-renders without the "Signed in"
+    block."""
+    current_user.steam_id64 = None
+    current_user.steam_persona_name = None
+    current_user.steam_avatar_url = None
+    db.commit()
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "Steam sign-in forgotten."},
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @router.post("/steam/test-cookies")
