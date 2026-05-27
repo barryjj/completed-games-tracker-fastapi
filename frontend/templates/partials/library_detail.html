@@ -20,30 +20,17 @@
 {% endif %}
 
 <div class="offcanvas-header border-bottom">
-  {# Title bar layout depends on whether this is DLC (parent_game set) or a
-     standalone game.
-       DLC:        <linked-parent> : <subtitle>
-                   — the linked-parent is clickable and swaps the pane to
-                   the parent's detail (back-nav stack from app.js handles
-                   the return).
-                   — <subtitle> is the DLC's display_title minus the parent's
-                   title prefix when one is detected (avoids duplicating the
-                   parent name).
-       Base game:  just display_title.
+  {# Title bar shows the entry's OWN identifier.
+       DLC:        the dlc_subtitle (DLC name minus parent prefix)
+                   — e.g. "The Forsaken Hollows"
+       Base game:  display_title — e.g. "ELDEN RING NIGHTREIGN"
+     The full breadcrumb (linked-parent : subtitle) lives in a metadata row
+     below the hero — not in the title bar — so the title bar stays scannable
+     even on narrow panes.
      The header bar also holds the close button + back-arrow (injected by
      app.js when the pane stack has > 1 entry). #}
   <h5 class="offcanvas-title cgt-detail-title">
-    {% if parent_game %}
-      {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
-         hx-get="/library/entries/{{ parent_entry_id }}/detail"
-         hx-target="#library-detail-content"
-         hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
-      %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
-      <span class="cgt-detail-title__separator">:</span>
-      {{ dlc_subtitle }}
-    {% else %}
-      {{ game.display_title }}
-    {% endif %}
+    {% if parent_game %}{{ dlc_subtitle }}{% else %}{{ game.display_title }}{% endif %}
   </h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
@@ -89,6 +76,21 @@
        "I started playing" — this is just when the entry first showed up in
        this app via sync or manual add. #}
     <dl class="row mb-3 small">
+      {# For DLC, lead the metadata with the parent breadcrumb — gives the
+         user the full context ("this is The Forsaken Hollows, part of Elden
+         Ring Nightreign") without putting that whole string in the title bar.
+         Parent name is clickable when the user owns the parent. #}
+      {% if parent_game %}
+      <dt class="col-5 text-secondary fw-normal">Part of</dt>
+      <dd class="col-7 mb-1">
+        {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
+           hx-get="/library/entries/{{ parent_entry_id }}/detail"
+           hx-target="#library-detail-content"
+           hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
+        %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
+      </dd>
+      {% endif %}
+
       <dt class="col-5 text-secondary fw-normal">Added to tracker</dt>
       <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.imported_at.isoformat() }}">{{ entry.imported_at.strftime("%Y-%m-%d") }}</span></dd>
 
