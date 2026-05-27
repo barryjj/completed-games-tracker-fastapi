@@ -942,9 +942,17 @@ body:has(.cgt-sticky-actions) {
   margin-bottom: 1rem;
 }
 .cgt-detail-meta dt {
+  /* Small uppercase letter-spaced label treatment — same look as the
+     section block headings (.cgt-detail-block__heading) so they read as
+     "labels for the value next to them" instead of just smaller body text.
+     No bold; the case + tracking + muted color does the visual lifting. */
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--ctp-subtext);
-  font-weight: 400;
+  font-weight: 500;
   margin: 0;
+  align-self: center;
 }
 .cgt-detail-meta dd {
   margin: 0;
