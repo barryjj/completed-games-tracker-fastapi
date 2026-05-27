@@ -20,13 +20,30 @@
 {% endif %}
 
 <div class="offcanvas-header border-bottom">
-  {# Title becomes a breadcrumb for DLC: "Parent : DLC name". For base games
-     it's just the game's display title. Truncates via CSS if the pane is
-     narrow. The header bar also holds the close button + back-nav (injected
-     by app.js when the pane stack has > 1 entry). #}
+  {# Title bar layout depends on whether this is DLC (parent_game set) or a
+     standalone game.
+       DLC:        <linked-parent> : <subtitle>
+                   — the linked-parent is clickable and swaps the pane to
+                   the parent's detail (back-nav stack from app.js handles
+                   the return).
+                   — <subtitle> is the DLC's display_title minus the parent's
+                   title prefix when one is detected (avoids duplicating the
+                   parent name).
+       Base game:  just display_title.
+     The header bar also holds the close button + back-arrow (injected by
+     app.js when the pane stack has > 1 entry). #}
   <h5 class="offcanvas-title cgt-detail-title">
-    {% if parent_game %}<span class="text-secondary">{{ parent_game.display_title }} :</span>{% endif %}
-    {{ game.display_title }}
+    {% if parent_game %}
+      {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
+         hx-get="/library/entries/{{ parent_entry_id }}/detail"
+         hx-target="#library-detail-content"
+         hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
+      %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
+      <span class="cgt-detail-title__separator">:</span>
+      {{ dlc_subtitle }}
+    {% else %}
+      {{ game.display_title }}
+    {% endif %}
   </h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
@@ -55,27 +72,9 @@
   </div>
   {% endif %}
 
-  {# Content padding — pushes everything below the hero in from the edges. #}
+  {# Content padding — pushes everything below the hero in from the edges.
+     Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
   <div class="p-3">
-    {# Parent breadcrumb link (DLC only). Clicking swaps the pane to the
-       parent's detail; the back-arrow injected by app.js will then pop back. #}
-    {% if parent_game %}
-    <div class="mb-2">
-      <small>
-        {% if parent_entry_id %}
-        <a href="#" class="text-secondary text-decoration-none"
-           hx-get="/library/entries/{{ parent_entry_id }}/detail"
-           hx-target="#library-detail-content"
-           hx-swap="innerHTML">
-          ← Part of {{ parent_game.display_title }}
-        </a>
-        {% else %}
-        <span class="text-secondary">Part of {{ parent_game.display_title }}</span>
-        {% endif %}
-      </small>
-    </div>
-    {% endif %}
-
     {# Badges row: platform + flags. #}
     <div class="mb-3 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>

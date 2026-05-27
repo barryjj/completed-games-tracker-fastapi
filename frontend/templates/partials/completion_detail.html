@@ -11,9 +11,22 @@
 {% endif %}
 
 <div class="offcanvas-header border-bottom">
+  {# See library_detail.html for design notes on this title bar. Note: the
+     parent link here swaps THIS pane (completion-detail-content) to the
+     parent's LIBRARY detail — useful since we don't have a "completion
+     detail of the parent game" concept. #}
   <h5 class="offcanvas-title cgt-detail-title">
-    {% if parent_game %}<span class="text-secondary">{{ parent_game.display_title }} :</span>{% endif %}
-    {{ game.display_title }}
+    {% if parent_game %}
+      {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
+         hx-get="/library/entries/{{ parent_entry_id }}/detail"
+         hx-target="#completion-detail-content"
+         hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
+      %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
+      <span class="cgt-detail-title__separator">:</span>
+      {{ dlc_subtitle }}
+    {% else %}
+      {{ game.display_title }}
+    {% endif %}
   </h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
@@ -40,23 +53,7 @@
   {% endif %}
 
   <div class="p-3">
-    {% if parent_game %}
-    <div class="mb-2">
-      <small>
-        {% if parent_entry_id %}
-        <a href="#" class="text-secondary text-decoration-none"
-           hx-get="/library/entries/{{ parent_entry_id }}/detail"
-           hx-target="#completion-detail-content"
-           hx-swap="innerHTML">
-          ← Part of {{ parent_game.display_title }}
-        </a>
-        {% else %}
-        <span class="text-secondary">Part of {{ parent_game.display_title }}</span>
-        {% endif %}
-      </small>
-    </div>
-    {% endif %}
-
+    {# Parent breadcrumb lives in the title bar (above) — see library_detail.html. #}
     <div class="mb-3 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
