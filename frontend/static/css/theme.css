@@ -942,15 +942,14 @@ body:has(.cgt-sticky-actions) {
   margin-bottom: 1rem;
 }
 .cgt-detail-meta dt {
-  /* Small uppercase letter-spaced label treatment — same look as the
-     section block headings (.cgt-detail-block__heading) so they read as
-     "labels for the value next to them" instead of just smaller body text.
-     No bold; the case + tracking + muted color does the visual lifting. */
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ctp-subtext);
-  font-weight: 500;
+  /* Label distinction by size + muted color, NOT by uppercase tracking —
+     that treatment is owned by the chip badges (.tag-badge) and small
+     section headings, and reusing it here made labels visually indistinct
+     from the "In Collection" chip immediately above. Sentence-case +
+     smaller + dimmer reads as "field label" without that collision. */
+  font-size: 0.8rem;
+  color: var(--ctp-overlay0);
+  font-weight: 400;
   margin: 0;
   align-self: center;
 }
