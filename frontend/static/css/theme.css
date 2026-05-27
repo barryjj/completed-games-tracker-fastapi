@@ -645,13 +645,12 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
 }
 
 /* ─── List view: row thumbnail ──────────────────────────────────────────── */
-/* Small horizontal thumbnail in the first cell of each library row. Visual
-   scan vastly improves; rows get a few px taller. No fallback for entries
-   without artwork — empty space rather than a blank rectangle. */
+/* Horizontal thumbnail in the dedicated thumb column of each list row.
+   Sized to fit Steam header.jpg aspect ratio (460:215 ≈ 2.14:1). */
 .cgt-list-row-thumb {
   display: inline-block;
-  width: 64px;
-  height: 30px;
+  width: 100px;
+  height: 47px;
   margin-right: 0.5rem;
   vertical-align: middle;
   background-color: var(--ctp-crust);
@@ -740,15 +739,19 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   box-shadow: 0 0 0 0.2rem rgba(203, 166, 247, 0.25);  /* mauve at 25% */
 }
 
-/* Dedicated thumbnail column in list views. Fixed-width so titles in the
-   next column don't wrap around the image. */
+/* Dedicated thumbnail column in list views. Sized to hug the thumb image
+   (~108px including a touch of padding either side) so we're not wasting
+   horizontal space on the table. Tightened from the original 80px-around-
+   a-64px-thumb to 108px-around-a-100px-thumb. */
 .cgt-list-thumb-cell {
-  width: 80px;
+  width: 1%;  /* shrink-to-content — table layout gives the rest to title col */
+  padding-right: 4px;
+  padding-left: 4px;
   white-space: nowrap;
   vertical-align: middle;
 }
 .cgt-list-thumb-cell .cgt-list-row-thumb {
-  margin-right: 0;  /* no need for spacer margin now that it's in its own cell */
+  margin-right: 0;
   vertical-align: middle;
 }
 
@@ -777,12 +780,79 @@ body:has(.cgt-sticky-actions) {
   padding-bottom: 5rem;
 }
 
-/* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */
-/* The drawer toggles (Filters / View buttons) flip `hidden` on a div that
-   also has `.d-flex` or `.row`, both of which set `display: flex !important`
-   in Bootstrap. The browser's default `[hidden] { display: none }` loses to
-   that, so the drawer never actually collapses. This rule restores the
-   expected behavior universally — anywhere we set `hidden`, it hides. */
-[hidden] {
-  display: none !important;
+/* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
+
+/* Title becomes a breadcrumb for DLC: "Parent : DLC name". The parent name
+   leads in muted color; the DLC name gets the normal title color. Single-
+   line ellipsis when the pane is narrow. */
+.cgt-detail-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* Hero block: full-bleed image with a soft gradient overlay at the bottom
+   so the logo (overlaid bottom-left) reads cleanly against any cover. */
+.cgt-detail-hero {
+  position: relative;
+  width: 100%;
+  background-color: var(--ctp-crust);
+  aspect-ratio: 96 / 31;  /* matches Steam's library_hero ~1920x620 */
+  overflow: hidden;
+}
+.cgt-detail-hero__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cgt-detail-hero::after {
+  /* Gradient that fades from transparent (top) to dark (bottom) so the logo
+     overlay is readable on hero images that aren't already dark at the bottom. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+.cgt-detail-hero__logo {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  max-width: 45%;
+  max-height: 60%;
+  object-fit: contain;
+  z-index: 1;
+  /* Drop shadow so the logo reads even when the bottom of the hero is busy. */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+}
+
+/* Content blocks within the pane body. Each section (Description, DLC list,
+   Completions, etc.) wraps in this so they read as distinct sections rather
+   than a wall of definition lists. Subtle tinted background distinguishes
+   without being heavy. */
+.cgt-detail-block {
+  background-color: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.cgt-detail-block__heading {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-subtext);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/* Inside the child-list block, drop the default table-cell padding since
+   the surrounding block already provides breathing room. */
+.cgt-detail-block .table {
+  margin-bottom: 0;
+  --bs-table-bg: transparent;
+}
+.cgt-detail-block .table > tbody > tr > td {
+  border-color: var(--ctp-surface0);
 }

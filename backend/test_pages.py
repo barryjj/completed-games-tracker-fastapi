@@ -638,28 +638,30 @@ def test_edit_title_saves_for_fully_manual_entry(client, db_session):
     assert entry.release.game.display_name == "Renamed Display"
 
 
-def test_detail_pane_provides_parent_cover_fallback_for_dlc(client, db_session):
-    """When a DLC's pane is rendered, fallback_header_url points at the parent
-    game's Steam header. The template uses this as the cover img onerror swap."""
+def test_detail_pane_provides_parent_hero_fallback_for_dlc(client, db_session):
+    """When a DLC's pane is rendered, the hero block uses the DLC's own hero
+    art with the parent's hero as data-fallback for cgtCoverFallback() to
+    swap on 404. Same for logo (constructed from each appid)."""
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
 
-    # Parent game with a Steam release + header artwork
+    # Parent game with hero artwork.
     parent = models.Game(title="Elden Ring Nightreign")
     db_session.add(parent)
     db_session.flush()
     parent_rel = models.GameRelease(game_id=parent.id, platform="Steam", source="steam", external_id="3000000")
     db_session.add(parent_rel)
     db_session.flush()
-    parent_art = models.GameArtwork(
-        release_id=parent_rel.id,
-        artwork_type="header",
-        source="steam",
-        url="https://cdn.akamai.steamstatic.com/steam/apps/3000000/header.jpg",
+    db_session.add(
+        models.GameArtwork(
+            release_id=parent_rel.id,
+            artwork_type="hero",
+            source="steam",
+            url="https://cdn.akamai.steamstatic.com/steam/apps/3000000/library_hero.jpg",
+        )
     )
-    db_session.add(parent_art)
 
-    # DLC linked to that parent, plus its own (broken) header
+    # DLC linked to that parent, plus its own (broken) hero.
     dlc = models.Game(title="The Forsaken Hollows", is_dlc=True, parent_id=parent.id)
     db_session.add(dlc)
     db_session.flush()
@@ -669,9 +671,9 @@ def test_detail_pane_provides_parent_cover_fallback_for_dlc(client, db_session):
     db_session.add(
         models.GameArtwork(
             release_id=dlc_rel.id,
-            artwork_type="header",
+            artwork_type="hero",
             source="steam",
-            url="https://cdn.akamai.steamstatic.com/steam/apps/3000001/header.jpg",
+            url="https://cdn.akamai.steamstatic.com/steam/apps/3000001/library_hero.jpg",
         )
     )
     dlc_entry = models.UserLibraryEntry(user_id=user.id, release_id=dlc_rel.id, import_source="steam_import")
@@ -680,11 +682,15 @@ def test_detail_pane_provides_parent_cover_fallback_for_dlc(client, db_session):
 
     r = client.get(f"/library/entries/{dlc_entry.id}/detail")
     assert r.status_code == 200
-    # Own header rendered as src
-    assert b"3000001/header.jpg" in r.content
-    # Parent's header surfaced as data-fallback so onerror can swap to it
-    assert b"3000000/header.jpg" in r.content
-    assert b"data-fallback=" in r.content
+    # DLC's own hero rendered as src.
+    assert b"3000001/library_hero.jpg" in r.content
+    # Parent's hero surfaced as data-fallback so onerror can swap to it.
+    assert b"3000000/library_hero.jpg" in r.content
+    # Logo URLs constructed for both DLC and parent appids.
+    assert b"3000001/logo.png" in r.content
+    assert b"3000000/logo.png" in r.content
+    # Breadcrumb shows the parent's title in the header.
+    assert b"Elden Ring Nightreign" in r.content
 
 
 def test_detail_pane_omits_fallback_when_no_parent(client, db_session):
@@ -878,10 +884,17 @@ def test_card_without_matching_artwork_gets_placeholder(client, db_session):
     assert b"cgt-library-card--no-art" in r.content
 
 
-def test_cover_url_override_h_takes_precedence_in_detail_pane(client, db_session):
-    """When cover_url_override_h is set, the detail pane uses it as the header."""
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
+def test_cover_url_override_h_takes_precedence_for_header_visual(db_session):
+    """cover_url_override_h still wins over the release's own 'header' artwork
+    in the visuals dict — used by list/grid views as the 460x215 thumb. The
+    detail pane v2 doesn't render this size directly (it uses the hero); a
+    separate hero_url_override is on the roadmap for SGDB hero swaps."""
+    from backend.models import User
+    from backend.pages import _build_detail_pane_visuals
+
+    user = User(name="t", username="t", password_hash="x", api_token="tok-cov")
+    db_session.add(user)
+    db_session.flush()
     game = models.Game(title="Cover Override Test")
     db_session.add(game)
     db_session.flush()
@@ -905,10 +918,8 @@ def test_cover_url_override_h_takes_precedence_in_detail_pane(client, db_session
     db_session.add(entry)
     db_session.commit()
 
-    r = client.get(f"/library/entries/{entry.id}/detail")
-    assert r.status_code == 200
-    assert b"sgdb.example.com/custom-header.jpg" in r.content
-    assert b"cdn.example.com/steam-header.jpg" not in r.content
+    visuals = _build_detail_pane_visuals(db_session, entry, game, release)
+    assert visuals["header_url"] == "https://sgdb.example.com/custom-header.jpg"
 
 
 def test_grid_cover_url_v_override_wins(client, db_session):

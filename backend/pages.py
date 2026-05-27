@@ -92,6 +92,85 @@ def _needs_metadata_refresh(release) -> bool:
     return age.days >= _METADATA_STALENESS_DAYS
 
 
+_STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps"
+
+
+def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
+    """Compute the visual chrome (hero, logo, header, parent info) for a
+    library detail pane render. Centralized so both library and completion
+    detail endpoints use the same logic.
+
+    Sources, in priority order:
+      hero  = own hero artwork → parent's hero artwork
+      logo  = own logo (constructed Steam URL) → parent's logo
+      header = cover_url_override_h → own header artwork → parent's header
+              (kept as a separate fallback so list-row / detail-pane code
+              that wants the 460x215 image specifically still works)
+
+    For DLC, the parent's hero/logo are the right default since Steam rarely
+    issues distinct hero/logo for DLC appids — they share the parent's
+    library identity.
+    """
+    parent_release = None
+    parent_game = None
+    parent_entry_id = None
+    if game.parent_id:
+        parent_release = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork), joinedload(models.GameRelease.game))
+            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
+            .first()
+        )
+        if parent_release:
+            parent_game = parent_release.game
+            # Find the user's library entry for the parent (if they own it) so
+            # the breadcrumb can swap the pane to the parent's detail.
+            parent_entry = db.query(models.UserLibraryEntry).filter_by(user_id=entry.user_id, release_id=parent_release.id).first()
+            if parent_entry:
+                parent_entry_id = parent_entry.id
+
+    def _art_url(rel, art_type):
+        if not rel:
+            return None
+        for art in rel.artwork:
+            if art.artwork_type == art_type:
+                return art.url
+        return None
+
+    def _steam_logo_url(rel):
+        # Logo isn't captured during enrichment — construct it from the appid.
+        # 404s for many entries, but the cover-fallback chain handles that
+        # client-side by hiding the img.
+        if not rel or rel.source != "steam" or not rel.external_id:
+            return None
+        return f"{_STEAM_CDN_BASE}/{rel.external_id}/logo.png"
+
+    # Header (460x215). cover_url_override_h takes priority because the SGDB
+    # picker writes to it; covers/replaces the Steam header.
+    header_url = entry.cover_url_override_h or _art_url(release, "header")
+    fallback_header_url = _art_url(parent_release, "header")
+
+    # Hero (~1920x620). No override field yet — TODO when we add SGDB hero
+    # picker variant.
+    hero_url = _art_url(release, "hero")
+    fallback_hero_url = _art_url(parent_release, "hero")
+
+    # Logo (~600x400, transparent). Constructed URL; cover-fallback hides on 404.
+    logo_url = _steam_logo_url(release)
+    fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
+
+    return {
+        "header_url": header_url,
+        "fallback_header_url": fallback_header_url,
+        "hero_url": hero_url,
+        "fallback_hero_url": fallback_hero_url,
+        "logo_url": logo_url,
+        "fallback_logo_url": fallback_logo_url,
+        "parent_game": parent_game,
+        "parent_entry_id": parent_entry_id,
+    }
+
+
 def _attach_parent_fallbacks(db: Session, entries) -> None:
     """For each entry whose game has a parent (DLC -> base game), look up the
     parent's Steam artwork and stamp `_fallback_v` / `_fallback_h` URLs onto
@@ -828,35 +907,7 @@ def library_entry_detail(
             .all()
         )
 
-    # Pick a header artwork URL: prefer the user's horizontal override, then
-    # "header" type from Steam artwork, else None.
-    header_url = None
-    if entry.cover_url_override_h:
-        header_url = entry.cover_url_override_h
-    else:
-        for art in entry.release.artwork:
-            if art.artwork_type == "header":
-                header_url = art.url
-                break
-
-    # Fallback to the parent game's header art when this entry is a DLC whose
-    # own header is missing or 404s. Steam's CDN doesn't host header.jpg for
-    # every DLC appid; falling back to the base game's cover beats a blank
-    # space in the pane.
-    fallback_header_url = None
-    if game.parent_id:
-        parent_release = (
-            db.query(models.GameRelease)
-            .options(joinedload(models.GameRelease.artwork))
-            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
-            .first()
-        )
-        if parent_release:
-            for art in parent_release.artwork:
-                if art.artwork_type == "header":
-                    fallback_header_url = art.url
-                    break
-
+    visuals = _build_detail_pane_visuals(db, entry, game, entry.release)
     appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
 
     # Stale-only auto-refresh: if this is a Steam entry and its metadata is
@@ -873,13 +924,12 @@ def library_entry_detail(
             "entry": entry,
             "game": game,
             "release": entry.release,
-            "header_url": header_url,
-            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
             "needs_refresh": needs_refresh,
+            **visuals,
         },
     )
 
@@ -1301,31 +1351,7 @@ def completion_detail(
         .all()
     )
 
-    header_url = None
-    if entry.cover_url_override_h:
-        header_url = entry.cover_url_override_h
-    else:
-        for art in release.artwork:
-            if art.artwork_type == "header":
-                header_url = art.url
-                break
-
-    # Same parent-fallback chain as the library pane — useful when a DLC
-    # completion's own header is missing.
-    fallback_header_url = None
-    if game.parent_id:
-        parent_release = (
-            db.query(models.GameRelease)
-            .options(joinedload(models.GameRelease.artwork))
-            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
-            .first()
-        )
-        if parent_release:
-            for art in parent_release.artwork:
-                if art.artwork_type == "header":
-                    fallback_header_url = art.url
-                    break
-
+    visuals = _build_detail_pane_visuals(db, entry, game, release)
     appdetails = (release.raw_data or {}).get("appdetails") or {}
 
     return templates.TemplateResponse(
@@ -1336,10 +1362,9 @@ def completion_detail(
             "entry": entry,
             "release": release,
             "game": game,
-            "header_url": header_url,
-            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
+            **visuals,
         },
     )
