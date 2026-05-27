@@ -67,7 +67,7 @@
       <h6 class="cgt-detail-block__heading">This completion</h6>
       <dl class="row small mb-0">
         <dt class="col-5 text-secondary fw-normal">Completed</dt>
-        <dd class="col-7 mb-1">{{ completion.completed_at.strftime("%b %d, %Y") }}</dd>
+        <dd class="col-7 mb-1">{{ completion.completed_at.strftime("%Y-%m-%d") }}</dd>
 
         {% if completion.playthroughs %}
         <dt class="col-5 text-secondary fw-normal">Playthroughs</dt>
@@ -90,7 +90,7 @@
       <dl class="row small mb-0">
         {% if entry.playtime_minutes %}
         <dt class="col-5 text-secondary fw-normal">Playtime</dt>
-        <dd class="col-7 mb-1">{{ "{:,}".format(entry.playtime_minutes) }} min</dd>
+        <dd class="col-7 mb-1">{{ entry.playtime_minutes | playtime_human }}</dd>
         {% endif %}
 
         {% if release.external_id %}
@@ -106,8 +106,9 @@
       </dl>
     </div>
 
+    {# Description as plain prose, no block frame. #}
     {% if appdetails.short_description %}
-    <div class="cgt-detail-block mb-3">
+    <div class="mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="mb-0">{{ appdetails.short_description }}</p>
     </div>
