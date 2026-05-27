@@ -885,3 +885,13 @@ body:has(.cgt-sticky-actions) {
 .cgt-detail-block .table > tbody > tr > td {
   border-color: var(--ctp-surface0);
 }
+
+/* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */
+/* The drawer toggles (Filters / View buttons) flip `hidden` on a div that
+   also has `.d-flex` or `.row`, both of which set `display: flex !important`
+   in Bootstrap. The browser's default `[hidden] { display: none }` loses to
+   that, so the drawer never actually collapses. This rule restores the
+   expected behavior universally — anywhere we set `hidden`, it hides. */
+[hidden] {
+  display: none !important;
+}

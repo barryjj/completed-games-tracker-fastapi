@@ -16,17 +16,7 @@
      parent's LIBRARY detail — useful since we don't have a "completion
      detail of the parent game" concept. #}
   <h5 class="offcanvas-title cgt-detail-title">
-    {% if parent_game %}
-      {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
-         hx-get="/library/entries/{{ parent_entry_id }}/detail"
-         hx-target="#completion-detail-content"
-         hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
-      %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
-      <span class="cgt-detail-title__separator">:</span>
-      {{ dlc_subtitle }}
-    {% else %}
-      {{ game.display_title }}
-    {% endif %}
+    {% if parent_game %}{{ dlc_subtitle }}{% else %}{{ game.display_title }}{% endif %}
   </h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
@@ -85,6 +75,19 @@
     <div class="mb-3">
       <h6 class="cgt-detail-block__heading">Library entry</h6>
       <dl class="row small mb-0">
+        {# For DLC, lead with the parent breadcrumb (clickable when the user
+           owns the parent). Mirrors the library detail pane's pattern. #}
+        {% if parent_game %}
+        <dt class="col-5 text-secondary fw-normal">Part of</dt>
+        <dd class="col-7 mb-1">
+          {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
+             hx-get="/library/entries/{{ parent_entry_id }}/detail"
+             hx-target="#completion-detail-content"
+             hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
+          %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
+        </dd>
+        {% endif %}
+
         {% if entry.playtime_minutes %}
         <dt class="col-5 text-secondary fw-normal">Playtime</dt>
         <dd class="col-7 mb-1">{{ entry.playtime_minutes | playtime_human }}</dd>
