@@ -90,9 +90,15 @@
            hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
         %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
         {% if parent_appid %}
-        <code class="ms-2">{{ parent_appid }}</code>
-        <a href="https://store.steampowered.com/app/{{ parent_appid }}/"
-           target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+        {# Keep appid + store link as one non-breaking group so a long parent
+           name causes them to wrap together to the next line, instead of
+           "1018010" landing on line 2 and "store ↗" awkwardly stranded on
+           line 3 (or just "↗" alone). #}
+        <span class="text-nowrap ms-2">
+          <code>{{ parent_appid }}</code>
+          <a href="https://store.steampowered.com/app/{{ parent_appid }}/"
+             target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+        </span>
         {% endif %}
       </dd>
       {% endif %}
@@ -110,11 +116,13 @@
       {% if release.external_id %}
       <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
       <dd class="col-7 mb-1">
-        <code>{{ release.external_id }}</code>
-        {% if release.source == "steam" %}
-        <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
-           target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
-        {% endif %}
+        <span class="text-nowrap">
+          <code>{{ release.external_id }}</code>
+          {% if release.source == "steam" %}
+          <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
+             target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+          {% endif %}
+        </span>
       </dd>
       {% endif %}
     </dl>
