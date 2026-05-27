@@ -593,6 +593,10 @@ def backfill_steam_display_names(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Re-apply the _clean_title heuristic to every Steam game in the user's
+    library, EXCEPT those the user has manually edited (display_name_user_set).
+    Safe to run repeatedly — idempotent for unchanged titles, only touches
+    rows where the cleaned output differs from what's already stored."""
     games = (
         db.query(models.Game)
         .join(models.GameRelease)
@@ -600,21 +604,28 @@ def backfill_steam_display_names(
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
-            models.Game.display_name == None,
+            # Respect manual edits — only re-clean things the user hasn't touched.
+            models.Game.display_name_user_set.is_(False),
         )
         .all()
     )
     updated = 0
     for game in games:
         cleaned = steam._clean_title(game.title)
-        if cleaned != game.title:
+        # New value (cleaned differs from title AND from any prior display_name)
+        # = real change worth committing.
+        if cleaned != game.title and cleaned != game.display_name:
             game.display_name = cleaned
+            updated += 1
+        elif cleaned == game.title and game.display_name is not None:
+            # Title no longer needs cleaning — drop the now-redundant display_name.
+            game.display_name = None
             updated += 1
     db.commit()
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": f"Backfill complete — {updated} game{'s' if updated != 1 else ''} updated."},
+        context={"message": f"Display-name cleanup complete — {updated} entries updated."},
     )
 
 
@@ -656,12 +667,17 @@ def steamgriddb_search(
     request: Request,
     entry_id: int,
     orientation: str,
+    page: int = 0,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     """Return cover-art candidates for a library entry. Used by the "Find cover"
     modal. Looks up by Steam appid when the entry came from Steam (better hit
-    rate); falls back to title search otherwise."""
+    rate); falls back to title search otherwise.
+
+    Pagination: `page` is zero-indexed. The picker's "Load more" button hits
+    this endpoint with page+1 and appends the new batch to the existing grid.
+    """
     if orientation not in ("v", "h"):
         return Response(status_code=400)
     if not current_user.steamgriddb_api_key:
@@ -692,7 +708,7 @@ def steamgriddb_search(
         if not sgdb_game:
             candidates = []
         else:
-            candidates = sgdb.get_grids_for_game(current_user.steamgriddb_api_key, sgdb_game["id"], orientation)
+            candidates = sgdb.get_grids_for_game(current_user.steamgriddb_api_key, sgdb_game["id"], orientation, page=page)
     except Exception as e:
         _logger.warning("SteamGridDB search failed: %s", e)
         return templates.TemplateResponse(
@@ -708,6 +724,10 @@ def steamgriddb_search(
             "candidates": candidates,
             "entry_id": entry_id,
             "orientation": orientation,
+            "page": page,
+            # If we got a full page back, assume there's probably more — the
+            # "Load more" button will fetch the next batch.
+            "has_more": len(candidates) >= sgdb._GRID_PAGE_SIZE,
         },
     )
 

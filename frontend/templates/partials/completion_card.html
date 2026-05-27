@@ -12,8 +12,7 @@
 {% set _entry = completion.library_entry %}
 {% set cover_url = _entry | grid_cover_url(view_mode) %}
 <div class="cgt-library-card completion-row-clickable
-            {% if not cover_url %}cgt-library-card--no-art{% endif %}
-            {% if _entry.release.game.is_dlc %}cgt-library-card--dlc{% endif %}"
+            {% if not cover_url %}cgt-library-card--no-art{% endif %}"
      id="completion-{{ completion.id }}"
      data-completion-id="{{ completion.id }}"
      title="{{ _entry.release.game.display_title | e }} — {{ completion.completed_at.strftime('%Y-%m-%d') }}">

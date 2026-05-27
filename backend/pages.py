@@ -950,6 +950,16 @@ def refresh_entry_metadata(
 
         app_type = details.get("type", "game")
 
+        # Title backfill — same as enrich_next_batch. Replaces the
+        # "App {appid}" placeholder when the sync couldn't find the appid in
+        # the catalog cache. Respects manual display_name edits.
+        real_name = (details.get("name") or "").strip()
+        if real_name and game.title.startswith("App ") and game.title[4:].strip().isdigit():
+            game.title = real_name
+            if not game.display_name_user_set:
+                cleaned = _steam._clean_title(real_name)
+                game.display_name = cleaned if cleaned != real_name else None
+
         if not game.is_dlc_user_set:
             if app_type == "dlc" and not game.is_dlc:
                 game.is_dlc = True

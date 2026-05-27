@@ -69,6 +69,8 @@ function openCompletionDetail(completionId) {
   if (!_completionDetailOffcanvas) {
     _completionDetailOffcanvas = new bootstrap.Offcanvas(document.getElementById('completion-detail'));
   }
+  // Reset the back-nav stack — see openLibraryDetail for the same pattern.
+  if (window.cgtPaneInitCompletion) window.cgtPaneInitCompletion(completionId);
   _completionDetailOffcanvas.show();
   htmx.ajax('GET', '/completions/' + completionId + '/detail', {
     target: '#completion-detail-content',
