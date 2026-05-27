@@ -51,17 +51,17 @@
 
     <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">This completion</h6>
-      <dl class="row small mb-0">
-        <dt class="col-5 text-secondary fw-normal">Completed</dt>
-        <dd class="col-7 mb-1">{{ completion.completed_at.strftime("%b %d, %Y") }}</dd>
+      <dl class="cgt-detail-meta small mb-0">
+        <dt>Completed</dt>
+        <dd>{{ completion.completed_at.strftime("%b %d, %Y") }}</dd>
 
         {% if completion.playthroughs %}
-        <dt class="col-5 text-secondary fw-normal">Playthroughs</dt>
-        <dd class="col-7 mb-1">{{ completion.playthroughs }}</dd>
+        <dt>Playthroughs</dt>
+        <dd>{{ completion.playthroughs }}</dd>
         {% endif %}
 
-        <dt class="col-5 text-secondary fw-normal">Logged</dt>
-        <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%b %d, %Y") }}</span></dd>
+        <dt>Logged</dt>
+        <dd><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%b %d, %Y") }}</span></dd>
       </dl>
       {% if completion.notes %}
       <div class="mt-2">
@@ -73,14 +73,14 @@
 
     <div class="mb-3">
       <h6 class="cgt-detail-block__heading">Library entry</h6>
-      <dl class="row small mb-0">
+      <dl class="cgt-detail-meta small mb-0">
         {# For DLC, lead with the parent breadcrumb + appid. Clickable when
            the user owns the parent. Mirrors the library detail pane. #}
         {# Parent relationship row — contextual label, one-line layout. See
            library_detail.html for design notes. #}
         {% if parent_game %}
-        <dt class="col-5 text-secondary fw-normal">{{ parent_label }}</dt>
-        <dd class="col-7 mb-1">
+        <dt>{{ parent_label }}</dt>
+        <dd>
           {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
              hx-get="/library/entries/{{ parent_entry_id }}/detail"
              hx-target="#completion-detail-content"
@@ -98,13 +98,13 @@
         {% endif %}
 
         {% if entry.playtime_minutes %}
-        <dt class="col-5 text-secondary fw-normal">Playtime</dt>
-        <dd class="col-7 mb-1">{{ entry.playtime_minutes | playtime_human }}</dd>
+        <dt>Playtime</dt>
+        <dd>{{ entry.playtime_minutes | playtime_human }}</dd>
         {% endif %}
 
         {% if release.external_id %}
-        <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
-        <dd class="col-7 mb-1">
+        <dt>{{ release.source | capitalize }} ID</dt>
+        <dd>
           <span class="text-nowrap">
             <code>{{ release.external_id }}</code>
             {% if release.source == "steam" %}

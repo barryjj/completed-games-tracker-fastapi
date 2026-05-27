@@ -75,15 +75,15 @@
        "Added to tracker" row was dropped — it captures when our sync first
        saw the entry, not anything the user cares about (we don't track
        release date or first-played which are the dates that matter). #}
-    <dl class="row mb-3 small">
+    <dl class="cgt-detail-meta small">
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"
            in-collection    → "In collection"
          All on one line: <name> <appid> <store↗>. Matches the Steam ID row
          layout below. #}
       {% if parent_game %}
-      <dt class="col-5 text-secondary fw-normal">{{ parent_label }}</dt>
-      <dd class="col-7 mb-1">
+      <dt>{{ parent_label }}</dt>
+      <dd>
         {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
            hx-get="/library/entries/{{ parent_entry_id }}/detail"
            hx-target="#library-detail-content"
@@ -104,18 +104,18 @@
       {% endif %}
 
       {% if entry.last_played_at %}
-      <dt class="col-5 text-secondary fw-normal">Last played</dt>
-      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%b %d, %Y") }}</span></dd>
+      <dt>Last played</dt>
+      <dd><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%b %d, %Y") }}</span></dd>
       {% endif %}
 
       {% if entry.playtime_minutes %}
-      <dt class="col-5 text-secondary fw-normal">Playtime</dt>
-      <dd class="col-7 mb-1">{{ entry.playtime_minutes | playtime_human }}</dd>
+      <dt>Playtime</dt>
+      <dd>{{ entry.playtime_minutes | playtime_human }}</dd>
       {% endif %}
 
       {% if release.external_id %}
-      <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
-      <dd class="col-7 mb-1">
+      <dt>{{ release.source | capitalize }} ID</dt>
+      <dd>
         <span class="text-nowrap">
           <code>{{ release.external_id }}</code>
           {% if release.source == "steam" %}
