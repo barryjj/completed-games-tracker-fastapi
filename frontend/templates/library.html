@@ -344,8 +344,12 @@
       </div>
       <div class="modal-body">
         <p class="text-secondary mb-3"><small>Click a cover to apply it. The image is hot-linked from SteamGridDB.</small></p>
-        <div id="sgdb-picker-results">
-          <p class="text-secondary"><small>Loading&hellip;</small></p>
+        {# Flex grid container — the partial renders bare card divs that wrap
+           via flex-wrap, and the "Load more" button replaces itself in place
+           with the next batch + a fresh button (so loaded results accumulate
+           instead of replacing each other). #}
+        <div id="sgdb-picker-grid" class="d-flex flex-wrap gap-3">
+          <p id="sgdb-picker-loading" class="text-secondary"><small>Loading&hellip;</small></p>
         </div>
       </div>
       <div class="modal-footer">
@@ -374,11 +378,11 @@ function openSgdbPicker(entryId, orientation) {
   }
   var label = orientation === 'v' ? 'vertical' : 'horizontal';
   document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label + ' cover art';
-  var results = document.getElementById('sgdb-picker-results');
-  results.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
+  var grid = document.getElementById('sgdb-picker-grid');
+  grid.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
   _sgdbModal.show();
-  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&orientation=' + orientation, {
-    target: '#sgdb-picker-results',
+  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&orientation=' + orientation + '&page=0', {
+    target: '#sgdb-picker-grid',
     swap: 'innerHTML',
   });
 }
@@ -529,6 +533,10 @@ function openLibraryDetail(entryId) {
   if (!_libraryDetailOffcanvas) {
     _libraryDetailOffcanvas = new bootstrap.Offcanvas(document.getElementById('library-detail'));
   }
+  // Reset the pane back-nav stack on every fresh open from a library row so
+  // the back button only reflects in-pane navigation (DLC click-throughs,
+  // parent click-throughs), not a chain across separate openings.
+  if (window.cgtPaneInitLibrary) window.cgtPaneInitLibrary(entryId);
   // Show the offcanvas immediately (with whatever was last loaded, or empty);
   // HTMX fetches fresh content into the inner div.
   _libraryDetailOffcanvas.show();

@@ -1,8 +1,11 @@
 {# Grid card. Mosaic-style: cover only, no title/badges below.
    Indicators:
-     - DLC: 3px platform-colored stripe at the top of the card (visible in
-       DLC / Everything views; default view filters DLC out)
      - Hidden: small "—" badge top-right (visible only when "Show hidden" is on)
+   DLC is differentiated by the fact that Steam doesn't host library_600x900
+   for most DLC appids — the cover img 404s, the cover container removes
+   itself, and the always-rendered placeholder card takes over showing the
+   DLC's title + platform. So DLC reads visually distinct from base games
+   without needing a stripe/badge overlay.
    Placeholder behavior:
      - We ALWAYS render the placeholder div; CSS hides it when a cover exists
        and is loading (:not(:only-child)). If the cover errors and removes
@@ -11,7 +14,6 @@
 {% set cover_url = entry | grid_cover_url(view_mode) %}
 <div class="cgt-library-card library-row-clickable
             {% if not cover_url %}cgt-library-card--no-art{% endif %}
-            {% if entry.release.game.is_dlc %}cgt-library-card--dlc{% endif %}
             {% if entry.is_hidden %}cgt-library-card--hidden{% endif %}"
      id="library-entry-{{ entry.id }}"
      data-entry-id="{{ entry.id }}"

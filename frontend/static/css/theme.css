@@ -628,19 +628,6 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   color: var(--ctp-subtext);
 }
 
-/* DLC indicator: 3px peach stripe across the top of the card. Subtle in the
-   default view (which filters DLC out anyway), useful in DLC / Everything views. */
-.cgt-library-card--dlc::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background-color: var(--ctp-peach);
-  z-index: 2;
-}
-
 /* Hidden indicator: small em-dash badge top-right. Only relevant when
    "Show hidden" is on (otherwise the row is filtered out of the query). */
 .cgt-library-card--hidden::after {
@@ -788,4 +775,14 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
    a sticky bar — affects all of them uniformly. */
 body:has(.cgt-sticky-actions) {
   padding-bottom: 5rem;
+}
+
+/* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */
+/* The drawer toggles (Filters / View buttons) flip `hidden` on a div that
+   also has `.d-flex` or `.row`, both of which set `display: flex !important`
+   in Bootstrap. The browser's default `[hidden] { display: none }` loses to
+   that, so the drawer never actually collapses. This rule restores the
+   expected behavior universally — anywhere we set `hidden`, it hides. */
+[hidden] {
+  display: none !important;
 }

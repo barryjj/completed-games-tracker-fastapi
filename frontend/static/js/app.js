@@ -164,3 +164,86 @@ if (document.readyState === 'loading') {
 } else {
   _initAllOffcanvasResize();
 }
+
+// ─── Detail-pane back navigation ──────────────────────────────────────────
+//
+// When the library / completion detail pane navigates internally (e.g. user
+// clicks a DLC under "Games in this collection" to swap the pane to the
+// child's detail), we want a "← Back" button in the new pane's header so
+// they can pop back to the parent.
+//
+// Implementation:
+// - Two stacks (one per pane type) hold the entry/completion IDs the user
+//   has navigated through during this offcanvas session.
+// - The opener functions (openLibraryDetail / openCompletionDetail in the
+//   page templates) reset their stack to [initial_id] on a fresh open.
+// - HTMX `beforeRequest` listener pushes the new ID onto the stack when a
+//   request targets the pane's content div (deduped: skip if it equals the
+//   top — covers back-button clicks).
+// - HTMX `afterSwap` injects/removes the back button in the rendered pane
+//   header based on stack depth.
+
+window._cgtPaneStacks = { library: [], completion: [] };
+
+window.cgtPaneInitLibrary = function(entryId) {
+  // Fresh open from a library row click — start the stack over.
+  window._cgtPaneStacks.library = [String(entryId)];
+};
+window.cgtPaneInitCompletion = function(completionId) {
+  window._cgtPaneStacks.completion = [String(completionId)];
+};
+
+function _cgtPaneTargetKind(target) {
+  if (!target || !target.id) return null;
+  if (target.id === 'library-detail-content') return 'library';
+  if (target.id === 'completion-detail-content') return 'completion';
+  return null;
+}
+
+function _cgtPaneIdFromPath(kind, path) {
+  // /library/entries/123/detail → "123"; /completions/45/detail → "45".
+  var re = kind === 'library' ? /\/library\/entries\/(\d+)\/detail/ : /\/completions\/(\d+)\/detail/;
+  var m = path && path.match(re);
+  return m ? m[1] : null;
+}
+
+document.body.addEventListener('htmx:beforeRequest', function(e) {
+  var kind = _cgtPaneTargetKind(e.detail.target);
+  if (!kind) return;
+  var path = e.detail.requestConfig && e.detail.requestConfig.path;
+  var id = _cgtPaneIdFromPath(kind, path);
+  if (!id) return;
+  var stack = window._cgtPaneStacks[kind];
+  // Skip dedupe (back-button click is followed by a request that lands on
+  // the previous top — we don't want to re-push and double-stack it).
+  if (stack[stack.length - 1] === id) return;
+  stack.push(id);
+});
+
+document.body.addEventListener('htmx:afterSwap', function(e) {
+  var kind = _cgtPaneTargetKind(e.detail.target);
+  if (!kind) return;
+  var stack = window._cgtPaneStacks[kind];
+  var header = e.detail.target.querySelector('.offcanvas-header');
+  if (!header) return;
+  // Clean up any prior injection so the button reflects the current depth.
+  var existing = header.querySelector('.cgt-pane-back');
+  if (existing) existing.remove();
+  if (stack.length <= 1) return;
+  var btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-sm btn-outline-secondary me-2 cgt-pane-back';
+  btn.setAttribute('aria-label', 'Back to previous detail');
+  btn.textContent = '←';
+  btn.addEventListener('click', function() {
+    stack.pop();  // remove current
+    var prev = stack[stack.length - 1];
+    var path = kind === 'library'
+      ? '/library/entries/' + prev + '/detail'
+      : '/completions/' + prev + '/detail';
+    var targetId = kind === 'library' ? '#library-detail-content' : '#completion-detail-content';
+    htmx.ajax('GET', path, { target: targetId, swap: 'innerHTML' });
+  });
+  // Insert before the title so the back arrow reads as the leftmost control.
+  header.insertBefore(btn, header.firstChild);
+});

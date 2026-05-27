@@ -749,6 +749,18 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
             game = release.game
             app_type = details.get("type", "game")
 
+            # Title backfill from appdetails. Sync-time fallback when an
+            # appid wasn't in the Steam catalog cache stamps the title as
+            # f"App {appid}" — appdetails has the real name (DLC's "Deluxe
+            # Upgrade Pack" etc.), so use it once we have it. Respect manual
+            # overrides via display_name_user_set.
+            real_name = (details.get("name") or "").strip()
+            if real_name and game.title.startswith("App ") and game.title[4:].strip().isdigit():
+                game.title = real_name
+                if not game.display_name_user_set:
+                    cleaned = _clean_title(real_name)
+                    game.display_name = cleaned if cleaned != real_name else None
+
             # is_dlc reconciliation in BOTH directions:
             #   appdetails type=dlc  + is_dlc=False → promote True
             #   appdetails type=game + is_dlc=True  → demote False

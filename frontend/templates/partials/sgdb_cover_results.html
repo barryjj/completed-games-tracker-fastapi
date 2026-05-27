@@ -1,13 +1,16 @@
-{# SteamGridDB cover candidates. Rendered into #sgdb-picker-results inside
-   the picker modal. Each thumbnail is a click-target that calls
-   applySgdbCover(entry_id, orientation, url) to POST the override. #}
+{# SteamGridDB cover candidates. Rendered into #sgdb-picker-grid inside
+   the picker modal. The partial renders bare card divs (no wrapper) so
+   the "Load more" button can replace itself in-place with the next batch's
+   cards + a fresh button, appending to whatever's already shown.
+
+   Each thumbnail is a click-target that calls applySgdbCover(entry_id,
+   orientation, url) to POST the override. #}
 
 {% if error %}
-<div class="alert alert-warning py-2 mb-0"><small>{{ error }}</small></div>
-{% elif not candidates %}
-<p class="text-secondary mb-0"><small>No candidates found on SteamGridDB. The game may not be catalogued, or the orientation may have no uploads.</small></p>
+<div class="alert alert-warning py-2 mb-0 w-100"><small>{{ error }}</small></div>
+{% elif not candidates and page == 0 %}
+<p class="text-secondary mb-0 w-100"><small>No candidates found on SteamGridDB. The game may not be catalogued, or the orientation may have no uploads.</small></p>
 {% else %}
-<div class="d-flex flex-wrap gap-3">
   {% for c in candidates %}
   <div class="text-center" style="cursor: pointer;"
        onclick="applySgdbCover({{ entry_id }}, '{{ orientation }}', '{{ c.url }}')"
@@ -20,5 +23,13 @@
     {% endif %}
   </div>
   {% endfor %}
-</div>
+  {% if has_more %}
+  {# Load more: replaces itself with the next batch's cards + a new button. #}
+  <button type="button"
+          class="btn btn-outline-secondary btn-sm w-100 mt-2"
+          hx-get="/integrations/steamgriddb/search?entry_id={{ entry_id }}&orientation={{ orientation }}&page={{ page + 1 }}"
+          hx-target="this"
+          hx-swap="outerHTML"
+          hx-disabled-elt="this">Load more from SteamGridDB</button>
+  {% endif %}
 {% endif %}

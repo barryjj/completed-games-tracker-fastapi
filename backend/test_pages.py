@@ -1086,3 +1086,51 @@ def test_needs_metadata_refresh_handles_naive_datetime():
     # Naive datetime from 1 day ago — fresh, no crash.
     release.metadata_fetched_at = dt.datetime.utcnow() - dt.timedelta(days=1)
     assert _needs_metadata_refresh(release) is False
+
+
+# --- "App {appid}" placeholder title backfill from appdetails ---
+
+
+def test_enrich_replaces_appid_placeholder_title(db_session):
+    """When sync stamped a title as 'App 12345' (appid wasn't in catalog
+    cache), enrichment should overwrite it with the real name from
+    appdetails. Without this, DLCs whose appid was added after our last
+    catalog refresh stay forever as 'App 12345' in the UI."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    game = models.Game(title="App 3515610")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="3515610")
+    db_session.add(release)
+    db_session.commit()
+
+    fake_details = {"type": "dlc", "name": "ELDEN RING NIGHTREIGN - Deluxe Upgrade Pack"}
+    with patch("backend.steam._fetch_appdetails", return_value=fake_details):
+        steam.enrich_next_batch(db_session, batch_size=10)
+
+    db_session.refresh(game)
+    assert game.title == "ELDEN RING NIGHTREIGN - Deluxe Upgrade Pack"
+
+
+def test_enrich_does_not_overwrite_real_title(db_session):
+    """If the title isn't the 'App {appid}' placeholder, leave it alone —
+    don't stomp something the user / sync got from a legitimate source."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    game = models.Game(title="Original Title")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="100")
+    db_session.add(release)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "Different Name"}):
+        steam.enrich_next_batch(db_session, batch_size=10)
+
+    db_session.refresh(game)
+    assert game.title == "Original Title"

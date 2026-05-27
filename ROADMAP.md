@@ -111,7 +111,15 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Grid completion card has a bottom date strip — completions are date-driven, so the date earns visible space (unlike library cards which are cover-only)
 - Drawer toggle helpers (`cgtToggleDrawer` / `cgtInitDrawer`) live in `app.js` and are shared across pages
 
-### Round-2 polish: detail-pane crash, DLC fallback rethink, server-side view-mode ✅ (this PR)
+### Round-3 polish: drawer toggle, back-nav, app-id titles, SGDB pagination ✅ (this PR)
+- **3px peach DLC stripe removed.** DLC differentiation now comes from the placeholder card (cover-less for DLC whose Steam library_600x900 doesn't exist).
+- **Drawer toggle (View/Filters) actually toggles now.** Bootstrap's `.d-flex` / `.row` ship `display: flex !important` which beats the browser default `[hidden] { display: none }`. Added universal `[hidden] { display: none !important; }` override.
+- **Detail-pane back-navigation.** When the user clicks through to a child DLC (or a parent) inside the detail pane, a "←" button appears in the pane header. Per-pane stack tracked via HTMX events; fresh opens reset.
+- **"App {appid}" placeholder titles fixed.** Enrichment worker now backfills the title from `appdetails.name` when the stored title is the `f"App {appid}"` sync-time fallback. Per-entry refresh-metadata endpoint gets the same treatment. Respects `display_name_user_set`.
+- **Re-clean display names button** re-added under Steam config → More sync options. The backfill endpoint now skips entries the user has manually edited (`display_name_user_set`) and re-applies the heuristic regardless of whether `display_name` was previously set. Idempotent.
+- **SteamGridDB picker pagination.** SGDB's `/grids/game/{id}` is now paged through with `?page=N`; the picker modal has a "Load more from SteamGridDB" button at the end that replaces itself with the next 20 candidates plus a fresh button.
+
+### Round-2 polish: detail-pane crash, DLC fallback rethink, server-side view-mode ✅ (PR before this)
 - **Detail pane was blank** on any entry with non-null `metadata_fetched_at`: SQLite stores DateTime as offset-naive but our `_needs_metadata_refresh` did `datetime.now(UTC) - fetched_at`, which 500s. Helper now treats naive as UTC.
 - **DLC vertical covers no longer fall back to parent's portrait art.** Steam often 404s a DLC's `library_600x900.jpg`; the previous fallback chain quietly substituted the base game's cover, so DLC cards visually duplicated the base. Vertical fallback removed (placeholder shows instead — DLC is now distinguishable at a glance); horizontal fallback kept since Steam reliably serves DLC `header.jpg`. Same change applied to library + completions cards.
 - **Completion grid date strip removed.** The bottom date overlay made borderless vs non-borderless look inconsistent and was redundant with the list view + detail pane. Cards are now cover-only, matching library.

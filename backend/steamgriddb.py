@@ -70,14 +70,26 @@ def _find_sgdb_game_for_entry(api_key: str, entry: models.UserLibraryEntry) -> d
     return results[0] if results else None
 
 
-def get_grids_for_game(api_key: str, sgdb_game_id: int, orientation: str) -> list[dict]:
+_GRID_PAGE_SIZE = 20
+
+
+def get_grids_for_game(
+    api_key: str,
+    sgdb_game_id: int,
+    orientation: str,
+    page: int = 0,
+) -> list[dict]:
     """Fetch grid (cover) candidates for a SGDB game ID in the requested
     orientation. Each result has `url` (full-size), `thumb` (preview), `id`,
-    and metadata about author / score. Sorted by SGDB's popularity score."""
+    and metadata about author / score. Sorted by SGDB's popularity score.
+
+    Pagination: SGDB's API uses `page` (zero-indexed) with `limit`. Caller
+    passes page=0 for the first batch (default), page=1 for the next, etc.
+    The picker's "Load more" button bumps the page parameter."""
     dimensions = _DIMENSIONS_V if orientation == "v" else _DIMENSIONS_H
     resp = httpx.get(
         f"{_BASE}/grids/game/{sgdb_game_id}",
-        params={"dimensions": dimensions, "limit": "20"},
+        params={"dimensions": dimensions, "limit": str(_GRID_PAGE_SIZE), "page": str(page)},
         headers=_headers(api_key),
         timeout=15,
     )
