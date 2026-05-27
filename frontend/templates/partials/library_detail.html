@@ -82,7 +82,7 @@
          All on one line: <name> <appid> <store↗>. Matches the Steam ID row
          layout below. #}
       {% if parent_game %}
-      <dt>{{ parent_label }}</dt>
+      <dt><span class="tag-badge {{ parent_label_class }}">{{ parent_label }}</span></dt>
       <dd>
         {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
            hx-get="/library/entries/{{ parent_entry_id }}/detail"
