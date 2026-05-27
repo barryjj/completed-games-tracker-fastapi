@@ -1065,7 +1065,7 @@ def test_sgdb_search_uses_steam_appid_when_available(client, db_session):
         r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
     assert r.status_code == 200
     m_lookup.assert_called_once_with("sgdb-key", "220")
-    m_grids.assert_called_once_with("sgdb-key", 999, "v")
+    m_grids.assert_called_once_with("sgdb-key", 999, "v", page=0)
     assert "https://cdn.sgdb/t.png" in r.text
 
 
@@ -1094,7 +1094,7 @@ def test_sgdb_search_falls_back_to_title_for_non_steam(client, db_session):
     assert r.status_code == 200
     m_lookup.assert_not_called()
     m_search.assert_called_once_with("sgdb-key", "Bloodborne")
-    m_grids.assert_called_once_with("sgdb-key", 555, "h")
+    m_grids.assert_called_once_with("sgdb-key", 555, "h", page=0)
 
 
 def test_set_cover_override_applies_to_correct_orientation(client, db_session):
