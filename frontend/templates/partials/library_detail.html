@@ -1,14 +1,18 @@
-{# Inner content for the library detail offcanvas. The wrapper #library-detail
-   in library.html stays in the DOM with a persistent resize handle; this
-   partial replaces #library-detail-content (a sibling div under the wrapper)
-   via hx-target="#library-detail-content" hx-swap="innerHTML". #}
+{# Library detail pane content. Replaces #library-detail-content via HTMX.
 
-{# Stale-metadata auto-refresh: if the server flagged this entry's metadata
-   as ≥7 days old (or never fetched), fire a background refresh. We don't
-   re-render the pane on completion — that would interrupt the user reading
-   what's currently shown. The freshly-fetched data appears next time they
-   open the pane. #}
+   Layout (top → bottom):
+     1. Hero block — full-bleed library_hero with logo overlay
+     2. Title + breadcrumb (for DLC: "Parent : DLC")
+     3. Badge strip (platform / DLC / Collection / Hidden)
+     4. Metadata definition list
+     5. Description
+     6. DLC / Collection child list (in a visually-bracketed section)
+     7. Completions list
+     8. Edit + More dropdown footer
+#}
+
 {% if needs_refresh %}
+{# Background metadata refresh for entries ≥7 days old (see _needs_metadata_refresh). #}
 <div hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
      hx-trigger="load delay:500ms"
      hx-swap="none"
@@ -16,192 +20,231 @@
 {% endif %}
 
 <div class="offcanvas-header border-bottom">
-  <h5 class="offcanvas-title">{{ game.display_title }}</h5>
+  {# Title becomes a breadcrumb for DLC: "Parent : DLC name". For base games
+     it's just the game's display title. Truncates via CSS if the pane is
+     narrow. The header bar also holds the close button + back-nav (injected
+     by app.js when the pane stack has > 1 entry). #}
+  <h5 class="offcanvas-title cgt-detail-title">
+    {% if parent_game %}<span class="text-secondary">{{ parent_game.display_title }} :</span>{% endif %}
+    {{ game.display_title }}
+  </h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
 
-<div class="offcanvas-body">
-  {% if header_url %}
-  <div class="mb-3 text-center">
-    <img src="{{ header_url }}" alt="" style="max-width: 100%; border-radius: 6px;" loading="lazy"
-         data-fallback="{{ fallback_header_url or '' }}"
+<div class="offcanvas-body p-0">
+  {# Hero block. Full-bleed image (own or parent's library_hero), with the
+     game logo overlaid bottom-left. If neither hero nor logo loads, the
+     onerror handlers remove themselves and the block collapses cleanly. #}
+  {% if hero_url or fallback_hero_url %}
+  <div class="cgt-detail-hero">
+    <img class="cgt-detail-hero__img"
+         src="{{ hero_url or fallback_hero_url }}"
+         alt=""
+         loading="lazy"
+         data-fallback="{{ fallback_hero_url if hero_url else '' }}"
+         data-cover-fallback-container=".cgt-detail-hero"
          onerror="cgtCoverFallback(this)">
-  </div>
-  {% endif %}
-
-  {# Badges row: platform + flags. Matches the row badges so it feels consistent. #}
-  <div class="mb-3 d-flex flex-wrap gap-1">
-    <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
-    {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
-    {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
-    {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
-    {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
-  </div>
-
-  {# Timestamps. Both server-rendered as UTC; the local-time JS in app.js
-     reformats data-utc into the user's locale on page load. #}
-  <dl class="row mb-3 small">
-    <dt class="col-5 text-secondary fw-normal">Added</dt>
-    <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.imported_at.isoformat() }}">{{ entry.imported_at.strftime("%Y-%m-%d") }}</span></dd>
-
-    {% if entry.last_played_at %}
-    <dt class="col-5 text-secondary fw-normal">Last played</dt>
-    <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%Y-%m-%d") }}</span></dd>
+    {% if logo_url or fallback_logo_url %}
+    <img class="cgt-detail-hero__logo"
+         src="{{ logo_url or fallback_logo_url }}"
+         alt=""
+         loading="lazy"
+         data-fallback="{{ fallback_logo_url if logo_url else '' }}"
+         onerror="cgtCoverFallback(this)">
     {% endif %}
-
-    {% if entry.playtime_minutes %}
-    <dt class="col-5 text-secondary fw-normal">Playtime</dt>
-    <dd class="col-7 mb-1">{{ "{:,}".format(entry.playtime_minutes) }} min</dd>
-    {% endif %}
-
-    {% if release.external_id %}
-    <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
-    <dd class="col-7 mb-1">
-      <code>{{ release.external_id }}</code>
-      {% if release.source == "steam" %}
-      <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
-         target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
-      {% endif %}
-    </dd>
-    {% endif %}
-  </dl>
-
-  {% if appdetails.short_description %}
-  <div class="mb-3">
-    <div class="text-secondary mb-1"><small>Description</small></div>
-    <p class="mb-0">{{ appdetails.short_description }}</p>
   </div>
   {% endif %}
 
-  {% if child_entries %}
-  <div class="mb-3">
-    <div class="text-secondary mb-1"><small>
-      {% if game.is_collection %}Games in this collection{% else %}DLC{% endif %}
-    </small></div>
-    {# Bounded scroll for long DLC lists (Dead by Daylight has 60+).
-       Striped table matches the library/completions main-table look. #}
-    <div class="cgt-detail-scroll-list">
-      <table class="table table-striped table-sm table-hover mb-0 align-middle">
-        <tbody>
-          {% for child in child_entries %}
-          <tr class="cgt-detail-child-row"
-              hx-get="/library/entries/{{ child.id }}/detail"
-              hx-target="#library-detail-content"
-              hx-swap="innerHTML">
-            <td>
-              {{ child.release.game.display_title }}
-              {% if child.is_hidden %}<small class="text-secondary ms-1">(hidden)</small>{% endif %}
-            </td>
-            <td class="text-end text-nowrap">
-              <span class="tag-badge {{ child.release.platform | platform_color }}">{{ child.release.platform }}</span>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-  {% endif %}
-
-  {% if completions %}
-  <div class="mb-3">
-    <div class="text-secondary mb-1"><small>Completions ({{ completions | length }})</small></div>
-    <ul class="list-unstyled mb-0">
-      {% for c in completions %}
-      <li class="mb-2">
-        <div><strong>{{ c.completed_at.strftime("%b %d, %Y") }}</strong>
-          {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
-        </div>
-        {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-  </div>
-  {% endif %}
-
-  {# Actions block. Edit stays as the primary visible button; secondary actions
-     (Refresh / Hide / Remove) live in a "More ▾" dropdown so the footer scales
-     as we add more without piling up buttons. Inline edit comes in a later PR;
-     Edit still opens the existing modal for now. #}
-  <div class="border-top pt-3 d-flex flex-wrap gap-2 align-items-center">
-    <button class="btn btn-outline-secondary btn-sm"
-            onclick="closeDetailAndEdit(this.dataset)"
-            data-entry-id="{{ entry.id }}"
-            data-title="{{ game.title | e }}"
-            data-display-name="{{ (game.display_name or '') | e }}"
-            data-is-dlc="{{ 'true' if game.is_dlc else 'false' }}"
-            data-is-collection="{{ 'true' if game.is_collection else 'false' }}"
-            data-is-part-of-collection="{{ 'true' if (game.parent_id and not game.is_dlc) else 'false' }}"
-            data-parent-id="{{ game.parent_id or '' }}"
-            data-source="{{ release.source }}"
-            data-label="{{ game.display_title | e }}">Edit</button>
-
-    <div class="dropdown ms-auto">
-      <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
-              data-bs-toggle="dropdown" aria-expanded="false">More</button>
-      <ul class="dropdown-menu dropdown-menu-end">
-        {% if release.source == "steam" %}
-        <li><a class="dropdown-item" href="#"
-               hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
-               hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
-             Refresh metadata
-           </a></li>
-        <li><hr class="dropdown-divider"></li>
-        {% endif %}
-        {% if current_user and current_user.steamgriddb_api_key %}
-        <li><a class="dropdown-item" href="#"
-               onclick="openSgdbPicker({{ entry.id }}, 'v'); return false;">
-             Find vertical cover
-           </a></li>
-        <li><a class="dropdown-item" href="#"
-               onclick="openSgdbPicker({{ entry.id }}, 'h'); return false;">
-             Find horizontal cover
-           </a></li>
-        <li><hr class="dropdown-divider"></li>
-        {% endif %}
-        {# Clear-cover-override items only appear when there's an override
-           to clear. Posting falls back to whatever Steam CDN art is on
-           the GameArtwork rows, then re-renders the pane. #}
-        {% if entry.cover_url_override_v or entry.cover_url_override_h %}
-          {% if entry.cover_url_override_v %}
-          <li><a class="dropdown-item" href="#"
-                 hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
-                 hx-vals='{"orientation": "v"}'
-                 hx-swap="none"
-                 hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
-               Reset vertical cover
-             </a></li>
-          {% endif %}
-          {% if entry.cover_url_override_h %}
-          <li><a class="dropdown-item" href="#"
-                 hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
-                 hx-vals='{"orientation": "h"}'
-                 hx-swap="none"
-                 hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
-               Reset horizontal cover
-             </a></li>
-          {% endif %}
-        <li><hr class="dropdown-divider"></li>
-        {% endif %}
-        {% if entry.is_hidden %}
-        <li><a class="dropdown-item" href="#"
-               hx-post="/library/entries/{{ entry.id }}/unhide"
-               hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Unhide</a></li>
+  {# Content padding — pushes everything below the hero in from the edges. #}
+  <div class="p-3">
+    {# Parent breadcrumb link (DLC only). Clicking swaps the pane to the
+       parent's detail; the back-arrow injected by app.js will then pop back. #}
+    {% if parent_game %}
+    <div class="mb-2">
+      <small>
+        {% if parent_entry_id %}
+        <a href="#" class="text-secondary text-decoration-none"
+           hx-get="/library/entries/{{ parent_entry_id }}/detail"
+           hx-target="#library-detail-content"
+           hx-swap="innerHTML">
+          ← Part of {{ parent_game.display_title }}
+        </a>
         {% else %}
-        <li><a class="dropdown-item" href="#"
-               hx-post="/library/entries/{{ entry.id }}/hide"
-               hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Hide</a></li>
+        <span class="text-secondary">Part of {{ parent_game.display_title }}</span>
         {% endif %}
-        <li><hr class="dropdown-divider"></li>
-        <li><a class="dropdown-item text-danger" href="#"
-               hx-delete="/library/entries/{{ entry.id }}"
-               hx-swap="none"
-               hx-confirm="Remove {{ game.display_title | e }} from your library?"
-               hx-on::after-request="if(event.detail.successful){ location.reload(); }">Remove</a></li>
+      </small>
+    </div>
+    {% endif %}
+
+    {# Badges row: platform + flags. #}
+    <div class="mb-3 d-flex flex-wrap gap-1">
+      <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
+      {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
+      {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
+      {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
+      {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
+    </div>
+
+    {# Timestamps. local-time JS rewrites data-utc into the user's locale. #}
+    <dl class="row mb-3 small">
+      <dt class="col-5 text-secondary fw-normal">Added</dt>
+      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.imported_at.isoformat() }}">{{ entry.imported_at.strftime("%Y-%m-%d") }}</span></dd>
+
+      {% if entry.last_played_at %}
+      <dt class="col-5 text-secondary fw-normal">Last played</dt>
+      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%Y-%m-%d") }}</span></dd>
+      {% endif %}
+
+      {% if entry.playtime_minutes %}
+      <dt class="col-5 text-secondary fw-normal">Playtime</dt>
+      <dd class="col-7 mb-1">{{ "{:,}".format(entry.playtime_minutes) }} min</dd>
+      {% endif %}
+
+      {% if release.external_id %}
+      <dt class="col-5 text-secondary fw-normal">{{ release.source | capitalize }} ID</dt>
+      <dd class="col-7 mb-1">
+        <code>{{ release.external_id }}</code>
+        {% if release.source == "steam" %}
+        <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
+           target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+        {% endif %}
+      </dd>
+      {% endif %}
+    </dl>
+
+    {% if appdetails.short_description %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Description</h6>
+      <p class="mb-0">{{ appdetails.short_description }}</p>
+    </div>
+    {% endif %}
+
+    {% if child_entries %}
+    {# DLC / Collection list block — visually bracketed so it reads as its
+       own section (heading + tinted panel) rather than another row in the
+       form. Bounded-scroll for long lists (Dead by Daylight, etc.). #}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">
+        {% if game.is_collection %}Games in this collection{% else %}DLC{% endif %}
+        <span class="text-secondary fw-normal ms-1">({{ child_entries | length }})</span>
+      </h6>
+      <div class="cgt-detail-scroll-list">
+        <table class="table table-sm table-hover mb-0 align-middle">
+          <tbody>
+            {% for child in child_entries %}
+            <tr class="cgt-detail-child-row"
+                hx-get="/library/entries/{{ child.id }}/detail"
+                hx-target="#library-detail-content"
+                hx-swap="innerHTML">
+              <td>
+                {{ child.release.game.display_title }}
+                {% if child.is_hidden %}<small class="text-secondary ms-1">(hidden)</small>{% endif %}
+              </td>
+              <td class="text-end text-nowrap">
+                <span class="tag-badge {{ child.release.platform | platform_color }}">{{ child.release.platform }}</span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if completions %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ completions | length }})</span></h6>
+      <ul class="list-unstyled mb-0">
+        {% for c in completions %}
+        <li class="mb-2">
+          <div><strong>{{ c.completed_at.strftime("%b %d, %Y") }}</strong>
+            {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+          </div>
+          {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
+        </li>
+        {% endfor %}
       </ul>
+    </div>
+    {% endif %}
+
+    {# Actions footer. Edit on the left, More dropdown on the right. #}
+    <div class="border-top pt-3 d-flex flex-wrap gap-2 align-items-center">
+      <button class="btn btn-outline-secondary btn-sm"
+              onclick="closeDetailAndEdit(this.dataset)"
+              data-entry-id="{{ entry.id }}"
+              data-title="{{ game.title | e }}"
+              data-display-name="{{ (game.display_name or '') | e }}"
+              data-is-dlc="{{ 'true' if game.is_dlc else 'false' }}"
+              data-is-collection="{{ 'true' if game.is_collection else 'false' }}"
+              data-is-part-of-collection="{{ 'true' if (game.parent_id and not game.is_dlc) else 'false' }}"
+              data-parent-id="{{ game.parent_id or '' }}"
+              data-source="{{ release.source }}"
+              data-label="{{ game.display_title | e }}">Edit</button>
+
+      <div class="dropdown ms-auto">
+        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+                data-bs-toggle="dropdown" aria-expanded="false">More</button>
+        <ul class="dropdown-menu dropdown-menu-end">
+          {% if release.source == "steam" %}
+          <li><a class="dropdown-item" href="#"
+                 hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
+                 hx-swap="none"
+                 hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               Refresh metadata
+             </a></li>
+          <li><hr class="dropdown-divider"></li>
+          {% endif %}
+          {% if current_user and current_user.steamgriddb_api_key %}
+          <li><a class="dropdown-item" href="#"
+                 onclick="openSgdbPicker({{ entry.id }}, 'v'); return false;">
+               Find vertical cover
+             </a></li>
+          <li><a class="dropdown-item" href="#"
+                 onclick="openSgdbPicker({{ entry.id }}, 'h'); return false;">
+               Find horizontal cover
+             </a></li>
+          <li><hr class="dropdown-divider"></li>
+          {% endif %}
+          {% if entry.cover_url_override_v or entry.cover_url_override_h %}
+            {% if entry.cover_url_override_v %}
+            <li><a class="dropdown-item" href="#"
+                   hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+                   hx-vals='{"orientation": "v"}'
+                   hx-swap="none"
+                   hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+                 Reset vertical cover
+               </a></li>
+            {% endif %}
+            {% if entry.cover_url_override_h %}
+            <li><a class="dropdown-item" href="#"
+                   hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+                   hx-vals='{"orientation": "h"}'
+                   hx-swap="none"
+                   hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+                 Reset horizontal cover
+               </a></li>
+            {% endif %}
+          <li><hr class="dropdown-divider"></li>
+          {% endif %}
+          {% if entry.is_hidden %}
+          <li><a class="dropdown-item" href="#"
+                 hx-post="/library/entries/{{ entry.id }}/unhide"
+                 hx-swap="none"
+                 hx-on::after-request="if(event.detail.successful){ location.reload(); }">Unhide</a></li>
+          {% else %}
+          <li><a class="dropdown-item" href="#"
+                 hx-post="/library/entries/{{ entry.id }}/hide"
+                 hx-swap="none"
+                 hx-on::after-request="if(event.detail.successful){ location.reload(); }">Hide</a></li>
+          {% endif %}
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item text-danger" href="#"
+                 hx-delete="/library/entries/{{ entry.id }}"
+                 hx-swap="none"
+                 hx-confirm="Remove {{ game.display_title | e }} from your library?"
+                 hx-on::after-request="if(event.detail.successful){ location.reload(); }">Remove</a></li>
+        </ul>
+      </div>
     </div>
   </div>
 </div>
