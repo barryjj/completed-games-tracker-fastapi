@@ -111,7 +111,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Grid completion card has a bottom date strip — completions are date-driven, so the date earns visible space (unlike library cards which are cover-only)
 - Drawer toggle helpers (`cgtToggleDrawer` / `cgtInitDrawer`) live in `app.js` and are shared across pages
 
-### Polish bugs + sticky bottom toolbar + stale-only auto-refresh ✅ (this PR)
+### Round-2 polish: detail-pane crash, DLC fallback rethink, server-side view-mode ✅ (this PR)
+- **Detail pane was blank** on any entry with non-null `metadata_fetched_at`: SQLite stores DateTime as offset-naive but our `_needs_metadata_refresh` did `datetime.now(UTC) - fetched_at`, which 500s. Helper now treats naive as UTC.
+- **DLC vertical covers no longer fall back to parent's portrait art.** Steam often 404s a DLC's `library_600x900.jpg`; the previous fallback chain quietly substituted the base game's cover, so DLC cards visually duplicated the base. Vertical fallback removed (placeholder shows instead — DLC is now distinguishable at a glance); horizontal fallback kept since Steam reliably serves DLC `header.jpg`. Same change applied to library + completions cards.
+- **Completion grid date strip removed.** The bottom date overlay made borderless vs non-borderless look inconsistent and was redundant with the list view + detail pane. Cards are now cover-only, matching library.
+- **Enrichment status line drops when idle.** When `pending == 0` the partial renders nothing — the auto-refresh-on-detail-pane behavior handles staleness invisibly so there's nothing to surface.
+- **Server-side view-mode cookie.** Backend reads `cgt-library-view-mode` / `cgt-completions-view-mode` cookies and renders the right view on first paint. Toggle JS writes the cookie alongside localStorage. Kills the "list flashes for a second, then pops into grid" lag the old JS-only redirect caused.
+
+### Polish bugs + sticky bottom toolbar + stale-only auto-refresh ✅ (PR before this)
 - **JS load-order fix.** Toolbar drawer helpers (`cgtToggleDrawer` / `cgtInitDrawer`) now defined inline in `base.html` instead of in `app.js` (which is deferred and wasn't ready when per-page inline scripts ran). View-mode buttons + grid sliders work again.
 - **Catppuccin checkbox styling.** Native `accent-color: var(--ctp-mauve)` plus checked/focus overrides so Borderless / Show hidden / form modal checkboxes match the theme.
 - **DLC cover fallback chain extended to list/grid.** Server-side batched query attaches parent-game artwork URLs to each DLC entry as `_fallback_v` / `_fallback_h` (no N+1). Templates emit them as `data-fallback`; new `cgtCoverFallback` enhancements handle list-row thumbs and grid card covers separately.

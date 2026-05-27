@@ -1,7 +1,14 @@
-{# Completion grid card. Same skeleton as library_card.html, plus a bottom
-   date strip — completions are date-driven, so the date earns visible space.
+{# Completion grid card. Cover-only mosaic to match the library page — the
+   date lives in the detail pane and list view, so it doesn't earn space here
+   too. (The previous bottom date strip caused borderless vs non-borderless
+   to look inconsistent and felt redundant once the detail pane shows the
+   date prominently.)
    Click anywhere → completion detail pane via the delegated handler in
-   completions.html. #}
+   completions.html.
+   Vertical orientation: no parent-cover fallback — DLC entries whose own
+   library_600x900 404s let the placeholder card render so they're visually
+   distinct from the base game. Horizontal still uses parent fallback (Steam
+   reliably hosts header.jpg). #}
 {% set _entry = completion.library_entry %}
 {% set cover_url = _entry | grid_cover_url(view_mode) %}
 <div class="cgt-library-card completion-row-clickable
@@ -11,7 +18,7 @@
      data-completion-id="{{ completion.id }}"
      title="{{ _entry.release.game.display_title | e }} — {{ completion.completed_at.strftime('%Y-%m-%d') }}">
   {% if cover_url %}
-  {% set _fallback = (_entry._fallback_v if view_mode == 'grid_v' else _entry._fallback_h) %}
+  {% set _fallback = _entry._fallback_h if view_mode == 'grid_h' else '' %}
   <div class="cgt-library-card__cover">
     <img src="{{ cover_url }}" alt="" loading="lazy"
          data-fallback="{{ _fallback or '' }}"
@@ -22,8 +29,5 @@
   <div class="cgt-library-card__placeholder">
     <div class="cgt-library-card__placeholder-title">{{ _entry.release.game.display_title }}</div>
     <div class="cgt-library-card__placeholder-platform">{{ _entry.release.platform }}</div>
-  </div>
-  <div class="cgt-completion-card__date">
-    <small>{{ completion.completed_at.strftime("%Y-%m-%d") }}</small>
   </div>
 </div>

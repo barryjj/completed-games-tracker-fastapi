@@ -17,7 +17,12 @@
      data-entry-id="{{ entry.id }}"
      title="{{ entry.release.game.display_title | e }} ({{ entry.release.platform }})">
   {% if cover_url %}
-  {% set _fallback = (entry._fallback_v if view_mode == 'grid_v' else entry._fallback_h) %}
+  {# Vertical orientation: no parent fallback. Steam often 404s a DLC's
+     library_600x900 — falling back to the parent's portrait makes the DLC
+     card visually duplicate the base game's card. Letting the placeholder
+     show keeps DLC distinguishable. Horizontal keeps the parent fallback
+     (Steam reliably serves header.jpg for DLC). #}
+  {% set _fallback = entry._fallback_h if view_mode == 'grid_h' else '' %}
   <div class="cgt-library-card__cover">
     <img src="{{ cover_url }}" alt="" loading="lazy"
          data-fallback="{{ _fallback or '' }}"
