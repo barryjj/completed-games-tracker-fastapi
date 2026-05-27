@@ -5,7 +5,8 @@ html[data-bs-theme="dark"] {
   --ctp-overlay0: #6c7086; --ctp-text:     #cdd6f4; --ctp-subtext:  #a6adc8;
   --ctp-mauve:    #cba6f7; --ctp-lavender: #b4befe; --ctp-blue:     #89b4fa;
   --ctp-green:    #a6e3a1; --ctp-peach:    #fab387; --ctp-red:      #f38ba8;
-  --ctp-yellow:   #f9e2af;
+  --ctp-yellow:   #f9e2af; --ctp-teal:     #94e2d5; --ctp-sky:      #89dceb;
+  --ctp-sapphire: #74c7ec;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #1e1e2e;
@@ -65,7 +66,8 @@ html[data-bs-theme="light"] {
   --ctp-overlay0: #9ca0b0; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
   --ctp-green:    #40a02b; --ctp-peach:    #fe640b; --ctp-red:      #d20f39;
-  --ctp-yellow:   #df8e1d;
+  --ctp-yellow:   #df8e1d; --ctp-teal:     #179299; --ctp-sky:      #04a5e5;
+  --ctp-sapphire: #209fb5;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #eff1f5;
@@ -927,4 +929,24 @@ body:has(.cgt-sticky-actions) {
   flex-shrink: 0;
   background-color: var(--bs-offcanvas-bg, var(--ctp-base));
   border-top-color: var(--ctp-surface1) !important;
+}
+
+/* Detail-pane metadata dl. Replaces Bootstrap's col-5/col-7 layout (which
+   left a huge gap between short labels and their values) with a CSS Grid
+   that auto-sizes labels to their content width. The widest label sets
+   the column width, so labels still align across rows. */
+.cgt-detail-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin-bottom: 1rem;
+}
+.cgt-detail-meta dt {
+  color: var(--ctp-subtext);
+  font-weight: 400;
+  margin: 0;
+}
+.cgt-detail-meta dd {
+  margin: 0;
+  min-width: 0; /* lets long values wrap inside the grid cell */
 }
