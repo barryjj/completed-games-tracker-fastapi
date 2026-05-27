@@ -402,14 +402,15 @@ function applySgdbCover(entryId, orientation, url) {
 
 // ─── Grid view: view-mode toggle + spacing slider ─────────────────────────
 //
-// View mode is server-rendered (the URL query param decides which template
-// branch is used), so toggle clicks navigate to a new URL with the chosen
-// mode. localStorage saves the preference so the next visit lands on the
-// same mode (a one-time JS redirect handles the URL-less initial load).
+// View mode is server-rendered: the backend picks list / grid_v / grid_h
+// from (a) the ?view_mode= URL param if present, else (b) the
+// cgt-library-view-mode cookie, else "list". The toggle JS writes BOTH the
+// cookie and localStorage, and navigates to a URL containing the chosen
+// mode. The cookie eliminates the brief "list flashes before flipping to
+// grid" lag the old localStorage-only approach caused on first paint.
 //
-// Grid gap is purely client-side: a CSS variable on the .cgt-library-grid
-// container is updated as the slider moves; the value is also saved to
-// localStorage so it persists across sessions.
+// Grid gap / size / borderless are pure CSS-var localStorage (no server
+// round-trip) — fine because they don't change the template branch.
 
 (function libraryGridControls() {
   var VIEW_MODE_KEY = 'cgt-library-view-mode';
@@ -444,21 +445,15 @@ function applySgdbCover(entryId, orientation, url) {
   var savedBorderless = localStorage.getItem(BORDERLESS_KEY) === '1';
   if (savedBorderless) applyBorderless(true);
 
-  // One-time redirect to apply a saved view_mode when the URL doesn't have one.
-  if (!urlParams.has('view_mode')) {
-    var savedMode = localStorage.getItem(VIEW_MODE_KEY);
-    if (savedMode && savedMode !== 'list') {
-      urlParams.set('view_mode', savedMode);
-      window.location.replace(window.location.pathname + '?' + urlParams.toString());
-      return;
-    }
-  }
-
-  // View-mode toggle: any [data-view-mode] button rewrites the URL.
+  // View-mode toggle: write cookie + localStorage + navigate. Cookie is the
+  // one the server reads on first paint, so collapse-then-pop never happens.
   document.querySelectorAll('[data-view-mode]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var mode = btn.dataset.viewMode;
       localStorage.setItem(VIEW_MODE_KEY, mode);
+      // 1-year persistence; SameSite=Lax matches the session cookie pattern.
+      document.cookie = 'cgt-library-view-mode=' + encodeURIComponent(mode) +
+        '; Max-Age=31536000; Path=/; SameSite=Lax';
       var p = new URLSearchParams(window.location.search);
       if (mode === 'list') p.delete('view_mode'); else p.set('view_mode', mode);
       var qs = p.toString();

@@ -171,20 +171,15 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
   var savedBorderless = localStorage.getItem(BORDERLESS_KEY) === '1';
   if (savedBorderless) applyBorderless(true);
 
-  // One-time redirect to apply a saved view_mode when URL lacks it.
-  if (!urlParams.has('view_mode')) {
-    var savedMode = localStorage.getItem(VIEW_MODE_KEY);
-    if (savedMode && savedMode !== 'list') {
-      urlParams.set('view_mode', savedMode);
-      window.location.replace(window.location.pathname + '?' + urlParams.toString());
-      return;
-    }
-  }
-
+  // View-mode toggle: write cookie + localStorage + navigate. Cookie is the
+  // one the server reads on first paint, so the list-flashes-before-grid
+  // lag the old localStorage-redirect approach caused never happens.
   document.querySelectorAll('[data-view-mode]').forEach(function(btn) {
     btn.addEventListener('click', function() {
       var mode = btn.dataset.viewMode;
       localStorage.setItem(VIEW_MODE_KEY, mode);
+      document.cookie = 'cgt-completions-view-mode=' + encodeURIComponent(mode) +
+        '; Max-Age=31536000; Path=/; SameSite=Lax';
       var p = new URLSearchParams(window.location.search);
       if (mode === 'list') p.delete('view_mode'); else p.set('view_mode', mode);
       var qs = p.toString();

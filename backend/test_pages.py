@@ -1023,3 +1023,66 @@ def test_needs_metadata_refresh_skips_non_steam():
 
     release = models.GameRelease(source="manual", external_id=None, metadata_fetched_at=None)
     assert _needs_metadata_refresh(release) is False
+
+
+# --- view_mode resolution from cookie ---
+
+
+def test_library_view_mode_falls_back_to_cookie(client):
+    """When no ?view_mode= in the URL, the page should pick up the cookie
+    set by the toggle JS — fixes the brief 'list flashes before grid' lag."""
+    _signup_and_login(client)
+    client.cookies.set("cgt-library-view-mode", "grid_v")
+    r = client.get("/library")
+    assert r.status_code == 200
+    assert b"cgt-library-grid--grid_v" in r.content
+
+
+def test_library_query_param_beats_cookie(client):
+    """Explicit ?view_mode= in URL takes precedence over the cookie."""
+    _signup_and_login(client)
+    client.cookies.set("cgt-library-view-mode", "grid_v")
+    r = client.get("/library?view_mode=list")
+    assert r.status_code == 200
+    assert b"cgt-library-grid--grid" not in r.content
+
+
+def test_completions_view_mode_falls_back_to_cookie(client):
+    _signup_and_login(client)
+    client.cookies.set("cgt-completions-view-mode", "grid_h")
+    r = client.get("/completions")
+    assert r.status_code == 200
+    assert b"cgt-library-grid--grid_h" in r.content
+
+
+def test_view_mode_junk_cookie_falls_back_to_list(client):
+    _signup_and_login(client)
+    client.cookies.set("cgt-library-view-mode", "diagonal")
+    r = client.get("/library")
+    assert r.status_code == 200
+    assert b"cgt-library-grid--grid" not in r.content
+
+
+# --- _needs_metadata_refresh tolerates naive datetimes ---
+
+
+def test_needs_metadata_refresh_handles_naive_datetime():
+    """SQLite stores DateTime as offset-naive; we need to handle that without
+    crashing. (Bug: previously the detail-pane endpoint 500'd with
+    'can't subtract offset-naive and offset-aware datetimes', blanking the
+    pane for any entry that had been enriched.)"""
+    import datetime as dt
+
+    from backend.pages import _needs_metadata_refresh
+
+    # Naive datetime from 14 days ago — should be considered stale, no crash.
+    release = models.GameRelease(
+        source="steam",
+        external_id="220",
+        metadata_fetched_at=dt.datetime.utcnow() - dt.timedelta(days=14),  # naive
+    )
+    assert _needs_metadata_refresh(release) is True
+
+    # Naive datetime from 1 day ago — fresh, no crash.
+    release.metadata_fetched_at = dt.datetime.utcnow() - dt.timedelta(days=1)
+    assert _needs_metadata_refresh(release) is False

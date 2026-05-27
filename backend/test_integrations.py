@@ -367,19 +367,17 @@ def test_jobs_poll_failure_toast_is_danger(client, db_session):
     assert b"connection refused" in r.content
 
 
-def test_enrichment_status_returns_counts(client, db_session):
+def test_enrichment_status_empty_when_nothing_pending(client, db_session):
+    """When pending==0, the partial renders nothing (no 'X enriched' line) —
+    cleaner hub card. The endpoint still returns 200 so the polling HTMX
+    swap doesn't error; the body is just whitespace."""
     _signup_and_login(client)
-    client.post(
-        "/integrations/steam/credentials",
-        data={
-            "steam_api_key": "K",
-            "steam_id64": "1",
-        },
-    )
     r = client.get("/integrations/steam/enrichment-status")
     assert r.status_code == 200
-    # Empty library — both numbers are zero
-    assert b"0" in r.content
+    # Nothing pending → no status line; should not surface the old
+    # "Metadata up to date — X enriched" wording.
+    assert b"enriched" not in r.content
+    assert b"Enriching" not in r.content
 
 
 def test_enrichment_refresh_nulls_timestamps(client, db_session):

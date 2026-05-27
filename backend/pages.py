@@ -79,9 +79,16 @@ def _needs_metadata_refresh(release) -> bool:
     have an appdetails endpoint to refresh against."""
     if release.source != "steam" or not release.external_id:
         return False
-    if release.metadata_fetched_at is None:
+    fetched_at = release.metadata_fetched_at
+    if fetched_at is None:
         return True
-    age = datetime.datetime.now(datetime.UTC) - release.metadata_fetched_at
+    # SQLite stores DateTime columns as offset-naive even though our model
+    # declares tz-aware. Treat any naive value as UTC so the subtraction
+    # below doesn't blow up the entire detail pane (which it did, returning
+    # a 500 and rendering as a blank offcanvas).
+    if fetched_at.tzinfo is None:
+        fetched_at = fetched_at.replace(tzinfo=datetime.UTC)
+    age = datetime.datetime.now(datetime.UTC) - fetched_at
     return age.days >= _METADATA_STALENESS_DAYS
 
 
@@ -344,6 +351,26 @@ VIEW_OPTIONS = ["default", "dlc", "collections", "in_collection", "manual", "all
 VIEW_MODES = {"list", "grid_v", "grid_h"}
 
 
+def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: str) -> str:
+    """Resolve the effective view_mode for a list page.
+
+    Order of precedence:
+      1. Explicit `?view_mode=X` in the URL (user just clicked the toggle).
+      2. The persisted cookie set by the toolbar JS — this is the fix for
+         the "list flashes briefly before flipping to grid" lag, since the
+         server now renders the right view on first paint.
+      3. Default "list".
+
+    Falls back to "list" on junk values from any source.
+    """
+    if query_value:
+        return query_value if query_value in VIEW_MODES else "list"
+    cookie_value = request.cookies.get(cookie_name)
+    if cookie_value in VIEW_MODES:
+        return cookie_value
+    return "list"
+
+
 @router.get("/library")
 def library_page(
     request: Request,
@@ -351,15 +378,16 @@ def library_page(
     q: str = Query(""),
     platform: str = Query(""),
     view: str = Query("default"),
-    view_mode: str = Query("list"),
+    view_mode: str | None = Query(None),
     show_hidden: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    # view_mode controls list-vs-grid presentation; defaults to list, persisted
-    # by JS in localStorage and reapplied via the same query param.
-    if view_mode not in VIEW_MODES:
-        view_mode = "list"
+    # view_mode resolved from query → cookie → default. Cookie is the
+    # server-side mirror of the JS localStorage preference, set by the
+    # view-mode toggle JS. Lets the first paint render in the right mode
+    # without the visible flicker the old JS-only redirect caused.
+    view_mode = _resolve_view_mode(request, view_mode, "cgt-library-view-mode")
 
     base_q = (
         db.query(models.UserLibraryEntry)
@@ -1028,14 +1056,12 @@ def completions_page(
     platform: str = Query(""),
     completed_from: str = Query(""),
     completed_to: str = Query(""),
-    view_mode: str = Query("list"),
+    view_mode: str | None = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    # Mirror library: view_mode chooses list / grid_v / grid_h. Anything else
-    # falls back to list so a junked query param can't blow up the template.
-    if view_mode not in ("list", "grid_v", "grid_h"):
-        view_mode = "list"
+    # Resolved from query → cookie → default (see _resolve_view_mode docstring).
+    view_mode = _resolve_view_mode(request, view_mode, "cgt-completions-view-mode")
     completions_q = (
         db.query(models.Completion)
         .join(models.Completion.library_entry)
