@@ -181,6 +181,24 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     logo_url = _steam_logo_url(release)
     fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
 
+    # Compute a "subtitle" for DLC display_title — what's left after stripping
+    # the parent's title from the front. Steam DLC titles usually embed the
+    # parent name as a prefix ("ELDEN RING NIGHTREIGN The Forsaken Hollows"),
+    # so the detail pane title bar can render as
+    #     <linked parent> : <subtitle>
+    # without duplicating the parent's name. Falls back to the full title
+    # when no parent prefix is detected (rare, but possible for oddly-named
+    # DLC). For non-DLC entries this is None.
+    dlc_subtitle = None
+    if parent_game:
+        title = game.display_title or ""
+        parent_title = parent_game.display_title or ""
+        if parent_title and title.lower().startswith(parent_title.lower()):
+            stripped = title[len(parent_title) :].lstrip(" :-").strip()
+            dlc_subtitle = stripped or title
+        else:
+            dlc_subtitle = title
+
     return {
         "header_url": header_url,
         "fallback_header_url": fallback_header_url,
@@ -190,6 +208,7 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
         "fallback_logo_url": fallback_logo_url,
         "parent_game": parent_game,
         "parent_entry_id": parent_entry_id,
+        "dlc_subtitle": dlc_subtitle,
     }
 
 

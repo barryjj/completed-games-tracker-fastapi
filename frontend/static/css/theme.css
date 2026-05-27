@@ -782,14 +782,43 @@ body:has(.cgt-sticky-actions) {
 
 /* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
 
-/* Title becomes a breadcrumb for DLC: "Parent : DLC name". The parent name
-   leads in muted color; the DLC name gets the normal title color. Single-
-   line ellipsis when the pane is narrow. */
+/* Title bar layout for the detail pane.
+     - DLC:       <linked-parent> : <subtitle>
+                  Parent reads muted (subtext color) and is clickable —
+                  swaps the pane to the parent's detail; the back-arrow
+                  injected by app.js will then pop back here.
+                  Subtitle (DLC's display_title minus parent prefix) gets
+                  the full title color so it has the visual weight.
+     - Base game: just display_title.
+   Single-line with ellipsis when the pane is narrow. */
 .cgt-detail-title {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+}
+.cgt-detail-title__parent {
+  color: var(--ctp-subtext);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+.cgt-detail-title__parent:hover {
+  color: var(--ctp-mauve);
+  text-decoration: underline;
+}
+/* When the user doesn't own the parent in their library, the parent name
+   is rendered as plain muted text — nothing to navigate to. */
+.cgt-detail-title__parent--unlinked {
+  cursor: default;
+}
+.cgt-detail-title__parent--unlinked:hover {
+  color: var(--ctp-subtext);
+  text-decoration: none;
+}
+.cgt-detail-title__separator {
+  color: var(--ctp-overlay0);
+  margin: 0 0.15em;
 }
 
 /* Hero block: full-bleed image with a soft gradient overlay at the bottom
