@@ -896,28 +896,15 @@ body:has(.cgt-sticky-actions) {
   display: none !important;
 }
 
-/* Detail offcanvas body: ensure it scrolls when content overflows, and has
-   enough bottom breathing room that the Edit/More action row isn't pinned
-   against the viewport edge or clipped by anything. */
-.offcanvas .offcanvas-body {
-  overflow-y: auto;
-}
-.offcanvas .offcanvas-body > .p-3:last-child {
-  padding-bottom: 2rem !important;
-}
+/* Detail-pane offcanvas layout. Three-part stack inside #*-detail-content:
+     1. .offcanvas-header  — fixed top (Title + close button)
+     2. .offcanvas-body    — scrollable middle (hero + metadata + sections)
+     3. .cgt-detail-actions— pinned bottom (Edit + More dropdown)
 
-/* Offcanvas content wrapper.
-   Bootstrap's offcanvas relies on a direct-child .offcanvas-body with
-   flex-grow:1; overflow-y:auto to make tall content scroll inside the
-   pane. We wrap the swapped content in #library-detail-content /
-   #completion-detail-content (so the resize-handle stays put across HTMX
-   swaps) which breaks that chain — .offcanvas-body becomes a grandchild,
-   loses the flex magic, and the bottom of the content drops below the
-   viewport with no way to scroll to it. (User-reported "unending page".)
-
-   Fix: make the content wrapper itself a flex item that fills the
-   remaining height. The .offcanvas-body inside it still has overflow-y:auto
-   so scrolling works inside the wrapped chain. */
+   #library-detail-content / #completion-detail-content wraps the swapped
+   content so the resize-handle persists across HTMX swaps. That wrapper
+   needs to be a flex column with min-height:0 so the body's flex-grow
+   actually fills the middle and the action footer pins to the bottom. */
 .offcanvas-end > #library-detail-content,
 .offcanvas-end > #completion-detail-content {
   display: flex;
@@ -925,4 +912,19 @@ body:has(.cgt-sticky-actions) {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
+}
+.offcanvas .offcanvas-body {
+  overflow-y: auto;
+  /* flex-grow:1 (Bootstrap default) lets the body fill all vertical space
+     not consumed by the header above and the actions footer below. */
+  flex: 1 1 auto;
+}
+
+/* Sticky action footer at the bottom of the detail pane. Flex-shrink:0
+   keeps it from collapsing when the body has a lot of content. Same bg
+   as the offcanvas so it reads as a pinned bar rather than overlapping. */
+.cgt-detail-actions {
+  flex-shrink: 0;
+  background-color: var(--bs-offcanvas-bg, var(--ctp-base));
+  border-top-color: var(--ctp-surface1) !important;
 }

@@ -180,9 +180,18 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
 
     # Compute a "subtitle" for DLC display_title — what's left after stripping
-    # Parent appid — shown alongside the parent name in the "Parent App" row
-    # of the metadata block. Just the Steam external_id; safe to be None.
+    # Parent appid — shown alongside the parent name in the parent row of
+    # the metadata block. Just the Steam external_id; safe to be None.
     parent_appid = parent_release.external_id if parent_release else None
+
+    # Contextual label for the parent relationship:
+    #   - DLC entry        → "DLC for"      (this DLC is for that base game)
+    #   - in-collection    → "In collection"(this entry sits inside that collection)
+    # Tells the user *what kind of relationship* this entry has with the
+    # parent, instead of the older catch-all "Part of" / "Parent App".
+    parent_label = None
+    if parent_game:
+        parent_label = "DLC for" if game.is_dlc else "In collection"
 
     return {
         "header_url": header_url,
@@ -194,6 +203,7 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
         "parent_game": parent_game,
         "parent_entry_id": parent_entry_id,
         "parent_appid": parent_appid,
+        "parent_label": parent_label,
     }
 
 
