@@ -79,7 +79,7 @@
         {# Parent relationship row — contextual label, one-line layout. See
            library_detail.html for design notes. #}
         {% if parent_game %}
-        <dt><span class="tag-badge {{ parent_label_class }}">{{ parent_label }}</span></dt>
+        <dt>{{ parent_label }}</dt>
         <dd>
           {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
              hx-get="/library/entries/{{ parent_entry_id }}/detail"
