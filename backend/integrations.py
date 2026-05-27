@@ -587,35 +587,67 @@ def steam_enrichment_refresh(
     )
 
 
+_APP_PLACEHOLDER_RE = re.compile(r"^App \d+$")
+
+
 @router.post("/steam/backfill-display-names")
 def backfill_steam_display_names(
     request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Re-apply the _clean_title heuristic to every Steam game in the user's
-    library, EXCEPT those the user has manually edited (display_name_user_set).
-    Safe to run repeatedly — idempotent for unchanged titles, only touches
-    rows where the cleaned output differs from what's already stored."""
-    games = (
-        db.query(models.Game)
-        .join(models.GameRelease)
-        .join(models.UserLibraryEntry)
+    """Re-process every Steam game in the user's library:
+
+    1. If the title is the "App NNNNNN" sync placeholder AND we have cached
+       appdetails with a real name, replace the title with the real name.
+       (Same path the enrichment worker now follows, but applied retroactively
+       to entries that were enriched before that fix existed.)
+    2. Re-apply the _clean_title heuristic to compute display_name. Updates
+       display_name when the heuristic now produces a different / better
+       output than what's stored, or clears it when title no longer needs
+       cleaning.
+
+    Skips games where display_name_user_set is True — manual edits stick.
+    No network calls; reads from cached release.raw_data only."""
+    rows = (
+        db.query(models.Game, models.GameRelease)
+        .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
-            # Respect manual edits — only re-clean things the user hasn't touched.
             models.Game.display_name_user_set.is_(False),
         )
         .all()
     )
+    # Dedupe in case a game has multiple Steam releases — take the first
+    # release we see for each game (any of them carries appdetails).
+    games_by_id: dict[int, tuple[models.Game, models.GameRelease]] = {}
+    for game, release in rows:
+        games_by_id.setdefault(game.id, (game, release))
+
     updated = 0
-    for game in games:
+    for game, release in games_by_id.values():
+        changed = False
+
+        # 1. App-NNNN placeholder → real name from cached appdetails.
+        if _APP_PLACEHOLDER_RE.match(game.title):
+            details = (release.raw_data or {}).get("appdetails") or {}
+            real_name = (details.get("name") or "").strip()
+            if real_name and real_name != game.title:
+                game.title = real_name
+                changed = True
+
+        # 2. Re-apply title-cleaning heuristic.
         cleaned = steam._clean_title(game.title)
-        # New value (cleaned differs from title AND from any prior display_name)
-        # = real change worth committing.
         if cleaned != game.title and cleaned != game.display_name:
             game.display_name = cleaned
+            changed = True
+        elif cleaned == game.title and game.display_name is not None:
+            game.display_name = None
+            changed = True
+
+        if changed:
             updated += 1
         elif cleaned == game.title and game.display_name is not None:
             # Title no longer needs cleaning — drop the now-redundant display_name.

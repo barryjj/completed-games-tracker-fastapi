@@ -66,6 +66,28 @@ def _grid_cover_url(entry, orientation: str) -> str | None:
 templates.env.filters["grid_cover_url"] = _grid_cover_url
 
 
+def _playtime_human(minutes) -> str:
+    """Convert an integer playtime in minutes to a compact "Xh Ym" string.
+    Used in detail panes. Examples:
+      270434  → "4,507h 14m"
+      120     → "2h"
+      45      → "45m"
+      0/None  → ""
+    Keeps the thousands separator on hours so "4,507h" is readable for big
+    Dead-by-Daylight-style totals."""
+    if not minutes:
+        return ""
+    h, m = divmod(int(minutes), 60)
+    if h and m:
+        return f"{h:,}h {m}m"
+    if h:
+        return f"{h:,}h"
+    return f"{m}m"
+
+
+templates.env.filters["playtime_human"] = _playtime_human
+
+
 # How long Steam appdetails can sit before we consider it stale enough to
 # auto-refresh on next detail-pane open. 7 days balances "user sees current
 # data when they actually look" against burning API calls on every click.
