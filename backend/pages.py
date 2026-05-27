@@ -67,25 +67,20 @@ templates.env.filters["grid_cover_url"] = _grid_cover_url
 
 
 def _playtime_human(minutes) -> str:
-    """Convert an integer playtime in minutes to a readable string.
+    """Convert an integer playtime in minutes to a Steam-style readable string.
 
-    Format rules (chosen so big totals don't carry useless trailing minutes):
-      < 60 min:      "N min"     ("45 min")
-      < 100 hours:   "Nh Nm"     ("23h 14m") — minutes still useful at this scale
-      >= 100 hours:  "N hours"   ("4,507 hours") — minutes are noise here, drop them
-      0 / None:      ""
+    Format rules match Steam's library display convention:
+      < 60 min:   "N minutes"     ("45 minutes")
+      >= 60 min:  "X.Y hours"     ("4,507.2 hours") — one decimal, thousands sep
+      0 / None:   ""
     """
     if not minutes:
         return ""
     total = int(minutes)
     if total < 60:
-        return f"{total} min"
-    h, m = divmod(total, 60)
-    if h >= 100:
-        return f"{h:,} hours"
-    if m:
-        return f"{h}h {m}m"
-    return f"{h}h"
+        return f"{total} minutes"
+    hours = total / 60
+    return f"{hours:,.1f} hours"
 
 
 templates.env.filters["playtime_human"] = _playtime_human

@@ -560,48 +560,30 @@ def test_sync_updates_playtime_on_resync(client, db_session):
 def test_clean_title_strips_trademark_symbols():
     from backend.steam import _clean_title
 
-    assert _clean_title("ELDEN RING™") == "Elden Ring"
+    # Trademark/copyright glyphs stripped; casing preserved as-is.
+    assert _clean_title("ELDEN RING™") == "ELDEN RING"
     assert _clean_title("Halo®: Combat Evolved") == "Halo: Combat Evolved"
 
 
-def test_clean_title_all_caps_normalizes():
+def test_clean_title_preserves_casing():
+    """We used to title-case loud ALL-CAPS titles. Decision: leave Steam's
+    casing alone — the heuristic was inconsistent (only fired on whole-string
+    ALL CAPS, missed mixed-case DLC names) and the edit modal lets users
+    override display_name when they don't like a shouting title."""
     from backend.steam import _clean_title
 
-    assert _clean_title("ELDEN RING") == "Elden Ring"
-    assert _clean_title("RESIDENT EVIL 4") == "Resident Evil 4"
-    assert _clean_title("DEAD CELLS") == "Dead Cells"
-
-
-def test_clean_title_preserves_roman_numerals_and_acronyms():
-    from backend.steam import _clean_title
-
-    assert _clean_title("GRAND THEFT AUTO V") == "Grand Theft Auto V"
-    assert _clean_title("DARK SOULS III") == "Dark Souls III"
-    assert _clean_title("FINAL FANTASY VII REMAKE") == "Final Fantasy VII Remake"
-    assert _clean_title("FTL: FASTER THAN LIGHT") == "FTL: Faster Than Light"
-    assert _clean_title("CALL OF DUTY: BLACK OPS VIII") == "Call Of Duty: Black Ops VIII"
-
-
-def test_clean_title_handles_apostrophes():
-    from backend.steam import _clean_title
-
-    assert _clean_title("ASSASSIN'S CREED II") == "Assassin's Creed II"
-
-
-def test_clean_title_leaves_short_or_single_word_alone():
-    from backend.steam import _clean_title
-
-    assert _clean_title("DOOM") == "DOOM"
-    assert _clean_title("FTL") == "FTL"
-    assert _clean_title("GTA V") == "GTA V"  # too short for the heuristic to trigger
+    assert _clean_title("ELDEN RING") == "ELDEN RING"
+    assert _clean_title("ELDEN RING NIGHTREIGN The Forsaken Hollows") == "ELDEN RING NIGHTREIGN The Forsaken Hollows"
+    assert _clean_title("DOOM Eternal") == "DOOM Eternal"
+    assert _clean_title("Halo: Combat Evolved") == "Halo: Combat Evolved"
 
 
 def test_clean_title_is_idempotent():
     from backend.steam import _clean_title
 
-    # Running on already-cleaned title should be a no-op.
+    # Running on already-cleaned title is a no-op.
     assert _clean_title("Elden Ring") == "Elden Ring"
-    assert _clean_title("Dark Souls III") == "Dark Souls III"
+    assert _clean_title("ELDEN RING") == "ELDEN RING"
 
 
 def test_should_auto_hide_only_fires_for_dlc():
