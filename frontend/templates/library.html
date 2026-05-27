@@ -750,11 +750,16 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
     body: body.toString(),
   })
-  .then(function(r) { return r.text(); })
-  .then(function(html) {
-    var row = document.getElementById('library-entry-' + _editEntryId);
-    if (row) row.outerHTML = html;
+  .then(function(r) {
+    if (!r.ok) return;
+    // Reload the page so the change shows everywhere (list row, grid card,
+    // detail pane title, sidebar). The PATCH endpoint returns the list-row
+    // partial which doesn't fit a grid card slot, AND the user might be
+    // viewing this entry's detail pane while the list/grid behind doesn't
+    // include this entry at all (e.g. opened from a parent's DLC list).
+    // Reload is the cheap-but-correct path.
     _editModal.hide();
+    location.reload();
   });
 });
 </script>

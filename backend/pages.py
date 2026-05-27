@@ -67,22 +67,25 @@ templates.env.filters["grid_cover_url"] = _grid_cover_url
 
 
 def _playtime_human(minutes) -> str:
-    """Convert an integer playtime in minutes to a compact "Xh Ym" string.
-    Used in detail panes. Examples:
-      270434  → "4,507h 14m"
-      120     → "2h"
-      45      → "45m"
-      0/None  → ""
-    Keeps the thousands separator on hours so "4,507h" is readable for big
-    Dead-by-Daylight-style totals."""
+    """Convert an integer playtime in minutes to a readable string.
+
+    Format rules (chosen so big totals don't carry useless trailing minutes):
+      < 60 min:      "N min"     ("45 min")
+      < 100 hours:   "Nh Nm"     ("23h 14m") — minutes still useful at this scale
+      >= 100 hours:  "N hours"   ("4,507 hours") — minutes are noise here, drop them
+      0 / None:      ""
+    """
     if not minutes:
         return ""
-    h, m = divmod(int(minutes), 60)
-    if h and m:
-        return f"{h:,}h {m}m"
-    if h:
-        return f"{h:,}h"
-    return f"{m}m"
+    total = int(minutes)
+    if total < 60:
+        return f"{total} min"
+    h, m = divmod(total, 60)
+    if h >= 100:
+        return f"{h:,} hours"
+    if m:
+        return f"{h}h {m}m"
+    return f"{h}h"
 
 
 templates.env.filters["playtime_human"] = _playtime_human
@@ -182,22 +185,9 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
 
     # Compute a "subtitle" for DLC display_title — what's left after stripping
-    # the parent's title from the front. Steam DLC titles usually embed the
-    # parent name as a prefix ("ELDEN RING NIGHTREIGN The Forsaken Hollows"),
-    # so the detail pane title bar can render as
-    #     <linked parent> : <subtitle>
-    # without duplicating the parent's name. Falls back to the full title
-    # when no parent prefix is detected (rare, but possible for oddly-named
-    # DLC). For non-DLC entries this is None.
-    dlc_subtitle = None
-    if parent_game:
-        title = game.display_title or ""
-        parent_title = parent_game.display_title or ""
-        if parent_title and title.lower().startswith(parent_title.lower()):
-            stripped = title[len(parent_title) :].lstrip(" :-").strip()
-            dlc_subtitle = stripped or title
-        else:
-            dlc_subtitle = title
+    # Parent appid — shown alongside the parent name in the "Parent App" row
+    # of the metadata block. Just the Steam external_id; safe to be None.
+    parent_appid = parent_release.external_id if parent_release else None
 
     return {
         "header_url": header_url,
@@ -208,7 +198,7 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
         "fallback_logo_url": fallback_logo_url,
         "parent_game": parent_game,
         "parent_entry_id": parent_entry_id,
-        "dlc_subtitle": dlc_subtitle,
+        "parent_appid": parent_appid,
     }
 
 

@@ -15,9 +15,8 @@
      parent link here swaps THIS pane (completion-detail-content) to the
      parent's LIBRARY detail — useful since we don't have a "completion
      detail of the parent game" concept. #}
-  <h5 class="offcanvas-title cgt-detail-title">
-    {% if parent_game %}{{ dlc_subtitle }}{% else %}{{ game.display_title }}{% endif %}
-  </h5>
+  {# See library_detail.html for why the title shows the full display_title. #}
+  <h5 class="offcanvas-title cgt-detail-title">{{ game.display_title }}</h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
 
@@ -54,7 +53,7 @@
       <h6 class="cgt-detail-block__heading">This completion</h6>
       <dl class="row small mb-0">
         <dt class="col-5 text-secondary fw-normal">Completed</dt>
-        <dd class="col-7 mb-1">{{ completion.completed_at.strftime("%Y-%m-%d") }}</dd>
+        <dd class="col-7 mb-1">{{ completion.completed_at.strftime("%b %d, %Y") }}</dd>
 
         {% if completion.playthroughs %}
         <dt class="col-5 text-secondary fw-normal">Playthroughs</dt>
@@ -62,7 +61,7 @@
         {% endif %}
 
         <dt class="col-5 text-secondary fw-normal">Logged</dt>
-        <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%Y-%m-%d") }}</span></dd>
+        <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%b %d, %Y") }}</span></dd>
       </dl>
       {% if completion.notes %}
       <div class="mt-2">
@@ -75,16 +74,17 @@
     <div class="mb-3">
       <h6 class="cgt-detail-block__heading">Library entry</h6>
       <dl class="row small mb-0">
-        {# For DLC, lead with the parent breadcrumb (clickable when the user
-           owns the parent). Mirrors the library detail pane's pattern. #}
+        {# For DLC, lead with the parent breadcrumb + appid. Clickable when
+           the user owns the parent. Mirrors the library detail pane. #}
         {% if parent_game %}
-        <dt class="col-5 text-secondary fw-normal">Part of</dt>
+        <dt class="col-5 text-secondary fw-normal">Parent App</dt>
         <dd class="col-7 mb-1">
           {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
              hx-get="/library/entries/{{ parent_entry_id }}/detail"
              hx-target="#completion-detail-content"
              hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
           %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
+          {% if parent_appid %}<code class="text-secondary ms-1 small">{{ parent_appid }}</code>{% endif %}
         </dd>
         {% endif %}
 

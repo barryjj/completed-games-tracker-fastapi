@@ -20,18 +20,17 @@
 {% endif %}
 
 <div class="offcanvas-header border-bottom">
-  {# Title bar shows the entry's OWN identifier.
-       DLC:        the dlc_subtitle (DLC name minus parent prefix)
-                   — e.g. "The Forsaken Hollows"
-       Base game:  display_title — e.g. "ELDEN RING NIGHTREIGN"
-     The full breadcrumb (linked-parent : subtitle) lives in a metadata row
-     below the hero — not in the title bar — so the title bar stays scannable
-     even on narrow panes.
-     The header bar also holds the close button + back-arrow (injected by
-     app.js when the pane stack has > 1 entry). #}
-  <h5 class="offcanvas-title cgt-detail-title">
-    {% if parent_game %}{{ dlc_subtitle }}{% else %}{{ game.display_title }}{% endif %}
-  </h5>
+  {# Title bar shows the entry's full display_title. For DLC, the parent
+     identity moves into a "Parent App" metadata row below the hero so the
+     title bar doesn't have to carry the whole breadcrumb. The header bar
+     also holds the close button + back-arrow (injected by app.js when the
+     pane stack has > 1 entry). #}
+  {# Full display_title; previous "subtitle = title minus parent prefix"
+     attempt produced weird results on Steam crossover DLCs (e.g. "Dead by
+     Daylight x Attack on Titan: ArmoredPack" minus parent "Dead by Daylight"
+     became "x Attack on Titan: ArmoredPack" — title starting with 'x' makes
+     no sense). Just show what Steam gives us; CSS ellipsis handles overflow. #}
+  <h5 class="offcanvas-title cgt-detail-title">{{ game.display_title }}</h5>
   <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
 
@@ -71,32 +70,30 @@
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
 
-    {# Metadata. Dates rendered ISO (YYYY-MM-DD) to match the list-view date
-       column. "Added to tracker" disambiguates from Steam's release date or
-       "I started playing" — this is just when the entry first showed up in
-       this app via sync or manual add. #}
+    {# Metadata. Dates rendered American long-form (May 23, 2026). When we
+       eventually add a locale preference this becomes user-configurable. The
+       "Added to tracker" row was dropped — it captures when our sync first
+       saw the entry, not anything the user cares about (we don't track
+       release date or first-played which are the dates that matter). #}
     <dl class="row mb-3 small">
-      {# For DLC, lead the metadata with the parent breadcrumb — gives the
-         user the full context ("this is The Forsaken Hollows, part of Elden
-         Ring Nightreign") without putting that whole string in the title bar.
-         Parent name is clickable when the user owns the parent. #}
+      {# For DLC, lead the metadata with the parent breadcrumb (includes the
+         parent's Steam appid alongside). Clickable when the user owns the
+         parent in their library. #}
       {% if parent_game %}
-      <dt class="col-5 text-secondary fw-normal">Part of</dt>
+      <dt class="col-5 text-secondary fw-normal">Parent App</dt>
       <dd class="col-7 mb-1">
         {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
            hx-get="/library/entries/{{ parent_entry_id }}/detail"
            hx-target="#library-detail-content"
            hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
         %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
+        {% if parent_appid %}<code class="text-secondary ms-1 small">{{ parent_appid }}</code>{% endif %}
       </dd>
       {% endif %}
 
-      <dt class="col-5 text-secondary fw-normal">Added to tracker</dt>
-      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.imported_at.isoformat() }}">{{ entry.imported_at.strftime("%Y-%m-%d") }}</span></dd>
-
       {% if entry.last_played_at %}
       <dt class="col-5 text-secondary fw-normal">Last played</dt>
-      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%Y-%m-%d") }}</span></dd>
+      <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%b %d, %Y") }}</span></dd>
       {% endif %}
 
       {% if entry.playtime_minutes %}
