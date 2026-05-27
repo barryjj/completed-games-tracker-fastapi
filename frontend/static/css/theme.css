@@ -905,3 +905,24 @@ body:has(.cgt-sticky-actions) {
 .offcanvas .offcanvas-body > .p-3:last-child {
   padding-bottom: 2rem !important;
 }
+
+/* Offcanvas content wrapper.
+   Bootstrap's offcanvas relies on a direct-child .offcanvas-body with
+   flex-grow:1; overflow-y:auto to make tall content scroll inside the
+   pane. We wrap the swapped content in #library-detail-content /
+   #completion-detail-content (so the resize-handle stays put across HTMX
+   swaps) which breaks that chain — .offcanvas-body becomes a grandchild,
+   loses the flex magic, and the bottom of the content drops below the
+   viewport with no way to scroll to it. (User-reported "unending page".)
+
+   Fix: make the content wrapper itself a flex item that fills the
+   remaining height. The .offcanvas-body inside it still has overflow-y:auto
+   so scrolling works inside the wrapped chain. */
+.offcanvas-end > #library-detail-content,
+.offcanvas-end > #completion-detail-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}

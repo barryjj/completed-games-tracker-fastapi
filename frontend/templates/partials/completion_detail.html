@@ -84,7 +84,13 @@
              hx-target="#completion-detail-content"
              hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
           %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
-          {% if parent_appid %}<code class="text-secondary ms-1 small">{{ parent_appid }}</code>{% endif %}
+          {% if parent_appid %}
+          <div class="mt-1">
+            <code>{{ parent_appid }}</code>
+            <a href="https://store.steampowered.com/app/{{ parent_appid }}/"
+               target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+          </div>
+          {% endif %}
         </dd>
         {% endif %}
 
@@ -106,9 +112,10 @@
       </dl>
     </div>
 
-    {# Description as plain prose, no block frame. #}
+    {# Description wrapped in the section block for visual parity with the
+       other sections (Completions, Other completions, DLC list). #}
     {% if appdetails.short_description %}
-    <div class="mb-3">
+    <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="mb-0">{{ appdetails.short_description }}</p>
     </div>
