@@ -184,14 +184,21 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     # the metadata block. Just the Steam external_id; safe to be None.
     parent_appid = parent_release.external_id if parent_release else None
 
-    # Contextual label for the parent relationship:
-    #   - DLC entry        → "DLC for"      (this DLC is for that base game)
-    #   - in-collection    → "In collection"(this entry sits inside that collection)
-    # Tells the user *what kind of relationship* this entry has with the
-    # parent, instead of the older catch-all "Part of" / "Parent App".
+    # Contextual label + chip class for the parent relationship.
+    # The template uses these to render the label as a colored chip
+    # ([DLC FOR] peach / [IN COLLECTION] teal) instead of plain muted text,
+    # so the relationship has the same visual punch as the entry-type chips
+    # in the badges row above. parent_label_class maps to the existing
+    # .tag-badge variant for that color.
     parent_label = None
+    parent_label_class = None
     if parent_game:
-        parent_label = "DLC for" if game.is_dlc else "In collection"
+        if game.is_dlc:
+            parent_label = "DLC for"
+            parent_label_class = "tag-dlc"
+        else:
+            parent_label = "In collection"
+            parent_label_class = "tag-in-collection"
 
     return {
         "header_url": header_url,
@@ -204,6 +211,7 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
         "parent_entry_id": parent_entry_id,
         "parent_appid": parent_appid,
         "parent_label": parent_label,
+        "parent_label_class": parent_label_class,
     }
 
 
