@@ -87,7 +87,13 @@
            hx-target="#library-detail-content"
            hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
         %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
-        {% if parent_appid %}<code class="text-secondary ms-1 small">{{ parent_appid }}</code>{% endif %}
+        {% if parent_appid %}
+        <div class="mt-1">
+          <code>{{ parent_appid }}</code>
+          <a href="https://store.steampowered.com/app/{{ parent_appid }}/"
+             target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+        </div>
+        {% endif %}
       </dd>
       {% endif %}
 
@@ -113,11 +119,11 @@
       {% endif %}
     </dl>
 
-    {# Description is flowing prose, doesn't need a block frame — leave it
-       as plain text under a small heading. (Lists / data blocks below keep
-       the .cgt-detail-block treatment.) #}
+    {# All "sections" (Description, DLC list, Completions) use the same
+       .cgt-detail-block treatment so they read as a uniform stack of
+       distinct sections rather than a mix of styles. #}
     {% if appdetails.short_description %}
-    <div class="mb-3">
+    <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="mb-0">{{ appdetails.short_description }}</p>
     </div>

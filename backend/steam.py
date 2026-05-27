@@ -163,12 +163,16 @@ def _should_auto_hide(title: str, appdetails: dict | None, is_dlc: bool) -> bool
 
 
 def _clean_title(title: str) -> str:
-    """Return title with trademark/copyright symbols stripped, whitespace
-    normalised, and SHOUTING ALL CAPS multi-word titles title-cased. Idempotent."""
-    cleaned = _JUNK_RE.sub("", title).strip()
-    if _is_loud_caps(cleaned):
-        cleaned = _smart_title_case(cleaned)
-    return cleaned
+    """Return title with trademark/copyright symbols stripped and whitespace
+    normalised. Idempotent.
+
+    We used to also title-case loud ALL-CAPS titles ("ELDEN RING NIGHTREIGN"
+    → "Elden Ring Nightreign") but that produced inconsistent results when
+    titles mixed cases (only whole-string ALL CAPS triggered, so DLC names
+    like "ELDEN RING NIGHTREIGN The Forsaken Hollows" passed through
+    unchanged). Decision: leave Steam's casing alone. If a user dislikes a
+    SHOUTING title, the edit modal lets them override display_name."""
+    return _JUNK_RE.sub("", title).strip()
 
 
 logger = logging.getLogger(__name__)
