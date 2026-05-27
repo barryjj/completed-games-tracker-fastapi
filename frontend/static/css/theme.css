@@ -895,3 +895,13 @@ body:has(.cgt-sticky-actions) {
 [hidden] {
   display: none !important;
 }
+
+/* Detail offcanvas body: ensure it scrolls when content overflows, and has
+   enough bottom breathing room that the Edit/More action row isn't pinned
+   against the viewport edge or clipped by anything. */
+.offcanvas .offcanvas-body {
+  overflow-y: auto;
+}
+.offcanvas .offcanvas-body > .p-3:last-child {
+  padding-bottom: 2rem !important;
+}
