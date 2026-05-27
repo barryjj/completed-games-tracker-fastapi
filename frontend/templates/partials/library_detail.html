@@ -85,9 +85,12 @@
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
 
-    {# Timestamps. local-time JS rewrites data-utc into the user's locale. #}
+    {# Metadata. Dates rendered ISO (YYYY-MM-DD) to match the list-view date
+       column. "Added to tracker" disambiguates from Steam's release date or
+       "I started playing" — this is just when the entry first showed up in
+       this app via sync or manual add. #}
     <dl class="row mb-3 small">
-      <dt class="col-5 text-secondary fw-normal">Added</dt>
+      <dt class="col-5 text-secondary fw-normal">Added to tracker</dt>
       <dd class="col-7 mb-1"><span class="local-time" data-utc="{{ entry.imported_at.isoformat() }}">{{ entry.imported_at.strftime("%Y-%m-%d") }}</span></dd>
 
       {% if entry.last_played_at %}
@@ -97,7 +100,7 @@
 
       {% if entry.playtime_minutes %}
       <dt class="col-5 text-secondary fw-normal">Playtime</dt>
-      <dd class="col-7 mb-1">{{ "{:,}".format(entry.playtime_minutes) }} min</dd>
+      <dd class="col-7 mb-1">{{ entry.playtime_minutes | playtime_human }}</dd>
       {% endif %}
 
       {% if release.external_id %}
@@ -112,8 +115,11 @@
       {% endif %}
     </dl>
 
+    {# Description is flowing prose, doesn't need a block frame — leave it
+       as plain text under a small heading. (Lists / data blocks below keep
+       the .cgt-detail-block treatment.) #}
     {% if appdetails.short_description %}
-    <div class="cgt-detail-block mb-3">
+    <div class="mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="mb-0">{{ appdetails.short_description }}</p>
     </div>
@@ -132,10 +138,15 @@
         <table class="table table-sm table-hover mb-0 align-middle">
           <tbody>
             {% for child in child_entries %}
+            {% set _thumb = child | grid_cover_url('grid_h') %}
             <tr class="cgt-detail-child-row"
                 hx-get="/library/entries/{{ child.id }}/detail"
                 hx-target="#library-detail-content"
                 hx-swap="innerHTML">
+              <td class="cgt-list-thumb-cell">
+                {% if _thumb %}<img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy"
+                                   onerror="this.remove()">{% endif %}
+              </td>
               <td>
                 {{ child.release.game.display_title }}
                 {% if child.is_hidden %}<small class="text-secondary ms-1">(hidden)</small>{% endif %}
