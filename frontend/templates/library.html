@@ -422,18 +422,42 @@ function applySgdbCover(entryId, imageType, url) {
           swap: 'innerHTML',
         });
       } else {
-        // v/h covers live in the grid / list view — update the card image
-        // in-place without touching the open detail pane.
-        var card = document.getElementById('library-entry-' + entryId);
-        if (card) {
-          var coverImg = card.querySelector('img.cgt-library-card__cover-img, .cgt-library-card__cover img');
-          if (coverImg) { coverImg.src = url; }
-          var thumbImg = card.querySelector('img.cgt-list-row-thumb');
-          if (thumbImg) { thumbImg.src = url; }
+        // v/h covers live in the grid/list. Re-render the card/row via a
+        // server-side swap so placeholder→cover transitions work, not just
+        // existing-img updates. Detail pane stays open and untouched.
+        var viewMode = new URLSearchParams(window.location.search).get('view_mode') || 'list';
+        if (document.getElementById('library-entry-' + entryId)) {
+          htmx.ajax(
+            'GET',
+            '/library/entries/' + entryId + '/card?view_mode=' + encodeURIComponent(viewMode),
+            { target: '#library-entry-' + entryId, swap: 'outerHTML' }
+          );
         }
       }
     }
   });
+}
+
+// Auto-fetch hero: called from cgtHeroFailed when the hero img 404s.
+// Mirrors cgtAutoFetchLogo — fires a background POST to store the SGDB top
+// result as hero_url_override, then un-hides/un-collapses the hero block and
+// sets img.src so the hero appears without a full page reload.
+function cgtAutoFetchHero(img, entryId) {
+  img.onerror = null;
+  fetch('/library/entries/' + entryId + '/auto-fetch-hero', {method: 'POST'})
+    .then(function(r) {
+      if (r.ok && r.status === 200) {
+        return r.json().then(function(data) {
+          if (data.url) {
+            img.style.display = '';
+            var block = img.closest('.cgt-detail-hero');
+            if (block) block.style.display = '';
+            img.src = data.url;
+          }
+        });
+      }
+    })
+    .catch(function() { /* silent */ });
 }
 
 // Auto-fetch logo: called from onerror on the hero logo img when it 404s.

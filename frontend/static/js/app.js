@@ -29,6 +29,8 @@ window.cgtHeroBlockCheck = function(img) {
 // logic (try data-fallback URL first), but on terminal failure hides only the
 // hero img rather than removing the whole block — so a logo overlay can still
 // show. Block is collapsed via cgtHeroBlockCheck only when both are gone.
+// If data-cgt-entry-id is set and cgtAutoFetchHero is registered (library
+// page), fires a background SGDB hero fetch just like logos do.
 window.cgtHeroFailed = function(img) {
   var fb = img.dataset.fallback;
   if (fb && img.src !== fb) {
@@ -38,6 +40,10 @@ window.cgtHeroFailed = function(img) {
   }
   img.style.display = 'none';
   window.cgtHeroBlockCheck(img);
+  if (typeof window.cgtAutoFetchHero === 'function') {
+    var entryId = img.dataset.cgtEntryId;
+    if (entryId) window.cgtAutoFetchHero(img, parseInt(entryId, 10));
+  }
 };
 
 window.cgtCoverFallback = function(img) {
