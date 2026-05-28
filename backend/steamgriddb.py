@@ -221,6 +221,34 @@ def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEnt
         return None
 
 
+def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEntry) -> str | None:
+    """Try to fetch a hero image for a single entry from SGDB and store it as
+    hero_url_override. Returns the URL on success, None if nothing found.
+
+    Mirrors auto_fetch_logo — called automatically when the detail pane has no
+    hero URL. The user can open the hero picker afterwards to swap it."""
+    if not user.steamgriddb_api_key:
+        return None
+    if entry.hero_url_override:
+        return entry.hero_url_override
+    try:
+        sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
+        if not sgdb_game:
+            return None
+        heroes = get_heroes_for_game(user.steamgriddb_api_key, sgdb_game["id"])
+        if not heroes:
+            return None
+        url = heroes[0].get("url")
+        if not url:
+            return None
+        entry.hero_url_override = url
+        db.commit()
+        return url
+    except Exception as e:
+        logger.warning("SGDB auto-fetch hero failed for entry %s: %s", entry.id, e)
+        return None
+
+
 def bulk_fill_missing(db: Session, user: models.User, image_type: str) -> dict:
     """Walk every visible library entry for `user`, and for each one missing
     art of the given type: hit SGDB, take the top candidate, and write it to

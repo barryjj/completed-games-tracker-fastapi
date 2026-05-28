@@ -45,6 +45,7 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_hero_url if hero_url else '' }}"
+         data-cgt-entry-id="{{ entry.id }}"
          onerror="cgtHeroFailed(this)">
     {% if logo_url or fallback_logo_url %}
     <img class="cgt-detail-hero__logo"
@@ -54,16 +55,24 @@
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
          onerror="this.style.display='none'; cgtHeroBlockCheck(this); cgtAutoFetchLogo(this, {{ entry.id }});">
     {% elif current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
-    {# No logo URL at all (non-Steam entry or missing CDN art) and no override
-       yet — fire a background SGDB fetch on pane open, same pattern as the
-       stale-metadata refresh trigger. #}
+    {# No logo URL at all — fire a background SGDB fetch on pane open.
+       On success (200), reload the pane so the logo appears this session. #}
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
          hx-trigger="load delay:800ms"
          hx-swap="none"
+         hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
          style="display:none;"></div>
     {% endif %}
   </div>
-  {% endif %}
+{% elif current_user and current_user.steamgriddb_api_key and not entry.hero_url_override %}
+{# No hero URL at all — fire a background SGDB hero fetch on pane open.
+   On success, reload the pane so hero + logo appear this session. #}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
+     hx-trigger="load delay:1000ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
 
   {# Content padding — pushes everything below the hero in from the edges.
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}

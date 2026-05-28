@@ -1153,6 +1153,66 @@ def clear_cover_override(
     )
 
 
+@router.get("/library/entries/{entry_id}/card")
+def library_entry_card(
+    entry_id: int,
+    view_mode: str = Query("list"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the rendered card or list row for a single library entry.
+
+    Used by the SGDB cover picker to update the background grid/list in-place
+    after a v/h cover is applied — avoids a full page reload while the detail
+    pane is still open."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    _attach_parent_fallbacks(db, [entry])
+    tmpl = "partials/library_card.html" if view_mode in ("grid_v", "grid_h") else "partials/library_row.html"
+    return templates.TemplateResponse(
+        tmpl,
+        {"request": request, "entry": entry, "view_mode": view_mode},
+    )
+
+
+@router.post("/library/entries/{entry_id}/auto-fetch-hero")
+def auto_fetch_hero(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Auto-fetch a hero image from SGDB when the entry has no hero URL.
+    Mirrors auto-fetch-logo. Returns 200 + {"url": ...} on success, 204 if
+    nothing found. The caller refreshes the detail pane to show the result."""
+    from . import steamgriddb as sgdb
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    url = sgdb.auto_fetch_hero(db, current_user, entry)
+    if url:
+        return JSONResponse({"url": url})
+    return Response(status_code=204)
+
+
 @router.post("/library/entries/{entry_id}/auto-fetch-logo")
 def auto_fetch_logo(
     entry_id: int,
