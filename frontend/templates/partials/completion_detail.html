@@ -36,7 +36,7 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="cgtCoverFallback(this)">
+         onerror="this.style.display='none'">
     {% endif %}
   </div>
   {% endif %}
