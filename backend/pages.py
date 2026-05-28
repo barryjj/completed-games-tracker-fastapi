@@ -194,10 +194,10 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     parent_label_class = None
     if parent_game:
         if game.is_dlc:
-            parent_label = "DLC for"
+            parent_label = "Base Game"
             parent_label_class = "tag-dlc"
         else:
-            parent_label = "In collection"
+            parent_label = "Collection"
             parent_label_class = "tag-in-collection"
 
     return {
