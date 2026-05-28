@@ -5,7 +5,8 @@ html[data-bs-theme="dark"] {
   --ctp-overlay0: #6c7086; --ctp-text:     #cdd6f4; --ctp-subtext:  #a6adc8;
   --ctp-mauve:    #cba6f7; --ctp-lavender: #b4befe; --ctp-blue:     #89b4fa;
   --ctp-green:    #a6e3a1; --ctp-peach:    #fab387; --ctp-red:      #f38ba8;
-  --ctp-yellow:   #f9e2af;
+  --ctp-yellow:   #f9e2af; --ctp-teal:     #94e2d5; --ctp-sky:      #89dceb;
+  --ctp-sapphire: #74c7ec;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #1e1e2e;
@@ -65,7 +66,8 @@ html[data-bs-theme="light"] {
   --ctp-overlay0: #9ca0b0; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
   --ctp-green:    #40a02b; --ctp-peach:    #fe640b; --ctp-red:      #d20f39;
-  --ctp-yellow:   #df8e1d;
+  --ctp-yellow:   #df8e1d; --ctp-teal:     #179299; --ctp-sky:      #04a5e5;
+  --ctp-sapphire: #209fb5;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #eff1f5;
@@ -184,6 +186,12 @@ html[data-bs-theme="light"] .btn-success {
   --bs-btn-hover-border-color: var(--ctp-mauve);
   --bs-btn-hover-color:        var(--ctp-text);
   --bs-btn-active-bg:          var(--ctp-surface0);
+}
+/* In Latte, surface1 is very pale — buttons become nearly invisible.
+   Step up to overlay1 for a legible border in light mode. */
+html[data-bs-theme="light"] .btn-outline-secondary {
+  --bs-btn-border-color:       var(--ctp-overlay1);
+  --bs-btn-hover-bg:           var(--ctp-surface1);
 }
 .btn-danger {
   --bs-btn-bg:                    var(--ctp-red);
@@ -645,13 +653,12 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
 }
 
 /* ─── List view: row thumbnail ──────────────────────────────────────────── */
-/* Small horizontal thumbnail in the first cell of each library row. Visual
-   scan vastly improves; rows get a few px taller. No fallback for entries
-   without artwork — empty space rather than a blank rectangle. */
+/* Horizontal thumbnail in the dedicated thumb column of each list row.
+   Sized to fit Steam header.jpg aspect ratio (460:215 ≈ 2.14:1). */
 .cgt-list-row-thumb {
   display: inline-block;
-  width: 64px;
-  height: 30px;
+  width: 100px;
+  height: 47px;
   margin-right: 0.5rem;
   vertical-align: middle;
   background-color: var(--ctp-crust);
@@ -740,15 +747,19 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   box-shadow: 0 0 0 0.2rem rgba(203, 166, 247, 0.25);  /* mauve at 25% */
 }
 
-/* Dedicated thumbnail column in list views. Fixed-width so titles in the
-   next column don't wrap around the image. */
+/* Dedicated thumbnail column in list views. Sized to hug the thumb image
+   (~108px including a touch of padding either side) so we're not wasting
+   horizontal space on the table. Tightened from the original 80px-around-
+   a-64px-thumb to 108px-around-a-100px-thumb. */
 .cgt-list-thumb-cell {
-  width: 80px;
+  width: 1%;  /* shrink-to-content — table layout gives the rest to title col */
+  padding-right: 4px;
+  padding-left: 4px;
   white-space: nowrap;
   vertical-align: middle;
 }
 .cgt-list-thumb-cell .cgt-list-row-thumb {
-  margin-right: 0;  /* no need for spacer margin now that it's in its own cell */
+  margin-right: 0;
   vertical-align: middle;
 }
 
@@ -777,6 +788,122 @@ body:has(.cgt-sticky-actions) {
   padding-bottom: 5rem;
 }
 
+/* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
+
+/* Title bar layout for the detail pane.
+     - DLC:       <linked-parent> : <subtitle>
+                  Parent reads muted (subtext color) and is clickable —
+                  swaps the pane to the parent's detail; the back-arrow
+                  injected by app.js will then pop back here.
+                  Subtitle (DLC's display_title minus parent prefix) gets
+                  the full title color so it has the visual weight.
+     - Base game: just display_title.
+   Single-line with ellipsis when the pane is narrow. */
+.cgt-detail-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.cgt-detail-title__parent {
+  color: var(--ctp-subtext);
+  text-decoration: none;
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+.cgt-detail-title__parent:hover {
+  color: var(--ctp-mauve);
+  text-decoration: underline;
+}
+/* When the user doesn't own the parent in their library, the parent name
+   is rendered as plain muted text — nothing to navigate to. */
+.cgt-detail-title__parent--unlinked {
+  cursor: default;
+}
+.cgt-detail-title__parent--unlinked:hover {
+  color: var(--ctp-subtext);
+  text-decoration: none;
+}
+.cgt-detail-title__separator {
+  color: var(--ctp-overlay0);
+  margin: 0 0.15em;
+}
+
+/* Hero block: full-bleed image with a soft gradient overlay at the bottom
+   so the logo (overlaid bottom-left) reads cleanly against any cover. */
+.cgt-detail-hero {
+  position: relative;
+  width: 100%;
+  background-color: var(--ctp-crust);
+  aspect-ratio: 96 / 31;  /* matches Steam's library_hero ~1920x620 */
+  overflow: hidden;
+}
+.cgt-detail-hero__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.cgt-detail-hero::after {
+  /* Gradient that fades from transparent (top) to dark (bottom) so the logo
+     overlay is readable on hero images that aren't already dark at the bottom. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+.cgt-detail-hero__logo {
+  position: absolute;
+  left: 16px;
+  bottom: 12px;
+  max-width: 45%;
+  max-height: 60%;
+  object-fit: contain;
+  z-index: 1;
+  /* Drop shadow so the logo reads even when the bottom of the hero is busy. */
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+}
+
+/* Content blocks within the pane body. Each section (Description, DLC list,
+   Completions, etc.) wraps in this so they read as distinct sections rather
+   than a wall of definition lists. Subtle tinted background distinguishes
+   without being heavy. */
+.cgt-detail-block {
+  background-color: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 6px;
+  padding: 12px 14px;
+}
+.cgt-detail-block__heading {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-subtext);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+/* Description text inside its block — top border separates it from the heading. */
+.cgt-detail-description {
+  border-top: 1px solid var(--ctp-surface0);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--ctp-subtext1);
+  line-height: 1.5;
+}
+
+/* Inside the child-list block, drop the default table-cell padding since
+   the surrounding block already provides breathing room. */
+.cgt-detail-block .table {
+  margin-bottom: 0;
+  --bs-table-bg: transparent;
+}
+.cgt-detail-block .table > tbody > tr > td {
+  border-color: var(--ctp-surface0);
+}
+
 /* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */
 /* The drawer toggles (Filters / View buttons) flip `hidden` on a div that
    also has `.d-flex` or `.row`, both of which set `display: flex !important`
@@ -785,4 +912,67 @@ body:has(.cgt-sticky-actions) {
    expected behavior universally — anywhere we set `hidden`, it hides. */
 [hidden] {
   display: none !important;
+}
+
+/* Detail-pane offcanvas layout. Three-part stack inside #*-detail-content:
+     1. .offcanvas-header  — fixed top (Title + close button)
+     2. .offcanvas-body    — scrollable middle (hero + metadata + sections)
+     3. .cgt-detail-actions— pinned bottom (Edit + More dropdown)
+
+   #library-detail-content / #completion-detail-content wraps the swapped
+   content so the resize-handle persists across HTMX swaps. That wrapper
+   needs to be a flex column with min-height:0 so the body's flex-grow
+   actually fills the middle and the action footer pins to the bottom. */
+.offcanvas-end > #library-detail-content,
+.offcanvas-end > #completion-detail-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.offcanvas .offcanvas-body {
+  overflow-y: auto;
+  /* flex-grow:1 (Bootstrap default) lets the body fill all vertical space
+     not consumed by the header above and the actions footer below. */
+  flex: 1 1 auto;
+}
+
+/* Sticky action footer at the bottom of the detail pane. Flex-shrink:0
+   keeps it from collapsing when the body has a lot of content. Same bg
+   as the offcanvas so it reads as a pinned bar rather than overlapping. */
+.cgt-detail-actions {
+  flex-shrink: 0;
+  background-color: var(--bs-offcanvas-bg, var(--ctp-base));
+  border-top-color: var(--ctp-surface1) !important;
+}
+
+/* Detail-pane metadata dl. Replaces Bootstrap's col-5/col-7 layout (which
+   left a huge gap between short labels and their values) with a CSS Grid
+   that auto-sizes labels to their content width. The widest label sets
+   the column width, so labels still align across rows. */
+.cgt-detail-meta {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.35rem 1rem;
+  margin-bottom: 1rem;
+}
+.cgt-detail-meta dt {
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-overlay1);
+  margin: 0;
+  align-self: baseline;
+  white-space: nowrap;
+}
+.cgt-detail-meta dt::after {
+  content: ':';
+  color: var(--ctp-overlay0);
+  margin-left: 0.05em;
+}
+.cgt-detail-meta dd {
+  margin: 0;
+  min-width: 0; /* lets long values wrap inside the grid cell */
 }

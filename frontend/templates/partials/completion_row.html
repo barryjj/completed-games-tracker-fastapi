@@ -8,7 +8,7 @@
   </td>
   <td>{{ completion.library_entry.release.game.display_title }}</td>
   <td><span class="tag-badge {{ completion.library_entry.release.platform | platform_color }}">{{ completion.library_entry.release.platform }}</span></td>
-  <td>{{ completion.completed_at.strftime("%Y-%m-%d") }}</td>
+  <td class="text-nowrap">{{ completion.completed_at.strftime("%B %-d, %Y") }}</td>
   <td>{{ completion.playthroughs or "" }}</td>
   <td>{{ completion.notes or "" }}</td>
   <td class="text-end text-nowrap">

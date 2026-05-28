@@ -233,7 +233,7 @@
           >Auto-hide non-games</button>
         </div>
         <div>
-          <p class="text-secondary mb-1"><small>Re-apply the display-name cleanup heuristic (strips ™/®/©, normalizes ALL CAPS, etc.) across every Steam game in your library. Useful after we improve the heuristic — already-cleaned entries don't get re-cleaned at sync time. Skips any entry whose display name you've manually edited.</small></p>
+          <p class="text-secondary mb-1"><small>Re-apply the display-name cleanup heuristic AND fix any "App NNNNNN" placeholder titles by pulling the real name from cached Steam metadata. Useful after we improve the heuristic, and to catch entries whose appid wasn't in the catalog cache at sync time. Skips any entry whose display name you've manually edited. No network calls.</small></p>
           <button
             class="btn btn-outline-secondary btn-sm"
             hx-post="/integrations/steam/backfill-display-names"

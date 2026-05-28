@@ -560,48 +560,30 @@ def test_sync_updates_playtime_on_resync(client, db_session):
 def test_clean_title_strips_trademark_symbols():
     from backend.steam import _clean_title
 
-    assert _clean_title("ELDEN RING™") == "Elden Ring"
+    # Trademark/copyright glyphs stripped; casing preserved as-is.
+    assert _clean_title("ELDEN RING™") == "ELDEN RING"
     assert _clean_title("Halo®: Combat Evolved") == "Halo: Combat Evolved"
 
 
-def test_clean_title_all_caps_normalizes():
+def test_clean_title_preserves_casing():
+    """We used to title-case loud ALL-CAPS titles. Decision: leave Steam's
+    casing alone — the heuristic was inconsistent (only fired on whole-string
+    ALL CAPS, missed mixed-case DLC names) and the edit modal lets users
+    override display_name when they don't like a shouting title."""
     from backend.steam import _clean_title
 
-    assert _clean_title("ELDEN RING") == "Elden Ring"
-    assert _clean_title("RESIDENT EVIL 4") == "Resident Evil 4"
-    assert _clean_title("DEAD CELLS") == "Dead Cells"
-
-
-def test_clean_title_preserves_roman_numerals_and_acronyms():
-    from backend.steam import _clean_title
-
-    assert _clean_title("GRAND THEFT AUTO V") == "Grand Theft Auto V"
-    assert _clean_title("DARK SOULS III") == "Dark Souls III"
-    assert _clean_title("FINAL FANTASY VII REMAKE") == "Final Fantasy VII Remake"
-    assert _clean_title("FTL: FASTER THAN LIGHT") == "FTL: Faster Than Light"
-    assert _clean_title("CALL OF DUTY: BLACK OPS VIII") == "Call Of Duty: Black Ops VIII"
-
-
-def test_clean_title_handles_apostrophes():
-    from backend.steam import _clean_title
-
-    assert _clean_title("ASSASSIN'S CREED II") == "Assassin's Creed II"
-
-
-def test_clean_title_leaves_short_or_single_word_alone():
-    from backend.steam import _clean_title
-
-    assert _clean_title("DOOM") == "DOOM"
-    assert _clean_title("FTL") == "FTL"
-    assert _clean_title("GTA V") == "GTA V"  # too short for the heuristic to trigger
+    assert _clean_title("ELDEN RING") == "ELDEN RING"
+    assert _clean_title("ELDEN RING NIGHTREIGN The Forsaken Hollows") == "ELDEN RING NIGHTREIGN The Forsaken Hollows"
+    assert _clean_title("DOOM Eternal") == "DOOM Eternal"
+    assert _clean_title("Halo: Combat Evolved") == "Halo: Combat Evolved"
 
 
 def test_clean_title_is_idempotent():
     from backend.steam import _clean_title
 
-    # Running on already-cleaned title should be a no-op.
+    # Running on already-cleaned title is a no-op.
     assert _clean_title("Elden Ring") == "Elden Ring"
-    assert _clean_title("Dark Souls III") == "Dark Souls III"
+    assert _clean_title("ELDEN RING") == "ELDEN RING"
 
 
 def test_should_auto_hide_only_fires_for_dlc():
@@ -1033,7 +1015,7 @@ def test_sgdb_search_requires_api_key(client, db_session):
     db_session.commit()
 
     with patch("backend.steamgriddb.lookup_by_steam_appid") as m:
-        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&image_type=v")
         assert r.status_code == 200
         assert "SteamGridDB API key" in r.text
         m.assert_not_called()
@@ -1062,7 +1044,7 @@ def test_sgdb_search_uses_steam_appid_when_available(client, db_session):
             return_value=[{"url": "https://cdn.sgdb/full.png", "thumb": "https://cdn.sgdb/t.png", "id": 1}],
         ) as m_grids,
     ):
-        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&image_type=v")
     assert r.status_code == 200
     m_lookup.assert_called_once_with("sgdb-key", "220")
     m_grids.assert_called_once_with("sgdb-key", 999, "v", page=0)
@@ -1090,7 +1072,7 @@ def test_sgdb_search_falls_back_to_title_for_non_steam(client, db_session):
         patch("backend.steamgriddb.search_games", return_value=[{"id": 555, "name": "Bloodborne"}]) as m_search,
         patch("backend.steamgriddb.get_grids_for_game", return_value=[]) as m_grids,
     ):
-        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=h")
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&image_type=h")
     assert r.status_code == 200
     m_lookup.assert_not_called()
     m_search.assert_called_once_with("sgdb-key", "Bloodborne")
@@ -1112,7 +1094,7 @@ def test_set_cover_override_applies_to_correct_orientation(client, db_session):
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
-        data={"orientation": "v", "url": "https://cdn.sgdb/cover-v.png"},
+        data={"image_type": "v", "url": "https://cdn.sgdb/cover-v.png"},
     )
     assert r.status_code == 200
     db_session.refresh(entry)
@@ -1121,7 +1103,7 @@ def test_set_cover_override_applies_to_correct_orientation(client, db_session):
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
-        data={"orientation": "h", "url": "https://cdn.sgdb/cover-h.png"},
+        data={"image_type": "h", "url": "https://cdn.sgdb/cover-h.png"},
     )
     assert r.status_code == 200
     db_session.refresh(entry)
@@ -1143,7 +1125,7 @@ def test_set_cover_override_rejects_bad_orientation(client, db_session):
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
-        data={"orientation": "diagonal", "url": "https://x/y.png"},
+        data={"image_type": "diagonal", "url": "https://x/y.png"},
     )
     assert r.status_code == 400
 
@@ -1194,7 +1176,7 @@ def test_sgdb_bulk_fill_applies_top_candidate(db_session, monkeypatch):
     monkeypatch.setattr(
         steamgriddb,
         "get_grids_for_game",
-        lambda k, gid, o: [{"url": "https://sgdb/top.png", "thumb": "https://sgdb/t.png"}],
+        lambda k, gid, o, page=0: [{"url": "https://sgdb/top.png", "thumb": "https://sgdb/t.png"}],
     )
 
     result = steamgriddb.bulk_fill_missing(db_session, user, "v")
@@ -1258,7 +1240,7 @@ def test_sgdb_bulk_fill_one_error_doesnt_abort_run(db_session, monkeypatch):
         return {"id": int(appid) * 10}
 
     monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lookup)
-    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o: [{"url": f"https://sgdb/{gid}.png"}])
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o, page=0: [{"url": f"https://sgdb/{gid}.png"}])
 
     result = steamgriddb.bulk_fill_missing(db_session, user, "v")
     assert result["filled"] == 2
@@ -1316,7 +1298,7 @@ def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatc
 
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 
-    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"image_type": "v"})
     assert r.status_code == 200
     assert "started" in r.text.lower()
     assert created_tasks == [True]
@@ -1324,6 +1306,6 @@ def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatc
 
 def test_sgdb_fill_missing_endpoint_requires_api_key(client, db_session):
     _signup_and_login(client)
-    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"image_type": "v"})
     assert r.status_code == 422
     assert "API key" in r.text

@@ -2,7 +2,7 @@ import datetime
 import os
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
@@ -66,6 +66,26 @@ def _grid_cover_url(entry, orientation: str) -> str | None:
 templates.env.filters["grid_cover_url"] = _grid_cover_url
 
 
+def _playtime_human(minutes) -> str:
+    """Convert an integer playtime in minutes to a Steam-style readable string.
+
+    Format rules match Steam's library display convention:
+      < 60 min:   "N minutes"     ("45 minutes")
+      >= 60 min:  "X.Y hours"     ("4,507.2 hours") — one decimal, thousands sep
+      0 / None:   ""
+    """
+    if not minutes:
+        return ""
+    total = int(minutes)
+    if total < 60:
+        return f"{total} minutes"
+    hours = total / 60
+    return f"{hours:,.1f} hours"
+
+
+templates.env.filters["playtime_human"] = _playtime_human
+
+
 # How long Steam appdetails can sit before we consider it stale enough to
 # auto-refresh on next detail-pane open. 7 days balances "user sees current
 # data when they actually look" against burning API calls on every click.
@@ -90,6 +110,109 @@ def _needs_metadata_refresh(release) -> bool:
         fetched_at = fetched_at.replace(tzinfo=datetime.UTC)
     age = datetime.datetime.now(datetime.UTC) - fetched_at
     return age.days >= _METADATA_STALENESS_DAYS
+
+
+_STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps"
+
+
+def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
+    """Compute the visual chrome (hero, logo, header, parent info) for a
+    library detail pane render. Centralized so both library and completion
+    detail endpoints use the same logic.
+
+    Sources, in priority order:
+      hero  = own hero artwork → parent's hero artwork
+      logo  = own logo (constructed Steam URL) → parent's logo
+      header = cover_url_override_h → own header artwork → parent's header
+              (kept as a separate fallback so list-row / detail-pane code
+              that wants the 460x215 image specifically still works)
+
+    For DLC, the parent's hero/logo are the right default since Steam rarely
+    issues distinct hero/logo for DLC appids — they share the parent's
+    library identity.
+    """
+    parent_release = None
+    parent_game = None
+    parent_entry_id = None
+    if game.parent_id:
+        parent_release = (
+            db.query(models.GameRelease)
+            .options(joinedload(models.GameRelease.artwork), joinedload(models.GameRelease.game))
+            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
+            .first()
+        )
+        if parent_release:
+            parent_game = parent_release.game
+            # Find the user's library entry for the parent (if they own it) so
+            # the breadcrumb can swap the pane to the parent's detail.
+            parent_entry = db.query(models.UserLibraryEntry).filter_by(user_id=entry.user_id, release_id=parent_release.id).first()
+            if parent_entry:
+                parent_entry_id = parent_entry.id
+
+    def _art_url(rel, art_type):
+        if not rel:
+            return None
+        for art in rel.artwork:
+            if art.artwork_type == art_type:
+                return art.url
+        return None
+
+    def _steam_logo_url(rel):
+        # Logo isn't captured during enrichment — construct it from the appid.
+        # 404s for many entries, but the cover-fallback chain handles that
+        # client-side by hiding the img.
+        if not rel or rel.source != "steam" or not rel.external_id:
+            return None
+        return f"{_STEAM_CDN_BASE}/{rel.external_id}/logo.png"
+
+    # Header (460x215). cover_url_override_h takes priority because the SGDB
+    # picker writes to it; covers/replaces the Steam header.
+    header_url = entry.cover_url_override_h or _art_url(release, "header")
+    fallback_header_url = _art_url(parent_release, "header")
+
+    # Hero (~1920x620). Override takes priority; falls back to GameArtwork row.
+    hero_url = entry.hero_url_override or _art_url(release, "hero")
+    fallback_hero_url = _art_url(parent_release, "hero")
+
+    # Logo (transparent PNG). Override takes priority; falls back to Steam CDN
+    # constructed URL (may 404 — handled client-side by onerror auto-fetch).
+    logo_url = entry.logo_url_override or _steam_logo_url(release)
+    fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
+
+    # Compute a "subtitle" for DLC display_title — what's left after stripping
+    # Parent appid — shown alongside the parent name in the parent row of
+    # the metadata block. Just the Steam external_id; safe to be None.
+    parent_appid = parent_release.external_id if parent_release else None
+
+    # Contextual label + chip class for the parent relationship.
+    # The template uses these to render the label as a colored chip
+    # ([DLC FOR] peach / [IN COLLECTION] teal) instead of plain muted text,
+    # so the relationship has the same visual punch as the entry-type chips
+    # in the badges row above. parent_label_class maps to the existing
+    # .tag-badge variant for that color.
+    parent_label = None
+    parent_label_class = None
+    if parent_game:
+        if game.is_dlc:
+            parent_label = "Base Game"
+            parent_label_class = "tag-dlc"
+        else:
+            parent_label = "Collection"
+            parent_label_class = "tag-in-collection"
+
+    return {
+        "header_url": header_url,
+        "fallback_header_url": fallback_header_url,
+        "hero_url": hero_url,
+        "fallback_hero_url": fallback_hero_url,
+        "logo_url": logo_url,
+        "fallback_logo_url": fallback_logo_url,
+        "parent_game": parent_game,
+        "parent_entry_id": parent_entry_id,
+        "parent_appid": parent_appid,
+        "parent_label": parent_label,
+        "parent_label_class": parent_label_class,
+    }
 
 
 def _attach_parent_fallbacks(db: Session, entries) -> None:
@@ -828,35 +951,7 @@ def library_entry_detail(
             .all()
         )
 
-    # Pick a header artwork URL: prefer the user's horizontal override, then
-    # "header" type from Steam artwork, else None.
-    header_url = None
-    if entry.cover_url_override_h:
-        header_url = entry.cover_url_override_h
-    else:
-        for art in entry.release.artwork:
-            if art.artwork_type == "header":
-                header_url = art.url
-                break
-
-    # Fallback to the parent game's header art when this entry is a DLC whose
-    # own header is missing or 404s. Steam's CDN doesn't host header.jpg for
-    # every DLC appid; falling back to the base game's cover beats a blank
-    # space in the pane.
-    fallback_header_url = None
-    if game.parent_id:
-        parent_release = (
-            db.query(models.GameRelease)
-            .options(joinedload(models.GameRelease.artwork))
-            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
-            .first()
-        )
-        if parent_release:
-            for art in parent_release.artwork:
-                if art.artwork_type == "header":
-                    fallback_header_url = art.url
-                    break
-
+    visuals = _build_detail_pane_visuals(db, entry, game, entry.release)
     appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
 
     # Stale-only auto-refresh: if this is a Steam entry and its metadata is
@@ -873,13 +968,12 @@ def library_entry_detail(
             "entry": entry,
             "game": game,
             "release": entry.release,
-            "header_url": header_url,
-            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
             "needs_refresh": needs_refresh,
+            **visuals,
         },
     )
 
@@ -993,18 +1087,28 @@ def refresh_entry_metadata(
     )
 
 
+_IMAGE_TYPE_LABELS = {
+    "v": "vertical cover",
+    "h": "horizontal cover",
+    "hero": "hero image",
+    "logo": "logo",
+}
+
+
 @router.post("/library/entries/{entry_id}/cover-override")
 def set_cover_override(
     request: Request,
     entry_id: int,
-    orientation: str = Form(...),
+    image_type: str = Form(...),
     url: str = Form(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Apply a custom cover override URL (typically a SteamGridDB pick) to a
-    library entry. orientation is "v" (600x900) or "h" (460x215)."""
-    if orientation not in ("v", "h"):
+    """Apply a custom art override URL (typically a SteamGridDB pick) to a
+    library entry. image_type: 'v' | 'h' | 'hero' | 'logo'."""
+    from . import steamgriddb as sgdb
+
+    if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     url = url.strip()
     if not url:
@@ -1012,17 +1116,13 @@ def set_cover_override(
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
-    if orientation == "v":
-        entry.cover_url_override_v = url
-        msg = "Custom vertical cover applied."
-    else:
-        entry.cover_url_override_h = url
-        msg = "Custom horizontal cover applied."
+    sgdb._set_image_override(entry, image_type, url)
     db.commit()
+    label = _IMAGE_TYPE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": msg},
+        context={"message": f"Custom {label} applied."},
     )
 
 
@@ -1030,30 +1130,59 @@ def set_cover_override(
 def clear_cover_override(
     request: Request,
     entry_id: int,
-    orientation: str = Form(...),
+    image_type: str = Form(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Clear a custom cover override on a library entry. The pane / grid then
-    falls back to whatever the release's GameArtwork has (Steam CDN art).
-    orientation is "v" (vertical / library card) or "h" (horizontal / header)."""
-    if orientation not in ("v", "h"):
+    """Clear a custom art override on a library entry.
+    image_type: 'v' | 'h' | 'hero' | 'logo'."""
+    from . import steamgriddb as sgdb
+
+    if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
-    if orientation == "v":
-        entry.cover_url_override_v = None
-        msg = "Custom vertical cover cleared."
-    else:
-        entry.cover_url_override_h = None
-        msg = "Custom horizontal cover cleared."
+    sgdb._set_image_override(entry, image_type, None)
     db.commit()
+    label = _IMAGE_TYPE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": msg},
+        context={"message": f"Custom {label} cleared."},
     )
+
+
+@router.post("/library/entries/{entry_id}/auto-fetch-logo")
+def auto_fetch_logo(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Auto-fetch a logo from SGDB when the Steam CDN logo 404s or when the
+    entry has no logo URL at all. Takes the top SGDB result and stores it as
+    logo_url_override so future detail pane opens skip the CDN entirely.
+
+    Returns 200 + {"url": ...} on success, 204 when nothing found or no key.
+    The JS onerror handler uses the returned URL to update the img src
+    in-place so the logo appears without a page reload."""
+    from . import steamgriddb as sgdb
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    url = sgdb.auto_fetch_logo(db, current_user, entry)
+    if url:
+        return JSONResponse({"url": url})
+    return Response(status_code=204)
 
 
 # --- Completions ---
@@ -1301,31 +1430,7 @@ def completion_detail(
         .all()
     )
 
-    header_url = None
-    if entry.cover_url_override_h:
-        header_url = entry.cover_url_override_h
-    else:
-        for art in release.artwork:
-            if art.artwork_type == "header":
-                header_url = art.url
-                break
-
-    # Same parent-fallback chain as the library pane — useful when a DLC
-    # completion's own header is missing.
-    fallback_header_url = None
-    if game.parent_id:
-        parent_release = (
-            db.query(models.GameRelease)
-            .options(joinedload(models.GameRelease.artwork))
-            .filter(models.GameRelease.game_id == game.parent_id, models.GameRelease.source == "steam")
-            .first()
-        )
-        if parent_release:
-            for art in parent_release.artwork:
-                if art.artwork_type == "header":
-                    fallback_header_url = art.url
-                    break
-
+    visuals = _build_detail_pane_visuals(db, entry, game, release)
     appdetails = (release.raw_data or {}).get("appdetails") or {}
 
     return templates.TemplateResponse(
@@ -1336,10 +1441,9 @@ def completion_detail(
             "entry": entry,
             "release": release,
             "game": game,
-            "header_url": header_url,
-            "fallback_header_url": fallback_header_url,
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
+            **visuals,
         },
     )
