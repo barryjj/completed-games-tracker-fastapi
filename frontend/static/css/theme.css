@@ -878,6 +878,16 @@ body:has(.cgt-sticky-actions) {
   font-weight: 600;
 }
 
+/* Description text inside its block — top border separates it from the heading. */
+.cgt-detail-description {
+  border-top: 1px solid var(--ctp-surface0);
+  padding-top: 10px;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: var(--ctp-subtext1);
+  line-height: 1.5;
+}
+
 /* Inside the child-list block, drop the default table-cell padding since
    the surrounding block already provides breathing room. */
 .cgt-detail-block .table {
@@ -942,15 +952,14 @@ body:has(.cgt-sticky-actions) {
   margin-bottom: 1rem;
 }
 .cgt-detail-meta dt {
-  /* Label treatment: sentence-case + medium weight + colon suffix +
-     subtext color. Reads clearly as "field label" without competing with
-     the .tag-badge chips (which are uppercase + tracked + colored) or
-     looking like generic body text. */
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--ctp-subtext);
+  font-size: 0.7rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-overlay1);
   margin: 0;
-  align-self: center;
+  align-self: baseline;
+  white-space: nowrap;
 }
 .cgt-detail-meta dt::after {
   content: ':';
