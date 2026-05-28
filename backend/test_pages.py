@@ -830,7 +830,9 @@ def test_library_invalid_view_mode_falls_back_to_list(client, db_session):
     # comments and localStorage keys regardless of view mode.
     assert b"table-striped" in r.content
     assert b'class="cgt-library-grid' not in r.content
-    assert b"cgt-library-card" not in r.content
+    # Use the rendered class= attribute form so JS querySelector strings like
+    # '.cgt-library-card__cover' don't trigger a false positive.
+    assert b'class="cgt-library-card' not in r.content
 
 
 def test_grid_vertical_uses_library_cover_url(client, db_session):
