@@ -1107,6 +1107,7 @@ def set_cover_override(
     """Apply a custom art override URL (typically a SteamGridDB pick) to a
     library entry. image_type: 'v' | 'h' | 'hero' | 'logo'."""
     from . import steamgriddb as sgdb
+
     if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     url = url.strip()
@@ -1136,6 +1137,7 @@ def clear_cover_override(
     """Clear a custom art override on a library entry.
     image_type: 'v' | 'h' | 'hero' | 'logo'."""
     from . import steamgriddb as sgdb
+
     if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
@@ -1165,6 +1167,7 @@ def auto_fetch_logo(
     The JS onerror handler uses the returned URL to update the img src
     in-place so the logo appears without a page reload."""
     from . import steamgriddb as sgdb
+
     entry = (
         db.query(models.UserLibraryEntry)
         .options(
