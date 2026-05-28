@@ -754,9 +754,7 @@ def steamgriddb_search(
         if not sgdb_game:
             candidates = []
         else:
-            candidates = sgdb.fetch_images_for_game(
-                current_user.steamgriddb_api_key, sgdb_game["id"], image_type, page=page
-            )
+            candidates = sgdb.fetch_images_for_game(current_user.steamgriddb_api_key, sgdb_game["id"], image_type, page=page)
     except Exception as e:
         _logger.warning("SteamGridDB search failed: %s", e)
         return templates.TemplateResponse(

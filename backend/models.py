@@ -130,8 +130,8 @@ class UserLibraryEntry(Base):
     # the right one to show depends on the grid view orientation / detail pane.
     cover_url_override_v: Mapped[str | None] = mapped_column(String, nullable=True)  # 600x900 portrait
     cover_url_override_h: Mapped[str | None] = mapped_column(String, nullable=True)  # 460x215 landscape header
-    hero_url_override: Mapped[str | None] = mapped_column(String, nullable=True)   # ~1920x620 detail pane hero
-    logo_url_override: Mapped[str | None] = mapped_column(String, nullable=True)   # transparent logo overlay
+    hero_url_override: Mapped[str | None] = mapped_column(String, nullable=True)  # ~1920x620 detail pane hero
+    logo_url_override: Mapped[str | None] = mapped_column(String, nullable=True)  # transparent logo overlay
     # True = entry hidden from the default library view (soundtracks, artbooks, etc.)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
