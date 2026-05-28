@@ -10,6 +10,36 @@
 //     their placeholder.
 //   - Otherwise we hide the immediate parent (detail-pane behavior).
 //   - For [class*="thumb"] list rows, we just remove the img.
+// Collapse the .cgt-detail-hero block only when every img inside it has been
+// hidden. Called after either the hero or the logo fails — each one hides
+// itself first, then calls this to decide whether the whole block goes away.
+// This lets the logo remain visible over a dark background when the hero
+// fails, and vice-versa. Both failing → nothing left to show → collapse.
+window.cgtHeroBlockCheck = function(img) {
+  var block = img.closest('.cgt-detail-hero');
+  if (!block) return;
+  var hasVisible = false;
+  block.querySelectorAll('img').forEach(function(i) {
+    if (i.style.display !== 'none') hasVisible = true;
+  });
+  if (!hasVisible) block.style.display = 'none';
+};
+
+// Detail-pane hero image failure handler. Mirrors cgtCoverFallback's fallback
+// logic (try data-fallback URL first), but on terminal failure hides only the
+// hero img rather than removing the whole block — so a logo overlay can still
+// show. Block is collapsed via cgtHeroBlockCheck only when both are gone.
+window.cgtHeroFailed = function(img) {
+  var fb = img.dataset.fallback;
+  if (fb && img.src !== fb) {
+    img.src = fb;
+    img.dataset.fallback = '';
+    return;
+  }
+  img.style.display = 'none';
+  window.cgtHeroBlockCheck(img);
+};
+
 window.cgtCoverFallback = function(img) {
   var fb = img.dataset.fallback;
   if (fb && img.src !== fb) {
