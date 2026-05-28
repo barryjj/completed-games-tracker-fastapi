@@ -403,6 +403,21 @@ function rerunSgdbSearch(entryId, imageType) {
   htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
 }
 
+// Set to true when a v/h cover is changed so the library reloads on pane close.
+var _cgtLibraryNeedsRefresh = false;
+
+(function() {
+  var pane = document.getElementById('library-detail');
+  if (pane) {
+    pane.addEventListener('hidden.bs.offcanvas', function() {
+      if (_cgtLibraryNeedsRefresh) {
+        _cgtLibraryNeedsRefresh = false;
+        location.reload();
+      }
+    });
+  }
+})();
+
 function applySgdbCover(entryId, imageType, url) {
   var body = new URLSearchParams();
   body.append('image_type', imageType);
@@ -415,24 +430,15 @@ function applySgdbCover(entryId, imageType, url) {
     if (r.ok) {
       _sgdbModal.hide();
       if (imageType === 'hero' || imageType === 'logo') {
-        // Hero and logo appear inside the detail pane — refresh pane content
-        // in-place. The grid/list cards are unaffected.
+        // Hero and logo appear inside the detail pane — refresh pane in-place.
         htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
           target: '#library-detail-content',
           swap: 'innerHTML',
         });
       } else {
-        // v/h covers live in the grid/list. Re-render the card/row via a
-        // server-side swap so placeholder→cover transitions work, not just
-        // existing-img updates. Detail pane stays open and untouched.
-        var viewMode = new URLSearchParams(window.location.search).get('view_mode') || 'list';
-        if (document.getElementById('library-entry-' + entryId)) {
-          htmx.ajax(
-            'GET',
-            '/library/entries/' + entryId + '/card?view_mode=' + encodeURIComponent(viewMode),
-            { target: '#library-entry-' + entryId, swap: 'outerHTML' }
-          );
-        }
+        // v/h covers live in the grid/list. Flag for reload when pane closes
+        // so the user sees updated covers without a jarring mid-session reload.
+        _cgtLibraryNeedsRefresh = true;
       }
     }
   });

@@ -956,6 +956,7 @@ body:has(.cgt-sticky-actions) {
   grid-template-columns: max-content 1fr;
   gap: 0.35rem 1rem;
   margin-bottom: 1rem;
+  font-size: 0.8rem;
 }
 .cgt-detail-meta dt {
   font-weight: 400;

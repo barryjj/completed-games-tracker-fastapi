@@ -18,6 +18,16 @@
      hx-swap="none"
      style="display: none;"></div>
 {% endif %}
+{% if not suppress_autofetch and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key and entry.hero_url_override is none %}
+{# No hero URL at all — fire a background SGDB hero fetch. Placed at the
+   top level alongside needs_refresh so hx-trigger="load" fires reliably.
+   On success, reload the pane so the hero appears this session. #}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
+     hx-trigger="load delay:1000ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
 
 <div class="offcanvas-header border-bottom">
   {# Title bar shows the entry's full display_title. For DLC, the parent
@@ -54,8 +64,9 @@
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
          onerror="this.style.display='none'; cgtHeroBlockCheck(this); cgtAutoFetchLogo(this, {{ entry.id }});">
-    {% elif current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
+    {% elif not suppress_autofetch and current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
     {# No logo URL at all — fire a background SGDB fetch on pane open.
+       Skipped when suppress_autofetch=1 (e.g. after user explicitly resets).
        On success (200), reload the pane so the logo appears this session. #}
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
          hx-trigger="load delay:800ms"
@@ -64,14 +75,6 @@
          style="display:none;"></div>
     {% endif %}
   </div>
-{% elif current_user and current_user.steamgriddb_api_key and not entry.hero_url_override %}
-{# No hero URL at all — fire a background SGDB hero fetch on pane open.
-   On success, reload the pane so hero + logo appear this session. #}
-<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
-     hx-trigger="load delay:1000ms"
-     hx-swap="none"
-     hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
-     style="display:none;"></div>
 {% endif %}
 
   {# Content padding — pushes everything below the hero in from the edges.
@@ -285,7 +288,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail?suppress_autofetch=1', {target: '#library-detail-content', swap: 'innerHTML'}); }">
              Reset hero image
            </a></li>
         {% endif %}
@@ -294,7 +297,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail?suppress_autofetch=1', {target: '#library-detail-content', swap: 'innerHTML'}); }">
              Reset logo
            </a></li>
         {% endif %}
