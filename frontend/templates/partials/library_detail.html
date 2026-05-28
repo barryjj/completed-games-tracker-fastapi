@@ -113,7 +113,7 @@
 
       {% if entry.last_played_at %}
       <dt>Last played</dt>
-      <dd><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%b %d, %Y") }}</span></dd>
+      <dd><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%B %-d, %Y") }}</span></dd>
       {% endif %}
 
       {% if entry.playtime_minutes %}
@@ -188,8 +188,8 @@
       <ul class="list-unstyled mb-0">
         {% for c in completions %}
         <li class="mb-2">
-          <div><strong>{{ c.completed_at.strftime("%b %d, %Y") }}</strong>
-            {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+          <div>{{ c.completed_at.strftime("%B %-d, %Y") }}
+            {% if c.playthroughs %}<small class="text-secondary ms-1">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
           </div>
           {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
         </li>

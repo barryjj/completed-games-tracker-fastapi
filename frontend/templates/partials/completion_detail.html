@@ -53,7 +53,7 @@
       <h6 class="cgt-detail-block__heading">This completion</h6>
       <dl class="cgt-detail-meta small mb-0">
         <dt>Completed</dt>
-        <dd>{{ completion.completed_at.strftime("%b %d, %Y") }}</dd>
+        <dd>{{ completion.completed_at.strftime("%B %-d, %Y") }}</dd>
 
         {% if completion.playthroughs %}
         <dt>Playthroughs</dt>
@@ -61,7 +61,7 @@
         {% endif %}
 
         <dt>Logged</dt>
-        <dd><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%b %d, %Y") }}</span></dd>
+        <dd><span class="local-time" data-utc="{{ completion.created_at.isoformat() }}">{{ completion.created_at.strftime("%B %-d, %Y") }}</span></dd>
       </dl>
       {% if completion.notes %}
       <div class="mt-2">
@@ -137,7 +137,7 @@
              hx-get="/completions/{{ c.id }}/detail"
              hx-target="#completion-detail-content"
              hx-swap="innerHTML">
-            {{ c.completed_at.strftime("%b %d, %Y") }}
+            {{ c.completed_at.strftime("%B %-d, %Y") }}
             {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
           </a>
         </li>
@@ -162,7 +162,7 @@
           data-notes="{{ (completion.notes or '') | e }}">Edit</button>
 
   <a class="btn btn-outline-secondary btn-sm"
-     href="/library?detail={{ entry.id }}">View in library ↗</a>
+     href="/library?detail={{ entry.id }}&q={{ game.display_title | urlencode }}">View in library ↗</a>
 
   <div class="dropdown ms-auto">
     <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
