@@ -72,6 +72,11 @@ def _find_sgdb_game_for_entry(api_key: str, entry: models.UserLibraryEntry) -> d
 
 _GRID_PAGE_SIZE = 20
 
+# Image type constants — used throughout to identify which SGDB endpoint and
+# which override column to target. "v" and "h" are cover grids; "hero" and
+# "logo" are the detail-pane art types.
+IMAGE_TYPES = ("v", "h", "hero", "logo")
+
 
 def get_grids_for_game(
     api_key: str,
@@ -97,38 +102,141 @@ def get_grids_for_game(
     return resp.json().get("data") or []
 
 
-def _entry_already_has_cover(entry: models.UserLibraryEntry, orientation: str) -> bool:
-    """True when the entry already has a cover for this orientation — either a
+def get_heroes_for_game(
+    api_key: str,
+    sgdb_game_id: int,
+    page: int = 0,
+) -> list[dict]:
+    """Fetch hero image candidates (~1920x620) for a SGDB game ID.
+    Heroes have no dimension filter — SGDB only serves one aspect ratio for
+    heroes. Pagination mirrors get_grids_for_game."""
+    resp = httpx.get(
+        f"{_BASE}/heroes/game/{sgdb_game_id}",
+        params={"limit": str(_GRID_PAGE_SIZE), "page": str(page)},
+        headers=_headers(api_key),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data") or []
+
+
+def get_logos_for_game(
+    api_key: str,
+    sgdb_game_id: int,
+    page: int = 0,
+) -> list[dict]:
+    """Fetch logo candidates (transparent PNG, variable size) for a SGDB game ID.
+    Pagination mirrors get_grids_for_game."""
+    resp = httpx.get(
+        f"{_BASE}/logos/game/{sgdb_game_id}",
+        params={"limit": str(_GRID_PAGE_SIZE), "page": str(page)},
+        headers=_headers(api_key),
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json().get("data") or []
+
+
+def fetch_images_for_game(
+    api_key: str,
+    sgdb_game_id: int,
+    image_type: str,
+    page: int = 0,
+) -> list[dict]:
+    """Dispatch to the right SGDB endpoint based on image_type.
+    image_type: 'v' | 'h' | 'hero' | 'logo'"""
+    if image_type in ("v", "h"):
+        return get_grids_for_game(api_key, sgdb_game_id, image_type, page=page)
+    if image_type == "hero":
+        return get_heroes_for_game(api_key, sgdb_game_id, page=page)
+    if image_type == "logo":
+        return get_logos_for_game(api_key, sgdb_game_id, page=page)
+    raise ValueError(f"Unknown image_type {image_type!r}")
+
+
+def _entry_already_has_image(entry: models.UserLibraryEntry, image_type: str) -> bool:
+    """True when the entry already has art for this image_type — either a
     user-set override or a release-level GameArtwork row of the right type.
     Used by the bulk fill to skip entries that don't need help."""
-    wanted_art_type = "cover" if orientation == "v" else "header"
-    if orientation == "v" and entry.cover_url_override_v:
-        return True
-    if orientation == "h" and entry.cover_url_override_h:
-        return True
-    for art in entry.release.artwork:
-        if art.artwork_type == wanted_art_type and art.url:
+    if image_type == "v":
+        if entry.cover_url_override_v:
             return True
-    return False
+        return any(a.artwork_type == "cover" and a.url for a in entry.release.artwork)
+    if image_type == "h":
+        if entry.cover_url_override_h:
+            return True
+        return any(a.artwork_type == "header" and a.url for a in entry.release.artwork)
+    if image_type == "hero":
+        if entry.hero_url_override:
+            return True
+        return any(a.artwork_type == "hero" and a.url for a in entry.release.artwork)
+    if image_type == "logo":
+        # Logos are never stored as GameArtwork — they're constructed from the
+        # Steam CDN URL on-the-fly. An override is the only reliable signal.
+        return bool(entry.logo_url_override)
+    raise ValueError(f"Unknown image_type {image_type!r}")
 
 
-def bulk_fill_missing(db: Session, user: models.User, orientation: str) -> dict:
-    """Walk every visible library entry for `user`, and for each one missing a
-    cover in the requested orientation: hit SGDB, take the top candidate, and
-    write it to the matching cover_url_override column.
+def _set_image_override(entry: models.UserLibraryEntry, image_type: str, url: str) -> None:
+    """Write a SGDB-sourced URL to the appropriate override column."""
+    if image_type == "v":
+        entry.cover_url_override_v = url
+    elif image_type == "h":
+        entry.cover_url_override_h = url
+    elif image_type == "hero":
+        entry.hero_url_override = url
+    elif image_type == "logo":
+        entry.logo_url_override = url
+    else:
+        raise ValueError(f"Unknown image_type {image_type!r}")
+
+
+def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEntry) -> str | None:
+    """Try to fetch a logo for a single entry from SGDB and store it as
+    logo_url_override. Returns the URL on success, None if nothing found.
+
+    Called automatically when the detail pane detects a missing/404 logo —
+    not a user-initiated pick, so we always take the top result. The user
+    can open the logo picker afterwards to swap it for a different one."""
+    if not user.steamgriddb_api_key:
+        return None
+    if entry.logo_url_override:
+        # Already have one — return it so the caller can update the img src.
+        return entry.logo_url_override
+    try:
+        sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
+        if not sgdb_game:
+            return None
+        logos = get_logos_for_game(user.steamgriddb_api_key, sgdb_game["id"])
+        if not logos:
+            return None
+        url = logos[0].get("url")
+        if not url:
+            return None
+        entry.logo_url_override = url
+        db.commit()
+        return url
+    except Exception as e:
+        logger.warning("SGDB auto-fetch logo failed for entry %s: %s", entry.id, e)
+        return None
+
+
+def bulk_fill_missing(db: Session, user: models.User, image_type: str) -> dict:
+    """Walk every visible library entry for `user`, and for each one missing
+    art of the given type: hit SGDB, take the top candidate, and write it to
+    the matching override column.
 
     Skips entries that already have either a user override OR a release-level
-    artwork row of the right type — we don't want to stomp Steam CDN art that's
-    already working.
+    artwork row of the right type (covers/heroes). Logos have no GameArtwork
+    row, so only the override column is checked for those.
 
-    Hidden entries are skipped (no point spending API calls on stuff the user
-    doesn't see). DLC is included — DLC frequently lacks portrait art and
-    benefits the most from this.
+    Hidden entries are skipped. DLC is included.
 
+    image_type: 'v' | 'h' | 'hero' | 'logo'
     Returns: {"filled": N, "no_candidate": N, "skipped": N, "errored": N}
     """
-    if orientation not in ("v", "h"):
-        raise ValueError(f"orientation must be 'v' or 'h', got {orientation!r}")
+    if image_type not in IMAGE_TYPES:
+        raise ValueError(f"image_type must be one of {IMAGE_TYPES}, got {image_type!r}")
     if not user.steamgriddb_api_key:
         raise ValueError("User has no SteamGridDB API key set.")
 
@@ -152,7 +260,7 @@ def bulk_fill_missing(db: Session, user: models.User, orientation: str) -> dict:
     errored = 0
 
     for entry in entries:
-        if _entry_already_has_cover(entry, orientation):
+        if _entry_already_has_image(entry, image_type):
             skipped += 1
             continue
         try:
@@ -160,30 +268,20 @@ def bulk_fill_missing(db: Session, user: models.User, orientation: str) -> dict:
             if not sgdb_game:
                 no_candidate += 1
                 continue
-            grids = get_grids_for_game(api_key, sgdb_game["id"], orientation)
-            if not grids:
+            images = fetch_images_for_game(api_key, sgdb_game["id"], image_type)
+            if not images:
                 no_candidate += 1
                 continue
-            top_url = grids[0].get("url")
+            top_url = images[0].get("url")
             if not top_url:
                 no_candidate += 1
                 continue
-            if orientation == "v":
-                entry.cover_url_override_v = top_url
-            else:
-                entry.cover_url_override_h = top_url
+            _set_image_override(entry, image_type, top_url)
             filled += 1
         except Exception as e:
-            # Don't abort the whole bulk job for one bad lookup — log it and
-            # move on. SGDB 5xx on individual titles shouldn't waste the
-            # progress made on the rest of the library.
             logger.warning("SGDB bulk fill failed for entry %s: %s", entry.id, e)
             errored += 1
             continue
 
-    # One commit at the end keeps the run atomic-ish — if we crashed mid-loop
-    # we'd lose the in-memory progress, but the user can just re-run and
-    # _entry_already_has_cover will skip everything we already covered.
     db.commit()
-
     return {"filled": filled, "no_candidate": no_candidate, "skipped": skipped, "errored": errored}

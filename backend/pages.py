@@ -2,7 +2,7 @@ import datetime
 import os
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
@@ -170,13 +170,13 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     header_url = entry.cover_url_override_h or _art_url(release, "header")
     fallback_header_url = _art_url(parent_release, "header")
 
-    # Hero (~1920x620). No override field yet — TODO when we add SGDB hero
-    # picker variant.
-    hero_url = _art_url(release, "hero")
+    # Hero (~1920x620). Override takes priority; falls back to GameArtwork row.
+    hero_url = entry.hero_url_override or _art_url(release, "hero")
     fallback_hero_url = _art_url(parent_release, "hero")
 
-    # Logo (~600x400, transparent). Constructed URL; cover-fallback hides on 404.
-    logo_url = _steam_logo_url(release)
+    # Logo (transparent PNG). Override takes priority; falls back to Steam CDN
+    # constructed URL (may 404 — handled client-side by onerror auto-fetch).
+    logo_url = entry.logo_url_override or _steam_logo_url(release)
     fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
 
     # Compute a "subtitle" for DLC display_title — what's left after stripping
@@ -1087,18 +1087,27 @@ def refresh_entry_metadata(
     )
 
 
+_IMAGE_TYPE_LABELS = {
+    "v": "vertical cover",
+    "h": "horizontal cover",
+    "hero": "hero image",
+    "logo": "logo",
+}
+
+
 @router.post("/library/entries/{entry_id}/cover-override")
 def set_cover_override(
     request: Request,
     entry_id: int,
-    orientation: str = Form(...),
+    image_type: str = Form(...),
     url: str = Form(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Apply a custom cover override URL (typically a SteamGridDB pick) to a
-    library entry. orientation is "v" (600x900) or "h" (460x215)."""
-    if orientation not in ("v", "h"):
+    """Apply a custom art override URL (typically a SteamGridDB pick) to a
+    library entry. image_type: 'v' | 'h' | 'hero' | 'logo'."""
+    from . import steamgriddb as sgdb
+    if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     url = url.strip()
     if not url:
@@ -1106,17 +1115,13 @@ def set_cover_override(
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
-    if orientation == "v":
-        entry.cover_url_override_v = url
-        msg = "Custom vertical cover applied."
-    else:
-        entry.cover_url_override_h = url
-        msg = "Custom horizontal cover applied."
+    sgdb._set_image_override(entry, image_type, url)
     db.commit()
+    label = _IMAGE_TYPE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": msg},
+        context={"message": f"Custom {label} applied."},
     )
 
 
@@ -1124,30 +1129,57 @@ def set_cover_override(
 def clear_cover_override(
     request: Request,
     entry_id: int,
-    orientation: str = Form(...),
+    image_type: str = Form(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Clear a custom cover override on a library entry. The pane / grid then
-    falls back to whatever the release's GameArtwork has (Steam CDN art).
-    orientation is "v" (vertical / library card) or "h" (horizontal / header)."""
-    if orientation not in ("v", "h"):
+    """Clear a custom art override on a library entry.
+    image_type: 'v' | 'h' | 'hero' | 'logo'."""
+    from . import steamgriddb as sgdb
+    if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
         return Response(status_code=404)
-    if orientation == "v":
-        entry.cover_url_override_v = None
-        msg = "Custom vertical cover cleared."
-    else:
-        entry.cover_url_override_h = None
-        msg = "Custom horizontal cover cleared."
+    sgdb._set_image_override(entry, image_type, None)
     db.commit()
+    label = _IMAGE_TYPE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": msg},
+        context={"message": f"Custom {label} cleared."},
     )
+
+
+@router.post("/library/entries/{entry_id}/auto-fetch-logo")
+def auto_fetch_logo(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Auto-fetch a logo from SGDB when the Steam CDN logo 404s or when the
+    entry has no logo URL at all. Takes the top SGDB result and stores it as
+    logo_url_override so future detail pane opens skip the CDN entirely.
+
+    Returns 200 + {"url": ...} on success, 204 when nothing found or no key.
+    The JS onerror handler uses the returned URL to update the img src
+    in-place so the logo appears without a page reload."""
+    from . import steamgriddb as sgdb
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    url = sgdb.auto_fetch_logo(db, current_user, entry)
+    if url:
+        return JSONResponse({"url": url})
+    return Response(status_code=204)
 
 
 # --- Completions ---

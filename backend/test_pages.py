@@ -962,7 +962,7 @@ def test_clear_cover_override_v(client, db_session):
     entry.cover_url_override_h = "https://example.com/custom_h.jpg"
     db_session.commit()
 
-    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "v"})
+    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"image_type": "v"})
     assert r.status_code == 200
     db_session.refresh(entry)
     assert entry.cover_url_override_v is None
@@ -978,7 +978,7 @@ def test_clear_cover_override_h(client, db_session):
     entry.cover_url_override_h = "https://example.com/custom_h.jpg"
     db_session.commit()
 
-    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "h"})
+    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"image_type": "h"})
     assert r.status_code == 200
     db_session.refresh(entry)
     assert entry.cover_url_override_h is None
@@ -989,7 +989,7 @@ def test_clear_cover_override_rejects_bad_orientation(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     entry = _add_game(db_session, user)
-    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"orientation": "x"})
+    r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"image_type": "x"})
     assert r.status_code == 400
 
 
