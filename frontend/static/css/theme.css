@@ -187,6 +187,12 @@ html[data-bs-theme="light"] .btn-success {
   --bs-btn-hover-color:        var(--ctp-text);
   --bs-btn-active-bg:          var(--ctp-surface0);
 }
+/* In Latte, surface1 is very pale — buttons become nearly invisible.
+   Step up to overlay1 for a legible border in light mode. */
+html[data-bs-theme="light"] .btn-outline-secondary {
+  --bs-btn-border-color:       var(--ctp-overlay1);
+  --bs-btn-hover-bg:           var(--ctp-surface1);
+}
 .btn-danger {
   --bs-btn-bg:                    var(--ctp-red);
   --bs-btn-border-color:          var(--ctp-red);
