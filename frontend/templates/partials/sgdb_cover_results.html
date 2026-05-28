@@ -1,22 +1,43 @@
-{# SteamGridDB cover candidates. Rendered into #sgdb-picker-grid inside
-   the picker modal. The partial renders bare card divs (no wrapper) so
-   the "Load more" button can replace itself in-place with the next batch's
-   cards + a fresh button, appending to whatever's already shown.
+{# SteamGridDB art candidates. Rendered into #sgdb-picker-grid inside the
+   picker modal. The partial renders the search-term bar (first page only),
+   then bare card divs so the "Load more" button can replace itself in-place
+   appending to whatever's already shown.
 
-   Each thumbnail is a click-target that calls applySgdbCover(entry_id,
-   orientation, url) to POST the override. #}
+   Each thumbnail calls applySgdbCover(entry_id, image_type, url).
+   image_type: 'v' | 'h' | 'hero' | 'logo' #}
 
 {% if error %}
 <div class="alert alert-warning py-2 mb-0 w-100"><small>{{ error }}</small></div>
-{% elif not candidates and page == 0 %}
-<p class="text-secondary mb-0 w-100"><small>No candidates found on SteamGridDB. The game may not be catalogued, or the orientation may have no uploads.</small></p>
+{% else %}
+
+{# Search term bar — only on first page so it doesn't repeat on "Load more". #}
+{% if page == 0 %}
+<div class="w-100 mb-2 d-flex gap-2 align-items-center">
+  <input type="text" id="sgdb-search-term"
+         class="form-control form-control-sm"
+         value="{{ search_term | e }}"
+         placeholder="Search term…"
+         aria-label="Search term">
+  <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap"
+          onclick="rerunSgdbSearch({{ entry_id }}, '{{ image_type }}')">Search</button>
+</div>
+{% endif %}
+
+{% if not candidates and page == 0 %}
+<p class="text-secondary mb-0 w-100"><small>No candidates found on SteamGridDB for this image type.</small></p>
 {% else %}
   {% for c in candidates %}
   <div class="text-center" style="cursor: pointer;"
-       onclick="applySgdbCover({{ entry_id }}, '{{ orientation }}', '{{ c.url }}')"
+       onclick="applySgdbCover({{ entry_id }}, '{{ image_type }}', '{{ c.url }}')"
        title="Click to apply">
     <img src="{{ c.thumb or c.url }}" alt=""
-         style="{% if orientation == 'v' %}max-width: 150px; max-height: 225px;{% else %}max-width: 230px; max-height: 107px;{% endif %} border-radius: 4px; display: block;"
+         style="
+           {%- if image_type == 'v' -%}max-width:150px;max-height:225px;
+           {%- elif image_type == 'hero' -%}max-width:280px;max-height:107px;
+           {%- elif image_type == 'logo' -%}max-width:200px;max-height:100px;object-fit:contain;background:var(--ctp-surface0);padding:4px;border-radius:4px;
+           {%- else -%}max-width:230px;max-height:107px;
+           {%- endif -%}
+           border-radius:4px;display:block;"
          loading="lazy">
     {% if c.author and c.author.name %}
     <small class="text-secondary d-block mt-1">by {{ c.author.name }}</small>
@@ -24,12 +45,13 @@
   </div>
   {% endfor %}
   {% if has_more %}
-  {# Load more: replaces itself with the next batch's cards + a new button. #}
   <button type="button"
           class="btn btn-outline-secondary btn-sm w-100 mt-2"
-          hx-get="/integrations/steamgriddb/search?entry_id={{ entry_id }}&orientation={{ orientation }}&page={{ page + 1 }}"
+          hx-get="/integrations/steamgriddb/search?entry_id={{ entry_id }}&image_type={{ image_type }}&page={{ page + 1 }}&search_term={{ search_term | urlencode }}"
           hx-target="this"
           hx-swap="outerHTML"
           hx-disabled-elt="this">Load more from SteamGridDB</button>
   {% endif %}
+{% endif %}
+
 {% endif %}

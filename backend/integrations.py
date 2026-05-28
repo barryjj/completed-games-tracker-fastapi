@@ -694,23 +694,34 @@ def save_steamgriddb_credentials(
     return response
 
 
+_SGDB_IMAGE_LABELS = {
+    "v": "vertical cover",
+    "h": "horizontal cover",
+    "hero": "hero image",
+    "logo": "logo",
+}
+
+
 @router.get("/steamgriddb/search")
 def steamgriddb_search(
     request: Request,
     entry_id: int,
-    orientation: str,
+    image_type: str,
     page: int = 0,
+    query: str | None = None,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Return cover-art candidates for a library entry. Used by the "Find cover"
-    modal. Looks up by Steam appid when the entry came from Steam (better hit
-    rate); falls back to title search otherwise.
+    """Return art candidates for a library entry from SGDB. Used by the picker
+    modal for covers, heroes, and logos.
 
-    Pagination: `page` is zero-indexed. The picker's "Load more" button hits
-    this endpoint with page+1 and appends the new batch to the existing grid.
+    image_type: 'v' | 'h' | 'hero' | 'logo'
+    query: optional override for the title search term; when omitted the entry's
+           display_title is used. Steam entries try the appid endpoint first
+           regardless of whether a custom query is supplied.
+    page: zero-indexed. The picker's "Load more" button hits this with page+1.
     """
-    if orientation not in ("v", "h"):
+    if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     if not current_user.steamgriddb_api_key:
         return templates.TemplateResponse(
@@ -729,18 +740,23 @@ def steamgriddb_search(
         return Response(status_code=404)
     release = entry.release
     game = release.game
+    search_term = query.strip() if query and query.strip() else game.display_title
 
     try:
         sgdb_game = None
-        if release.source == "steam" and release.external_id:
+        # Steam appid lookup only when no custom query is supplied — a custom
+        # query implies the user wants to search by title, not by appid.
+        if not query and release.source == "steam" and release.external_id:
             sgdb_game = sgdb.lookup_by_steam_appid(current_user.steamgriddb_api_key, release.external_id)
         if not sgdb_game:
-            results = sgdb.search_games(current_user.steamgriddb_api_key, game.display_title)
+            results = sgdb.search_games(current_user.steamgriddb_api_key, search_term)
             sgdb_game = results[0] if results else None
         if not sgdb_game:
             candidates = []
         else:
-            candidates = sgdb.get_grids_for_game(current_user.steamgriddb_api_key, sgdb_game["id"], orientation, page=page)
+            candidates = sgdb.fetch_images_for_game(
+                current_user.steamgriddb_api_key, sgdb_game["id"], image_type, page=page
+            )
     except Exception as e:
         _logger.warning("SteamGridDB search failed: %s", e)
         return templates.TemplateResponse(
@@ -755,19 +771,16 @@ def steamgriddb_search(
         context={
             "candidates": candidates,
             "entry_id": entry_id,
-            "orientation": orientation,
+            "image_type": image_type,
+            "search_term": search_term,
             "page": page,
-            # If we got a full page back, assume there's probably more — the
-            # "Load more" button will fetch the next batch.
             "has_more": len(candidates) >= sgdb._GRID_PAGE_SIZE,
         },
     )
 
 
-async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, orientation: str) -> None:
-    """Background runner for the SGDB bulk-fill job. Mirrors _run_sync_job's
-    shape but doesn't pause enrichment — SGDB writes to cover_url_override_*,
-    which enrichment never touches."""
+async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, image_type: str) -> None:
+    """Background runner for the SGDB bulk-fill job."""
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
     db = SessionLocal()
     try:
@@ -775,9 +788,9 @@ async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, orientation: str) -
         if user is None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
-        result = await asyncio.to_thread(sgdb.bulk_fill_missing, db, user, orientation)
-        label = "vertical" if orientation == "v" else "horizontal"
-        header = f"SteamGridDB {label} cover fill complete"
+        result = await asyncio.to_thread(sgdb.bulk_fill_missing, db, user, image_type)
+        label = _SGDB_IMAGE_LABELS.get(image_type, image_type)
+        header = f"SteamGridDB {label} fill complete"
         delta = f"+{result['filled']:,} filled · {result['no_candidate']:,} no match · {result['skipped']:,} already had art"
         if result["errored"]:
             delta += f" · {result['errored']:,} errored"
@@ -794,12 +807,11 @@ async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, orientation: str) -
 @router.post("/steamgriddb/fill-missing")
 async def steamgriddb_fill_missing(
     request: Request,
-    orientation: str = Form(...),
+    image_type: str = Form(...),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Kick off the bulk fill job. Walks the user's library and SGDB-fills
-    every entry that's missing a cover of the requested orientation."""
-    if orientation not in ("v", "h"):
+    """Kick off the bulk fill job for the given image type."""
+    if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
     if not current_user.steamgriddb_api_key:
         return templates.TemplateResponse(
@@ -816,12 +828,12 @@ async def steamgriddb_fill_missing(
             context={"error": "Another job is already running — please wait for it to finish."},
             status_code=409,
         )
-    kind = f"sgdb_fill_{orientation}"
+    kind = f"sgdb_fill_{image_type}"
     job = jobs.create(user_id=current_user.id, kind=kind)
-    asyncio.create_task(_run_sgdb_bulk_fill_job(job.id, current_user.id, orientation))
-    label = "vertical" if orientation == "v" else "horizontal"
+    asyncio.create_task(_run_sgdb_bulk_fill_job(job.id, current_user.id, image_type))
+    label = _SGDB_IMAGE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": f"SteamGridDB {label} cover fill started — you'll see a toast when it finishes."},
+        context={"message": f"SteamGridDB {label} fill started — you'll see a toast when it finishes."},
     )
