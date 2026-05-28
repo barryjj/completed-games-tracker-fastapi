@@ -53,7 +53,15 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="cgtCoverFallback(this)">
+         onerror="cgtCoverFallback(this); cgtAutoFetchLogo(this, {{ entry.id }});">
+    {% elif current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
+    {# No logo URL at all (non-Steam entry or missing CDN art) and no override
+       yet — fire a background SGDB fetch on pane open, same pattern as the
+       stale-metadata refresh trigger. #}
+    <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
+         hx-trigger="load delay:800ms"
+         hx-swap="none"
+         style="display:none;"></div>
     {% endif %}
   </div>
   {% endif %}
@@ -234,13 +242,22 @@
              onclick="openSgdbPicker({{ entry.id }}, 'h'); return false;">
            Find horizontal cover
          </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'hero'); return false;">
+           Find hero image
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'logo'); return false;">
+           Find logo
+         </a></li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}
-      {% if entry.cover_url_override_v or entry.cover_url_override_h %}
+      {% set _has_overrides = entry.cover_url_override_v or entry.cover_url_override_h or entry.hero_url_override or entry.logo_url_override %}
+      {% if _has_overrides %}
         {% if entry.cover_url_override_v %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
-               hx-vals='{"orientation": "v"}'
+               hx-vals='{"image_type": "v"}'
                hx-swap="none"
                hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
              Reset vertical cover
@@ -249,10 +266,28 @@
         {% if entry.cover_url_override_h %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
-               hx-vals='{"orientation": "h"}'
+               hx-vals='{"image_type": "h"}'
                hx-swap="none"
                hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
              Reset horizontal cover
+           </a></li>
+        {% endif %}
+        {% if entry.hero_url_override %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "hero"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+             Reset hero image
+           </a></li>
+        {% endif %}
+        {% if entry.logo_url_override %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "logo"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+             Reset logo
            </a></li>
         {% endif %}
       <li><hr class="dropdown-divider"></li>

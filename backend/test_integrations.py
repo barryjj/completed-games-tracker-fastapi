@@ -1015,7 +1015,7 @@ def test_sgdb_search_requires_api_key(client, db_session):
     db_session.commit()
 
     with patch("backend.steamgriddb.lookup_by_steam_appid") as m:
-        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&image_type=v")
         assert r.status_code == 200
         assert "SteamGridDB API key" in r.text
         m.assert_not_called()
@@ -1044,7 +1044,7 @@ def test_sgdb_search_uses_steam_appid_when_available(client, db_session):
             return_value=[{"url": "https://cdn.sgdb/full.png", "thumb": "https://cdn.sgdb/t.png", "id": 1}],
         ) as m_grids,
     ):
-        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=v")
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&image_type=v")
     assert r.status_code == 200
     m_lookup.assert_called_once_with("sgdb-key", "220")
     m_grids.assert_called_once_with("sgdb-key", 999, "v", page=0)
@@ -1072,7 +1072,7 @@ def test_sgdb_search_falls_back_to_title_for_non_steam(client, db_session):
         patch("backend.steamgriddb.search_games", return_value=[{"id": 555, "name": "Bloodborne"}]) as m_search,
         patch("backend.steamgriddb.get_grids_for_game", return_value=[]) as m_grids,
     ):
-        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&orientation=h")
+        r = client.get(f"/integrations/steamgriddb/search?entry_id={entry.id}&image_type=h")
     assert r.status_code == 200
     m_lookup.assert_not_called()
     m_search.assert_called_once_with("sgdb-key", "Bloodborne")
@@ -1094,7 +1094,7 @@ def test_set_cover_override_applies_to_correct_orientation(client, db_session):
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
-        data={"orientation": "v", "url": "https://cdn.sgdb/cover-v.png"},
+        data={"image_type": "v", "url": "https://cdn.sgdb/cover-v.png"},
     )
     assert r.status_code == 200
     db_session.refresh(entry)
@@ -1103,7 +1103,7 @@ def test_set_cover_override_applies_to_correct_orientation(client, db_session):
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
-        data={"orientation": "h", "url": "https://cdn.sgdb/cover-h.png"},
+        data={"image_type": "h", "url": "https://cdn.sgdb/cover-h.png"},
     )
     assert r.status_code == 200
     db_session.refresh(entry)
@@ -1125,7 +1125,7 @@ def test_set_cover_override_rejects_bad_orientation(client, db_session):
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
-        data={"orientation": "diagonal", "url": "https://x/y.png"},
+        data={"image_type": "diagonal", "url": "https://x/y.png"},
     )
     assert r.status_code == 400
 
@@ -1176,7 +1176,7 @@ def test_sgdb_bulk_fill_applies_top_candidate(db_session, monkeypatch):
     monkeypatch.setattr(
         steamgriddb,
         "get_grids_for_game",
-        lambda k, gid, o: [{"url": "https://sgdb/top.png", "thumb": "https://sgdb/t.png"}],
+        lambda k, gid, o, page=0: [{"url": "https://sgdb/top.png", "thumb": "https://sgdb/t.png"}],
     )
 
     result = steamgriddb.bulk_fill_missing(db_session, user, "v")
@@ -1240,7 +1240,7 @@ def test_sgdb_bulk_fill_one_error_doesnt_abort_run(db_session, monkeypatch):
         return {"id": int(appid) * 10}
 
     monkeypatch.setattr(steamgriddb, "lookup_by_steam_appid", lookup)
-    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o: [{"url": f"https://sgdb/{gid}.png"}])
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o, page=0: [{"url": f"https://sgdb/{gid}.png"}])
 
     result = steamgriddb.bulk_fill_missing(db_session, user, "v")
     assert result["filled"] == 2
@@ -1298,7 +1298,7 @@ def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatc
 
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
 
-    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"image_type": "v"})
     assert r.status_code == 200
     assert "started" in r.text.lower()
     assert created_tasks == [True]
@@ -1306,6 +1306,6 @@ def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatc
 
 def test_sgdb_fill_missing_endpoint_requires_api_key(client, db_session):
     _signup_and_login(client)
-    r = client.post("/integrations/steamgriddb/fill-missing", data={"orientation": "v"})
+    r = client.post("/integrations/steamgriddb/fill-missing", data={"image_type": "v"})
     assert r.status_code == 422
     assert "API key" in r.text

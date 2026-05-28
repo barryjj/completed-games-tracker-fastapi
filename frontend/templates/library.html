@@ -365,30 +365,47 @@
 cgtInitDrawer('lib-filters-drawer', 'cgt-lib-filters-open', 'lib-toggle-filters');
 cgtInitDrawer('lib-view-drawer',    'cgt-lib-view-open',    'lib-toggle-view');
 
-// ─── SteamGridDB cover picker ─────────────────────────────────────────────
+// ─── SteamGridDB art picker ───────────────────────────────────────────────
 //
 // Opens a modal, fires off a search against /integrations/steamgriddb/search,
 // renders candidate thumbnails. Clicking a candidate POSTs the URL back to
-// /library/entries/{id}/cover-override, then closes the modal and reloads
-// the detail pane to show the new cover.
+// /library/entries/{id}/cover-override, then reloads the detail pane.
+// image_type: 'v' | 'h' | 'hero' | 'logo'
 var _sgdbModal = null;
-function openSgdbPicker(entryId, orientation) {
+var _sgdbCurrentEntryId = null;
+var _sgdbCurrentImageType = null;
+var _SGDB_LABELS = {v: 'vertical cover', h: 'horizontal cover', hero: 'hero image', logo: 'logo'};
+
+function openSgdbPicker(entryId, imageType) {
   if (!_sgdbModal) {
     _sgdbModal = new bootstrap.Modal(document.getElementById('sgdbPickerModal'));
   }
-  var label = orientation === 'v' ? 'vertical' : 'horizontal';
-  document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label + ' cover art';
+  _sgdbCurrentEntryId = entryId;
+  _sgdbCurrentImageType = imageType;
+  var label = _SGDB_LABELS[imageType] || imageType;
+  document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label;
   var grid = document.getElementById('sgdb-picker-grid');
   grid.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
   _sgdbModal.show();
-  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&orientation=' + orientation + '&page=0', {
+  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&image_type=' + imageType + '&page=0', {
     target: '#sgdb-picker-grid',
     swap: 'innerHTML',
   });
 }
-function applySgdbCover(entryId, orientation, url) {
+
+function rerunSgdbSearch(entryId, imageType) {
+  // Called by the search-term input's Search button. Reads the current value
+  // of the input and re-fires the search with that query.
+  var term = (document.getElementById('sgdb-search-term') || {}).value || '';
+  var url = '/integrations/steamgriddb/search?entry_id=' + entryId
+    + '&image_type=' + imageType + '&page=0'
+    + (term ? '&query=' + encodeURIComponent(term) : '');
+  htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
+}
+
+function applySgdbCover(entryId, imageType, url) {
   var body = new URLSearchParams();
-  body.append('orientation', orientation);
+  body.append('image_type', imageType);
   body.append('url', url);
   fetch('/library/entries/' + entryId + '/cover-override', {
     method: 'POST',
@@ -397,11 +414,29 @@ function applySgdbCover(entryId, orientation, url) {
   }).then(function(r) {
     if (r.ok) {
       _sgdbModal.hide();
-      // Reload so the grid/list row and the detail pane both pick up the
-      // new cover override.
       location.reload();
     }
   });
+}
+
+// Auto-fetch logo: called from onerror on the hero logo img when it 404s.
+// Fires a background POST to store the SGDB top result as logo_url_override,
+// then updates the img src in-place so it appears without a reload.
+function cgtAutoFetchLogo(img, entryId) {
+  // Prevent onerror from firing again if our fetched URL also fails.
+  img.onerror = null;
+  fetch('/library/entries/' + entryId + '/auto-fetch-logo', {method: 'POST'})
+    .then(function(r) {
+      if (r.ok && r.status === 200) {
+        return r.json().then(function(data) {
+          if (data.url) {
+            img.src = data.url;
+          }
+        });
+      }
+      // 204 = nothing found; leave img hidden (cgtCoverFallback already ran)
+    })
+    .catch(function() { /* silent — best-effort */ });
 }
 
 // ─── Grid view: view-mode toggle + spacing slider ─────────────────────────
