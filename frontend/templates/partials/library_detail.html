@@ -53,7 +53,7 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="cgtCoverFallback(this); cgtAutoFetchLogo(this, {{ entry.id }});">
+         onerror="this.style.display='none'; cgtAutoFetchLogo(this, {{ entry.id }});">
     {% elif current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
     {# No logo URL at all (non-Steam entry or missing CDN art) and no override
        yet — fire a background SGDB fetch on pane open, same pattern as the
