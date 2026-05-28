@@ -447,7 +447,11 @@ function cgtAutoFetchLogo(img, entryId) {
       if (r.ok && r.status === 200) {
         return r.json().then(function(data) {
           if (data.url) {
-            img.style.display = '';  // un-hide before setting src
+            // Un-hide img and un-collapse the hero block (it may have been
+            // collapsed if the hero also failed before this fetch returned).
+            img.style.display = '';
+            var block = img.closest('.cgt-detail-hero');
+            if (block) block.style.display = '';
             img.src = data.url;
           }
         });
