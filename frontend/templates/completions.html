@@ -363,4 +363,8 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
   <div id="completion-detail-content"></div>
 </div>
 
+{% if current_user and current_user.steamgriddb_api_key %}
+{% include "partials/sgdb_picker_modal.html" %}
+{% endif %}
+
 {% endblock %}

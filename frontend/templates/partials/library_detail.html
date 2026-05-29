@@ -18,23 +18,23 @@
      hx-swap="none"
      style="display: none;"></div>
 {% endif %}
-
-<div class="offcanvas-header border-bottom">
-  {# Title bar shows the entry's full display_title. For DLC, the parent
-     identity moves into a "Parent App" metadata row below the hero so the
-     title bar doesn't have to carry the whole breadcrumb. The header bar
-     also holds the close button + back-arrow (injected by app.js when the
-     pane stack has > 1 entry). #}
-  {# Full display_title; previous "subtitle = title minus parent prefix"
-     attempt produced weird results on Steam crossover DLCs (e.g. "Dead by
-     Daylight x Attack on Titan: ArmoredPack" minus parent "Dead by Daylight"
-     became "x Attack on Titan: ArmoredPack" — title starting with 'x' makes
-     no sense). Just show what Steam gives us; CSS ellipsis handles overflow. #}
-  <h5 class="offcanvas-title cgt-detail-title">{{ game.display_title }}</h5>
-  <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-</div>
+{% if fresh_open and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key and entry.hero_url_override is none %}
+{# No hero URL — fire a background SGDB hero fetch. Only rendered when the
+   pane is opened fresh by a user row-click (fresh_open=1). Never rendered on
+   internal refreshes (clear overrides, logo auto-fetch reloads, etc.) so the
+   auto-fetch cannot re-trigger after a Reset or any other pane swap. #}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
+     hx-trigger="load delay:1000ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
 
 <div class="offcanvas-body p-0">
+  {# Back-arrow injected here by app.js when pane stack > 1. Collapses via
+     CSS :empty when there is no navigation history. #}
+  <div class="cgt-pane-nav"></div>
+
   {# Hero block. Full-bleed image (own or parent's library_hero), with the
      game logo overlaid bottom-left. If neither hero nor logo loads, the
      onerror handlers remove themselves and the block collapses cleanly. #}
@@ -46,6 +46,7 @@
          loading="lazy"
          data-fallback="{{ fallback_hero_url if hero_url else '' }}"
          data-cgt-entry-id="{{ entry.id }}"
+         data-cgt-fresh-open="{{ '1' if fresh_open else '' }}"
          onerror="cgtHeroFailed(this)">
     {% if logo_url or fallback_logo_url %}
     <img class="cgt-detail-hero__logo"
@@ -53,10 +54,10 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="this.style.display='none'; cgtHeroBlockCheck(this); cgtAutoFetchLogo(this, {{ entry.id }});">
-    {% elif current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
+         onerror="this.style.display='none'; cgtHeroBlockCheck(this); {% if fresh_open %}cgtAutoFetchLogo(this, {{ entry.id }});{% endif %}">
+    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
     {# No logo URL at all — fire a background SGDB fetch on pane open.
-       On success (200), reload the pane so the logo appears this session. #}
+       Only rendered on fresh user-initiated opens (fresh_open=1). #}
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
          hx-trigger="load delay:800ms"
          hx-swap="none"
@@ -64,21 +65,13 @@
          style="display:none;"></div>
     {% endif %}
   </div>
-{% elif current_user and current_user.steamgriddb_api_key and not entry.hero_url_override %}
-{# No hero URL at all — fire a background SGDB hero fetch on pane open.
-   On success, reload the pane so hero + logo appear this session. #}
-<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
-     hx-trigger="load delay:1000ms"
-     hx-swap="none"
-     hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
-     style="display:none;"></div>
 {% endif %}
 
   {# Content padding — pushes everything below the hero in from the edges.
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
-  <div class="p-3">
+  <div class="cgt-detail-body">
     {# Badges row: platform + flags. #}
-    <div class="mb-3 d-flex flex-wrap gap-1">
+    <div class="mb-2 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
@@ -86,12 +79,12 @@
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
 
-    {# Metadata. Dates rendered American long-form (May 23, 2026). When we
-       eventually add a locale preference this becomes user-configurable. The
-       "Added to tracker" row was dropped — it captures when our sync first
-       saw the entry, not anything the user cares about (we don't track
-       release date or first-played which are the dates that matter). #}
-    <dl class="cgt-detail-meta small">
+    {# Metadata section — same tinted-block treatment as Description/DLC/etc. #}
+    <div class="cgt-detail-block mb-2">
+    <dl class="cgt-detail-meta small mb-0">
+      <dt>Title</dt>
+      <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
+
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"
            in-collection    → "In collection"
@@ -142,6 +135,7 @@
       </dd>
       {% endif %}
     </dl>
+    </div>
 
     {# All "sections" (Description, DLC list, Completions) use the same
        .cgt-detail-block treatment so they read as a uniform stack of
@@ -243,19 +237,19 @@
       {% endif %}
       {% if current_user and current_user.steamgriddb_api_key %}
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'v'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'v', '#library-detail-content'); return false;">
            Find vertical cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'h'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'h', '#library-detail-content'); return false;">
            Find horizontal cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'hero'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#library-detail-content'); return false;">
            Find hero image
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'logo'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#library-detail-content'); return false;">
            Find logo
          </a></li>
       <li><hr class="dropdown-divider"></li>

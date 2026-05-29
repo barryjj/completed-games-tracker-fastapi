@@ -227,6 +227,19 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Users can add custom platforms (NES, Dreamcast, etc.) and rename display names
 - Color key maps to Catppuccin token — replaces current heuristic matching in `_platform_color_class`
 
+### User-configurable DLC auto-hide keywords
+- Same model as the platforms table: system-default keywords (the current `_AUTO_HIDE_RE` patterns) seeded into a `dlc_hide_keywords` table with `is_system=True`, plus user rows for custom additions
+- Configure page UI: list current active keywords, add/remove user entries
+- System defaults can't be deleted but could be individually disabled if a user has a legit reason (e.g. a game called "Starter Pack" they actually want to track)
+- Merge logic: effective regex is built from `system (not disabled) + user` rows at request time, cached per-user
+- Useful for publisher-specific patterns that are too niche for the default list (e.g. a specific franchise's naming convention for cosmetic drops)
+
+### Missing artwork filter / utility view
+- Checkbox or filter option in the library toolbar: "Missing artwork" — shows only entries with no cover art (no override, no GameArtwork row for the current orientation)
+- Useful after bulk SGDB fill runs to find anything that slipped through (manual entries, obscure titles, DLC with no art catalog entry)
+- Could be a standalone filter checkbox alongside Show hidden, or a "Utility" view option alongside Default / DLC / Collections / etc.
+- Orientation-aware: in grid_v mode it checks vertical cover, in grid_h checks horizontal, in list checks either
+
 ### PSN integration
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data

@@ -788,6 +788,36 @@ body:has(.cgt-sticky-actions) {
   padding-bottom: 5rem;
 }
 
+/* ─── Detail-pane body layout ───────────────────────────────────────────── */
+
+/* Wrapper for everything below the hero image. Tighter padding than
+   Bootstrap's p-3 so the pane content feels compact at any width. */
+.cgt-detail-body {
+  padding: 0.6rem 0.75rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* Thin nav bar at the top of the pane body — collapses when empty (no back
+   button) via :empty, expands when JS injects the back arrow. */
+.cgt-pane-nav {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+}
+.cgt-pane-nav:empty {
+  display: none;
+}
+
+/* Title row inside the metadata block — slightly larger than other dd values
+   so it registers as the primary identifier, but regular weight so it reads
+   as data rather than a heading. */
+.cgt-detail-title-value {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--ctp-text);
+  line-height: 1.3;
+}
+
 /* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
 
 /* Title bar layout for the detail pane.
@@ -835,7 +865,7 @@ body:has(.cgt-sticky-actions) {
   position: relative;
   width: 100%;
   background-color: var(--ctp-crust);
-  aspect-ratio: 96 / 31;  /* matches Steam's library_hero ~1920x620 */
+  aspect-ratio: 96 / 38;  /* slightly taller than Steam's native 96/31 */
   overflow: hidden;
 }
 .cgt-detail-hero__img {
@@ -855,10 +885,10 @@ body:has(.cgt-sticky-actions) {
 }
 .cgt-detail-hero__logo {
   position: absolute;
-  left: 16px;
-  bottom: 12px;
-  max-width: 45%;
-  max-height: 60%;
+  left: 14px;
+  bottom: 10px;
+  max-width: 38%;
+  max-height: 50%;
   object-fit: contain;
   z-index: 1;
   /* Drop shadow so the logo reads even when the bottom of the hero is busy. */
@@ -873,23 +903,23 @@ body:has(.cgt-sticky-actions) {
   background-color: var(--ctp-mantle);
   border: 1px solid var(--ctp-surface0);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 9px 12px;
 }
 .cgt-detail-block__heading {
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ctp-subtext);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-weight: 600;
 }
 
 /* Description text inside its block — top border separates it from the heading. */
 .cgt-detail-description {
   border-top: 1px solid var(--ctp-surface0);
-  padding-top: 10px;
+  padding-top: 8px;
   margin-top: 4px;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: var(--ctp-subtext1);
   line-height: 1.5;
 }
@@ -954,10 +984,12 @@ body:has(.cgt-sticky-actions) {
 .cgt-detail-meta {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.35rem 1rem;
-  margin-bottom: 1rem;
+  gap: 0.22rem 0.65rem;
+  margin-bottom: 0.6rem;
+  font-size: 0.75rem;
 }
 .cgt-detail-meta dt {
+  font-size: 0.63rem;
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;

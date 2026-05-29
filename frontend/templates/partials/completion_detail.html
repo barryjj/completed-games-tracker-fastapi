@@ -10,17 +10,10 @@
      style="display: none;"></div>
 {% endif %}
 
-<div class="offcanvas-header border-bottom">
-  {# See library_detail.html for design notes on this title bar. Note: the
-     parent link here swaps THIS pane (completion-detail-content) to the
-     parent's LIBRARY detail — useful since we don't have a "completion
-     detail of the parent game" concept. #}
-  {# See library_detail.html for why the title shows the full display_title. #}
-  <h5 class="offcanvas-title cgt-detail-title">{{ game.display_title }}</h5>
-  <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-</div>
-
 <div class="offcanvas-body p-0">
+  {# Back-arrow injected here by app.js when pane stack > 1. #}
+  <div class="cgt-pane-nav"></div>
+
   {% if hero_url or fallback_hero_url %}
   <div class="cgt-detail-hero">
     <img class="cgt-detail-hero__img"
@@ -35,20 +28,19 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="this.style.display='none'; cgtHeroBlockCheck(this);"
+         onerror="this.style.display='none'; cgtHeroBlockCheck(this);">
     {% endif %}
   </div>
   {% endif %}
 
-  <div class="p-3">
-    {# Parent breadcrumb lives in the title bar (above) — see library_detail.html. #}
-    <div class="mb-3 d-flex flex-wrap gap-1">
+  <div class="cgt-detail-body">
+    <div class="mb-2 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
     </div>
 
-    <div class="cgt-detail-block mb-3">
+    <div class="cgt-detail-block mb-2">
       <h6 class="cgt-detail-block__heading">This completion</h6>
       <dl class="cgt-detail-meta small mb-0">
         <dt>Completed</dt>
@@ -70,9 +62,12 @@
       {% endif %}
     </div>
 
-    <div class="mb-3">
+    <div class="cgt-detail-block mb-2">
       <h6 class="cgt-detail-block__heading">Library entry</h6>
       <dl class="cgt-detail-meta small mb-0">
+        <dt>Title</dt>
+        <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
+
         {# For DLC, lead with the parent breadcrumb + appid. Clickable when
            the user owns the parent. Mirrors the library detail pane. #}
         {# Parent relationship row — contextual label, one-line layout. See
@@ -160,8 +155,12 @@
           data-playthroughs="{{ (completion.playthroughs or '') | e }}"
           data-notes="{{ (completion.notes or '') | e }}">Edit</button>
 
+  {# No view= or q= — the pane opens by entry ID regardless of the grid's
+     current filter state, so we leave the library in whatever state the user
+     had it. Forcing a view would disrupt their context for no real gain now
+     that image controls are available directly from this pane. #}
   <a class="btn btn-outline-secondary btn-sm"
-     href="/library?detail={{ entry.id }}&q={{ game.display_title | urlencode }}">View in library ↗</a>
+     href="/library?detail={{ entry.id }}">View in library ↗</a>
 
   <div class="dropdown ms-auto">
     <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
@@ -174,6 +173,65 @@
              hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
            Refresh game metadata
          </a></li>
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}
+      {% if current_user and current_user.steamgriddb_api_key %}
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'v', '#completion-detail-content'); return false;">
+           Find vertical cover
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'h', '#completion-detail-content'); return false;">
+           Find horizontal cover
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#completion-detail-content'); return false;">
+           Find hero image
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#completion-detail-content'); return false;">
+           Find logo
+         </a></li>
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}
+      {% set _has_overrides = entry.cover_url_override_v or entry.cover_url_override_h or entry.hero_url_override or entry.logo_url_override %}
+      {% if _has_overrides %}
+        {% if entry.cover_url_override_v %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "v"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset vertical cover
+           </a></li>
+        {% endif %}
+        {% if entry.cover_url_override_h %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "h"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset horizontal cover
+           </a></li>
+        {% endif %}
+        {% if entry.hero_url_override %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "hero"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset hero image
+           </a></li>
+        {% endif %}
+        {% if entry.logo_url_override %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "logo"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset logo
+           </a></li>
+        {% endif %}
       <li><hr class="dropdown-divider"></li>
       {% endif %}
       <li><a class="dropdown-item text-danger" href="#"

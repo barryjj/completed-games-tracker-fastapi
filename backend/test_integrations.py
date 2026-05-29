@@ -617,6 +617,17 @@ def test_should_auto_hide_only_fires_for_dlc():
     # subtraction lands actual music products in is_dlc=True anyway.
     assert _should_auto_hide("Some Soundtrack", {"type": "music"}, is_dlc=False) is False
 
+    # Standalone costume / skin / outfit (not just *pack variants)
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Armored Dracula Costume", None, is_dlc=True) is True
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Dark Dracula Costume", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Legendary Outfit", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Hero Skin", None, is_dlc=True) is True
+    # Standalone pack suffix
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Relic Rune Pack", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Starter Pack", None, is_dlc=True) is True
+    # Real content DLC should NOT be hidden
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Revelations", None, is_dlc=True) is False
+
     # Real games shouldn't match (even when is_dlc=True, no pattern word)
     assert _should_auto_hide("Elden Ring", None, is_dlc=True) is False
     assert _should_auto_hide("Doom Eternal", None, is_dlc=True) is False

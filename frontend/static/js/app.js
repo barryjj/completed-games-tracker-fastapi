@@ -42,7 +42,7 @@ window.cgtHeroFailed = function(img) {
   window.cgtHeroBlockCheck(img);
   if (typeof window.cgtAutoFetchHero === 'function') {
     var entryId = img.dataset.cgtEntryId;
-    if (entryId) window.cgtAutoFetchHero(img, parseInt(entryId, 10));
+    if (entryId && img.dataset.cgtFreshOpen) window.cgtAutoFetchHero(img, parseInt(entryId, 10));
   }
 };
 
@@ -201,6 +201,40 @@ if (document.readyState === 'loading') {
   _initAllOffcanvasResize();
 }
 
+// ─── Chrome title dynamic sizing ──────────────────────────────────────────
+//
+// After any detail-pane content swap, shrink .cgt-pane-chrome-title in 0.5px
+// steps until it fits on one line (no overflow), down to a 10px floor.
+// A ResizeObserver re-runs the fit whenever the user drags the pane wider or
+// narrower. Works for both #library-detail-content and
+// #completion-detail-content — lives here so it doesn't have to be duplicated
+// in every page template that hosts a detail pane.
+var _cgtChromeTitleRO = null;
+window.cgtFitChromeTitle = function(contentEl) {
+  var el = contentEl && contentEl.querySelector('.cgt-pane-chrome-title');
+  if (!el) return;
+  el.style.fontSize = '';  // reset to CSS-defined max before measuring
+  var px = parseFloat(getComputedStyle(el).fontSize);
+  var min = 10;
+  while (el.scrollWidth > el.clientWidth + 1 && px > min) {
+    px -= 0.5;
+    el.style.fontSize = px + 'px';
+  }
+};
+
+document.body.addEventListener('htmx:afterSettle', function(e) {
+  var t = e.detail.target;
+  if (t.id !== 'library-detail-content' && t.id !== 'completion-detail-content') return;
+  window.cgtFitChromeTitle(t);
+  // Re-fit whenever the pane is resized by dragging.
+  if (_cgtChromeTitleRO) _cgtChromeTitleRO.disconnect();
+  var header = t.querySelector('.cgt-pane-chrome');
+  if (header && window.ResizeObserver) {
+    _cgtChromeTitleRO = new ResizeObserver(function() { window.cgtFitChromeTitle(t); });
+    _cgtChromeTitleRO.observe(header);
+  }
+});
+
 // ─── Detail-pane back navigation ──────────────────────────────────────────
 //
 // When the library / completion detail pane navigates internally (e.g. user
@@ -260,17 +294,17 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
   var kind = _cgtPaneTargetKind(e.detail.target);
   if (!kind) return;
   var stack = window._cgtPaneStacks[kind];
-  var header = e.detail.target.querySelector('.offcanvas-header');
-  if (!header) return;
-  // Clean up any prior injection so the button reflects the current depth.
-  var existing = header.querySelector('.cgt-pane-back');
-  if (existing) existing.remove();
+  // Target the dedicated nav bar (collapses via CSS :empty when no button).
+  var nav = e.detail.target.querySelector('.cgt-pane-nav');
+  if (!nav) return;
+  // Clear any prior injection so depth is always reflected correctly.
+  nav.innerHTML = '';
   if (stack.length <= 1) return;
   var btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'btn btn-sm btn-outline-secondary me-2 cgt-pane-back';
+  btn.className = 'btn btn-sm btn-outline-secondary cgt-pane-back';
   btn.setAttribute('aria-label', 'Back to previous detail');
-  btn.textContent = '←';
+  btn.textContent = '← Back';
   btn.addEventListener('click', function() {
     stack.pop();  // remove current
     var prev = stack[stack.length - 1];
@@ -280,6 +314,83 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
     var targetId = kind === 'library' ? '#library-detail-content' : '#completion-detail-content';
     htmx.ajax('GET', path, { target: targetId, swap: 'innerHTML' });
   });
-  // Insert before the title so the back arrow reads as the leftmost control.
-  header.insertBefore(btn, header.firstChild);
+  nav.appendChild(btn);
 });
+
+// ─── SteamGridDB art picker ────────────────────────────────────────────────
+//
+// Shared between library.html and completions.html. The modal HTML lives in
+// partials/sgdb_picker_modal.html, included in both pages.
+//
+// openSgdbPicker(entryId, imageType, detailTarget)
+//   detailTarget — CSS selector for the pane content div to reload after
+//   applying ('library-detail-content' or '#completion-detail-content').
+//   Defaults to '#library-detail-content' for backward compat.
+//
+// applySgdbCover — POSTs the chosen URL, then:
+//   hero/logo → reloads whichever detail pane opened the picker
+//   v/h       → refreshes #library-content if it exists (library page only)
+
+var _sgdbModal = null;
+var _sgdbCurrentEntryId = null;
+var _sgdbCurrentImageType = null;
+var _sgdbCurrentDetailTarget = '#library-detail-content';
+var _SGDB_LABELS = {v: 'vertical cover', h: 'horizontal cover', hero: 'hero image', logo: 'logo'};
+
+window.openSgdbPicker = function(entryId, imageType, detailTarget) {
+  if (!_sgdbModal) {
+    _sgdbModal = new bootstrap.Modal(document.getElementById('sgdbPickerModal'));
+  }
+  _sgdbCurrentEntryId = entryId;
+  _sgdbCurrentImageType = imageType;
+  _sgdbCurrentDetailTarget = detailTarget || '#library-detail-content';
+  var label = _SGDB_LABELS[imageType] || imageType;
+  document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label;
+  var grid = document.getElementById('sgdb-picker-grid');
+  grid.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
+  _sgdbModal.show();
+  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&image_type=' + imageType + '&page=0', {
+    target: '#sgdb-picker-grid',
+    swap: 'innerHTML',
+  });
+};
+
+window.rerunSgdbSearch = function(entryId, imageType) {
+  var term = (document.getElementById('sgdb-search-term') || {}).value || '';
+  var url = '/integrations/steamgriddb/search?entry_id=' + entryId
+    + '&image_type=' + imageType + '&page=0'
+    + (term ? '&query=' + encodeURIComponent(term) : '');
+  htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
+};
+
+window.applySgdbCover = function(entryId, imageType, url) {
+  var body = new URLSearchParams();
+  body.append('image_type', imageType);
+  body.append('url', url);
+  fetch('/library/entries/' + entryId + '/cover-override', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body.toString(),
+  }).then(function(r) {
+    if (!r.ok) return;
+    if (_sgdbModal) _sgdbModal.hide();
+    if (imageType === 'hero' || imageType === 'logo') {
+      // Hero/logo live in the detail pane — reload whichever pane opened the picker.
+      htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+        target: _sgdbCurrentDetailTarget,
+        swap: 'innerHTML',
+      });
+    } else {
+      // v/h covers live in the library grid. Refresh it only if present
+      // (not available on the completions page).
+      var libraryContent = document.getElementById('library-content');
+      if (libraryContent) {
+        htmx.ajax('GET', window.location.pathname + window.location.search, {
+          target: '#library-content',
+          swap: 'innerHTML',
+          select: '#library-content',
+        });
+      }
+    }
+  });
+};

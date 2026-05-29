@@ -913,6 +913,7 @@ def search_library_games(
 def library_entry_detail(
     request: Request,
     entry_id: int,
+    fresh_open: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -973,6 +974,7 @@ def library_entry_detail(
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
             "needs_refresh": needs_refresh,
+            "fresh_open": fresh_open,
             **visuals,
         },
     )
@@ -1504,6 +1506,7 @@ def completion_detail(
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
+            "current_user": current_user,
             **visuals,
         },
     )
