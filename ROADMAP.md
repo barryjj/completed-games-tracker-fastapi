@@ -241,6 +241,12 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Migration backfills existing entries: `sort_name = COALESCE(display_name, title)` where sort_name is null
 - Inspired by Steam's old community sort-order tool (RIP) and standard media library practice (iTunes Sort Name etc.)
 
+### "Recently played" library view
+- Filter/sort option showing entries ordered by `last_played_at` descending — quick way to resume whatever you were playing
+- Steam provides this via `rtime_last_played` (already stored as `last_played_at`); useful as long as Steam is the primary platform
+- Caveat: manual entries have no play date and PSN last-played data availability is uncertain — this view would be Steam-centric or would need a "hide entries with no play date" option to avoid a wall of nulls
+- Roadmap-only for now; revisit once PSN integration exists and we know what last-played data is available there
+
 ### Missing artwork filter / utility view
 - Checkbox or filter option in the library toolbar: "Missing artwork" — shows only entries with no cover art (no override, no GameArtwork row for the current orientation)
 - Useful after bulk SGDB fill runs to find anything that slipped through (manual entries, obscure titles, DLC with no art catalog entry)
