@@ -426,8 +426,8 @@ def test_detail_pane_returns_content_for_owned_entry(client, db_session):
     r = client.get(f"/library/entries/{entry.id}/detail")
     assert r.status_code == 200
     assert b"Elden Ring" in r.content
-    assert b"offcanvas-header" in r.content
     assert b"offcanvas-body" in r.content
+    assert b"cgt-pane-nav" in r.content
 
 
 def test_detail_pane_404_for_other_users_entry(client, db_session):
