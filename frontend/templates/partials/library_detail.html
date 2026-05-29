@@ -30,13 +30,6 @@
      style="display:none;"></div>
 {% endif %}
 
-<div class="offcanvas-header border-bottom cgt-pane-chrome">
-  {# Title scales down dynamically (JS fitChromeTitle) before truncating.
-     Back-arrow is injected before this span by app.js when pane stack > 1. #}
-  <span class="cgt-pane-chrome-title">{{ game.display_title }}</span>
-  <button type="button" class="btn-close ms-auto flex-shrink-0" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-</div>
-
 <div class="offcanvas-body p-0">
   {# Hero block. Full-bleed image (own or parent's library_hero), with the
      game logo overlaid bottom-left. If neither hero nor logo loads, the
@@ -85,6 +78,9 @@
     {# Metadata section — same tinted-block treatment as Description/DLC/etc. #}
     <div class="cgt-detail-block mb-2">
     <dl class="cgt-detail-meta small mb-0">
+      <dt>Title</dt>
+      <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
+
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"
            in-collection    → "In collection"
