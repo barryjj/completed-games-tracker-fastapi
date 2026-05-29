@@ -134,6 +134,47 @@
         </span>
       </dd>
       {% endif %}
+
+      {% if steam_meta.released %}
+      <dt>Released</dt>
+      <dd>{{ steam_meta.released }}</dd>
+      {% endif %}
+
+      {% if steam_meta.developers %}
+      <dt>Developer</dt>
+      <dd>{{ steam_meta.developers | join(", ") }}</dd>
+      {% endif %}
+
+      {% if steam_meta.publishers %}
+      <dt>Publisher</dt>
+      <dd>{{ steam_meta.publishers | join(", ") }}</dd>
+      {% endif %}
+
+      {% if steam_meta.genres %}
+      <dt>Genre</dt>
+      <dd>{{ steam_meta.genres | join(", ") }}</dd>
+      {% endif %}
+
+      {% if steam_meta.features %}
+      <dt>Features</dt>
+      <dd>{{ steam_meta.features | join(" · ") }}</dd>
+      {% endif %}
+
+      {% if steam_meta.metacritic_score is not none %}
+      <dt>Metacritic</dt>
+      <dd>
+        {% if steam_meta.metacritic_url %}
+        <a href="{{ steam_meta.metacritic_url }}" target="_blank" rel="noopener">{{ steam_meta.metacritic_score }}/100 ↗</a>
+        {% else %}
+        {{ steam_meta.metacritic_score }}/100
+        {% endif %}
+      </dd>
+      {% endif %}
+
+      {% if steam_meta.website %}
+      <dt>Website</dt>
+      <dd><a href="{{ steam_meta.website }}" target="_blank" rel="noopener">Official site ↗</a></dd>
+      {% endif %}
     </dl>
     </div>
 

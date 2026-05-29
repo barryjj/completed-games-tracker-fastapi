@@ -274,6 +274,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
 - New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
 - Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
+- Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
 - Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
 - Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
 - Filter / sort by achievement progress (e.g. "show games close to 100%")

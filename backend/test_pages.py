@@ -496,6 +496,87 @@ def test_detail_pane_shows_description_from_appdetails(client, db_session):
     assert b"A roguelike from Supergiant Games." in r.content
 
 
+def test_extract_steam_meta_happy_path():
+    """_extract_steam_meta returns clean display fields from a full payload."""
+    from backend.pages import _extract_steam_meta
+
+    appdetails = {
+        "genres": [{"id": "1", "description": "Action"}, {"id": "25", "description": "Adventure"}],
+        "categories": [
+            {"id": 2, "description": "Single-player"},
+            {"id": 22, "description": "Steam Achievements"},  # should be filtered out
+            {"id": 29, "description": "Steam Trading Cards"},  # should be filtered out
+            {"id": 28, "description": "Full controller support"},
+        ],
+        "developers": ["Hello Games"],
+        "publishers": ["Hello Games"],  # same as dev — should be suppressed
+        "release_date": {"coming_soon": False, "date": "Aug 12, 2016"},
+        "metacritic": {"score": 71, "url": "https://www.metacritic.com/game/no-mans-sky/"},
+        "website": "https://www.no-mans-sky.com",
+    }
+    meta = _extract_steam_meta(appdetails)
+
+    assert meta["genres"] == ["Action", "Adventure"]
+    assert meta["features"] == ["Single-player", "Full controller support"]
+    assert meta["developers"] == ["Hello Games"]
+    assert meta["publishers"] == []  # suppressed — same as developer
+    assert meta["released"] == "Aug 12, 2016"
+    assert meta["metacritic_score"] == 71
+    assert meta["metacritic_url"] == "https://www.metacritic.com/game/no-mans-sky/"
+    assert meta["website"] == "https://www.no-mans-sky.com"
+
+
+def test_extract_steam_meta_publisher_shown_when_different():
+    from backend.pages import _extract_steam_meta
+
+    meta = _extract_steam_meta({
+        "developers": ["id Software"],
+        "publishers": ["Bethesda Softworks"],
+    })
+    assert meta["developers"] == ["id Software"]
+    assert meta["publishers"] == ["Bethesda Softworks"]
+
+
+def test_extract_steam_meta_empty_payload():
+    from backend.pages import _extract_steam_meta
+
+    meta = _extract_steam_meta({})
+    assert meta["genres"] == []
+    assert meta["features"] == []
+    assert meta["developers"] == []
+    assert meta["publishers"] == []
+    assert meta["released"] == ""
+    assert meta["metacritic_score"] is None
+    assert meta["website"] is None
+
+
+def test_detail_pane_shows_steam_meta_fields(client, db_session):
+    """Detail pane renders genre, developer, release date, and metacritic from appdetails."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="DOOM Eternal")
+    entry.release.raw_data = {
+        "appdetails": {
+            "genres": [{"id": "1", "description": "Action"}],
+            "categories": [{"id": 2, "description": "Single-player"}],
+            "developers": ["id Software"],
+            "publishers": ["Bethesda Softworks"],
+            "release_date": {"coming_soon": False, "date": "Mar 20, 2020"},
+            "metacritic": {"score": 88, "url": "https://www.metacritic.com/game/doom-eternal/"},
+            "website": "https://bethesda.net/en/game/doom-eternal",
+        }
+    }
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{entry.id}/detail")
+    assert b"Action" in r.content
+    assert b"id Software" in r.content
+    assert b"Bethesda Softworks" in r.content
+    assert b"Mar 20, 2020" in r.content
+    assert b"88/100" in r.content
+    assert b"Single-player" in r.content
+
+
 # ─── Completion detail pane ─────────────────────────────────────────────────
 
 
