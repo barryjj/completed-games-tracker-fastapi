@@ -959,6 +959,7 @@ body:has(.cgt-sticky-actions) {
   font-size: 0.8rem;
 }
 .cgt-detail-meta dt {
+  font-size: 0.7rem;
   font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;

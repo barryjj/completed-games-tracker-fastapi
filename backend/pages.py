@@ -913,7 +913,7 @@ def search_library_games(
 def library_entry_detail(
     request: Request,
     entry_id: int,
-    suppress_autofetch: bool = Query(False),
+    fresh_open: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -974,7 +974,7 @@ def library_entry_detail(
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
             "needs_refresh": needs_refresh,
-            "suppress_autofetch": suppress_autofetch,
+            "fresh_open": fresh_open,
             **visuals,
         },
     )

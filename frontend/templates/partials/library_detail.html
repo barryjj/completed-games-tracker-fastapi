@@ -18,10 +18,11 @@
      hx-swap="none"
      style="display: none;"></div>
 {% endif %}
-{% if not suppress_autofetch and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key and entry.hero_url_override is none %}
-{# No hero URL at all — fire a background SGDB hero fetch. Placed at the
-   top level alongside needs_refresh so hx-trigger="load" fires reliably.
-   On success, reload the pane so the hero appears this session. #}
+{% if fresh_open and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key and entry.hero_url_override is none %}
+{# No hero URL — fire a background SGDB hero fetch. Only rendered when the
+   pane is opened fresh by a user row-click (fresh_open=1). Never rendered on
+   internal refreshes (clear overrides, logo auto-fetch reloads, etc.) so the
+   auto-fetch cannot re-trigger after a Reset or any other pane swap. #}
 <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
      hx-trigger="load delay:1000ms"
      hx-swap="none"
@@ -30,18 +31,10 @@
 {% endif %}
 
 <div class="offcanvas-header border-bottom">
-  {# Title bar shows the entry's full display_title. For DLC, the parent
-     identity moves into a "Parent App" metadata row below the hero so the
-     title bar doesn't have to carry the whole breadcrumb. The header bar
-     also holds the close button + back-arrow (injected by app.js when the
-     pane stack has > 1 entry). #}
-  {# Full display_title; previous "subtitle = title minus parent prefix"
-     attempt produced weird results on Steam crossover DLCs (e.g. "Dead by
-     Daylight x Attack on Titan: ArmoredPack" minus parent "Dead by Daylight"
-     became "x Attack on Titan: ArmoredPack" — title starting with 'x' makes
-     no sense). Just show what Steam gives us; CSS ellipsis handles overflow. #}
-  <h5 class="offcanvas-title cgt-detail-title">{{ game.display_title }}</h5>
-  <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  {# Title-bar is chrome-only: close button (+ back-arrow injected by app.js).
+     The game title moves into the metadata section as the first row so it
+     has the full pane width and can wrap freely on narrow panes. #}
+  <button type="button" class="btn-close ms-auto" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
 
 <div class="offcanvas-body p-0">
@@ -63,11 +56,10 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="this.style.display='none'; cgtHeroBlockCheck(this); cgtAutoFetchLogo(this, {{ entry.id }});">
-    {% elif not suppress_autofetch and current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
+         onerror="this.style.display='none'; cgtHeroBlockCheck(this); {% if fresh_open %}cgtAutoFetchLogo(this, {{ entry.id }});{% endif %}">
+    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
     {# No logo URL at all — fire a background SGDB fetch on pane open.
-       Skipped when suppress_autofetch=1 (e.g. after user explicitly resets).
-       On success (200), reload the pane so the logo appears this session. #}
+       Only rendered on fresh user-initiated opens (fresh_open=1). #}
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
          hx-trigger="load delay:800ms"
          hx-swap="none"
@@ -95,6 +87,11 @@
        saw the entry, not anything the user cares about (we don't track
        release date or first-played which are the dates that matter). #}
     <dl class="cgt-detail-meta small">
+      {# Title row — sits first so long names get the full pane width and
+         can wrap rather than being truncated in the offcanvas header. #}
+      <dt>Title</dt>
+      <dd>{{ game.display_title }}</dd>
+
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"
            in-collection    → "In collection"
@@ -288,7 +285,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail?suppress_autofetch=1', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
              Reset hero image
            </a></li>
         {% endif %}
@@ -297,7 +294,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail?suppress_autofetch=1', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
              Reset logo
            </a></li>
         {% endif %}
