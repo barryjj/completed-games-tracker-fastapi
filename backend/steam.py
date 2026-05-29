@@ -132,8 +132,12 @@ _AUTO_HIDE_RE = re.compile(
     # Standalone cosmetic items — word alone is enough; the *pack variants
     # below also catch compound forms like "Skin Pack" / "Costume Pack".
     r"skin|costume|outfit|"
-    # Generic DLC pack suffixes — catch "Relic Rune Pack", "Starter Pack", etc.
-    r"pack|"
+    # Generic DLC pack / pass suffixes.
+    # "pack" catches "Relic Rune Pack", "Starter Pack", etc.
+    # "pass" catches "Year One Pass", "Battle Pass", "Annual Pass", etc.
+    # Both are standalone word matches — DLC-only because is_dlc gate is checked
+    # before this regex fires (see _should_auto_hide).
+    r"pack|pass|"
     r"cosmetic\s*pack|emotes?\s*pack|customization(\s+item)?\s*pack|"
     r"(skin|costume|outfit)\s*pack|cinematic\s*pack|"
     # Pass-suffix DLC (heavy in fighting games)
@@ -777,10 +781,19 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                 if app_type == "dlc" and not game.is_dlc:
                     game.is_dlc = True
                 elif app_type == "game" and game.is_dlc:
-                    # Steam's rgOwnedApps subtraction can misclassify edge cases
-                    # (e.g. games owned via paths GetOwnedGames doesn't return).
-                    # Trust appdetails when it explicitly says "game".
-                    game.is_dlc = False
+                    # Steam sometimes tags season passes and bundle wrappers as
+                    # type=game even though they are not completable games.
+                    # Two signals mean "definitely DLC, don't demote":
+                    #   1. appdetails has a fullgame object → Steam itself links
+                    #      it to a parent, so it's DLC regardless of type field.
+                    #   2. Title matches auto-hide patterns (pass, pack, etc.)
+                    #      → purchase wrapper; keeping is_dlc=True so auto-hide
+                    #      can fire on it.
+                    # Otherwise trust appdetails when it says "game".
+                    has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                    looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
+                    if not has_fullgame and not looks_like_dlc:
+                        game.is_dlc = False
 
             # Link DLC to its base game if not already linked — but respect
             # user override on parent_id.
