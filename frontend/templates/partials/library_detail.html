@@ -31,6 +31,10 @@
 {% endif %}
 
 <div class="offcanvas-body p-0">
+  {# Back-arrow injected here by app.js when pane stack > 1. Collapses via
+     CSS :empty when there is no navigation history. #}
+  <div class="cgt-pane-nav"></div>
+
   {# Hero block. Full-bleed image (own or parent's library_hero), with the
      game logo overlaid bottom-left. If neither hero nor logo loads, the
      onerror handlers remove themselves and the block collapses cleanly. #}

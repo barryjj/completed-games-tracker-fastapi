@@ -294,17 +294,17 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
   var kind = _cgtPaneTargetKind(e.detail.target);
   if (!kind) return;
   var stack = window._cgtPaneStacks[kind];
-  var header = e.detail.target.querySelector('.offcanvas-header');
-  if (!header) return;
-  // Clean up any prior injection so the button reflects the current depth.
-  var existing = header.querySelector('.cgt-pane-back');
-  if (existing) existing.remove();
+  // Target the dedicated nav bar (collapses via CSS :empty when no button).
+  var nav = e.detail.target.querySelector('.cgt-pane-nav');
+  if (!nav) return;
+  // Clear any prior injection so depth is always reflected correctly.
+  nav.innerHTML = '';
   if (stack.length <= 1) return;
   var btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'btn btn-sm btn-outline-secondary me-2 cgt-pane-back';
+  btn.className = 'btn btn-sm btn-outline-secondary cgt-pane-back';
   btn.setAttribute('aria-label', 'Back to previous detail');
-  btn.textContent = '←';
+  btn.textContent = '← Back';
   btn.addEventListener('click', function() {
     stack.pop();  // remove current
     var prev = stack[stack.length - 1];
@@ -314,6 +314,5 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
     var targetId = kind === 'library' ? '#library-detail-content' : '#completion-detail-content';
     htmx.ajax('GET', path, { target: targetId, swap: 'innerHTML' });
   });
-  // Insert before the title so the back arrow reads as the leftmost control.
-  header.insertBefore(btn, header.firstChild);
+  nav.appendChild(btn);
 });
