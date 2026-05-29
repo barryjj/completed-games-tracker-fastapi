@@ -1060,12 +1060,14 @@ def refresh_entry_metadata(
             if app_type == "dlc" and not game.is_dlc:
                 game.is_dlc = True
             elif app_type == "game" and game.is_dlc:
-                # Don't demote if fullgame is present (Steam links it to a
-                # parent) or if the title matches auto-hide patterns (season
-                # pass / bundle wrapper Steam mislabels as type=game).
+                # Don't demote if any of these signals say it's attached content:
+                #   1. game.parent_id → already resolved DB link, strongest signal
+                #   2. fullgame in appdetails → Steam links it to a parent game
+                #   3. Title matches auto-hide patterns → purchase wrapper
+                has_parent = game.parent_id is not None
                 has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
                 looks_like_dlc = _steam._should_auto_hide(game.title, details, is_dlc=True)
-                if not has_fullgame and not looks_like_dlc:
+                if not has_parent and not has_fullgame and not looks_like_dlc:
                     game.is_dlc = False
             elif app_type == "game" and not game.is_dlc:
                 # Re-promote entries previously demoted before the guard above
