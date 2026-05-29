@@ -683,11 +683,7 @@ def _promote_dlc_children(db: Session, parent_game_id: int, dlc_appids: list[int
     Respects is_dlc_user_set and parent_id_user_set so manual overrides win.
     """
     for appid in dlc_appids:
-        child_release = (
-            db.query(models.GameRelease)
-            .filter_by(source="steam", external_id=str(appid))
-            .first()
-        )
+        child_release = db.query(models.GameRelease).filter_by(source="steam", external_id=str(appid)).first()
         if not child_release:
             continue
         child_game = child_release.game
