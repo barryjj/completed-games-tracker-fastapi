@@ -42,7 +42,7 @@ window.cgtHeroFailed = function(img) {
   window.cgtHeroBlockCheck(img);
   if (typeof window.cgtAutoFetchHero === 'function') {
     var entryId = img.dataset.cgtEntryId;
-    if (entryId) window.cgtAutoFetchHero(img, parseInt(entryId, 10));
+    if (entryId && img.dataset.cgtFreshOpen) window.cgtAutoFetchHero(img, parseInt(entryId, 10));
   }
 };
 
