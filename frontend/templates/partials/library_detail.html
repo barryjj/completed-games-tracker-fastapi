@@ -30,11 +30,11 @@
      style="display:none;"></div>
 {% endif %}
 
-<div class="offcanvas-header border-bottom">
-  {# Title-bar is chrome-only: close button (+ back-arrow injected by app.js).
-     The game title moves into the metadata section as the first row so it
-     has the full pane width and can wrap freely on narrow panes. #}
-  <button type="button" class="btn-close ms-auto" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+<div class="offcanvas-header border-bottom cgt-pane-chrome">
+  {# Title scales down dynamically (JS fitChromeTitle) before truncating.
+     Back-arrow is injected before this span by app.js when pane stack > 1. #}
+  <span class="cgt-pane-chrome-title">{{ game.display_title }}</span>
+  <button type="button" class="btn-close ms-auto flex-shrink-0" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
 
 <div class="offcanvas-body p-0">
@@ -73,12 +73,6 @@
   {# Content padding — pushes everything below the hero in from the edges.
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
   <div class="cgt-detail-body">
-    {# Title sits below the hero with full pane width — wraps freely rather
-       than being squashed into a header chrome bar or a narrow metadata cell. #}
-    <div class="cgt-detail-body__title-row">
-      <h6 class="cgt-pane-title">{{ game.display_title }}</h6>
-    </div>
-
     {# Badges row: platform + flags. #}
     <div class="mb-2 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
@@ -88,12 +82,9 @@
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
 
-    {# Metadata. Dates rendered American long-form (May 23, 2026). When we
-       eventually add a locale preference this becomes user-configurable. The
-       "Added to tracker" row was dropped — it captures when our sync first
-       saw the entry, not anything the user cares about (we don't track
-       release date or first-played which are the dates that matter). #}
-    <dl class="cgt-detail-meta small">
+    {# Metadata section — same tinted-block treatment as Description/DLC/etc. #}
+    <div class="cgt-detail-block mb-2">
+    <dl class="cgt-detail-meta small mb-0">
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"
            in-collection    → "In collection"
@@ -144,6 +135,7 @@
       </dd>
       {% endif %}
     </dl>
+    </div>
 
     {# All "sections" (Description, DLC list, Completions) use the same
        .cgt-detail-block treatment so they read as a uniform stack of

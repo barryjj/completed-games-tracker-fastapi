@@ -10,14 +10,9 @@
      style="display: none;"></div>
 {% endif %}
 
-<div class="offcanvas-header border-bottom">
-  {# See library_detail.html for design notes on this title bar. Note: the
-     parent link here swaps THIS pane (completion-detail-content) to the
-     parent's LIBRARY detail — useful since we don't have a "completion
-     detail of the parent game" concept. #}
-  {# See library_detail.html for why the title shows the full display_title. #}
-  <h5 class="offcanvas-title cgt-detail-title">{{ game.display_title }}</h5>
-  <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+<div class="offcanvas-header border-bottom cgt-pane-chrome">
+  <span class="cgt-pane-chrome-title">{{ game.display_title }}</span>
+  <button type="button" class="btn-close ms-auto flex-shrink-0" data-bs-dismiss="offcanvas" aria-label="Close"></button>
 </div>
 
 <div class="offcanvas-body p-0">
@@ -35,20 +30,19 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="this.style.display='none'; cgtHeroBlockCheck(this);"
+         onerror="this.style.display='none'; cgtHeroBlockCheck(this);">
     {% endif %}
   </div>
   {% endif %}
 
-  <div class="p-3">
-    {# Parent breadcrumb lives in the title bar (above) — see library_detail.html. #}
-    <div class="mb-3 d-flex flex-wrap gap-1">
+  <div class="cgt-detail-body">
+    <div class="mb-2 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
     </div>
 
-    <div class="cgt-detail-block mb-3">
+    <div class="cgt-detail-block mb-2">
       <h6 class="cgt-detail-block__heading">This completion</h6>
       <dl class="cgt-detail-meta small mb-0">
         <dt>Completed</dt>
@@ -70,7 +64,7 @@
       {% endif %}
     </div>
 
-    <div class="mb-3">
+    <div class="cgt-detail-block mb-2">
       <h6 class="cgt-detail-block__heading">Library entry</h6>
       <dl class="cgt-detail-meta small mb-0">
         {# For DLC, lead with the parent breadcrumb + appid. Clickable when

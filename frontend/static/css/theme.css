@@ -797,21 +797,20 @@ body:has(.cgt-sticky-actions) {
   font-size: 0.8rem;
 }
 
-/* Title strip: game name sits directly below the hero with full pane width
-   so long names wrap naturally rather than being crammed into header chrome
-   or a narrow metadata grid cell. Slightly bolder than body text so it reads
-   as the primary label, but intentionally not large — the hero image already
-   carries the visual weight. */
-.cgt-detail-body__title-row {
-  margin-bottom: 0.4rem;
+/* Chrome header: muted small title that scales down via JS (fitChromeTitle)
+   before truncating. flex-shrink lets it give space to the back-arrow and
+   close button without pushing them off-screen. */
+.cgt-pane-chrome {
+  gap: 0.4rem;
 }
-.cgt-pane-title {
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.35;
-  margin: 0;
-  color: var(--ctp-text);
-  word-break: break-word;
+.cgt-pane-chrome-title {
+  font-size: 0.8rem;
+  color: var(--ctp-subtext);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 1 1 0;
 }
 
 /* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
@@ -881,10 +880,10 @@ body:has(.cgt-sticky-actions) {
 }
 .cgt-detail-hero__logo {
   position: absolute;
-  left: 16px;
-  bottom: 12px;
-  max-width: 45%;
-  max-height: 60%;
+  left: 14px;
+  bottom: 10px;
+  max-width: 38%;
+  max-height: 50%;
   object-fit: contain;
   z-index: 1;
   /* Drop shadow so the logo reads even when the bottom of the hero is busy. */
@@ -902,20 +901,20 @@ body:has(.cgt-sticky-actions) {
   padding: 9px 12px;
 }
 .cgt-detail-block__heading {
-  font-size: 0.85rem;
+  font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ctp-subtext);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   font-weight: 600;
 }
 
 /* Description text inside its block — top border separates it from the heading. */
 .cgt-detail-description {
   border-top: 1px solid var(--ctp-surface0);
-  padding-top: 10px;
+  padding-top: 8px;
   margin-top: 4px;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
   color: var(--ctp-subtext1);
   line-height: 1.5;
 }

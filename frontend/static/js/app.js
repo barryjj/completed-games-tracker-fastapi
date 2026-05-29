@@ -201,6 +201,40 @@ if (document.readyState === 'loading') {
   _initAllOffcanvasResize();
 }
 
+// ─── Chrome title dynamic sizing ──────────────────────────────────────────
+//
+// After any detail-pane content swap, shrink .cgt-pane-chrome-title in 0.5px
+// steps until it fits on one line (no overflow), down to a 10px floor.
+// A ResizeObserver re-runs the fit whenever the user drags the pane wider or
+// narrower. Works for both #library-detail-content and
+// #completion-detail-content — lives here so it doesn't have to be duplicated
+// in every page template that hosts a detail pane.
+var _cgtChromeTitleRO = null;
+window.cgtFitChromeTitle = function(contentEl) {
+  var el = contentEl && contentEl.querySelector('.cgt-pane-chrome-title');
+  if (!el) return;
+  el.style.fontSize = '';  // reset to CSS-defined max before measuring
+  var px = parseFloat(getComputedStyle(el).fontSize);
+  var min = 10;
+  while (el.scrollWidth > el.clientWidth + 1 && px > min) {
+    px -= 0.5;
+    el.style.fontSize = px + 'px';
+  }
+};
+
+document.body.addEventListener('htmx:afterSettle', function(e) {
+  var t = e.detail.target;
+  if (t.id !== 'library-detail-content' && t.id !== 'completion-detail-content') return;
+  window.cgtFitChromeTitle(t);
+  // Re-fit whenever the pane is resized by dragging.
+  if (_cgtChromeTitleRO) _cgtChromeTitleRO.disconnect();
+  var header = t.querySelector('.cgt-pane-chrome');
+  if (header && window.ResizeObserver) {
+    _cgtChromeTitleRO = new ResizeObserver(function() { window.cgtFitChromeTitle(t); });
+    _cgtChromeTitleRO.observe(header);
+  }
+});
+
 // ─── Detail-pane back navigation ──────────────────────────────────────────
 //
 // When the library / completion detail pane navigates internally (e.g. user
