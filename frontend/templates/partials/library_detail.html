@@ -49,6 +49,7 @@
          loading="lazy"
          data-fallback="{{ fallback_hero_url if hero_url else '' }}"
          data-cgt-entry-id="{{ entry.id }}"
+         data-cgt-fresh-open="{{ '1' if fresh_open else '' }}"
          onerror="cgtHeroFailed(this)">
     {% if logo_url or fallback_logo_url %}
     <img class="cgt-detail-hero__logo"
