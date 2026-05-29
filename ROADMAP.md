@@ -234,6 +234,12 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Merge logic: effective regex is built from `system (not disabled) + user` rows at request time, cached per-user
 - Useful for publisher-specific patterns that are too niche for the default list (e.g. a specific franchise's naming convention for cosmetic drops)
 
+### Missing artwork filter / utility view
+- Checkbox or filter option in the library toolbar: "Missing artwork" — shows only entries with no cover art (no override, no GameArtwork row for the current orientation)
+- Useful after bulk SGDB fill runs to find anything that slipped through (manual entries, obscure titles, DLC with no art catalog entry)
+- Could be a standalone filter checkbox alongside Show hidden, or a "Utility" view option alongside Default / DLC / Collections / etc.
+- Orientation-aware: in grid_v mode it checks vertical cover, in grid_h checks horizontal, in list checks either
+
 ### PSN integration
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
