@@ -403,21 +403,6 @@ function rerunSgdbSearch(entryId, imageType) {
   htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
 }
 
-// Set to true when a v/h cover is changed so the library reloads on pane close.
-var _cgtLibraryNeedsRefresh = false;
-
-(function() {
-  var pane = document.getElementById('library-detail');
-  if (pane) {
-    pane.addEventListener('hidden.bs.offcanvas', function() {
-      if (_cgtLibraryNeedsRefresh) {
-        _cgtLibraryNeedsRefresh = false;
-        location.reload();
-      }
-    });
-  }
-})();
-
 function applySgdbCover(entryId, imageType, url) {
   var body = new URLSearchParams();
   body.append('image_type', imageType);
@@ -436,9 +421,14 @@ function applySgdbCover(entryId, imageType, url) {
           swap: 'innerHTML',
         });
       } else {
-        // v/h covers live in the grid/list. Flag for reload when pane closes
-        // so the user sees updated covers without a jarring mid-session reload.
-        _cgtLibraryNeedsRefresh = true;
+        // v/h covers live in the library grid. Refresh just #library-content
+        // in-place so the updated cover appears immediately without closing
+        // the detail pane or reloading the full page.
+        htmx.ajax('GET', window.location.pathname + window.location.search, {
+          target: '#library-content',
+          swap: 'innerHTML',
+          select: '#library-content',
+        });
       }
     }
   });
@@ -627,7 +617,7 @@ function openLibraryDetail(entryId) {
   // Show the offcanvas immediately (with whatever was last loaded, or empty);
   // HTMX fetches fresh content into the inner div.
   _libraryDetailOffcanvas.show();
-  htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+  htmx.ajax('GET', '/library/entries/' + entryId + '/detail?fresh_open=1', {
     target: '#library-detail-content',
     swap: 'innerHTML',
   });
