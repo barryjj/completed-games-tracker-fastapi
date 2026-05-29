@@ -495,6 +495,16 @@ function cgtAutoFetchLogo(img, entryId) {
       localStorage.setItem(BORDERLESS_KEY, borderlessEl.checked ? '1' : '0');
     });
   }
+
+  // Re-apply borderless after any HTMX swap of #library-content (search,
+  // filter, pagination). The class lives on .cgt-library-grid which is inside
+  // the swapped element, so it gets blown away. Gap/size survive because they
+  // use CSS vars on documentElement; borderless needs this extra re-apply.
+  document.body.addEventListener('htmx:afterSwap', function(e) {
+    if (e.detail.target.id !== 'library-content') return;
+    var on = localStorage.getItem(BORDERLESS_KEY) === '1';
+    if (on) applyBorderless(true);
+  });
 })();
 
 var COLLECTION_KEYWORDS = ["collection","anthology","trilogy","compilation","complete edition","complete pack","bundle","chronicles","archives","legacy","origins"];
