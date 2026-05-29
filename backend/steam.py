@@ -783,16 +783,18 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                 elif app_type == "game" and game.is_dlc:
                     # Steam sometimes tags season passes and bundle wrappers as
                     # type=game even though they are not completable games.
-                    # Two signals mean "definitely DLC, don't demote":
-                    #   1. appdetails has a fullgame object → Steam itself links
-                    #      it to a parent, so it's DLC regardless of type field.
-                    #   2. Title matches auto-hide patterns (pass, pack, etc.)
-                    #      → purchase wrapper; keeping is_dlc=True so auto-hide
-                    #      can fire on it.
+                    # Three signals mean "definitely DLC, don't demote":
+                    #   1. game.parent_id set → already resolved to a parent in
+                    #      our DB; strongest signal, beats the appdetails type.
+                    #   2. appdetails has a fullgame object → Steam itself links
+                    #      it to a parent game.
+                    #   3. Title matches auto-hide patterns (pass, pack, etc.)
+                    #      → purchase wrapper Steam mislabels as a game.
                     # Otherwise trust appdetails when it says "game".
+                    has_parent = game.parent_id is not None
                     has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
                     looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
-                    if not has_fullgame and not looks_like_dlc:
+                    if not has_parent and not has_fullgame and not looks_like_dlc:
                         game.is_dlc = False
                 elif app_type == "game" and not game.is_dlc:
                     # Re-promote entries previously demoted before the guard
