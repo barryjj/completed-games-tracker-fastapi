@@ -687,14 +687,16 @@ def test_enrichment_does_not_demote_season_pass_mislabeled_as_game(db_session):
     db_session.commit()
 
     # Steam says type=game (its mislabelling), no fullgame field.
-    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}), \
-         patch("backend.steam.time.sleep", return_value=None):
+    with (
+        patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
     game = db_session.query(models.Game).filter_by(title="DOOM Eternal Year One Pass").first()
     entry = db_session.query(models.UserLibraryEntry).first()
-    assert game.is_dlc is True   # not demoted
+    assert game.is_dlc is True  # not demoted
     assert entry.is_hidden is True  # and auto-hidden
 
 
@@ -720,14 +722,16 @@ def test_enrichment_repromotes_previously_demoted_season_pass(db_session):
     db_session.add(entry)
     db_session.commit()
 
-    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}), \
-         patch("backend.steam.time.sleep", return_value=None):
+    with (
+        patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
     game = db_session.query(models.Game).filter_by(title="DOOM Eternal Year One Pass").first()
     entry = db_session.query(models.UserLibraryEntry).first()
-    assert game.is_dlc is True   # re-promoted
+    assert game.is_dlc is True  # re-promoted
     assert entry.is_hidden is True  # and auto-hidden
 
 
@@ -944,9 +948,7 @@ def test_enrichment_promotes_dlc_children_via_parent_dlc_array(db_session):
     parent_game = models.Game(title="DOOM Eternal", is_dlc=False)
     db_session.add(parent_game)
     db_session.flush()
-    parent_release = models.GameRelease(
-        game_id=parent_game.id, platform="Steam", source="steam", external_id="782330"
-    )
+    parent_release = models.GameRelease(game_id=parent_game.id, platform="Steam", source="steam", external_id="782330")
     db_session.add(parent_release)
     db_session.flush()
     db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=parent_release.id, import_source="steam_import"))
@@ -957,11 +959,17 @@ def test_enrichment_promotes_dlc_children_via_parent_dlc_array(db_session):
     db_session.add_all([child_game1, child_game2])
     db_session.flush()
     child_release1 = models.GameRelease(
-        game_id=child_game1.id, platform="Steam", source="steam", external_id="1098292",
+        game_id=child_game1.id,
+        platform="Steam",
+        source="steam",
+        external_id="1098292",
         metadata_fetched_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
     )
     child_release2 = models.GameRelease(
-        game_id=child_game2.id, platform="Steam", source="steam", external_id="1098293",
+        game_id=child_game2.id,
+        platform="Steam",
+        source="steam",
+        external_id="1098293",
         metadata_fetched_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
     )
     db_session.add_all([child_release1, child_release2])
