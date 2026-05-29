@@ -1067,6 +1067,13 @@ def refresh_entry_metadata(
                 looks_like_dlc = _steam._should_auto_hide(game.title, details, is_dlc=True)
                 if not has_fullgame and not looks_like_dlc:
                     game.is_dlc = False
+            elif app_type == "game" and not game.is_dlc:
+                # Re-promote entries previously demoted before the guard above
+                # existed — catches season passes already sitting at is_dlc=False.
+                has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                looks_like_dlc = _steam._should_auto_hide(game.title, details, is_dlc=True)
+                if has_fullgame or looks_like_dlc:
+                    game.is_dlc = True
 
         if app_type == "dlc" and game.parent_id is None and not game.parent_id_user_set:
             fullgame = details.get("fullgame", {})
