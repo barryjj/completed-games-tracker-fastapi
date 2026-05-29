@@ -112,6 +112,63 @@ def _needs_metadata_refresh(release) -> bool:
     return age.days >= _METADATA_STALENESS_DAYS
 
 
+# Steam category IDs worth surfacing in the detail pane. Filters out store
+# housekeeping entries (Steam Cloud, Trading Cards, Family Sharing) and the
+# accessibility sub-tags Steam added in their 2024 revamp.
+_GAMEPLAY_CATEGORY_IDS = {
+    1,   # Multi-player
+    2,   # Single-player
+    9,   # Co-op
+    18,  # Partial Controller Support
+    24,  # Shared/Split Screen
+    27,  # Cross-Platform Multiplayer
+    28,  # Full controller support
+    36,  # Online PvP
+    38,  # Online Co-op
+    39,  # Local Co-op
+    44,  # Remote Play Together
+    49,  # PvP
+    53,  # VR Supported
+    54,  # VR Only
+    61,  # HDR available
+}
+
+
+def _extract_steam_meta(appdetails: dict) -> dict:
+    """Pull display-ready fields from a cached appdetails payload.
+
+    Returns a dict with only the keys that have usable values — callers
+    (templates) should guard with `if steam_meta.x` rather than assume
+    presence. Publisher is omitted when it matches the developer exactly
+    (very common for indie studios).
+    """
+    genres = [g["description"] for g in (appdetails.get("genres") or [])]
+    features = [
+        c["description"]
+        for c in (appdetails.get("categories") or [])
+        if c.get("id") in _GAMEPLAY_CATEGORY_IDS
+    ]
+    devs = appdetails.get("developers") or []
+    pubs = appdetails.get("publishers") or []
+    # Suppress publisher when it's identical to developer — avoids "Hello Games
+    # / Hello Games" redundancy, which is common for self-published studios.
+    pubs_display = pubs if pubs != devs else []
+
+    metacritic = appdetails.get("metacritic") or {}
+    release_date = (appdetails.get("release_date") or {}).get("date") or ""
+
+    return {
+        "released": release_date,
+        "developers": devs,
+        "publishers": pubs_display,
+        "genres": genres,
+        "features": features,
+        "metacritic_score": metacritic.get("score"),
+        "metacritic_url": metacritic.get("url"),
+        "website": (appdetails.get("website") or "").strip() or None,
+    }
+
+
 _STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps"
 
 
@@ -970,6 +1027,7 @@ def library_entry_detail(
             "game": game,
             "release": entry.release,
             "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
@@ -1527,6 +1585,7 @@ def completion_detail(
             "release": release,
             "game": game,
             "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
             "current_user": current_user,
