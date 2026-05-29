@@ -1060,7 +1060,13 @@ def refresh_entry_metadata(
             if app_type == "dlc" and not game.is_dlc:
                 game.is_dlc = True
             elif app_type == "game" and game.is_dlc:
-                game.is_dlc = False
+                # Don't demote if fullgame is present (Steam links it to a
+                # parent) or if the title matches auto-hide patterns (season
+                # pass / bundle wrapper Steam mislabels as type=game).
+                has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                looks_like_dlc = _steam._should_auto_hide(game.title, details, is_dlc=True)
+                if not has_fullgame and not looks_like_dlc:
+                    game.is_dlc = False
 
         if app_type == "dlc" and game.parent_id is None and not game.parent_id_user_set:
             fullgame = details.get("fullgame", {})

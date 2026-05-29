@@ -625,8 +625,13 @@ def test_should_auto_hide_only_fires_for_dlc():
     # Standalone pack suffix
     assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Relic Rune Pack", None, is_dlc=True) is True
     assert _should_auto_hide("Some Game - Starter Pack", None, is_dlc=True) is True
+    # Standalone pass suffix — season passes Steam mislabels as type=game
+    assert _should_auto_hide("DOOM Eternal Year One Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Annual Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Battle Pass Season 3", None, is_dlc=True) is True
     # Real content DLC should NOT be hidden
     assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Revelations", None, is_dlc=True) is False
+    assert _should_auto_hide("DOOM Eternal: The Ancient Gods - Part One", None, is_dlc=True) is False
 
     # Real games shouldn't match (even when is_dlc=True, no pattern word)
     assert _should_auto_hide("Elden Ring", None, is_dlc=True) is False
@@ -658,6 +663,39 @@ def test_enrichment_demotes_is_dlc_when_appdetails_says_game(db_session):
 
     db_session.expire_all()
     assert db_session.query(models.Game).first().is_dlc is False
+
+
+def test_enrichment_does_not_demote_season_pass_mislabeled_as_game(db_session):
+    """Steam sometimes tags season passes / bundle wrappers as type=game.
+    We should not demote is_dlc to False when the title matches auto-hide
+    patterns — keep it as DLC so auto-hide can fire."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-pass-guard")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="DOOM Eternal Year One Pass", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1098291")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    # Steam says type=game (its mislabelling), no fullgame field.
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}), \
+         patch("backend.steam.time.sleep", return_value=None):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    game = db_session.query(models.Game).filter_by(title="DOOM Eternal Year One Pass").first()
+    entry = db_session.query(models.UserLibraryEntry).first()
+    assert game.is_dlc is True   # not demoted
+    assert entry.is_hidden is True  # and auto-hidden
 
 
 def test_enrichment_demotion_respects_user_override(db_session):
