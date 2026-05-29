@@ -171,6 +171,65 @@
          </a></li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}
+      {% if current_user and current_user.steamgriddb_api_key %}
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'v', '#completion-detail-content'); return false;">
+           Find vertical cover
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'h', '#completion-detail-content'); return false;">
+           Find horizontal cover
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#completion-detail-content'); return false;">
+           Find hero image
+         </a></li>
+      <li><a class="dropdown-item" href="#"
+             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#completion-detail-content'); return false;">
+           Find logo
+         </a></li>
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}
+      {% set _has_overrides = entry.cover_url_override_v or entry.cover_url_override_h or entry.hero_url_override or entry.logo_url_override %}
+      {% if _has_overrides %}
+        {% if entry.cover_url_override_v %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "v"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset vertical cover
+           </a></li>
+        {% endif %}
+        {% if entry.cover_url_override_h %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "h"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset horizontal cover
+           </a></li>
+        {% endif %}
+        {% if entry.hero_url_override %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "hero"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset hero image
+           </a></li>
+        {% endif %}
+        {% if entry.logo_url_override %}
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
+               hx-vals='{"image_type": "logo"}'
+               hx-swap="none"
+               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+             Reset logo
+           </a></li>
+        {% endif %}
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}
       <li><a class="dropdown-item text-danger" href="#"
              hx-delete="/completions/{{ completion.id }}"
              hx-swap="none"

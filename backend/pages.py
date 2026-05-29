@@ -1506,6 +1506,7 @@ def completion_detail(
             "appdetails": appdetails,
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
+            "current_user": current_user,
             **visuals,
         },
     )

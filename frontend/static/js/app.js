@@ -316,3 +316,81 @@ document.body.addEventListener('htmx:afterSwap', function(e) {
   });
   nav.appendChild(btn);
 });
+
+// ─── SteamGridDB art picker ────────────────────────────────────────────────
+//
+// Shared between library.html and completions.html. The modal HTML lives in
+// partials/sgdb_picker_modal.html, included in both pages.
+//
+// openSgdbPicker(entryId, imageType, detailTarget)
+//   detailTarget — CSS selector for the pane content div to reload after
+//   applying ('library-detail-content' or '#completion-detail-content').
+//   Defaults to '#library-detail-content' for backward compat.
+//
+// applySgdbCover — POSTs the chosen URL, then:
+//   hero/logo → reloads whichever detail pane opened the picker
+//   v/h       → refreshes #library-content if it exists (library page only)
+
+var _sgdbModal = null;
+var _sgdbCurrentEntryId = null;
+var _sgdbCurrentImageType = null;
+var _sgdbCurrentDetailTarget = '#library-detail-content';
+var _SGDB_LABELS = {v: 'vertical cover', h: 'horizontal cover', hero: 'hero image', logo: 'logo'};
+
+window.openSgdbPicker = function(entryId, imageType, detailTarget) {
+  if (!_sgdbModal) {
+    _sgdbModal = new bootstrap.Modal(document.getElementById('sgdbPickerModal'));
+  }
+  _sgdbCurrentEntryId = entryId;
+  _sgdbCurrentImageType = imageType;
+  _sgdbCurrentDetailTarget = detailTarget || '#library-detail-content';
+  var label = _SGDB_LABELS[imageType] || imageType;
+  document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label;
+  var grid = document.getElementById('sgdb-picker-grid');
+  grid.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
+  _sgdbModal.show();
+  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&image_type=' + imageType + '&page=0', {
+    target: '#sgdb-picker-grid',
+    swap: 'innerHTML',
+  });
+};
+
+window.rerunSgdbSearch = function(entryId, imageType) {
+  var term = (document.getElementById('sgdb-search-term') || {}).value || '';
+  var url = '/integrations/steamgriddb/search?entry_id=' + entryId
+    + '&image_type=' + imageType + '&page=0'
+    + (term ? '&query=' + encodeURIComponent(term) : '');
+  htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
+};
+
+window.applySgdbCover = function(entryId, imageType, url) {
+  var body = new URLSearchParams();
+  body.append('image_type', imageType);
+  body.append('url', url);
+  fetch('/library/entries/' + entryId + '/cover-override', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: body.toString(),
+  }).then(function(r) {
+    if (!r.ok) return;
+    if (_sgdbModal) _sgdbModal.hide();
+    if (imageType === 'hero' || imageType === 'logo') {
+      // Hero/logo live in the detail pane — reload whichever pane opened the picker.
+      htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+        target: _sgdbCurrentDetailTarget,
+        swap: 'innerHTML',
+      });
+    } else {
+      // v/h covers live in the library grid. Refresh it only if present
+      // (not available on the completions page).
+      var libraryContent = document.getElementById('library-content');
+      if (libraryContent) {
+        htmx.ajax('GET', window.location.pathname + window.location.search, {
+          target: '#library-content',
+          swap: 'innerHTML',
+          select: '#library-content',
+        });
+      }
+    }
+  });
+};

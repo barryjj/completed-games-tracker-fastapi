@@ -237,19 +237,19 @@
       {% endif %}
       {% if current_user and current_user.steamgriddb_api_key %}
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'v'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'v', '#library-detail-content'); return false;">
            Find vertical cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'h'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'h', '#library-detail-content'); return false;">
            Find horizontal cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'hero'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#library-detail-content'); return false;">
            Find hero image
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'logo'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#library-detail-content'); return false;">
            Find logo
          </a></li>
       <li><hr class="dropdown-divider"></li>
