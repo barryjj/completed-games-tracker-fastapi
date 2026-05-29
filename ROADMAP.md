@@ -234,6 +234,13 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Merge logic: effective regex is built from `system (not disabled) + user` rows at request time, cached per-user
 - Useful for publisher-specific patterns that are too niche for the default list (e.g. a specific franchise's naming convention for cosmetic drops)
 
+### Sort name field
+- `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create and edit unless the user has explicitly set it (`sort_name_user_set` flag, same pattern as display_name)
+- Sort query changes from `COALESCE(display_name, title)` to `sort_name` — always populated so the key space is consistent; no COALESCE fallback needed
+- User can override in the edit modal for cases where publisher naming is inconsistent across a franchise (e.g. "The Witcher: Enhanced Edition" → sort_name "Witcher 1" so it sorts before "Witcher 2" and "Witcher 3")
+- Migration backfills existing entries: `sort_name = COALESCE(display_name, title)` where sort_name is null
+- Inspired by Steam's old community sort-order tool (RIP) and standard media library practice (iTunes Sort Name etc.)
+
 ### Missing artwork filter / utility view
 - Checkbox or filter option in the library toolbar: "Missing artwork" — shows only entries with no cover art (no override, no GameArtwork row for the current orientation)
 - Useful after bulk SGDB fill runs to find anything that slipped through (manual entries, obscure titles, DLC with no art catalog entry)
