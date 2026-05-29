@@ -334,30 +334,7 @@
   </div>
 </div>
 
-<!-- SteamGridDB cover picker modal -->
-<div class="modal fade" id="sgdbPickerModal" tabindex="-1" aria-labelledby="sgdbPickerModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="sgdbPickerModalLabel">Find Cover Art</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <p class="text-secondary mb-3"><small>Click a cover to apply it. The image is hot-linked from SteamGridDB.</small></p>
-        {# Flex grid container — the partial renders bare card divs that wrap
-           via flex-wrap, and the "Load more" button replaces itself in place
-           with the next batch + a fresh button (so loaded results accumulate
-           instead of replacing each other). #}
-        <div id="sgdb-picker-grid" class="d-flex flex-wrap gap-3">
-          <p id="sgdb-picker-loading" class="text-secondary"><small>Loading&hellip;</small></p>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
+{% include "partials/sgdb_picker_modal.html" %}
 
 {% block scripts %}
 <script>
@@ -365,74 +342,8 @@
 cgtInitDrawer('lib-filters-drawer', 'cgt-lib-filters-open', 'lib-toggle-filters');
 cgtInitDrawer('lib-view-drawer',    'cgt-lib-view-open',    'lib-toggle-view');
 
-// ─── SteamGridDB art picker ───────────────────────────────────────────────
-//
-// Opens a modal, fires off a search against /integrations/steamgriddb/search,
-// renders candidate thumbnails. Clicking a candidate POSTs the URL back to
-// /library/entries/{id}/cover-override, then reloads the detail pane.
-// image_type: 'v' | 'h' | 'hero' | 'logo'
-var _sgdbModal = null;
-var _sgdbCurrentEntryId = null;
-var _sgdbCurrentImageType = null;
-var _SGDB_LABELS = {v: 'vertical cover', h: 'horizontal cover', hero: 'hero image', logo: 'logo'};
-
-function openSgdbPicker(entryId, imageType) {
-  if (!_sgdbModal) {
-    _sgdbModal = new bootstrap.Modal(document.getElementById('sgdbPickerModal'));
-  }
-  _sgdbCurrentEntryId = entryId;
-  _sgdbCurrentImageType = imageType;
-  var label = _SGDB_LABELS[imageType] || imageType;
-  document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label;
-  var grid = document.getElementById('sgdb-picker-grid');
-  grid.innerHTML = '<p class="text-secondary"><small>Searching SteamGridDB&hellip;</small></p>';
-  _sgdbModal.show();
-  htmx.ajax('GET', '/integrations/steamgriddb/search?entry_id=' + entryId + '&image_type=' + imageType + '&page=0', {
-    target: '#sgdb-picker-grid',
-    swap: 'innerHTML',
-  });
-}
-
-function rerunSgdbSearch(entryId, imageType) {
-  // Called by the search-term input's Search button. Reads the current value
-  // of the input and re-fires the search with that query.
-  var term = (document.getElementById('sgdb-search-term') || {}).value || '';
-  var url = '/integrations/steamgriddb/search?entry_id=' + entryId
-    + '&image_type=' + imageType + '&page=0'
-    + (term ? '&query=' + encodeURIComponent(term) : '');
-  htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
-}
-
-function applySgdbCover(entryId, imageType, url) {
-  var body = new URLSearchParams();
-  body.append('image_type', imageType);
-  body.append('url', url);
-  fetch('/library/entries/' + entryId + '/cover-override', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: body.toString(),
-  }).then(function(r) {
-    if (r.ok) {
-      _sgdbModal.hide();
-      if (imageType === 'hero' || imageType === 'logo') {
-        // Hero and logo appear inside the detail pane — refresh pane in-place.
-        htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
-          target: '#library-detail-content',
-          swap: 'innerHTML',
-        });
-      } else {
-        // v/h covers live in the library grid. Refresh just #library-content
-        // in-place so the updated cover appears immediately without closing
-        // the detail pane or reloading the full page.
-        htmx.ajax('GET', window.location.pathname + window.location.search, {
-          target: '#library-content',
-          swap: 'innerHTML',
-          select: '#library-content',
-        });
-      }
-    }
-  });
-}
+// openSgdbPicker / rerunSgdbSearch / applySgdbCover moved to app.js so they
+// are also available on the completions page.
 
 // Auto-fetch hero: called from cgtHeroFailed when the hero img 404s.
 // Mirrors cgtAutoFetchLogo — fires a background POST to store the SGDB top
