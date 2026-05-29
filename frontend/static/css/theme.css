@@ -797,20 +797,13 @@ body:has(.cgt-sticky-actions) {
   font-size: 0.8rem;
 }
 
-/* Chrome header: muted small title that scales down via JS (fitChromeTitle)
-   before truncating. flex-shrink lets it give space to the back-arrow and
-   close button without pushing them off-screen. */
-.cgt-pane-chrome {
-  gap: 0.4rem;
-}
-.cgt-pane-chrome-title {
-  font-size: 0.8rem;
-  color: var(--ctp-subtext);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1 1 0;
+/* Title row inside the metadata block — larger weight so the game name reads
+   as a heading rather than a plain data value. */
+.cgt-detail-title-value {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--ctp-text);
+  line-height: 1.3;
 }
 
 /* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
@@ -860,7 +853,7 @@ body:has(.cgt-sticky-actions) {
   position: relative;
   width: 100%;
   background-color: var(--ctp-crust);
-  aspect-ratio: 96 / 31;  /* matches Steam's library_hero ~1920x620 */
+  aspect-ratio: 96 / 38;  /* slightly taller than Steam's native 96/31 */
   overflow: hidden;
 }
 .cgt-detail-hero__img {

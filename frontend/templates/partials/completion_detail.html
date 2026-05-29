@@ -10,11 +10,6 @@
      style="display: none;"></div>
 {% endif %}
 
-<div class="offcanvas-header border-bottom cgt-pane-chrome">
-  <span class="cgt-pane-chrome-title">{{ game.display_title }}</span>
-  <button type="button" class="btn-close ms-auto flex-shrink-0" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-</div>
-
 <div class="offcanvas-body p-0">
   {% if hero_url or fallback_hero_url %}
   <div class="cgt-detail-hero">
@@ -67,6 +62,9 @@
     <div class="cgt-detail-block mb-2">
       <h6 class="cgt-detail-block__heading">Library entry</h6>
       <dl class="cgt-detail-meta small mb-0">
+        <dt>Title</dt>
+        <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
+
         {# For DLC, lead with the parent breadcrumb + appid. Clickable when
            the user owns the parent. Mirrors the library detail pane. #}
         {# Parent relationship row — contextual label, one-line layout. See
