@@ -134,6 +134,40 @@ _GAMEPLAY_CATEGORY_IDS = {
 }
 
 
+_STEAM_DATE_FORMATS = [
+    "%b %d, %Y",   # "Aug 12, 2016"   ← most common US format
+    "%B %d, %Y",   # "August 12, 2016"
+    "%d %b, %Y",   # "28 May, 2026"   ← day-first with comma (UK/EU locale)
+    "%d %B, %Y",   # "28 May, 2026"   full month name
+    "%d %b %Y",    # "28 May 2026"    no comma
+    "%d %B %Y",    # "28 May 2026"    full month, no comma
+    "%b %Y",       # "Aug 2016"       month + year only
+    "%B %Y",       # "August 2016"
+]
+
+
+def _normalize_steam_date(raw: str) -> str:
+    """Normalize Steam's free-form release date strings to 'Mon D, YYYY'.
+
+    Steam has no enforced format — titles come back as 'Aug 12, 2016',
+    '28 May, 2026', '28 May 2026', 'Q2 2024', 'Coming soon', etc. We try
+    the common parse patterns and fall back to the raw string for anything
+    we can't handle (quarter strings, 'Coming soon', bare years).
+    """
+    if not raw:
+        return raw
+    for fmt in _STEAM_DATE_FORMATS:
+        try:
+            dt = datetime.datetime.strptime(raw.strip(), fmt)
+            # Month+year-only: omit the day so we don't invent one.
+            if "%d" not in fmt:
+                return dt.strftime("%b %Y")
+            return dt.strftime("%b %-d, %Y")
+        except ValueError:
+            continue
+    return raw  # Q1 2024, Coming soon, bare year, etc. — pass through as-is
+
+
 def _extract_steam_meta(appdetails: dict) -> dict:
     """Pull display-ready fields from a cached appdetails payload.
 
@@ -155,7 +189,9 @@ def _extract_steam_meta(appdetails: dict) -> dict:
     pubs_display = pubs if pubs != devs else []
 
     metacritic = appdetails.get("metacritic") or {}
-    release_date = (appdetails.get("release_date") or {}).get("date") or ""
+    release_date = _normalize_steam_date(
+        (appdetails.get("release_date") or {}).get("date") or ""
+    )
 
     return {
         "released": release_date,
