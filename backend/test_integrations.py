@@ -698,6 +698,39 @@ def test_enrichment_does_not_demote_season_pass_mislabeled_as_game(db_session):
     assert entry.is_hidden is True  # and auto-hidden
 
 
+def test_enrichment_repromotes_previously_demoted_season_pass(db_session):
+    """Entries that were already demoted to is_dlc=False before the guard
+    existed should be re-promoted when refreshed if their title matches
+    auto-hide patterns."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-repromote")
+    db_session.add(user)
+    db_session.flush()
+    # Simulates an entry that was already demoted by a previous enrichment run.
+    game = models.Game(title="DOOM Eternal Year One Pass", is_dlc=False)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1098292")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}), \
+         patch("backend.steam.time.sleep", return_value=None):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    game = db_session.query(models.Game).filter_by(title="DOOM Eternal Year One Pass").first()
+    entry = db_session.query(models.UserLibraryEntry).first()
+    assert game.is_dlc is True   # re-promoted
+    assert entry.is_hidden is True  # and auto-hidden
+
+
 def test_enrichment_demotion_respects_user_override(db_session):
     """Even if appdetails says 'game', a user who manually marked is_dlc=True
     sticks — their is_dlc_user_set flag blocks the demotion."""

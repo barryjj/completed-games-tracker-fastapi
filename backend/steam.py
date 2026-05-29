@@ -794,6 +794,15 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                     looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
                     if not has_fullgame and not looks_like_dlc:
                         game.is_dlc = False
+                elif app_type == "game" and not game.is_dlc:
+                    # Re-promote entries previously demoted before the guard
+                    # above existed. If fullgame is present or the title matches
+                    # auto-hide patterns, Steam mislabelled this — flip it back
+                    # to DLC so auto-hide can fire.
+                    has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                    looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
+                    if has_fullgame or looks_like_dlc:
+                        game.is_dlc = True
 
             # Link DLC to its base game if not already linked — but respect
             # user override on parent_id.
