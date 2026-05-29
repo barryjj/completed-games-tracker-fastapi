@@ -788,6 +788,32 @@ body:has(.cgt-sticky-actions) {
   padding-bottom: 5rem;
 }
 
+/* ─── Detail-pane body layout ───────────────────────────────────────────── */
+
+/* Wrapper for everything below the hero image. Tighter padding than
+   Bootstrap's p-3 so the pane content feels compact at any width. */
+.cgt-detail-body {
+  padding: 0.6rem 0.75rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+/* Title strip: game name sits directly below the hero with full pane width
+   so long names wrap naturally rather than being crammed into header chrome
+   or a narrow metadata grid cell. Slightly bolder than body text so it reads
+   as the primary label, but intentionally not large — the hero image already
+   carries the visual weight. */
+.cgt-detail-body__title-row {
+  margin-bottom: 0.4rem;
+}
+.cgt-pane-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
+  color: var(--ctp-text);
+  word-break: break-word;
+}
+
 /* ─── Detail-pane v2: hero block, logo overlay, section blocks ─────────── */
 
 /* Title bar layout for the detail pane.
@@ -873,7 +899,7 @@ body:has(.cgt-sticky-actions) {
   background-color: var(--ctp-mantle);
   border: 1px solid var(--ctp-surface0);
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 9px 12px;
 }
 .cgt-detail-block__heading {
   font-size: 0.85rem;
@@ -954,8 +980,8 @@ body:has(.cgt-sticky-actions) {
 .cgt-detail-meta {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.35rem 1rem;
-  margin-bottom: 1rem;
+  gap: 0.25rem 0.75rem;
+  margin-bottom: 0.6rem;
   font-size: 0.8rem;
 }
 .cgt-detail-meta dt {

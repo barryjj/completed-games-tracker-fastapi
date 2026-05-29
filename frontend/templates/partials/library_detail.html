@@ -72,9 +72,15 @@
 
   {# Content padding — pushes everything below the hero in from the edges.
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
-  <div class="p-3">
+  <div class="cgt-detail-body">
+    {# Title sits below the hero with full pane width — wraps freely rather
+       than being squashed into a header chrome bar or a narrow metadata cell. #}
+    <div class="cgt-detail-body__title-row">
+      <h6 class="cgt-pane-title">{{ game.display_title }}</h6>
+    </div>
+
     {# Badges row: platform + flags. #}
-    <div class="mb-3 d-flex flex-wrap gap-1">
+    <div class="mb-2 d-flex flex-wrap gap-1">
       <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
@@ -88,11 +94,6 @@
        saw the entry, not anything the user cares about (we don't track
        release date or first-played which are the dates that matter). #}
     <dl class="cgt-detail-meta small">
-      {# Title row — sits first so long names get the full pane width and
-         can wrap rather than being truncated in the offcanvas header. #}
-      <dt>Title</dt>
-      <dd>{{ game.display_title }}</dd>
-
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"
            in-collection    → "In collection"
