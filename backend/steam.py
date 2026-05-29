@@ -129,7 +129,11 @@ _AUTO_HIDE_RE = re.compile(
     # Audio / book / wallpaper content
     r"soundtrack|ost|original\s+sound(track)?|"
     r"art\s*book|wallpapers?(\s*set)?|"
-    # Generic DLC pack suffixes
+    # Standalone cosmetic items — word alone is enough; the *pack variants
+    # below also catch compound forms like "Skin Pack" / "Costume Pack".
+    r"skin|costume|outfit|"
+    # Generic DLC pack suffixes — catch "Relic Rune Pack", "Starter Pack", etc.
+    r"pack|"
     r"cosmetic\s*pack|emotes?\s*pack|customization(\s+item)?\s*pack|"
     r"(skin|costume|outfit)\s*pack|cinematic\s*pack|"
     # Pass-suffix DLC (heavy in fighting games)
