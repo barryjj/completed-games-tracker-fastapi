@@ -927,6 +927,69 @@ def test_enrichment_creates_header_artwork_if_missing(db_session):
     assert art.url == url
 
 
+def test_enrichment_promotes_dlc_children_via_parent_dlc_array(db_session):
+    """When a parent game's appdetails includes a dlc[] list, any of those
+    appids we own should be marked is_dlc=True and linked to the parent —
+    even if the child's own appdetails returns type=game (e.g. DOOM Eternal:
+    The Ancient Gods standalone expansions)."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-dlcpush")
+    db_session.add(user)
+    db_session.flush()
+
+    # Parent game
+    parent_game = models.Game(title="DOOM Eternal", is_dlc=False)
+    db_session.add(parent_game)
+    db_session.flush()
+    parent_release = models.GameRelease(
+        game_id=parent_game.id, platform="Steam", source="steam", external_id="782330"
+    )
+    db_session.add(parent_release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=parent_release.id, import_source="steam_import"))
+
+    # Child entries — both is_dlc=False because Steam returned type=game on them
+    child_game1 = models.Game(title="DOOM Eternal: The Ancient Gods - Part One", is_dlc=False)
+    child_game2 = models.Game(title="DOOM Eternal: The Ancient Gods - Part Two", is_dlc=False)
+    db_session.add_all([child_game1, child_game2])
+    db_session.flush()
+    child_release1 = models.GameRelease(
+        game_id=child_game1.id, platform="Steam", source="steam", external_id="1098292",
+        metadata_fetched_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+    )
+    child_release2 = models.GameRelease(
+        game_id=child_game2.id, platform="Steam", source="steam", external_id="1098293",
+        metadata_fetched_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+    )
+    db_session.add_all([child_release1, child_release2])
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=child_release1.id, import_source="steam_import"))
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=child_release2.id, import_source="steam_import"))
+    db_session.commit()
+
+    parent_details = {
+        "type": "game",
+        "name": "DOOM Eternal",
+        "dlc": [1098292, 1098293],
+    }
+    with (
+        patch("backend.steam._fetch_appdetails", return_value=parent_details),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    child1 = db_session.query(models.Game).filter_by(title="DOOM Eternal: The Ancient Gods - Part One").first()
+    child2 = db_session.query(models.Game).filter_by(title="DOOM Eternal: The Ancient Gods - Part Two").first()
+    assert child1.is_dlc is True, "Part One should be promoted to DLC via parent dlc[] array"
+    assert child1.parent_id == parent_game.id
+    assert child2.is_dlc is True, "Part Two should be promoted to DLC via parent dlc[] array"
+    assert child2.parent_id == parent_game.id
+
+
 # ─── Steam OpenID ─────────────────────────────────────────────────────────
 
 

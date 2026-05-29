@@ -671,6 +671,32 @@ def _sync_header_artwork_from_appdetails(db: Session, release: "models.GameRelea
     )
 
 
+def _promote_dlc_children(db: Session, parent_game_id: int, dlc_appids: list[int]) -> None:
+    """Cross-reference a parent game's dlc[] array against our library.
+
+    Steam includes a `dlc` list on the parent game's appdetails even when the
+    child entries return type=game themselves (e.g. standalone expansions like
+    DOOM Eternal: The Ancient Gods).  When we see this list we can mark owned
+    children as DLC and link their parent_id without waiting for the child's
+    own appdetails to say type=dlc.
+
+    Respects is_dlc_user_set and parent_id_user_set so manual overrides win.
+    """
+    for appid in dlc_appids:
+        child_release = (
+            db.query(models.GameRelease)
+            .filter_by(source="steam", external_id=str(appid))
+            .first()
+        )
+        if not child_release:
+            continue
+        child_game = child_release.game
+        if not child_game.is_dlc_user_set and not child_game.is_dlc:
+            child_game.is_dlc = True
+        if not child_game.parent_id_user_set and child_game.parent_id is None:
+            child_game.parent_id = parent_game_id
+
+
 def _fetch_appdetails(appid: int) -> dict | None:
     """
     Fetch app metadata from the Steam store API.
@@ -815,6 +841,15 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                     parent_release = db.query(models.GameRelease).filter_by(source="steam", external_id=parent_appid).first()
                     if parent_release:
                         game.parent_id = parent_release.game_id
+
+            # Push DLC status down to children listed in the parent's dlc[].
+            # Steam returns type=game on some standalone expansions (e.g. DOOM
+            # Eternal: The Ancient Gods) even though the parent lists them as
+            # DLC — so we need to look at the parent side, not just the child.
+            if app_type == "game":
+                dlc_appids = details.get("dlc") or []
+                if dlc_appids:
+                    _promote_dlc_children(db, game.id, dlc_appids)
 
             # Auto-hide soundtracks / artbooks / cosmetic packs etc.
             # GATED on is_dlc=True — games are never auto-hidden.

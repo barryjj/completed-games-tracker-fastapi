@@ -1085,6 +1085,14 @@ def refresh_entry_metadata(
                 if parent_release:
                     game.parent_id = parent_release.game_id
 
+        # Push DLC status to children listed in the parent's dlc[] array.
+        # Covers standalone expansions Steam tags as type=game on the child
+        # but correctly lists under the parent (e.g. DOOM Eternal: The Ancient Gods).
+        if app_type == "game":
+            dlc_appids = details.get("dlc") or []
+            if dlc_appids:
+                _steam._promote_dlc_children(db, game.id, dlc_appids)
+
         if _steam._should_auto_hide(game.title, details, game.is_dlc):
             if not entry.is_hidden and not entry.is_hidden_user_set:
                 entry.is_hidden = True
