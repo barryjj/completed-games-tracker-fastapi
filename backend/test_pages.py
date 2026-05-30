@@ -1250,3 +1250,122 @@ def test_enrich_does_not_overwrite_real_title(db_session):
 
     db_session.refresh(game)
     assert game.title == "Original Title"
+
+
+# --- Recently played sort ---
+
+
+def test_library_recently_played_sort(client, db_session):
+    """sort=recently_played orders by last_played_at desc, nulls last."""
+    import datetime
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    def _add(title, last_played):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id=str(game.id))
+        db_session.add(release)
+        db_session.flush()
+        entry = models.UserLibraryEntry(
+            user_id=user.id,
+            release_id=release.id,
+            import_source="steam_import",
+            last_played_at=last_played,
+        )
+        db_session.add(entry)
+
+    now = datetime.datetime.now(datetime.UTC)
+    _add("Older Game", now - datetime.timedelta(days=10))
+    _add("Newer Game", now - datetime.timedelta(days=1))
+    _add("Never Played", None)
+    db_session.commit()
+
+    r = client.get("/library?sort=recently_played&view=all")
+    assert r.status_code == 200
+    body = r.text
+    # Newer should appear before Older; Never Played should come last
+    pos_newer = body.index("Newer Game")
+    pos_older = body.index("Older Game")
+    pos_never = body.index("Never Played")
+    assert pos_newer < pos_older < pos_never
+
+
+# --- Missing artwork filter ---
+
+
+def _add_steam_entry(db, user, title, appid, has_cover=True, has_header=True):
+    """Helper: add a Steam entry optionally with GameArtwork rows."""
+    game = models.Game(title=title)
+    db.add(game)
+    db.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id=str(appid))
+    db.add(release)
+    db.flush()
+    if has_cover:
+        db.add(models.GameArtwork(release_id=release.id, artwork_type="cover", source="steam", url=f"http://cdn/{appid}/cover.jpg"))
+    if has_header:
+        db.add(models.GameArtwork(release_id=release.id, artwork_type="header", source="steam", url=f"http://cdn/{appid}/header.jpg"))
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db.add(entry)
+    db.commit()
+    return entry
+
+
+_HX = {"HX-Request": "true"}  # triggers HTMX partial path — skips modal dropdowns
+
+
+def test_missing_art_filter_grid_v(client, db_session):
+    """missing_art=true in grid_v shows only entries missing a vertical cover."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    _add_steam_entry(db_session, user, "Has Cover", 101, has_cover=True)
+    _add_steam_entry(db_session, user, "No Cover", 102, has_cover=False)
+
+    r = client.get("/library?missing_art=true&view_mode=grid_v&view=all", headers=_HX)
+    assert r.status_code == 200
+    assert b"No Cover" in r.content
+    assert b"Has Cover" not in r.content
+
+
+def test_missing_art_filter_grid_h(client, db_session):
+    """missing_art=true in grid_h shows only entries missing a header."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    _add_steam_entry(db_session, user, "Has Header", 201, has_header=True)
+    _add_steam_entry(db_session, user, "No Header", 202, has_header=False)
+
+    r = client.get("/library?missing_art=true&view_mode=grid_h&view=all", headers=_HX)
+    assert r.status_code == 200
+    assert b"No Header" in r.content
+    assert b"Has Header" not in r.content
+
+
+def test_missing_art_override_satisfies_filter(client, db_session):
+    """An entry with a cover_url_override is NOT shown as missing art."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    game = models.Game(title="Override Game")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="301")
+    db_session.add(release)
+    db_session.flush()
+    # No GameArtwork row, but has a manual override
+    entry = models.UserLibraryEntry(
+        user_id=user.id,
+        release_id=release.id,
+        import_source="steam_import",
+        cover_url_override_v="https://example.com/override.jpg",
+    )
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.get("/library?missing_art=true&view_mode=grid_v&view=all", headers=_HX)
+    assert r.status_code == 200
+    assert b"Override Game" not in r.content
