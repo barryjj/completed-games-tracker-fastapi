@@ -303,7 +303,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "v"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'v', '#library-detail-content')">
              Reset vertical cover
            </a></li>
         {% endif %}
@@ -312,7 +312,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "h"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'h', '#library-detail-content')">
              Reset horizontal cover
            </a></li>
         {% endif %}
@@ -321,7 +321,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'hero', '#library-detail-content')">
              Reset hero image
            </a></li>
         {% endif %}
@@ -330,7 +330,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'logo', '#library-detail-content')">
              Reset logo
            </a></li>
         {% endif %}

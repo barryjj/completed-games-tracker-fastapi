@@ -243,7 +243,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "v"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'v', '#completion-detail-content')">
              Reset vertical cover
            </a></li>
         {% endif %}
@@ -252,7 +252,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "h"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'h', '#completion-detail-content')">
              Reset horizontal cover
            </a></li>
         {% endif %}
@@ -261,7 +261,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'hero', '#completion-detail-content')">
              Reset hero image
            </a></li>
         {% endif %}
@@ -270,7 +270,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'logo', '#completion-detail-content')">
              Reset logo
            </a></li>
         {% endif %}

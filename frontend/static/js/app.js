@@ -363,6 +363,27 @@ window.rerunSgdbSearch = function(entryId, imageType) {
   htmx.ajax('GET', url, {target: '#sgdb-picker-grid', swap: 'innerHTML'});
 };
 
+// cgtAfterArtReset — called from hx-on::after-request on the Reset art buttons.
+// Reloads the detail pane (so the More menu and header visual update) and for
+// v/h types also refreshes the library grid card (so the cover reverts too).
+window.cgtAfterArtReset = function(entryId, imageType, detailTarget) {
+  var target = detailTarget || '#library-detail-content';
+  htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+    target: target,
+    swap: 'innerHTML',
+  });
+  if (imageType === 'v' || imageType === 'h') {
+    var libraryContent = document.getElementById('library-content');
+    if (libraryContent) {
+      htmx.ajax('GET', window.location.pathname + window.location.search, {
+        target: '#library-content',
+        swap: 'innerHTML',
+        select: '#library-content',
+      });
+    }
+  }
+};
+
 window.applySgdbCover = function(entryId, imageType, url) {
   var body = new URLSearchParams();
   body.append('image_type', imageType);
@@ -374,14 +395,14 @@ window.applySgdbCover = function(entryId, imageType, url) {
   }).then(function(r) {
     if (!r.ok) return;
     if (_sgdbModal) _sgdbModal.hide();
-    if (imageType === 'hero' || imageType === 'logo') {
-      // Hero/logo live in the detail pane — reload whichever pane opened the picker.
-      htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
-        target: _sgdbCurrentDetailTarget,
-        swap: 'innerHTML',
-      });
-    } else {
-      // v/h covers live in the library grid. Refresh it only if present
+    // Always reload the detail pane so the More menu reflects the new UserArtwork row
+    // (Reset options appear/disappear based on what's in user_artwork at render time).
+    htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+      target: _sgdbCurrentDetailTarget,
+      swap: 'innerHTML',
+    });
+    if (imageType !== 'hero' && imageType !== 'logo') {
+      // v/h covers also appear in the library grid — refresh it if present
       // (not available on the completions page).
       var libraryContent = document.getElementById('library-content');
       if (libraryContent) {
