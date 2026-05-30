@@ -231,6 +231,16 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## Near-term
 
+### Artwork URL resolution overhaul ⚠️ (blocks SGDB bulk fill fix)
+- **Root problem:** `_artwork_url()` constructs Steam CDN URLs for `library_600x900.jpg` and `library_hero.jpg` at sync time without verifying they exist. Steam has migrated newer/DLC content to hashed paths on `shared.fastly.steamstatic.com`; the constructed `cdn.akamai.steamstatic.com/{appid}/library_600x900.jpg` URL 404s for any game using the new format. Headers work because `appdetails.header_image` gives us the real URL; covers and heroes have no equivalent data source.
+- **Effect:** Library shows placeholder cards for any game whose `library_600x900.jpg` doesn't exist at the constructed path. The "Missing artwork" filter and SGDB bulk fill both treat `GameArtwork` rows as "has art" regardless of whether the URL resolves — so the bulk fill skips entries it should fill, and the filter doesn't surface entries it should surface.
+- **Options to investigate:**
+  - Pull cover URL from `appdetails` if Steam ever exposes it (they currently don't for `library_600x900.jpg`)
+  - Try multiple URL patterns at enrichment time (constructed path + known alternate hosts) and store whichever responds 200
+  - Add `is_verified` / `verified_at` flag to `GameArtwork`; a background pass HEAD-checks stored URLs and marks stale ones; bulk fill and filter use the verified flag
+  - Unified resolved-artwork table per `UserLibraryEntry`: source (steam_cdn / sgdb / manual), url, verified_at, is_valid — consolidates `GameArtwork` + override columns into one queryable place
+- **SGDB bulk fill fix is parked until this is resolved.** The correct fill logic is "entry has no verified working cover → fetch from SGDB"; implementing that on top of the current unverified URL storage is patching the wrong layer.
+
 ### Platforms table
 - `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`
 - `GameRelease.platform` becomes FK to platforms instead of free text
