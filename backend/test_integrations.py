@@ -1489,7 +1489,7 @@ def test_sgdb_bulk_fill_skips_hidden_entries(db_session, monkeypatch):
 
 
 def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatch):
-    """The endpoint should create a job and return a started toast — it
+    """The endpoint should create a job and return a progress div — it
     shouldn't run the fill synchronously."""
     import asyncio
 
@@ -1512,7 +1512,7 @@ def test_sgdb_fill_missing_endpoint_kicks_off_job(client, db_session, monkeypatc
 
     r = client.post("/integrations/steamgriddb/fill-missing", data={"image_type": "v"})
     assert r.status_code == 200
-    assert "started" in r.text.lower()
+    assert "sgdb-fill-status" in r.text  # progress div rendered
     assert created_tasks == [True]
 
 
