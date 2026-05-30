@@ -18,7 +18,7 @@
      hx-swap="none"
      style="display: none;"></div>
 {% endif %}
-{% if fresh_open and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key and entry.hero_url_override is none %}
+{% if fresh_open and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key %}
 {# No hero URL — fire a background SGDB hero fetch. Only rendered when the
    pane is opened fresh by a user row-click (fresh_open=1). Never rendered on
    internal refreshes (clear overrides, logo auto-fetch reloads, etc.) so the
@@ -55,7 +55,7 @@
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
          onerror="this.style.display='none'; cgtHeroBlockCheck(this); {% if fresh_open %}cgtAutoFetchLogo(this, {{ entry.id }});{% endif %}">
-    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not entry.logo_url_override %}
+    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not logo_url %}
     {# No logo URL at all — fire a background SGDB fetch on pane open.
        Only rendered on fresh user-initiated opens (fresh_open=1). #}
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
@@ -295,9 +295,10 @@
          </a></li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}
-      {% set _has_overrides = entry.cover_url_override_v or entry.cover_url_override_h or entry.hero_url_override or entry.logo_url_override %}
+      {% set _ua_types = entry.user_artwork | map(attribute='artwork_type') | list %}
+      {% set _has_overrides = _ua_types | length > 0 %}
       {% if _has_overrides %}
-        {% if entry.cover_url_override_v %}
+        {% if 'cover_v' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "v"}'
@@ -306,7 +307,7 @@
              Reset vertical cover
            </a></li>
         {% endif %}
-        {% if entry.cover_url_override_h %}
+        {% if 'cover_h' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "h"}'
@@ -315,7 +316,7 @@
              Reset horizontal cover
            </a></li>
         {% endif %}
-        {% if entry.hero_url_override %}
+        {% if 'hero' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
@@ -324,7 +325,7 @@
              Reset hero image
            </a></li>
         {% endif %}
-        {% if entry.logo_url_override %}
+        {% if 'logo' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'

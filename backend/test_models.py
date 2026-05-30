@@ -144,7 +144,7 @@ def test_create_artwork(db):
     g = make_game(db)
     r = make_release(db, g)
     art = models.GameArtwork(
-        release_id=r.id, artwork_type="cover", source="steam", url="https://example.com/cover.jpg", width=600, height=900
+        release_id=r.id, artwork_type="cover_v", source="steam", url="https://example.com/cover.jpg", width=600, height=900
     )
     db.add(art)
     db.commit()
@@ -158,35 +158,35 @@ def test_create_artwork(db):
 def test_artwork_multiple_types_per_release(db):
     g = make_game(db)
     r = make_release(db, g)
-    for artwork_type, url in [("cover", "cover.jpg"), ("header", "header.jpg"), ("hero", "hero.jpg")]:
+    for artwork_type, url in [("cover_v", "cover.jpg"), ("cover_h", "header.jpg"), ("hero", "hero.jpg")]:
         db.add(models.GameArtwork(release_id=r.id, artwork_type=artwork_type, source="steam", url=url))
     db.commit()
     db.refresh(r)
 
     assert len(r.artwork) == 3
-    assert {a.artwork_type for a in r.artwork} == {"cover", "header", "hero"}
+    assert {a.artwork_type for a in r.artwork} == {"cover_v", "cover_h", "hero"}
 
 
 def test_artwork_same_type_different_sources(db):
     g = make_game(db)
     r = make_release(db, g)
-    db.add(models.GameArtwork(release_id=r.id, artwork_type="cover", source="steam", url="steam_cover.jpg"))
-    db.add(models.GameArtwork(release_id=r.id, artwork_type="cover", source="steamgriddb", url="sgdb_cover.jpg"))
+    db.add(models.GameArtwork(release_id=r.id, artwork_type="cover_v", source="steam", url="steam_cover.jpg"))
+    db.add(models.GameArtwork(release_id=r.id, artwork_type="cover_v", source="sgdb", url="sgdb_cover.jpg"))
     db.commit()
     db.refresh(r)
 
-    covers = [a for a in r.artwork if a.artwork_type == "cover"]
+    covers = [a for a in r.artwork if a.artwork_type == "cover_v"]
     assert len(covers) == 2
-    assert {a.source for a in covers} == {"steam", "steamgriddb"}
+    assert {a.source for a in covers} == {"steam", "sgdb"}
 
 
 def test_artwork_unique_constraint(db):
     g = make_game(db)
     r = make_release(db, g)
-    db.add(models.GameArtwork(release_id=r.id, artwork_type="cover", source="steam", url="cover.jpg"))
+    db.add(models.GameArtwork(release_id=r.id, artwork_type="cover_v", source="steam", url="cover.jpg"))
     db.commit()
     with pytest.raises(IntegrityError):
-        db.add(models.GameArtwork(release_id=r.id, artwork_type="cover", source="steam", url="other.jpg"))
+        db.add(models.GameArtwork(release_id=r.id, artwork_type="cover_v", source="steam", url="other.jpg"))
         db.commit()
 
 
