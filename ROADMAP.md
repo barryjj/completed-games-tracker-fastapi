@@ -89,11 +89,11 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Especially important for manual entries (no Steam artwork available) and PSN entries (different art catalog)
 
 ### Bulk SGDB "fill in the gaps" job ✅ (this PR)
-- `POST /integrations/steamgriddb/fill-missing` with `orientation=v|h`
-- Walks every visible library entry; for each one missing a matching-orientation cover (no override AND no `GameArtwork` row of the right type), looks it up on SGDB and writes the top candidate to `cover_url_override_v` or `_h`
+- `POST /integrations/steamgriddb/fill-missing` with `image_type=v|h|hero|logo`
+- Walks every visible library entry; for each one missing art of the given type (no override AND no `GameArtwork` row of the right type), looks it up on SGDB and writes the top candidate
 - Runs through the job system — started toast on click, completion toast with counts (filled / no_candidate / skipped / errored) when done
 - Single errored entry doesn't abort the whole run; logged and counted
-- Two buttons on the SGDB configure page (vertical / horizontal), only shown when an API key is saved
+- Dropdown on the SGDB configure page with four types (vertical covers / horizontal covers / hero images / logos), only shown when an API key is saved
 
 ### Steam integration polish (avatar + ID64 cleanup + hub enrichment) ✅ (this PR)
 - Drop the Steam ID64 input field from the configure page — OpenID owns the SteamID now; manual paste is no longer an option
@@ -216,6 +216,17 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Pair with the existing OpenID identity flow: one "Sign in through Steam" click → SteamID + persona + cookies all captured at once
 - Web-only build keeps the manual cookie fields as a fallback
 
+### Library cleanup — DLC leak, collection detection, auto-hide overhaul ✅ (PR #92)
+- **Default view DLC leak fixed.** Filter changed to `(parent_id IS NULL AND is_dlc = FALSE) OR import_source = 'manual'` — DLC entries with no parent (e.g. free standalone DLC) no longer bleed into the default view.
+- **Collection detection replaced with `_COLLECTION_RE` regex.** Word-boundary matching (`\b`); "collection" is end-of-title-anchored so mid-word matches (Recollection, Collection Agency) are avoided. JS-side `COLLECTION_KEYWORDS` list trimmed to match — removed bundle/chronicles/archives/legacy/origins/"collection" (end-of-title can't be checked with `includes()`).
+- **`backfill_collection_flags` now corrects false positives.** Sets `is_collection = False` where the current regex disagrees with a previous `True` flag. Respects `is_collection_user_set`. "Re-detect collections" button added to Steam → More sync options.
+- **Two-tier `_should_auto_hide`.** Tier 1 gate-free (no `is_dlc` required): music/video/episode type, beta type, demo type + "demo" in title, "beta" anywhere in title. Tier 2 DLC-only gate: cosmetic/pack/pass/bonus content title patterns. Separates type-based hides (always safe) from title-pattern hides (too risky without the DLC gate).
+- **HTML entity unescaping.** `_clean_title()` calls `html.unescape()` for display names; Jinja2 `html_unescape` filter added for short descriptions in detail panes.
+
+### Recently played sort + missing artwork filter ✅ (PR #93)
+- **Recently played sort.** Library `?sort=recently_played` orders by `last_played_at DESC NULLS LAST` (SQLAlchemy 2.x via `.desc().nulls_last()`). Sort dropdown added to library toolbar alongside existing name sort.
+- **Missing artwork filter.** `?missing_art=true` shows only entries with no cover art for the current orientation (no override AND no `GameArtwork` row of the matching type). Orientation-aware: grid_v checks vertical, grid_h checks horizontal. Checkbox in library toolbar.
+
 ---
 
 ## Near-term
@@ -240,18 +251,6 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - User can override in the edit modal for cases where publisher naming is inconsistent across a franchise (e.g. "The Witcher: Enhanced Edition" → sort_name "Witcher 1" so it sorts before "Witcher 2" and "Witcher 3")
 - Migration backfills existing entries: `sort_name = COALESCE(display_name, title)` where sort_name is null
 - Inspired by Steam's old community sort-order tool (RIP) and standard media library practice (iTunes Sort Name etc.)
-
-### "Recently played" library view
-- Filter/sort option showing entries ordered by `last_played_at` descending — quick way to resume whatever you were playing
-- Steam provides this via `rtime_last_played` (already stored as `last_played_at`); useful as long as Steam is the primary platform
-- Caveat: manual entries have no play date and PSN last-played data availability is uncertain — this view would be Steam-centric or would need a "hide entries with no play date" option to avoid a wall of nulls
-- Roadmap-only for now; revisit once PSN integration exists and we know what last-played data is available there
-
-### Missing artwork filter / utility view
-- Checkbox or filter option in the library toolbar: "Missing artwork" — shows only entries with no cover art (no override, no GameArtwork row for the current orientation)
-- Useful after bulk SGDB fill runs to find anything that slipped through (manual entries, obscure titles, DLC with no art catalog entry)
-- Could be a standalone filter checkbox alongside Show hidden, or a "Utility" view option alongside Default / DLC / Collections / etc.
-- Orientation-aware: in grid_v mode it checks vertical cover, in grid_h checks horizontal, in list checks either
 
 ### PSN integration
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
