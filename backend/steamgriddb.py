@@ -249,7 +249,12 @@ def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEnt
         return None
 
 
-def bulk_fill_missing(db: Session, user: models.User, image_type: str) -> dict:
+def bulk_fill_missing(
+    db: Session,
+    user: models.User,
+    image_type: str,
+    progress_callback=None,
+) -> dict:
     """Walk every visible library entry for `user`, and for each one missing
     art of the given type: hit SGDB, take the top candidate, and write it to
     the matching override column.
@@ -258,9 +263,11 @@ def bulk_fill_missing(db: Session, user: models.User, image_type: str) -> dict:
     artwork row of the right type (covers/heroes). Logos have no GameArtwork
     row, so only the override column is checked for those.
 
-    Hidden entries are skipped. DLC is included.
+    Hidden entries are skipped. DLC is included. Entries are processed
+    alphabetically by display title.
 
     image_type: 'v' | 'h' | 'hero' | 'logo'
+    progress_callback: optional callable(done: int, total: int, title: str)
     Returns: {"filled": N, "no_candidate": N, "skipped": N, "errored": N}
     """
     if image_type not in IMAGE_TYPES:
@@ -282,12 +289,24 @@ def bulk_fill_missing(db: Session, user: models.User, image_type: str) -> dict:
         .all()
     )
 
+    # Sort alphabetically by display title so progress is predictable
+    def _sort_key(e):
+        g = e.release.game if e.release else None
+        return (g.display_title or g.title or "").casefold() if g else ""
+
+    entries.sort(key=_sort_key)
+    total = len(entries)
+
     filled = 0
     no_candidate = 0
     skipped = 0
     errored = 0
 
-    for entry in entries:
+    for i, entry in enumerate(entries):
+        if progress_callback:
+            g = entry.release.game if entry.release else None
+            title = (g.display_title or g.title or "") if g else ""
+            progress_callback(i, total, title)
         if _entry_already_has_image(entry, image_type):
             skipped += 1
             continue

@@ -35,6 +35,7 @@ class Job:
     message: str | None = None
     error: str | None = None
     notified: bool = False  # client has seen the completion toast for this job
+    progress: dict | None = None  # live progress, updated mid-run: {done, total, title}
     created_at: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     finished_at: datetime.datetime | None = None
 

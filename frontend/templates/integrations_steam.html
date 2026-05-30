@@ -222,7 +222,7 @@
           >Refresh Metadata</button>
         </div>
         <div>
-          <p class="text-secondary mb-1"><small>Run the auto-hide heuristic across your library — hides soundtracks, artbooks, cosmetic packs, character/season passes, etc. Only touches DLC; never games. Skips any entries you've manually hidden or unhidden.</small></p>
+          <p class="text-secondary mb-1"><small>Run the auto-hide heuristic across your library — hides soundtracks, artbooks, cosmetic packs, character/season passes, bonus content, entries with "beta" in the title, and video/episode/beta/demo app types. Skips any entries you've manually hidden or unhidden.</small></p>
           <button
             class="btn btn-outline-secondary btn-sm"
             hx-post="/library/backfill-hidden"
@@ -231,6 +231,17 @@
             hx-confirm="Run the auto-hide heuristic across your library?"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
           >Auto-hide non-games</button>
+        </div>
+        <div>
+          <p class="text-secondary mb-1"><small>Re-run collection detection across your library using the current keyword rules. Flags new collections AND clears false positives from old rules. Skips any entry you've manually marked or unmarked as a collection.</small></p>
+          <button
+            class="btn btn-outline-secondary btn-sm"
+            hx-post="/integrations/steam/backfill-collection-flags"
+            hx-target="#steam-flash"
+            hx-swap="innerHTML"
+            hx-confirm="Re-run collection detection across your library?"
+            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
+          >Re-detect collections</button>
         </div>
         <div>
           <p class="text-secondary mb-1"><small>Re-apply the display-name cleanup heuristic AND fix any "App NNNNNN" placeholder titles by pulling the real name from cached Steam metadata. Useful after we improve the heuristic, and to catch entries whose appid wasn't in the catalog cache at sync time. Skips any entry whose display name you've manually edited. No network calls.</small></p>

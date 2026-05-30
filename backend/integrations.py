@@ -476,26 +476,45 @@ def backfill_collection_flags(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Re-run collection detection across the whole library.
+
+    Sets is_collection=True or False for every game where
+    is_collection_user_set=False, so this also corrects false positives left
+    over from an earlier keyword run.  Manual overrides (is_collection_user_set)
+    are always respected.
+    """
     games = (
         db.query(models.Game)
         .join(models.GameRelease)
         .join(models.UserLibraryEntry)
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
-            models.Game.is_collection == False,
+            models.Game.is_collection_user_set == False,
         )
         .all()
     )
-    updated = 0
+    flagged = 0
+    cleared = 0
     for game in games:
-        if steam._infer_is_collection(game.title):
+        should_be = steam._infer_is_collection(game.display_title)
+        if should_be and not game.is_collection:
             game.is_collection = True
-            updated += 1
+            flagged += 1
+        elif not should_be and game.is_collection:
+            game.is_collection = False
+            cleared += 1
     db.commit()
+    parts = []
+    if flagged:
+        parts.append(f"{flagged} flagged as collection{'s' if flagged != 1 else ''}")
+    if cleared:
+        parts.append(f"{cleared} false positive{'s' if cleared != 1 else ''} cleared")
+    if not parts:
+        parts.append("no changes needed")
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": f"Backfill complete — {updated} game{'s' if updated != 1 else ''} flagged as collections."},
+        context={"message": "Collection re-detection complete — " + ", ".join(parts) + "."},
     )
 
 
@@ -786,7 +805,11 @@ async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, image_type: str) ->
         if user is None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
-        result = await asyncio.to_thread(sgdb.bulk_fill_missing, db, user, image_type)
+
+        def on_progress(done: int, total: int, title: str) -> None:
+            jobs.update(job_id, progress={"done": done, "total": total, "title": title})
+
+        result = await asyncio.to_thread(sgdb.bulk_fill_missing, db, user, image_type, on_progress)
         label = _SGDB_IMAGE_LABELS.get(image_type, image_type)
         header = f"SteamGridDB {label} fill complete"
         delta = f"+{result['filled']:,} filled · {result['no_candidate']:,} no match · {result['skipped']:,} already had art"
@@ -800,6 +823,22 @@ async def _run_sgdb_bulk_fill_job(job_id: str, user_id: int, image_type: str) ->
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
         db.close()
+
+
+@router.get("/steamgriddb/fill-status")
+def sgdb_fill_status(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return live progress for any running SGDB bulk-fill job. Returns empty
+    when no job is active so the polling div removes itself from the DOM."""
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind.startswith("sgdb_fill_")]
+    job = active[0] if active else None
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/sgdb_fill_status.html",
+        context={"job": job},
+    )
 
 
 @router.post("/steamgriddb/fill-missing")
@@ -829,9 +868,8 @@ async def steamgriddb_fill_missing(
     kind = f"sgdb_fill_{image_type}"
     job = jobs.create(user_id=current_user.id, kind=kind)
     asyncio.create_task(_run_sgdb_bulk_fill_job(job.id, current_user.id, image_type))
-    label = _SGDB_IMAGE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
         request=request,
-        name="partials/integrations_flash.html",
-        context={"message": f"SteamGridDB {label} fill started — you'll see a toast when it finishes."},
+        name="partials/sgdb_fill_status.html",
+        context={"job": job},
     )

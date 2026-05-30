@@ -1,0 +1,26 @@
+{# Polls every 3s while a bulk SGDB fill job is running. When the job finishes
+   the endpoint returns empty and this element removes itself via outerHTML swap.
+   Completion is delivered as a toast via the base.html job poller. #}
+{% if job %}
+<div
+  id="sgdb-fill-status"
+  hx-get="/integrations/steamgriddb/fill-status"
+  hx-trigger="every 3s"
+  hx-swap="outerHTML"
+>
+  {% if job.progress %}
+  {% set pct = ((job.progress.done / job.progress.total) * 100) | int if job.progress.total else 0 %}
+  <div class="d-flex align-items-center gap-2 mb-1">
+    <div class="progress flex-grow-1" style="height: 4px;">
+      <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ pct }}%"></div>
+    </div>
+    <small class="text-secondary text-nowrap">{{ job.progress.done + 1 }} / {{ job.progress.total }}</small>
+  </div>
+  {% if job.progress.title %}
+  <small class="text-secondary">{{ job.progress.title }}</small>
+  {% endif %}
+  {% else %}
+  <small class="text-secondary">Starting&hellip;</small>
+  {% endif %}
+</div>
+{% endif %}

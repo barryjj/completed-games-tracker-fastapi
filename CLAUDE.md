@@ -49,6 +49,8 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - No top-level directory restructuring without approval.
 - Match existing patterns before introducing new ones.
 - Tests live in `backend/test_*.py` and use pytest with in-memory SQLite. Run them before committing.
+- **Test workflow: `ruff format` first, then `pytest` once.** Never format → test → reformat → test again.
+- **Test isolation for library/completion endpoints:** pass `headers={"HX-Request": "true"}` so the server skips populating `base_game_options` / `collections` for the modal dropdowns. Without it, game titles appear in `<select>` options and confuse assertions that check body text.
 
 ## UI
 
