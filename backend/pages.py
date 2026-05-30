@@ -1,4 +1,5 @@
 import datetime
+import html as _html
 import os
 
 from fastapi import APIRouter, Depends, Form, Query, Request
@@ -84,6 +85,16 @@ def _playtime_human(minutes) -> str:
 
 
 templates.env.filters["playtime_human"] = _playtime_human
+
+
+def _html_unescape(s: str) -> str:
+    """Unescape HTML entities in a string (e.g. ``&amp;`` → ``&``).
+    Used in templates to clean Steam API text that sometimes contains
+    encoded entities before Jinja2 re-escapes for safe HTML output."""
+    return _html.unescape(s or "")
+
+
+templates.env.filters["html_unescape"] = _html_unescape
 
 
 # How long Steam appdetails can sit before we consider it stale enough to
@@ -638,11 +649,12 @@ def library_page(
         view = "default"
 
     if view == "default":
-        # Games + collections; hide DLC and sub-collection games.
-        # Manually added entries always show regardless of parent status.
+        # Games + collections; hide DLC (even with no parent yet) and
+        # sub-collection games.  Manually added entries always show regardless
+        # of DLC/parent status — they were added intentionally.
         base_q = base_q.filter(
             or_(
-                models.Game.parent_id == None,
+                ((models.Game.parent_id == None) & (models.Game.is_dlc == False)),
                 models.UserLibraryEntry.import_source == "manual",
             )
         )

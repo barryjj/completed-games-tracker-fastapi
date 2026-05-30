@@ -476,26 +476,45 @@ def backfill_collection_flags(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Re-run collection detection across the whole library.
+
+    Sets is_collection=True or False for every game where
+    is_collection_user_set=False, so this also corrects false positives left
+    over from an earlier keyword run.  Manual overrides (is_collection_user_set)
+    are always respected.
+    """
     games = (
         db.query(models.Game)
         .join(models.GameRelease)
         .join(models.UserLibraryEntry)
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
-            models.Game.is_collection == False,
+            models.Game.is_collection_user_set == False,
         )
         .all()
     )
-    updated = 0
+    flagged = 0
+    cleared = 0
     for game in games:
-        if steam._infer_is_collection(game.title):
+        should_be = steam._infer_is_collection(game.display_title)
+        if should_be and not game.is_collection:
             game.is_collection = True
-            updated += 1
+            flagged += 1
+        elif not should_be and game.is_collection:
+            game.is_collection = False
+            cleared += 1
     db.commit()
+    parts = []
+    if flagged:
+        parts.append(f"{flagged} flagged as collection{'s' if flagged != 1 else ''}")
+    if cleared:
+        parts.append(f"{cleared} false positive{'s' if cleared != 1 else ''} cleared")
+    if not parts:
+        parts.append("no changes needed")
     return templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": f"Backfill complete — {updated} game{'s' if updated != 1 else ''} flagged as collections."},
+        context={"message": "Collection re-detection complete — " + ", ".join(parts) + "."},
     )
 
 

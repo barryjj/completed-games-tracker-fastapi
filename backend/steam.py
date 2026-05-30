@@ -1,4 +1,5 @@
 import datetime
+import html
 import json
 import logging
 import os
@@ -13,19 +14,23 @@ from . import models
 # Symbols that Steam appends to titles but are meaningless for display
 _JUNK_RE = re.compile(r"[™®©]+")
 
-COLLECTION_KEYWORDS = [
-    "collection",
-    "anthology",
-    "trilogy",
-    "compilation",
-    "complete edition",
-    "complete pack",
-    "bundle",
-    "chronicles",
-    "archives",
-    "legacy",
-    "origins",
-]
+# Collection-detection regex.  Only word-boundary matches to avoid false
+# positives from words like "Recollection" or "Legacy".  "collection" is
+# anchored to end-of-title (optionally followed by a volume indicator like
+# "Vol.1") so "Master Collection Vol.1 Bonus Content" is NOT flagged — the
+# trailing words push it past the anchor.
+_COLLECTION_RE = re.compile(
+    r"""
+    \banthology\b |
+    \btrilogy\b |
+    \bcompilation\b |
+    \bcomplete\s+edition\b |
+    \bcomplete\s+pack\b |
+    # "collection" only qualifies at/near end of title
+    \bcollection\b ( \s* (vol\.?\s*\d+ | volume\s+\d+) )? \s* $
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 # Explicit allowlist of acronyms and Roman numerals to preserve as uppercase
 # during title-case normalization. Length-based "looks like an acronym" rules
@@ -114,17 +119,15 @@ def _smart_title_case(s: str) -> str:
 
 
 def _infer_is_collection(title: str) -> bool:
-    t = title.lower()
-    return any(kw in t for kw in COLLECTION_KEYWORDS)
+    return bool(_COLLECTION_RE.search(title or ""))
 
 
-# Patterns that indicate "DLC the user almost certainly can't 'complete'":
-# soundtracks, artbooks, cosmetic / character / costume packs, season passes,
-# avatar items, deluxe-edition upgrades. Auto-hide is intentionally GATED on
-# is_dlc=True — a real game won't have "Skin Pack" or "Season Pass" in its
-# title in a way we'd want to hide. Trying to detect individual character names
-# ("Mileena", "Armor King") is too brittle; we leave those for manual hide.
-_AUTO_HIDE_RE = re.compile(
+# DLC-only patterns: cosmetic packs, season passes, artbooks, soundtracks,
+# etc.  These are gated on is_dlc=True in _should_auto_hide — a real game
+# won't have "Skin Pack" or "Season Pass" in its title in a way we'd hide.
+# Trying to detect individual character names ("Mileena") is too brittle;
+# we leave those for manual hide.
+_AUTO_HIDE_DLC_RE = re.compile(
     r"\b("
     # Audio / book / wallpaper content
     r"soundtrack|ost|original\s+sound(track)?|"
@@ -135,8 +138,6 @@ _AUTO_HIDE_RE = re.compile(
     # Generic DLC pack / pass suffixes.
     # "pack" catches "Relic Rune Pack", "Starter Pack", etc.
     # "pass" catches "Year One Pass", "Battle Pass", "Annual Pass", etc.
-    # Both are standalone word matches — DLC-only because is_dlc gate is checked
-    # before this regex fires (see _should_auto_hide).
     r"pack|pass|"
     r"cosmetic\s*pack|emotes?\s*pack|customization(\s+item)?\s*pack|"
     r"(skin|costume|outfit)\s*pack|cinematic\s*pack|"
@@ -147,32 +148,80 @@ _AUTO_HIDE_RE = re.compile(
     r"avatar\s*(skin|costume)|"
     # "DLC Playable Character" (Inti Creates pattern)
     r"dlc\s*playable\s*character|"
-    # "Ultimate Add-On Bundle" (MK11 etc.)
+    # "Ultimate Add-On Bundle" / "Bonus Content" (purchase wrappers)
     r"add[- ]?on\s*bundle|"
+    r"bonus\s+content|"
     # "Deluxe Edition Upgrade" pattern
     r"deluxe.*upgrade"
     r")\b",
     re.IGNORECASE,
 )
 
+# Title patterns that auto-hide regardless of is_dlc.
+# A real completable game will not have "\bbeta\b" in its Steam title.
+_AUTO_HIDE_TITLE_RE = re.compile(r"\bbeta\b", re.IGNORECASE)
+
+# Steam app types that are gate-free auto-hidden (no is_dlc check needed).
+# "video" and "episode" can arrive as is_dlc=False when Steam tags them as
+# type=game but appdetails shows the real type.
+# "music" is intentionally NOT here — music products always arrive via the
+# DLC sync path (is_dlc=True), so we leave that check in the DLC-only tier.
+_AUTO_HIDE_TYPES_GATE_FREE: frozenset[str] = frozenset({"video", "episode"})
+
+# Steam type "beta" always hides.
+# Steam type "demo" hides only when "demo" also appears in the title (to
+# preserve edge cases like "RE7: Beginning Hour" that Steam tags demo but
+# that users may legitimately want to log).
+_AUTO_HIDE_DEMO_TITLE_RE = re.compile(r"\bdemo\b", re.IGNORECASE)
+
 
 def _should_auto_hide(title: str, appdetails: dict | None, is_dlc: bool) -> bool:
-    """True if this entry is DLC the user almost certainly can't 'complete'.
+    """True if this entry should be hidden as non-completable content.
 
-    Hard rule: auto-hide ONLY fires for is_dlc=True. Games are never auto-hidden
-    by any heuristic — if Steam tagged something as a game, it stays visible.
-    Soundtracks etc. land in is_dlc=True from the sync's rgOwnedApps subtraction
-    already, so this gate doesn't lose them."""
+    Two-tier check:
+
+    Tier 1 — gate-free (fires regardless of is_dlc):
+      * app type is music / video / episode → always hide.
+      * app type is beta → always hide.
+      * app type is demo AND "demo" appears in the title → hide (keeps
+        edge-cases like RE7: Beginning Hour visible if not named "demo").
+      * title contains \\bbeta\\b → hide (catches beta builds Steam mislabels
+        as type=game, e.g. "Elden Ring NIGHTREIGN Network Test Beta").
+
+    Tier 2 — DLC-only (fires only when is_dlc=True):
+      * app type is music (belt-and-suspenders against the tier-1 check).
+      * title matches _AUTO_HIDE_DLC_RE (soundtracks, cosmetic packs,
+        season passes, bonus content, deluxe upgrades, etc.).
+    """
+    app_type = (appdetails or {}).get("type", "")
+
+    # --- Tier 1: gate-free (fire regardless of is_dlc) ---
+    if app_type in _AUTO_HIDE_TYPES_GATE_FREE:
+        return True
+    if app_type == "beta":
+        return True
+    if app_type == "demo" and _AUTO_HIDE_DEMO_TITLE_RE.search(title or ""):
+        return True
+    if _AUTO_HIDE_TITLE_RE.search(title or ""):
+        return True
+
+    # --- Tier 2: DLC-only ---
     if not is_dlc:
         return False
-    if appdetails and appdetails.get("type") == "music":
+    # type=music is DLC-gated: music products always arrive as is_dlc=True via
+    # the DLC sync, so this gate is always satisfied for them in practice.
+    if app_type == "music":
         return True
-    return bool(_AUTO_HIDE_RE.search(title or ""))
+    return bool(_AUTO_HIDE_DLC_RE.search(title or ""))
 
 
 def _clean_title(title: str) -> str:
-    """Return title with trademark/copyright symbols stripped and whitespace
-    normalised. Idempotent.
+    """Return title with HTML entities unescaped, trademark/copyright symbols
+    stripped, and whitespace normalised. Idempotent.
+
+    Steam's name catalog sometimes includes HTML-encoded characters
+    (e.g. ``&amp;`` for ``&``, ``&quot;`` for ``"``).  We unescape those
+    before stripping junk so display_name shows clean text.
 
     We used to also title-case loud ALL-CAPS titles ("ELDEN RING NIGHTREIGN"
     → "Elden Ring Nightreign") but that produced inconsistent results when
@@ -180,7 +229,7 @@ def _clean_title(title: str) -> str:
     like "ELDEN RING NIGHTREIGN The Forsaken Hollows" passed through
     unchanged). Decision: leave Steam's casing alone. If a user dislikes a
     SHOUTING title, the edit modal lets them override display_name."""
-    return _JUNK_RE.sub("", title).strip()
+    return _JUNK_RE.sub("", html.unescape(title)).strip()
 
 
 logger = logging.getLogger(__name__)
