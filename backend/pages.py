@@ -567,6 +567,7 @@ PAGE_SIZE = 100
 # --- Library ---
 
 VIEW_OPTIONS = ["default", "dlc", "collections", "in_collection", "manual", "all"]
+SORT_OPTIONS = ["name", "recently_played"]
 
 
 VIEW_MODES = {"list", "grid_v", "grid_h"}
@@ -599,8 +600,10 @@ def library_page(
     q: str = Query(""),
     platform: str = Query(""),
     view: str = Query("default"),
+    sort: str = Query("name"),
     view_mode: str | None = Query(None),
     show_hidden: bool = Query(False),
+    missing_art: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -622,13 +625,17 @@ def library_page(
             contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
         )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
-        # Sort on what's actually shown (display_name with title as fallback),
-        # case-insensitive so "Apple"/"apple" cluster together. Sorting by raw
-        # title caused rows like "Influent DLC…" to land before number-prefixed
-        # games because of how ALL CAPS / leading-symbol titles compare to
-        # cleaned display names.
+        # Default order — overridden below when sort != "name".
         .order_by(func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE"))
     )
+
+    # Normalise sort param
+    if sort not in SORT_OPTIONS:
+        sort = "name"
+    if sort == "recently_played":
+        # NULL last so entries with no play date (manual, un-launched games)
+        # sink to the bottom rather than surfacing at the top.
+        base_q = base_q.order_by(None).order_by(models.UserLibraryEntry.last_played_at.desc().nulls_last())
     # Hidden entries (soundtracks, artbooks, etc.) are excluded by default.
     # The "Show hidden" toggle flips this off so the user can review or unhide.
     if not show_hidden:
@@ -670,6 +677,19 @@ def library_page(
     elif view == "manual":
         base_q = base_q.filter(models.UserLibraryEntry.import_source == "manual")
     # "all" — no additional filter
+
+    # Missing-artwork filter — orientation-aware.
+    # grid_v → needs a vertical cover (artwork_type="cover" or cover_url_override_v).
+    # grid_h / list → needs a horizontal cover (artwork_type="header" or cover_url_override_h).
+    if missing_art:
+        art_type = "cover" if view_mode == "grid_v" else "header"
+        override_col = (
+            models.UserLibraryEntry.cover_url_override_v if view_mode == "grid_v" else models.UserLibraryEntry.cover_url_override_h
+        )
+        # Release IDs that already have the required artwork type — we want the complement.
+        has_art_release_ids = db.query(models.GameArtwork.release_id).filter(models.GameArtwork.artwork_type == art_type)
+        base_q = base_q.filter(override_col == None).filter(models.GameRelease.id.not_in(has_art_release_ids))
+
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
@@ -742,8 +762,12 @@ def library_page(
         filter_parts.append(f"platform={platform}")
     if view != "default":
         filter_parts.append(f"view={view}")
+    if sort != "name":
+        filter_parts.append(f"sort={sort}")
     if show_hidden:
         filter_parts.append("show_hidden=true")
+    if missing_art:
+        filter_parts.append("missing_art=true")
     if view_mode != "list":
         filter_parts.append(f"view_mode={view_mode}")
     filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
@@ -763,8 +787,10 @@ def library_page(
             "q": q,
             "platform": platform,
             "view": view,
+            "sort": sort,
             "view_mode": view_mode,
             "show_hidden": show_hidden,
+            "missing_art": missing_art,
             "filter_qs": filter_qs,
             "lib_platforms": lib_platform_list,
         },

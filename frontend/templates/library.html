@@ -28,7 +28,7 @@
   hx-target="#library-content"
   hx-select="#library-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view, change from:#lib-show-hidden"
+  hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view, change from:#lib-sort, change from:#lib-show-hidden, change from:#lib-missing-art"
 >
   <input type="hidden" name="view_mode" id="lib-view-mode" value="{{ view_mode }}">
   <div class="col-md-4">
@@ -61,9 +61,21 @@
     </select>
   </div>
   <div class="col-auto">
+    <select class="form-select form-select-sm" id="lib-sort" name="sort">
+      <option value="name"           {% if sort == 'name'           %}selected{% endif %}>A – Z</option>
+      <option value="recently_played"{% if sort == 'recently_played'%}selected{% endif %}>Recently played</option>
+    </select>
+  </div>
+  <div class="col-auto">
     <div class="form-check">
       <input class="form-check-input" type="checkbox" id="lib-show-hidden" name="show_hidden" value="true" {% if show_hidden %}checked{% endif %}>
       <label class="form-check-label text-secondary" for="lib-show-hidden"><small>Show hidden</small></label>
+    </div>
+  </div>
+  <div class="col-auto">
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="lib-missing-art" name="missing_art" value="true" {% if missing_art %}checked{% endif %}>
+      <label class="form-check-label text-secondary" for="lib-missing-art"><small>Missing artwork</small></label>
     </div>
   </div>
 </form>
