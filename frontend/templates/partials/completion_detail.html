@@ -157,7 +157,7 @@
     {% if appdetails.short_description %}
     <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
-      <p class="cgt-detail-description mb-0">{{ appdetails.short_description }}</p>
+      <p class="cgt-detail-description mb-0">{{ appdetails.short_description | html_unescape }}</p>
     </div>
     {% endif %}
 

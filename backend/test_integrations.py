@@ -586,18 +586,59 @@ def test_clean_title_is_idempotent():
     assert _clean_title("ELDEN RING") == "ELDEN RING"
 
 
+def test_clean_title_unescapes_html_entities():
+    from backend.steam import _clean_title
+
+    assert _clean_title("Fish &amp; Chips") == "Fish & Chips"
+    assert _clean_title("Game &quot;Subtitle&quot;") == 'Game "Subtitle"'
+    assert _clean_title("A&amp;B") == "A&B"
+    # Combined with trademark stripping
+    assert _clean_title("Game™ &amp; DLC") == "Game & DLC"
+
+
+def test_infer_is_collection_regex():
+    from backend.steam import _infer_is_collection
+
+    # Should match
+    assert _infer_is_collection("The Bioshock Collection") is True
+    assert _infer_is_collection("Mass Effect Legendary Edition Trilogy") is True
+    assert _infer_is_collection("Metal Gear Solid: Master Collection Vol.1") is True
+    assert _infer_is_collection("Metal Gear Solid: Master Collection Vol. 2") is True
+    assert _infer_is_collection("Castlevania Anthology") is True
+    assert _infer_is_collection("The Dark Knight Trilogy") is True
+    assert _infer_is_collection("Games Compilation") is True
+    assert _infer_is_collection("Mass Effect Complete Edition") is True
+    assert _infer_is_collection("Game Complete Pack") is True
+
+    # Should NOT match — false positives from old keyword list
+    assert _infer_is_collection("Elven Legacy") is False
+    assert _infer_is_collection("Assassin's Creed Origins") is False
+    assert _infer_is_collection("Lost Chronicles of Zerzura") is False
+    assert _infer_is_collection("Bundle of Joy") is False
+    assert _infer_is_collection("Archives of the Deep") is False
+    assert _infer_is_collection("Recollection") is False  # sub-word of "collection"
+
+    # "collection" must be at/near end of title — "Bonus Content" after kills it
+    assert _infer_is_collection("Metal Gear Solid: Master Collection Vol.1 Bonus Content") is False
+
+
 def test_should_auto_hide_only_fires_for_dlc():
-    """Auto-hide is gated on is_dlc=True. A game can never be auto-hidden by
-    the heuristic — even if its title accidentally contains a pattern word."""
+    """Auto-hide uses a two-tier check.
+
+    Tier 1 (gate-free): video/episode type, beta type, beta in title,
+    demo type + demo in title.  These fire regardless of is_dlc.
+
+    Tier 2 (DLC-only): soundtracks, artbooks, cosmetic packs, passes, bonus
+    content, deluxe upgrades, type=music.  These require is_dlc=True.
+    """
     from backend.steam import _should_auto_hide
 
-    # is_dlc=True + matching title → hide
+    # --- Tier 2 (DLC-only): title patterns ---
     assert _should_auto_hide("Elden Ring - Soundtrack", None, is_dlc=True) is True
     assert _should_auto_hide("Game OST", None, is_dlc=True) is True
     assert _should_auto_hide("Game Artbook", None, is_dlc=True) is True
     assert _should_auto_hide("Cosmetic Pack", None, is_dlc=True) is True
     assert _should_auto_hide("Wallpaper Set", None, is_dlc=True) is True
-    # New DLC patterns from the user's screenshots
     assert _should_auto_hide("TEKKEN 8 - Season 1 Character Pass", None, is_dlc=True) is True
     assert _should_auto_hide("TEKKEN 8 - Season 2 Character & Stage Pass", None, is_dlc=True) is True
     assert _should_auto_hide("Street Fighter 6 - Year 1 Ultimate Pass", None, is_dlc=True) is True
@@ -607,29 +648,50 @@ def test_should_auto_hide_only_fires_for_dlc():
     assert _should_auto_hide("Blaster Master Zero 2 - DLC Playable Character: Copen", None, is_dlc=True) is True
     assert _should_auto_hide("TEKKEN 8 - Avatar Skin: Tetsujin", None, is_dlc=True) is True
     assert _should_auto_hide("Game - Digital Deluxe Edition Upgrade", None, is_dlc=True) is True
-    # appdetails type=music → hide regardless of title (still requires is_dlc)
+    # "Bonus Content" DLC purchase wrapper
+    assert _should_auto_hide("Metal Gear Solid: Master Collection Vol.1 Bonus Content", None, is_dlc=True) is True
+    # Standalone costume / skin / outfit
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Armored Dracula Costume", None, is_dlc=True) is True
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Dark Dracula Costume", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Legendary Outfit", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Hero Skin", None, is_dlc=True) is True
+    # Standalone pack / pass
+    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Relic Rune Pack", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Starter Pack", None, is_dlc=True) is True
+    assert _should_auto_hide("DOOM Eternal Year One Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Annual Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Battle Pass Season 3", None, is_dlc=True) is True
+    # type=music → hide (gated on is_dlc — music always arrives as DLC)
     assert _should_auto_hide("Anything", {"type": "music"}, is_dlc=True) is True
 
-    # is_dlc=False → NEVER hide, even if title matches a pattern
+    # --- Tier 2 DLC-only: NOT hidden when is_dlc=False ---
     assert _should_auto_hide("Elden Ring - Soundtrack", None, is_dlc=False) is False
     assert _should_auto_hide("Cosmetic Pack", None, is_dlc=False) is False
     # type=music without is_dlc still doesn't hide — sync's rgOwnedApps
     # subtraction lands actual music products in is_dlc=True anyway.
     assert _should_auto_hide("Some Soundtrack", {"type": "music"}, is_dlc=False) is False
 
-    # Standalone costume / skin / outfit (not just *pack variants)
-    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Armored Dracula Costume", None, is_dlc=True) is True
-    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Dark Dracula Costume", None, is_dlc=True) is True
-    assert _should_auto_hide("Some Game - Legendary Outfit", None, is_dlc=True) is True
-    assert _should_auto_hide("Some Game - Hero Skin", None, is_dlc=True) is True
-    # Standalone pack suffix
-    assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Relic Rune Pack", None, is_dlc=True) is True
-    assert _should_auto_hide("Some Game - Starter Pack", None, is_dlc=True) is True
-    # Standalone pass suffix — season passes Steam mislabels as type=game
-    assert _should_auto_hide("DOOM Eternal Year One Pass", None, is_dlc=True) is True
-    assert _should_auto_hide("Some Game - Annual Pass", None, is_dlc=True) is True
-    assert _should_auto_hide("Some Game - Battle Pass Season 3", None, is_dlc=True) is True
-    # Real content DLC should NOT be hidden
+    # --- Tier 1 (gate-free): video / episode types ---
+    assert _should_auto_hide("Amnesia Fortnight 2017", {"type": "video"}, is_dlc=False) is True
+    assert _should_auto_hide("Some Series Episode 1", {"type": "episode"}, is_dlc=False) is True
+    assert _should_auto_hide("Documentary", {"type": "video"}, is_dlc=True) is True
+
+    # --- Tier 1: beta type ---
+    assert _should_auto_hide("Some Game Beta", {"type": "beta"}, is_dlc=False) is True
+    assert _should_auto_hide("Some Game Beta", {"type": "beta"}, is_dlc=True) is True
+
+    # --- Tier 1: "beta" in title (catches network tests mislabelled type=game) ---
+    assert _should_auto_hide("Elden Ring NIGHTREIGN Network Test Beta", None, is_dlc=False) is True
+    assert _should_auto_hide("Some Game - Open Beta", {"type": "game"}, is_dlc=False) is True
+    # No word boundary → should NOT match
+    assert _should_auto_hide("Roberta Williams Collection", None, is_dlc=False) is False
+
+    # --- Tier 1: demo type + "demo" in title ---
+    assert _should_auto_hide("DOOM Eternal Demo", {"type": "demo"}, is_dlc=False) is True
+    # demo type but no "demo" in title → keep visible (RE7: Beginning Hour etc.)
+    assert _should_auto_hide("RE7: Beginning Hour", {"type": "demo"}, is_dlc=False) is False
+
+    # --- Real content DLC should NOT be hidden by tier-2 patterns ---
     assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Revelations", None, is_dlc=True) is False
     assert _should_auto_hide("DOOM Eternal: The Ancient Gods - Part One", None, is_dlc=True) is False
 
