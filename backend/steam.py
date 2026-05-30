@@ -921,6 +921,74 @@ def _pending_count(db: Session) -> int:
     )
 
 
+# ---------------------------------------------------------------------------
+# Artwork URL verification
+# ---------------------------------------------------------------------------
+
+_VERIFY_SLEEP_OK = 0.5  # between successful HEAD requests
+_VERIFY_SLEEP_ERR = 2.0  # after a network error (transient)
+_verify_logger = logging.getLogger("steam.artwork_verification")
+
+
+def verify_artwork_batch(db: Session, batch_size: int = 50) -> int:
+    """
+    HEAD-check the next batch of GameArtwork rows that haven't been verified yet.
+
+    - HTTP 2xx/3xx → is_valid=True
+    - HTTP 4xx (404, 410, …) → is_valid=False  (URL is definitively broken)
+    - Network / 5xx errors → skip; leave verified_at null so we retry next cycle.
+
+    Returns the count of rows still pending verification (verified_at IS NULL).
+    """
+    rows = (
+        db.query(models.GameArtwork)
+        .filter(models.GameArtwork.verified_at == None)
+        .order_by(models.GameArtwork.id.asc())
+        .limit(batch_size)
+        .all()
+    )
+
+    now = datetime.datetime.now(datetime.UTC)
+
+    for art in rows:
+        if not art.url:
+            # No URL to check — stamp it so we don't keep visiting it.
+            art.verified_at = now
+            art.is_valid = False
+            db.commit()
+            continue
+
+        try:
+            resp = httpx.head(art.url, follow_redirects=True, timeout=10)
+            if resp.status_code < 400:
+                art.is_valid = True
+            else:
+                art.is_valid = False
+                _verify_logger.debug(
+                    "Artwork %d marked invalid: %s → HTTP %d",
+                    art.id,
+                    art.url,
+                    resp.status_code,
+                )
+            art.verified_at = now
+            db.commit()
+            time.sleep(_VERIFY_SLEEP_OK)
+        except Exception as e:
+            _verify_logger.debug(
+                "Artwork %d HEAD check failed (transient, will retry): %s",
+                art.id,
+                e,
+            )
+            time.sleep(_VERIFY_SLEEP_ERR)
+            continue
+
+    return _artwork_pending_count(db)
+
+
+def _artwork_pending_count(db: Session) -> int:
+    return db.query(models.GameArtwork).filter(models.GameArtwork.verified_at == None).count()
+
+
 def sync_dlc_flags(db: Session, user: models.User) -> dict:
     """
     Legacy DLC detection via appdetails — one API call per game.

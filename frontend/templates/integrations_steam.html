@@ -171,6 +171,18 @@
       </div>
     </div>
 
+    {# Artwork URL verification status — shows progress while the background worker
+       HEAD-checks artwork URLs; quiet once caught up unless broken URLs are found. #}
+    <div class="mt-4">
+      <h6 class="mb-2">Artwork URL Verification</h6>
+      <p class="text-secondary mb-2"><small>Runs automatically in the background. Checks each artwork URL and marks broken ones so they're skipped during display.</small></p>
+      <div hx-get="/integrations/steam/artwork-verification-status"
+           hx-trigger="load"
+           hx-swap="outerHTML">
+        <p class="text-secondary mb-0"><small>Loading&hellip;</small></p>
+      </div>
+    </div>
+
     {# Power-user / diagnostic operations. Collapsed by default. #}
     <details class="mt-4">
       <summary class="text-secondary" style="cursor: pointer;"><small>More sync options</small></summary>
