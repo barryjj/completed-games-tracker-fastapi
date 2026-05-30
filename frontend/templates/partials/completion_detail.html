@@ -235,9 +235,10 @@
          </a></li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}
-      {% set _has_overrides = entry.cover_url_override_v or entry.cover_url_override_h or entry.hero_url_override or entry.logo_url_override %}
+      {% set _ua_types = entry.user_artwork | map(attribute='artwork_type') | list %}
+      {% set _has_overrides = _ua_types | length > 0 %}
       {% if _has_overrides %}
-        {% if entry.cover_url_override_v %}
+        {% if 'cover_v' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "v"}'
@@ -246,7 +247,7 @@
              Reset vertical cover
            </a></li>
         {% endif %}
-        {% if entry.cover_url_override_h %}
+        {% if 'cover_h' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "h"}'
@@ -255,7 +256,7 @@
              Reset horizontal cover
            </a></li>
         {% endif %}
-        {% if entry.hero_url_override %}
+        {% if 'hero' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
@@ -264,7 +265,7 @@
              Reset hero image
            </a></li>
         {% endif %}
-        {% if entry.logo_url_override %}
+        {% if 'logo' in _ua_types %}
         <li><a class="dropdown-item" href="#"
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'

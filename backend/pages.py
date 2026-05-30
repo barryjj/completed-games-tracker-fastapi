@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
-from sqlalchemy.orm import Session, contains_eager, joinedload
+from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import models, users
 from .models import get_db
@@ -39,29 +39,32 @@ templates.env.filters["platform_color"] = _platform_color_class
 
 def _grid_cover_url(entry, orientation: str) -> str | None:
     """Pick the right cover URL for the grid view's orientation. Returns None
-    when neither the user's override nor the release's artwork has a matching-
-    orientation cover — no cross-orientation borrowing (stretched/squished
-    art looks worse than a clean placeholder card).
+    when there is no art for the required orientation — no cross-orientation
+    borrowing (stretched/squished art looks worse than a clean placeholder).
 
     Resolution order:
-      1. User override (cover_url_override_v / cover_url_override_h) — explicit
-         choice from SGDB lookup, manual upload, etc.
-      2. Release's GameArtwork — Steam CDN URLs populated at sync / enrichment.
+      1. UserArtwork for this entry — explicit pick (SGDB picker, user upload).
+      2. Valid GameArtwork for this release — native sources (steam/psn) before
+         sgdb to prefer the authoritative art when it exists.
 
-    Vertical mode wants library_600x900.jpg (Steam's portrait library art).
-    Horizontal mode wants header.jpg (Steam's landscape header)."""
-    if orientation == "grid_v":
-        if entry.cover_url_override_v:
-            return entry.cover_url_override_v
-        wanted = "cover"
-    else:
-        if entry.cover_url_override_h:
-            return entry.cover_url_override_h
-        wanted = "header"
+    Vertical mode wants cover_v (library_600x900.jpg / portrait art).
+    Horizontal mode wants cover_h (header.jpg / landscape header)."""
+    wanted = "cover_v" if orientation == "grid_v" else "cover_h"
+    # 1. Explicit user pick
+    for ua in entry.user_artwork:
+        if ua.artwork_type == wanted and ua.url:
+            return ua.url
+    # 2. Valid GameArtwork — native sources preferred
+    native_url = None
+    sgdb_url = None
     for art in entry.release.artwork:
-        if art.artwork_type == wanted:
-            return art.url
-    return None
+        if art.artwork_type == wanted and art.is_valid and art.url:
+            if art.source in ("steam", "psn"):
+                if native_url is None:
+                    native_url = art.url
+            elif sgdb_url is None:
+                sgdb_url = art.url
+    return native_url or sgdb_url
 
 
 templates.env.filters["grid_cover_url"] = _grid_cover_url
@@ -218,16 +221,12 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     library detail pane render. Centralized so both library and completion
     detail endpoints use the same logic.
 
-    Sources, in priority order:
-      hero  = own hero artwork → parent's hero artwork
-      logo  = own logo (constructed Steam URL) → parent's logo
-      header = cover_url_override_h → own header artwork → parent's header
-              (kept as a separate fallback so list-row / detail-pane code
-              that wants the 460x215 image specifically still works)
+    Resolution order (per art type):
+      1. UserArtwork for this entry  — explicit user pick
+      2. Valid GameArtwork for this release — native sources (steam/psn) first
 
-    For DLC, the parent's hero/logo are the right default since Steam rarely
-    issues distinct hero/logo for DLC appids — they share the parent's
-    library identity.
+    For DLC, the parent's hero/logo are the right fallback default since Steam
+    rarely issues distinct art for DLC appids.
     """
     parent_release = None
     parent_game = None
@@ -247,34 +246,45 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
             if parent_entry:
                 parent_entry_id = parent_entry.id
 
-    def _art_url(rel, art_type):
-        if not rel:
-            return None
-        for art in rel.artwork:
-            if art.artwork_type == art_type:
-                return art.url
+    def _user_art_url(art_type: str) -> str | None:
+        """First UserArtwork URL for this entry matching art_type."""
+        for ua in entry.user_artwork:
+            if ua.artwork_type == art_type and ua.url:
+                return ua.url
         return None
 
-    def _steam_logo_url(rel):
-        # Logo isn't captured during enrichment — construct it from the appid.
-        # 404s for many entries, but the cover-fallback chain handles that
-        # client-side by hiding the img.
+    def _art_url(rel, art_type: str) -> str | None:
+        """Best valid GameArtwork URL for a release. Native sources preferred."""
+        if not rel:
+            return None
+        native = None
+        sgdb = None
+        for art in rel.artwork:
+            if art.artwork_type == art_type and art.is_valid and art.url:
+                if art.source in ("steam", "psn"):
+                    if native is None:
+                        native = art.url
+                elif sgdb is None:
+                    sgdb = art.url
+        return native or sgdb
+
+    def _steam_logo_url(rel) -> str | None:
+        # Logo isn't captured as GameArtwork — construct it from the appid.
+        # May 404; handled client-side by onerror auto-fetch from SGDB.
         if not rel or rel.source != "steam" or not rel.external_id:
             return None
         return f"{_STEAM_CDN_BASE}/{rel.external_id}/logo.png"
 
-    # Header (460x215). cover_url_override_h takes priority because the SGDB
-    # picker writes to it; covers/replaces the Steam header.
-    header_url = entry.cover_url_override_h or _art_url(release, "header")
-    fallback_header_url = _art_url(parent_release, "header")
+    # Header (460x215): UserArtwork pick > valid GameArtwork(cover_h)
+    header_url = _user_art_url("cover_h") or _art_url(release, "cover_h")
+    fallback_header_url = _art_url(parent_release, "cover_h")
 
-    # Hero (~1920x620). Override takes priority; falls back to GameArtwork row.
-    hero_url = entry.hero_url_override or _art_url(release, "hero")
+    # Hero (~1920x620): UserArtwork pick > valid GameArtwork(hero)
+    hero_url = _user_art_url("hero") or _art_url(release, "hero")
     fallback_hero_url = _art_url(parent_release, "hero")
 
-    # Logo (transparent PNG). Override takes priority; falls back to Steam CDN
-    # constructed URL (may 404 — handled client-side by onerror auto-fetch).
-    logo_url = entry.logo_url_override or _steam_logo_url(release)
+    # Logo (transparent PNG): UserArtwork pick > Steam CDN constructed URL
+    logo_url = _user_art_url("logo") or _steam_logo_url(release)
     fallback_logo_url = _steam_logo_url(parent_release) if parent_release else None
 
     # Compute a "subtitle" for DLC display_title — what's left after stripping
@@ -335,17 +345,17 @@ def _attach_parent_fallbacks(db: Session, entries) -> None:
             .all()
         )
         for r in rows:
-            d: dict[str, str | None] = {"cover": None, "header": None}
+            d: dict[str, str | None] = {"cover_v": None, "cover_h": None}
             for art in r.artwork:
-                if art.artwork_type in d and not d[art.artwork_type]:
+                if art.artwork_type in d and not d[art.artwork_type] and art.is_valid:
                     d[art.artwork_type] = art.url
             parent_art[r.game_id] = d
 
     for e in entries:
         parent_id = e.release.game.parent_id
         p = parent_art.get(parent_id) if parent_id else None
-        e._fallback_v = (p or {}).get("cover")
-        e._fallback_h = (p or {}).get("header")
+        e._fallback_v = (p or {}).get("cover_v")
+        e._fallback_h = (p or {}).get("cover_h")
 
 
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
@@ -623,6 +633,7 @@ def library_page(
             # joinedload(release) would conflict.
             contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game),
             contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
         # Default order — overridden below when sort != "name".
@@ -679,16 +690,30 @@ def library_page(
     # "all" — no additional filter
 
     # Missing-artwork filter — orientation-aware.
-    # grid_v → needs a vertical cover (artwork_type="cover" or cover_url_override_v).
-    # grid_h / list → needs a horizontal cover (artwork_type="header" or cover_url_override_h).
+    # grid_v → needs cover_v; grid_h / list → needs cover_h.
+    # An entry "has art" if it has a UserArtwork pick OR a valid GameArtwork row.
     if missing_art:
-        art_type = "cover" if view_mode == "grid_v" else "header"
-        override_col = (
-            models.UserLibraryEntry.cover_url_override_v if view_mode == "grid_v" else models.UserLibraryEntry.cover_url_override_h
+        art_type = "cover_v" if view_mode == "grid_v" else "cover_h"
+        # Entry IDs that already have a UserArtwork pick for this type
+        has_user_art_ids = (
+            db.query(models.UserArtwork.entry_id)
+            .filter(
+                models.UserArtwork.artwork_type == art_type,
+                models.UserArtwork.entry_id.isnot(None),
+                models.UserArtwork.url.isnot(None),
+            )
+            .scalar_subquery()
         )
-        # Release IDs that already have the required artwork type — we want the complement.
-        has_art_release_ids = db.query(models.GameArtwork.release_id).filter(models.GameArtwork.artwork_type == art_type)
-        base_q = base_q.filter(override_col == None).filter(models.GameRelease.id.not_in(has_art_release_ids))
+        # Release IDs that have a valid GameArtwork row of this type
+        has_art_release_ids = (
+            db.query(models.GameArtwork.release_id)
+            .filter(models.GameArtwork.artwork_type == art_type, models.GameArtwork.is_valid.is_(True))
+            .scalar_subquery()
+        )
+        base_q = base_q.filter(
+            models.UserLibraryEntry.id.not_in(has_user_art_ids),
+            models.GameRelease.id.not_in(has_art_release_ids),
+        )
 
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
@@ -1051,6 +1076,7 @@ def library_entry_detail(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
             joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter_by(id=entry_id, user_id=current_user.id)
         .first()
@@ -1264,10 +1290,15 @@ def set_cover_override(
     url = url.strip()
     if not url:
         return Response(status_code=400)
-    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(selectinload(models.UserLibraryEntry.user_artwork))
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
     if not entry:
         return Response(status_code=404)
-    sgdb._set_image_override(entry, image_type, url)
+    sgdb._upsert_user_artwork(db, entry, image_type, url)
     db.commit()
     label = _IMAGE_TYPE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
@@ -1291,10 +1322,17 @@ def clear_cover_override(
 
     if image_type not in sgdb.IMAGE_TYPES:
         return Response(status_code=400)
-    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
-    if not entry:
-        return Response(status_code=404)
-    sgdb._set_image_override(entry, image_type, None)
+    if image_type not in sgdb._IMAGE_TYPE_TO_ARTWORK_TYPE:
+        return Response(status_code=400)
+    art_type = sgdb._IMAGE_TYPE_TO_ARTWORK_TYPE[image_type]
+    ua = (
+        db.query(models.UserArtwork)
+        .filter_by(user_id=current_user.id, artwork_type=art_type)
+        .filter(models.UserArtwork.entry_id == entry_id)
+        .first()
+    )
+    if ua:
+        db.delete(ua)
     db.commit()
     label = _IMAGE_TYPE_LABELS.get(image_type, image_type)
     return templates.TemplateResponse(
@@ -1322,6 +1360,7 @@ def library_entry_card(
         .options(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter_by(id=entry_id, user_id=current_user.id)
         .first()
@@ -1352,6 +1391,7 @@ def auto_fetch_hero(
         .options(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter_by(id=entry_id, user_id=current_user.id)
         .first()
@@ -1372,7 +1412,7 @@ def auto_fetch_logo(
 ):
     """Auto-fetch a logo from SGDB when the Steam CDN logo 404s or when the
     entry has no logo URL at all. Takes the top SGDB result and stores it as
-    logo_url_override so future detail pane opens skip the CDN entirely.
+    a UserArtwork row so future detail pane opens resolve it from there.
 
     Returns 200 + {"url": ...} on success, 204 when nothing found or no key.
     The JS onerror handler uses the returned URL to update the img src
@@ -1384,6 +1424,7 @@ def auto_fetch_logo(
         .options(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter_by(id=entry_id, user_id=current_user.id)
         .first()
@@ -1425,6 +1466,7 @@ def completions_page(
             contains_eager(models.Completion.library_entry)
             .contains_eager(models.UserLibraryEntry.release)
             .selectinload(models.GameRelease.artwork),
+            contains_eager(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter(models.Completion.user_id == current_user.id)
     )
@@ -1621,6 +1663,7 @@ def completion_detail(
         .options(
             joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter_by(id=completion_id, user_id=current_user.id)
         .first()

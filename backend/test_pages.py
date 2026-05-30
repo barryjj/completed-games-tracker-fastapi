@@ -953,7 +953,7 @@ def test_grid_vertical_uses_library_cover_url(client, db_session):
     db_session.add(
         models.GameArtwork(
             release_id=release.id,
-            artwork_type="cover",
+            artwork_type="cover_v",
             source="steam",
             url="https://example.com/100/library_600x900.jpg",
         )
@@ -961,7 +961,7 @@ def test_grid_vertical_uses_library_cover_url(client, db_session):
     db_session.add(
         models.GameArtwork(
             release_id=release.id,
-            artwork_type="header",
+            artwork_type="cover_h",
             source="steam",
             url="https://example.com/100/header.jpg",
         )
@@ -989,11 +989,9 @@ def test_card_without_matching_artwork_gets_placeholder(client, db_session):
     assert b"cgt-library-card--no-art" in r.content
 
 
-def test_cover_url_override_h_takes_precedence_for_header_visual(db_session):
-    """cover_url_override_h still wins over the release's own 'header' artwork
-    in the visuals dict — used by list/grid views as the 460x215 thumb. The
-    detail pane v2 doesn't render this size directly (it uses the hero); a
-    separate hero_url_override is on the roadmap for SGDB hero swaps."""
+def test_user_artwork_h_wins_over_game_artwork(db_session):
+    """UserArtwork cover_h beats a valid GameArtwork cover_h row in the
+    detail-pane visuals dict — user explicit pick always wins."""
     from backend.models import User
     from backend.pages import _build_detail_pane_visuals
 
@@ -1009,26 +1007,32 @@ def test_cover_url_override_h_takes_precedence_for_header_visual(db_session):
     db_session.add(
         models.GameArtwork(
             release_id=release.id,
-            artwork_type="header",
+            artwork_type="cover_h",
             source="steam",
             url="https://cdn.example.com/steam-header.jpg",
         )
     )
-    entry = models.UserLibraryEntry(
-        user_id=user.id,
-        release_id=release.id,
-        import_source="steam_import",
-        cover_url_override_h="https://sgdb.example.com/custom-header.jpg",
-    )
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
     db_session.add(entry)
+    db_session.flush()
+    db_session.add(
+        models.UserArtwork(
+            user_id=user.id,
+            entry_id=entry.id,
+            artwork_type="cover_h",
+            source="sgdb",
+            url="https://sgdb.example.com/custom-header.jpg",
+        )
+    )
     db_session.commit()
+    db_session.refresh(entry)
 
     visuals = _build_detail_pane_visuals(db_session, entry, game, release)
     assert visuals["header_url"] == "https://sgdb.example.com/custom-header.jpg"
 
 
-def test_grid_cover_url_v_override_wins(client, db_session):
-    """In grid_v view, cover_url_override_v wins over GameArtwork."""
+def test_grid_cover_url_v_user_artwork_wins(client, db_session):
+    """In grid_v view, UserArtwork cover_v wins over GameArtwork cover_v."""
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     game = models.Game(title="Vertical Override Test")
@@ -1040,18 +1044,23 @@ def test_grid_cover_url_v_override_wins(client, db_session):
     db_session.add(
         models.GameArtwork(
             release_id=release.id,
-            artwork_type="cover",
+            artwork_type="cover_v",
             source="steam",
             url="https://cdn.example.com/steam-600x900.jpg",
         )
     )
-    entry = models.UserLibraryEntry(
-        user_id=user.id,
-        release_id=release.id,
-        import_source="steam_import",
-        cover_url_override_v="https://sgdb.example.com/custom-600x900.jpg",
-    )
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
     db_session.add(entry)
+    db_session.flush()
+    db_session.add(
+        models.UserArtwork(
+            user_id=user.id,
+            entry_id=entry.id,
+            artwork_type="cover_v",
+            source="sgdb",
+            url="https://sgdb.example.com/custom-600x900.jpg",
+        )
+    )
     db_session.commit()
 
     r = client.get("/library?view_mode=grid_v")
@@ -1063,31 +1072,46 @@ def test_clear_cover_override_v(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     entry = _add_game(db_session, user)
-    entry.cover_url_override_v = "https://example.com/custom.jpg"
-    entry.cover_url_override_h = "https://example.com/custom_h.jpg"
+    db_session.add(
+        models.UserArtwork(user_id=user.id, entry_id=entry.id, artwork_type="cover_v", source="sgdb", url="https://example.com/custom.jpg")
+    )
+    db_session.add(
+        models.UserArtwork(
+            user_id=user.id, entry_id=entry.id, artwork_type="cover_h", source="sgdb", url="https://example.com/custom_h.jpg"
+        )
+    )
     db_session.commit()
 
     r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"image_type": "v"})
     assert r.status_code == 200
-    db_session.refresh(entry)
-    assert entry.cover_url_override_v is None
-    # _h untouched
-    assert entry.cover_url_override_h == "https://example.com/custom_h.jpg"
+    remaining = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id).all()
+    remaining_types = {ua.artwork_type for ua in remaining}
+    # cover_v cleared, cover_h untouched
+    assert "cover_v" not in remaining_types
+    assert "cover_h" in remaining_types
 
 
 def test_clear_cover_override_h(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     entry = _add_game(db_session, user)
-    entry.cover_url_override_v = "https://example.com/custom.jpg"
-    entry.cover_url_override_h = "https://example.com/custom_h.jpg"
+    db_session.add(
+        models.UserArtwork(user_id=user.id, entry_id=entry.id, artwork_type="cover_v", source="sgdb", url="https://example.com/custom.jpg")
+    )
+    db_session.add(
+        models.UserArtwork(
+            user_id=user.id, entry_id=entry.id, artwork_type="cover_h", source="sgdb", url="https://example.com/custom_h.jpg"
+        )
+    )
     db_session.commit()
 
     r = client.post(f"/library/entries/{entry.id}/clear-cover-override", data={"image_type": "h"})
     assert r.status_code == 200
-    db_session.refresh(entry)
-    assert entry.cover_url_override_h is None
-    assert entry.cover_url_override_v == "https://example.com/custom.jpg"
+    remaining = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id).all()
+    remaining_types = {ua.artwork_type for ua in remaining}
+    # cover_h cleared, cover_v untouched
+    assert "cover_h" not in remaining_types
+    assert "cover_v" in remaining_types
 
 
 def test_clear_cover_override_rejects_bad_orientation(client, db_session):
@@ -1305,9 +1329,9 @@ def _add_steam_entry(db, user, title, appid, has_cover=True, has_header=True):
     db.add(release)
     db.flush()
     if has_cover:
-        db.add(models.GameArtwork(release_id=release.id, artwork_type="cover", source="steam", url=f"http://cdn/{appid}/cover.jpg"))
+        db.add(models.GameArtwork(release_id=release.id, artwork_type="cover_v", source="steam", url=f"http://cdn/{appid}/cover.jpg"))
     if has_header:
-        db.add(models.GameArtwork(release_id=release.id, artwork_type="header", source="steam", url=f"http://cdn/{appid}/header.jpg"))
+        db.add(models.GameArtwork(release_id=release.id, artwork_type="cover_h", source="steam", url=f"http://cdn/{appid}/header.jpg"))
     entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
     db.add(entry)
     db.commit()
@@ -1345,8 +1369,8 @@ def test_missing_art_filter_grid_h(client, db_session):
     assert b"Has Header" not in r.content
 
 
-def test_missing_art_override_satisfies_filter(client, db_session):
-    """An entry with a cover_url_override is NOT shown as missing art."""
+def test_missing_art_user_artwork_satisfies_filter(client, db_session):
+    """An entry with a UserArtwork pick is NOT shown as missing art."""
     _signup_and_login(client)
     user = db_session.query(models.User).first()
 
@@ -1356,14 +1380,19 @@ def test_missing_art_override_satisfies_filter(client, db_session):
     release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="301")
     db_session.add(release)
     db_session.flush()
-    # No GameArtwork row, but has a manual override
-    entry = models.UserLibraryEntry(
-        user_id=user.id,
-        release_id=release.id,
-        import_source="steam_import",
-        cover_url_override_v="https://example.com/override.jpg",
-    )
+    # No GameArtwork row, but has a UserArtwork pick
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
     db_session.add(entry)
+    db_session.flush()
+    db_session.add(
+        models.UserArtwork(
+            user_id=user.id,
+            entry_id=entry.id,
+            artwork_type="cover_v",
+            source="sgdb",
+            url="https://example.com/override.jpg",
+        )
+    )
     db_session.commit()
 
     r = client.get("/library?missing_art=true&view_mode=grid_v&view=all", headers=_HX)

@@ -348,8 +348,8 @@ def get_app_list(api_key: str) -> dict[int, str]:
 
 def _artwork_url(appid: int, artwork_type: str) -> str | None:
     urls = {
-        "header": f"{STEAM_CDN}/{appid}/header.jpg",
-        "cover": f"{STEAM_CDN}/{appid}/library_600x900.jpg",
+        "cover_h": f"{STEAM_CDN}/{appid}/header.jpg",
+        "cover_v": f"{STEAM_CDN}/{appid}/library_600x900.jpg",
         "hero": f"{STEAM_CDN}/{appid}/library_hero.jpg",
     }
     return urls.get(artwork_type)
@@ -411,7 +411,7 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
             db.add(release)
             db.flush()
 
-            for artwork_type in ("header", "cover", "hero"):
+            for artwork_type in ("cover_h", "cover_v", "hero"):
                 url = _artwork_url(int(appid), artwork_type)
                 if url:
                     db.add(
@@ -529,7 +529,7 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
             db.add(release)
             db.flush()
 
-            for artwork_type in ("header", "cover", "hero"):
+            for artwork_type in ("cover_h", "cover_v", "hero"):
                 url = _artwork_url(appid, artwork_type)
                 if url:
                     db.add(
@@ -690,23 +690,23 @@ def refresh_app_catalog(api_key: str) -> dict:
 
 def _sync_header_artwork_from_appdetails(db: Session, release: "models.GameRelease", details: dict) -> None:
     """If appdetails contains a header_image URL, persist it as the release's
-    'header' GameArtwork row (creating or updating as needed). This fixes
+    'cover_h' GameArtwork row (creating or updating as needed). This fixes
     coverage gaps for DLC entries whose legacy CDN URL 404s on the new
     hashed-path Steam assets."""
     header_url = (details or {}).get("header_image")
     if not header_url:
         return
     for art in release.artwork:
-        if art.artwork_type == "header":
+        if art.artwork_type == "cover_h":
             if art.url != header_url:
                 art.url = header_url
                 art.source = "steam"
             return
-    # No header row yet — create one
+    # No cover_h row yet — create one
     db.add(
         models.GameArtwork(
             release_id=release.id,
-            artwork_type="header",
+            artwork_type="cover_h",
             source="steam",
             url=header_url,
         )

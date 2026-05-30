@@ -154,55 +154,69 @@ def fetch_images_for_game(
     raise ValueError(f"Unknown image_type {image_type!r}")
 
 
+_IMAGE_TYPE_TO_ARTWORK_TYPE = {
+    "v": "cover_v",
+    "h": "cover_h",
+    "hero": "hero",
+    "logo": "logo",
+}
+
+
 def _entry_already_has_image(entry: models.UserLibraryEntry, image_type: str) -> bool:
     """True when the entry already has art for this image_type — either a
-    user-set override or a release-level GameArtwork row of the right type.
-    Used by the bulk fill to skip entries that don't need help."""
-    if image_type == "v":
-        if entry.cover_url_override_v:
-            return True
-        return any(a.artwork_type == "cover" and a.url for a in entry.release.artwork)
-    if image_type == "h":
-        if entry.cover_url_override_h:
-            return True
-        return any(a.artwork_type == "header" and a.url for a in entry.release.artwork)
-    if image_type == "hero":
-        if entry.hero_url_override:
-            return True
-        return any(a.artwork_type == "hero" and a.url for a in entry.release.artwork)
+    UserArtwork row (explicit pick) or a valid release-level GameArtwork row.
+    Used by bulk fill to skip entries that don't need help."""
+    art_type = _IMAGE_TYPE_TO_ARTWORK_TYPE[image_type]
+    # 1. UserArtwork explicit pick for this entry
+    if any(ua.artwork_type == art_type and ua.url for ua in entry.user_artwork):
+        return True
     if image_type == "logo":
-        # Logos are never stored as GameArtwork — they're constructed from the
-        # Steam CDN URL on-the-fly. An override is the only reliable signal.
-        return bool(entry.logo_url_override)
-    raise ValueError(f"Unknown image_type {image_type!r}")
+        # Logos have no GameArtwork rows — constructed from CDN on-the-fly.
+        return False
+    # 2. Valid GameArtwork row for this release
+    return any(a.artwork_type == art_type and a.is_valid and a.url for a in entry.release.artwork)
 
 
-def _set_image_override(entry: models.UserLibraryEntry, image_type: str, url: str) -> None:
-    """Write a SGDB-sourced URL to the appropriate override column."""
-    if image_type == "v":
-        entry.cover_url_override_v = url
-    elif image_type == "h":
-        entry.cover_url_override_h = url
-    elif image_type == "hero":
-        entry.hero_url_override = url
-    elif image_type == "logo":
-        entry.logo_url_override = url
-    else:
-        raise ValueError(f"Unknown image_type {image_type!r}")
+def _upsert_user_artwork(
+    db: Session,
+    entry: models.UserLibraryEntry,
+    image_type: str,
+    url: str,
+    source: str = "sgdb",
+) -> None:
+    """Write art to UserArtwork for this entry. Creates the row if it doesn't
+    exist; updates url/source if it does."""
+    art_type = _IMAGE_TYPE_TO_ARTWORK_TYPE[image_type]
+    # Check in-memory collection first to avoid a redundant query
+    for ua in entry.user_artwork:
+        if ua.artwork_type == art_type:
+            ua.url = url
+            ua.source = source
+            return
+    # New row
+    ua = models.UserArtwork(
+        user_id=entry.user_id,
+        entry_id=entry.id,
+        artwork_type=art_type,
+        source=source,
+        url=url,
+    )
+    db.add(ua)
 
 
 def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEntry) -> str | None:
-    """Try to fetch a logo for a single entry from SGDB and store it as
-    logo_url_override. Returns the URL on success, None if nothing found.
+    """Try to fetch a logo for a single entry from SGDB and store it as a
+    UserArtwork row. Returns the URL on success, None if nothing found.
 
     Called automatically when the detail pane detects a missing/404 logo —
     not a user-initiated pick, so we always take the top result. The user
     can open the logo picker afterwards to swap it for a different one."""
     if not user.steamgriddb_api_key:
         return None
-    if entry.logo_url_override:
-        # Already have one — return it so the caller can update the img src.
-        return entry.logo_url_override
+    # Already have one — return it so the caller can update the img src.
+    existing = next((ua for ua in entry.user_artwork if ua.artwork_type == "logo" and ua.url), None)
+    if existing:
+        return existing.url
     try:
         sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
         if not sgdb_game:
@@ -213,7 +227,7 @@ def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEnt
         url = logos[0].get("url")
         if not url:
             return None
-        entry.logo_url_override = url
+        _upsert_user_artwork(db, entry, "logo", url)
         db.commit()
         return url
     except Exception as e:
@@ -223,14 +237,15 @@ def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEnt
 
 def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEntry) -> str | None:
     """Try to fetch a hero image for a single entry from SGDB and store it as
-    hero_url_override. Returns the URL on success, None if nothing found.
+    a UserArtwork row. Returns the URL on success, None if nothing found.
 
     Mirrors auto_fetch_logo — called automatically when the detail pane has no
     hero URL. The user can open the hero picker afterwards to swap it."""
     if not user.steamgriddb_api_key:
         return None
-    if entry.hero_url_override:
-        return entry.hero_url_override
+    existing = next((ua for ua in entry.user_artwork if ua.artwork_type == "hero" and ua.url), None)
+    if existing:
+        return existing.url
     try:
         sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
         if not sgdb_game:
@@ -241,7 +256,7 @@ def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEnt
         url = heroes[0].get("url")
         if not url:
             return None
-        entry.hero_url_override = url
+        _upsert_user_artwork(db, entry, "hero", url)
         db.commit()
         return url
     except Exception as e:
@@ -281,6 +296,7 @@ def bulk_fill_missing(
         .options(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.user_artwork),
         )
         .filter(
             models.UserLibraryEntry.user_id == user.id,
@@ -323,7 +339,7 @@ def bulk_fill_missing(
             if not top_url:
                 no_candidate += 1
                 continue
-            _set_image_override(entry, image_type, top_url)
+            _upsert_user_artwork(db, entry, image_type, top_url)
             filled += 1
         except Exception as e:
             logger.warning("SGDB bulk fill failed for entry %s: %s", entry.id, e)
