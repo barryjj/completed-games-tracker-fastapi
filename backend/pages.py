@@ -123,14 +123,14 @@ _GAMEPLAY_CATEGORY_IDS = {
     24,  # Shared/Split Screen
     27,  # Cross-Platform Multiplayer
     28,  # Full controller support
+    31,  # VR Support
     36,  # Online PvP
     38,  # Online Co-op
-    39,  # Local Co-op
+    39,  # Shared/Split Screen Co-op
     44,  # Remote Play Together
     49,  # PvP
     53,  # VR Supported
     54,  # VR Only
-    61,  # HDR available
 }
 
 
@@ -161,8 +161,8 @@ def _normalize_steam_date(raw: str) -> str:
             dt = datetime.datetime.strptime(raw.strip(), fmt)
             # Month+year-only: omit the day so we don't invent one.
             if "%d" not in fmt:
-                return dt.strftime("%b %Y")
-            return dt.strftime("%b %-d, %Y")
+                return dt.strftime("%B %Y")
+            return dt.strftime("%B %-d, %Y")
         except ValueError:
             continue
     return raw  # Q1 2024, Coming soon, bare year, etc. — pass through as-is
