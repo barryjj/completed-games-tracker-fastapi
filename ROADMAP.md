@@ -234,6 +234,19 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Merge logic: effective regex is built from `system (not disabled) + user` rows at request time, cached per-user
 - Useful for publisher-specific patterns that are too niche for the default list (e.g. a specific franchise's naming convention for cosmetic drops)
 
+### Sort name field
+- `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create and edit unless the user has explicitly set it (`sort_name_user_set` flag, same pattern as display_name)
+- Sort query changes from `COALESCE(display_name, title)` to `sort_name` — always populated so the key space is consistent; no COALESCE fallback needed
+- User can override in the edit modal for cases where publisher naming is inconsistent across a franchise (e.g. "The Witcher: Enhanced Edition" → sort_name "Witcher 1" so it sorts before "Witcher 2" and "Witcher 3")
+- Migration backfills existing entries: `sort_name = COALESCE(display_name, title)` where sort_name is null
+- Inspired by Steam's old community sort-order tool (RIP) and standard media library practice (iTunes Sort Name etc.)
+
+### "Recently played" library view
+- Filter/sort option showing entries ordered by `last_played_at` descending — quick way to resume whatever you were playing
+- Steam provides this via `rtime_last_played` (already stored as `last_played_at`); useful as long as Steam is the primary platform
+- Caveat: manual entries have no play date and PSN last-played data availability is uncertain — this view would be Steam-centric or would need a "hide entries with no play date" option to avoid a wall of nulls
+- Roadmap-only for now; revisit once PSN integration exists and we know what last-played data is available there
+
 ### Missing artwork filter / utility view
 - Checkbox or filter option in the library toolbar: "Missing artwork" — shows only entries with no cover art (no override, no GameArtwork row for the current orientation)
 - Useful after bulk SGDB fill runs to find anything that slipped through (manual entries, obscure titles, DLC with no art catalog entry)
@@ -267,6 +280,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
 - New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
 - Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
+- Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
 - Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
 - Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
 - Filter / sort by achievement progress (e.g. "show games close to 100%")

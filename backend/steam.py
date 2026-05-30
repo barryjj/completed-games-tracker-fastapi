@@ -132,8 +132,12 @@ _AUTO_HIDE_RE = re.compile(
     # Standalone cosmetic items — word alone is enough; the *pack variants
     # below also catch compound forms like "Skin Pack" / "Costume Pack".
     r"skin|costume|outfit|"
-    # Generic DLC pack suffixes — catch "Relic Rune Pack", "Starter Pack", etc.
-    r"pack|"
+    # Generic DLC pack / pass suffixes.
+    # "pack" catches "Relic Rune Pack", "Starter Pack", etc.
+    # "pass" catches "Year One Pass", "Battle Pass", "Annual Pass", etc.
+    # Both are standalone word matches — DLC-only because is_dlc gate is checked
+    # before this regex fires (see _should_auto_hide).
+    r"pack|pass|"
     r"cosmetic\s*pack|emotes?\s*pack|customization(\s+item)?\s*pack|"
     r"(skin|costume|outfit)\s*pack|cinematic\s*pack|"
     # Pass-suffix DLC (heavy in fighting games)
@@ -667,6 +671,28 @@ def _sync_header_artwork_from_appdetails(db: Session, release: "models.GameRelea
     )
 
 
+def _promote_dlc_children(db: Session, parent_game_id: int, dlc_appids: list[int]) -> None:
+    """Cross-reference a parent game's dlc[] array against our library.
+
+    Steam includes a `dlc` list on the parent game's appdetails even when the
+    child entries return type=game themselves (e.g. standalone expansions like
+    DOOM Eternal: The Ancient Gods).  When we see this list we can mark owned
+    children as DLC and link their parent_id without waiting for the child's
+    own appdetails to say type=dlc.
+
+    Respects is_dlc_user_set and parent_id_user_set so manual overrides win.
+    """
+    for appid in dlc_appids:
+        child_release = db.query(models.GameRelease).filter_by(source="steam", external_id=str(appid)).first()
+        if not child_release:
+            continue
+        child_game = child_release.game
+        if not child_game.is_dlc_user_set and not child_game.is_dlc:
+            child_game.is_dlc = True
+        if not child_game.parent_id_user_set and child_game.parent_id is None:
+            child_game.parent_id = parent_game_id
+
+
 def _fetch_appdetails(appid: int) -> dict | None:
     """
     Fetch app metadata from the Steam store API.
@@ -777,10 +803,30 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                 if app_type == "dlc" and not game.is_dlc:
                     game.is_dlc = True
                 elif app_type == "game" and game.is_dlc:
-                    # Steam's rgOwnedApps subtraction can misclassify edge cases
-                    # (e.g. games owned via paths GetOwnedGames doesn't return).
-                    # Trust appdetails when it explicitly says "game".
-                    game.is_dlc = False
+                    # Steam sometimes tags season passes and bundle wrappers as
+                    # type=game even though they are not completable games.
+                    # Three signals mean "definitely DLC, don't demote":
+                    #   1. game.parent_id set → already resolved to a parent in
+                    #      our DB; strongest signal, beats the appdetails type.
+                    #   2. appdetails has a fullgame object → Steam itself links
+                    #      it to a parent game.
+                    #   3. Title matches auto-hide patterns (pass, pack, etc.)
+                    #      → purchase wrapper Steam mislabels as a game.
+                    # Otherwise trust appdetails when it says "game".
+                    has_parent = game.parent_id is not None
+                    has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                    looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
+                    if not has_parent and not has_fullgame and not looks_like_dlc:
+                        game.is_dlc = False
+                elif app_type == "game" and not game.is_dlc:
+                    # Re-promote entries previously demoted before the guard
+                    # above existed. If fullgame is present or the title matches
+                    # auto-hide patterns, Steam mislabelled this — flip it back
+                    # to DLC so auto-hide can fire.
+                    has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                    looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
+                    if has_fullgame or looks_like_dlc:
+                        game.is_dlc = True
 
             # Link DLC to its base game if not already linked — but respect
             # user override on parent_id.
@@ -791,6 +837,15 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                     parent_release = db.query(models.GameRelease).filter_by(source="steam", external_id=parent_appid).first()
                     if parent_release:
                         game.parent_id = parent_release.game_id
+
+            # Push DLC status down to children listed in the parent's dlc[].
+            # Steam returns type=game on some standalone expansions (e.g. DOOM
+            # Eternal: The Ancient Gods) even though the parent lists them as
+            # DLC — so we need to look at the parent side, not just the child.
+            if app_type == "game":
+                dlc_appids = details.get("dlc") or []
+                if dlc_appids:
+                    _promote_dlc_children(db, game.id, dlc_appids)
 
             # Auto-hide soundtracks / artbooks / cosmetic packs etc.
             # GATED on is_dlc=True — games are never auto-hidden.

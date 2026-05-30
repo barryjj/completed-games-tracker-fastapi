@@ -625,8 +625,13 @@ def test_should_auto_hide_only_fires_for_dlc():
     # Standalone pack suffix
     assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Relic Rune Pack", None, is_dlc=True) is True
     assert _should_auto_hide("Some Game - Starter Pack", None, is_dlc=True) is True
+    # Standalone pass suffix — season passes Steam mislabels as type=game
+    assert _should_auto_hide("DOOM Eternal Year One Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Annual Pass", None, is_dlc=True) is True
+    assert _should_auto_hide("Some Game - Battle Pass Season 3", None, is_dlc=True) is True
     # Real content DLC should NOT be hidden
     assert _should_auto_hide("Castlevania: Lords of Shadow 2 - Revelations", None, is_dlc=True) is False
+    assert _should_auto_hide("DOOM Eternal: The Ancient Gods - Part One", None, is_dlc=True) is False
 
     # Real games shouldn't match (even when is_dlc=True, no pattern word)
     assert _should_auto_hide("Elden Ring", None, is_dlc=True) is False
@@ -658,6 +663,76 @@ def test_enrichment_demotes_is_dlc_when_appdetails_says_game(db_session):
 
     db_session.expire_all()
     assert db_session.query(models.Game).first().is_dlc is False
+
+
+def test_enrichment_does_not_demote_season_pass_mislabeled_as_game(db_session):
+    """Steam sometimes tags season passes / bundle wrappers as type=game.
+    We should not demote is_dlc to False when the title matches auto-hide
+    patterns — keep it as DLC so auto-hide can fire."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-pass-guard")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="DOOM Eternal Year One Pass", is_dlc=True)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1098291")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    # Steam says type=game (its mislabelling), no fullgame field.
+    with (
+        patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    game = db_session.query(models.Game).filter_by(title="DOOM Eternal Year One Pass").first()
+    entry = db_session.query(models.UserLibraryEntry).first()
+    assert game.is_dlc is True  # not demoted
+    assert entry.is_hidden is True  # and auto-hidden
+
+
+def test_enrichment_repromotes_previously_demoted_season_pass(db_session):
+    """Entries that were already demoted to is_dlc=False before the guard
+    existed should be re-promoted when refreshed if their title matches
+    auto-hide patterns."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-repromote")
+    db_session.add(user)
+    db_session.flush()
+    # Simulates an entry that was already demoted by a previous enrichment run.
+    game = models.Game(title="DOOM Eternal Year One Pass", is_dlc=False)
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="1098292")
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with (
+        patch("backend.steam._fetch_appdetails", return_value={"type": "game", "name": "DOOM Eternal Year One Pass"}),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    game = db_session.query(models.Game).filter_by(title="DOOM Eternal Year One Pass").first()
+    entry = db_session.query(models.UserLibraryEntry).first()
+    assert game.is_dlc is True  # re-promoted
+    assert entry.is_hidden is True  # and auto-hidden
 
 
 def test_enrichment_demotion_respects_user_override(db_session):
@@ -854,6 +929,73 @@ def test_enrichment_creates_header_artwork_if_missing(db_session):
     art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
     assert art is not None
     assert art.url == url
+
+
+def test_enrichment_promotes_dlc_children_via_parent_dlc_array(db_session):
+    """When a parent game's appdetails includes a dlc[] list, any of those
+    appids we own should be marked is_dlc=True and linked to the parent —
+    even if the child's own appdetails returns type=game (e.g. DOOM Eternal:
+    The Ancient Gods standalone expansions)."""
+    from unittest.mock import patch
+
+    from backend import steam
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok-dlcpush")
+    db_session.add(user)
+    db_session.flush()
+
+    # Parent game
+    parent_game = models.Game(title="DOOM Eternal", is_dlc=False)
+    db_session.add(parent_game)
+    db_session.flush()
+    parent_release = models.GameRelease(game_id=parent_game.id, platform="Steam", source="steam", external_id="782330")
+    db_session.add(parent_release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=parent_release.id, import_source="steam_import"))
+
+    # Child entries — both is_dlc=False because Steam returned type=game on them
+    child_game1 = models.Game(title="DOOM Eternal: The Ancient Gods - Part One", is_dlc=False)
+    child_game2 = models.Game(title="DOOM Eternal: The Ancient Gods - Part Two", is_dlc=False)
+    db_session.add_all([child_game1, child_game2])
+    db_session.flush()
+    child_release1 = models.GameRelease(
+        game_id=child_game1.id,
+        platform="Steam",
+        source="steam",
+        external_id="1098292",
+        metadata_fetched_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+    )
+    child_release2 = models.GameRelease(
+        game_id=child_game2.id,
+        platform="Steam",
+        source="steam",
+        external_id="1098293",
+        metadata_fetched_at=__import__("datetime").datetime.now(__import__("datetime").UTC),
+    )
+    db_session.add_all([child_release1, child_release2])
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=child_release1.id, import_source="steam_import"))
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=child_release2.id, import_source="steam_import"))
+    db_session.commit()
+
+    parent_details = {
+        "type": "game",
+        "name": "DOOM Eternal",
+        "dlc": [1098292, 1098293],
+    }
+    with (
+        patch("backend.steam._fetch_appdetails", return_value=parent_details),
+        patch("backend.steam.time.sleep", return_value=None),
+    ):
+        steam.enrich_next_batch(db_session, batch_size=5)
+
+    db_session.expire_all()
+    child1 = db_session.query(models.Game).filter_by(title="DOOM Eternal: The Ancient Gods - Part One").first()
+    child2 = db_session.query(models.Game).filter_by(title="DOOM Eternal: The Ancient Gods - Part Two").first()
+    assert child1.is_dlc is True, "Part One should be promoted to DLC via parent dlc[] array"
+    assert child1.parent_id == parent_game.id
+    assert child2.is_dlc is True, "Part Two should be promoted to DLC via parent dlc[] array"
+    assert child2.parent_id == parent_game.id
 
 
 # ─── Steam OpenID ─────────────────────────────────────────────────────────

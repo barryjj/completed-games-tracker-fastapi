@@ -112,6 +112,99 @@ def _needs_metadata_refresh(release) -> bool:
     return age.days >= _METADATA_STALENESS_DAYS
 
 
+# Steam category IDs worth surfacing in the detail pane. Filters out store
+# housekeeping entries (Steam Cloud, Trading Cards, Family Sharing) and the
+# accessibility sub-tags Steam added in their 2024 revamp.
+_GAMEPLAY_CATEGORY_IDS = {
+    1,   # Multi-player
+    2,   # Single-player
+    9,   # Co-op
+    18,  # Partial Controller Support
+    24,  # Shared/Split Screen
+    27,  # Cross-Platform Multiplayer
+    28,  # Full controller support
+    31,  # VR Support
+    36,  # Online PvP
+    38,  # Online Co-op
+    39,  # Shared/Split Screen Co-op
+    44,  # Remote Play Together
+    49,  # PvP
+    53,  # VR Supported
+    54,  # VR Only
+}
+
+
+_STEAM_DATE_FORMATS = [
+    "%b %d, %Y",   # "Aug 12, 2016"   ← most common US format
+    "%B %d, %Y",   # "August 12, 2016"
+    "%d %b, %Y",   # "28 May, 2026"   ← day-first with comma (UK/EU locale)
+    "%d %B, %Y",   # "28 May, 2026"   full month name
+    "%d %b %Y",    # "28 May 2026"    no comma
+    "%d %B %Y",    # "28 May 2026"    full month, no comma
+    "%b %Y",       # "Aug 2016"       month + year only
+    "%B %Y",       # "August 2016"
+]
+
+
+def _normalize_steam_date(raw: str) -> str:
+    """Normalize Steam's free-form release date strings to 'Mon D, YYYY'.
+
+    Steam has no enforced format — titles come back as 'Aug 12, 2016',
+    '28 May, 2026', '28 May 2026', 'Q2 2024', 'Coming soon', etc. We try
+    the common parse patterns and fall back to the raw string for anything
+    we can't handle (quarter strings, 'Coming soon', bare years).
+    """
+    if not raw:
+        return raw
+    for fmt in _STEAM_DATE_FORMATS:
+        try:
+            dt = datetime.datetime.strptime(raw.strip(), fmt)
+            # Month+year-only: omit the day so we don't invent one.
+            if "%d" not in fmt:
+                return dt.strftime("%B %Y")
+            return dt.strftime("%B %-d, %Y")
+        except ValueError:
+            continue
+    return raw  # Q1 2024, Coming soon, bare year, etc. — pass through as-is
+
+
+def _extract_steam_meta(appdetails: dict) -> dict:
+    """Pull display-ready fields from a cached appdetails payload.
+
+    Returns a dict with only the keys that have usable values — callers
+    (templates) should guard with `if steam_meta.x` rather than assume
+    presence. Publisher is omitted when it matches the developer exactly
+    (very common for indie studios).
+    """
+    genres = [g["description"] for g in (appdetails.get("genres") or [])]
+    features = [
+        c["description"]
+        for c in (appdetails.get("categories") or [])
+        if c.get("id") in _GAMEPLAY_CATEGORY_IDS
+    ]
+    devs = appdetails.get("developers") or []
+    pubs = appdetails.get("publishers") or []
+    # Suppress publisher when it's identical to developer — avoids "Hello Games
+    # / Hello Games" redundancy, which is common for self-published studios.
+    pubs_display = pubs if pubs != devs else []
+
+    metacritic = appdetails.get("metacritic") or {}
+    release_date = _normalize_steam_date(
+        (appdetails.get("release_date") or {}).get("date") or ""
+    )
+
+    return {
+        "released": release_date,
+        "developers": devs,
+        "publishers": pubs_display,
+        "genres": genres,
+        "features": features,
+        "metacritic_score": metacritic.get("score"),
+        "metacritic_url": metacritic.get("url"),
+        "website": (appdetails.get("website") or "").strip() or None,
+    }
+
+
 _STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps"
 
 
@@ -970,6 +1063,7 @@ def library_entry_detail(
             "game": game,
             "release": entry.release,
             "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
@@ -1060,7 +1154,22 @@ def refresh_entry_metadata(
             if app_type == "dlc" and not game.is_dlc:
                 game.is_dlc = True
             elif app_type == "game" and game.is_dlc:
-                game.is_dlc = False
+                # Don't demote if any of these signals say it's attached content:
+                #   1. game.parent_id → already resolved DB link, strongest signal
+                #   2. fullgame in appdetails → Steam links it to a parent game
+                #   3. Title matches auto-hide patterns → purchase wrapper
+                has_parent = game.parent_id is not None
+                has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                looks_like_dlc = _steam._should_auto_hide(game.title, details, is_dlc=True)
+                if not has_parent and not has_fullgame and not looks_like_dlc:
+                    game.is_dlc = False
+            elif app_type == "game" and not game.is_dlc:
+                # Re-promote entries previously demoted before the guard above
+                # existed — catches season passes already sitting at is_dlc=False.
+                has_fullgame = bool((details.get("fullgame") or {}).get("appid"))
+                looks_like_dlc = _steam._should_auto_hide(game.title, details, is_dlc=True)
+                if has_fullgame or looks_like_dlc:
+                    game.is_dlc = True
 
         if app_type == "dlc" and game.parent_id is None and not game.parent_id_user_set:
             fullgame = details.get("fullgame", {})
@@ -1069,6 +1178,14 @@ def refresh_entry_metadata(
                 parent_release = db.query(models.GameRelease).filter_by(source="steam", external_id=parent_appid).first()
                 if parent_release:
                     game.parent_id = parent_release.game_id
+
+        # Push DLC status to children listed in the parent's dlc[] array.
+        # Covers standalone expansions Steam tags as type=game on the child
+        # but correctly lists under the parent (e.g. DOOM Eternal: The Ancient Gods).
+        if app_type == "game":
+            dlc_appids = details.get("dlc") or []
+            if dlc_appids:
+                _steam._promote_dlc_children(db, game.id, dlc_appids)
 
         if _steam._should_auto_hide(game.title, details, game.is_dlc):
             if not entry.is_hidden and not entry.is_hidden_user_set:
@@ -1504,6 +1621,7 @@ def completion_detail(
             "release": release,
             "game": game,
             "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
             "current_user": current_user,
