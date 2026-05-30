@@ -520,7 +520,7 @@ def test_extract_steam_meta_happy_path():
     assert meta["features"] == ["Single-player", "Full controller support"]
     assert meta["developers"] == ["Hello Games"]
     assert meta["publishers"] == []  # suppressed — same as developer
-    assert meta["released"] == "Aug 12, 2016"  # already in canonical form
+    assert meta["released"] == "August 12, 2016"  # normalized to full month name
     assert meta["metacritic_score"] == 71
     assert meta["metacritic_url"] == "https://www.metacritic.com/game/no-mans-sky/"
     assert meta["website"] == "https://www.no-mans-sky.com"
@@ -530,16 +530,16 @@ def test_normalize_steam_date():
     """_normalize_steam_date handles all known Steam date format variants."""
     from backend.pages import _normalize_steam_date
 
-    # Standard US format — pass through cleanly
-    assert _normalize_steam_date("Aug 12, 2016") == "Aug 12, 2016"
+    # Standard US format — normalized to full month name
+    assert _normalize_steam_date("Aug 12, 2016") == "August 12, 2016"
     # Day-first with comma (UK/EU locale)
     assert _normalize_steam_date("28 May, 2026") == "May 28, 2026"
     # Day-first no comma
     assert _normalize_steam_date("28 May 2026") == "May 28, 2026"
     # Full month name day-first
-    assert _normalize_steam_date("28 August, 2016") == "Aug 28, 2016"
+    assert _normalize_steam_date("28 August, 2016") == "August 28, 2016"
     # Month + year only
-    assert _normalize_steam_date("Aug 2016") == "Aug 2016"
+    assert _normalize_steam_date("Aug 2016") == "August 2016"
     # Unparseable — pass through as-is
     assert _normalize_steam_date("Q2 2024") == "Q2 2024"
     assert _normalize_steam_date("Coming soon") == "Coming soon"
@@ -592,7 +592,7 @@ def test_detail_pane_shows_steam_meta_fields(client, db_session):
     assert b"Action" in r.content
     assert b"id Software" in r.content
     assert b"Bethesda Softworks" in r.content
-    assert b"Mar 20, 2020" in r.content
+    assert b"March 20, 2020" in r.content
     assert b"88/100" in r.content
     assert b"Single-player" in r.content
 
