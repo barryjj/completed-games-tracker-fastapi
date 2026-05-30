@@ -116,9 +116,9 @@ def _needs_metadata_refresh(release) -> bool:
 # housekeeping entries (Steam Cloud, Trading Cards, Family Sharing) and the
 # accessibility sub-tags Steam added in their 2024 revamp.
 _GAMEPLAY_CATEGORY_IDS = {
-    1,   # Multi-player
-    2,   # Single-player
-    9,   # Co-op
+    1,  # Multi-player
+    2,  # Single-player
+    9,  # Co-op
     18,  # Partial Controller Support
     24,  # Shared/Split Screen
     27,  # Cross-Platform Multiplayer
@@ -135,14 +135,14 @@ _GAMEPLAY_CATEGORY_IDS = {
 
 
 _STEAM_DATE_FORMATS = [
-    "%b %d, %Y",   # "Aug 12, 2016"   ← most common US format
-    "%B %d, %Y",   # "August 12, 2016"
-    "%d %b, %Y",   # "28 May, 2026"   ← day-first with comma (UK/EU locale)
-    "%d %B, %Y",   # "28 May, 2026"   full month name
-    "%d %b %Y",    # "28 May 2026"    no comma
-    "%d %B %Y",    # "28 May 2026"    full month, no comma
-    "%b %Y",       # "Aug 2016"       month + year only
-    "%B %Y",       # "August 2016"
+    "%b %d, %Y",  # "Aug 12, 2016"   ← most common US format
+    "%B %d, %Y",  # "August 12, 2016"
+    "%d %b, %Y",  # "28 May, 2026"   ← day-first with comma (UK/EU locale)
+    "%d %B, %Y",  # "28 May, 2026"   full month name
+    "%d %b %Y",  # "28 May 2026"    no comma
+    "%d %B %Y",  # "28 May 2026"    full month, no comma
+    "%b %Y",  # "Aug 2016"       month + year only
+    "%B %Y",  # "August 2016"
 ]
 
 
@@ -177,11 +177,7 @@ def _extract_steam_meta(appdetails: dict) -> dict:
     (very common for indie studios).
     """
     genres = [g["description"] for g in (appdetails.get("genres") or [])]
-    features = [
-        c["description"]
-        for c in (appdetails.get("categories") or [])
-        if c.get("id") in _GAMEPLAY_CATEGORY_IDS
-    ]
+    features = [c["description"] for c in (appdetails.get("categories") or []) if c.get("id") in _GAMEPLAY_CATEGORY_IDS]
     devs = appdetails.get("developers") or []
     pubs = appdetails.get("publishers") or []
     # Suppress publisher when it's identical to developer — avoids "Hello Games
@@ -189,9 +185,7 @@ def _extract_steam_meta(appdetails: dict) -> dict:
     pubs_display = pubs if pubs != devs else []
 
     metacritic = appdetails.get("metacritic") or {}
-    release_date = _normalize_steam_date(
-        (appdetails.get("release_date") or {}).get("date") or ""
-    )
+    release_date = _normalize_steam_date((appdetails.get("release_date") or {}).get("date") or "")
 
     return {
         "released": release_date,
