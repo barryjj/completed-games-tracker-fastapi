@@ -549,10 +549,12 @@ def test_normalize_steam_date():
 def test_extract_steam_meta_publisher_shown_when_different():
     from backend.pages import _extract_steam_meta
 
-    meta = _extract_steam_meta({
-        "developers": ["id Software"],
-        "publishers": ["Bethesda Softworks"],
-    })
+    meta = _extract_steam_meta(
+        {
+            "developers": ["id Software"],
+            "publishers": ["Bethesda Softworks"],
+        }
+    )
     assert meta["developers"] == ["id Software"]
     assert meta["publishers"] == ["Bethesda Softworks"]
 
