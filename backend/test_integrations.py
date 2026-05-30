@@ -625,11 +625,11 @@ def test_infer_is_collection_regex():
 def test_should_auto_hide_only_fires_for_dlc():
     """Auto-hide uses a two-tier check.
 
-    Tier 1 (gate-free): video/episode type, beta type, beta in title,
+    Tier 1 (gate-free): music/video/episode type, beta type, beta in title,
     demo type + demo in title.  These fire regardless of is_dlc.
 
     Tier 2 (DLC-only): soundtracks, artbooks, cosmetic packs, passes, bonus
-    content, deluxe upgrades, type=music.  These require is_dlc=True.
+    content, deluxe upgrades.  These require is_dlc=True.
     """
     from backend.steam import _should_auto_hide
 
@@ -661,17 +661,14 @@ def test_should_auto_hide_only_fires_for_dlc():
     assert _should_auto_hide("DOOM Eternal Year One Pass", None, is_dlc=True) is True
     assert _should_auto_hide("Some Game - Annual Pass", None, is_dlc=True) is True
     assert _should_auto_hide("Some Game - Battle Pass Season 3", None, is_dlc=True) is True
-    # type=music → hide (gated on is_dlc — music always arrives as DLC)
-    assert _should_auto_hide("Anything", {"type": "music"}, is_dlc=True) is True
 
     # --- Tier 2 DLC-only: NOT hidden when is_dlc=False ---
     assert _should_auto_hide("Elden Ring - Soundtrack", None, is_dlc=False) is False
     assert _should_auto_hide("Cosmetic Pack", None, is_dlc=False) is False
-    # type=music without is_dlc still doesn't hide — sync's rgOwnedApps
-    # subtraction lands actual music products in is_dlc=True anyway.
-    assert _should_auto_hide("Some Soundtrack", {"type": "music"}, is_dlc=False) is False
 
-    # --- Tier 1 (gate-free): video / episode types ---
+    # --- Tier 1 (gate-free): music / video / episode types ---
+    assert _should_auto_hide("Some Soundtrack App", {"type": "music"}, is_dlc=False) is True
+    assert _should_auto_hide("Some Soundtrack App", {"type": "music"}, is_dlc=True) is True
     assert _should_auto_hide("Amnesia Fortnight 2017", {"type": "video"}, is_dlc=False) is True
     assert _should_auto_hide("Some Series Episode 1", {"type": "episode"}, is_dlc=False) is True
     assert _should_auto_hide("Documentary", {"type": "video"}, is_dlc=True) is True

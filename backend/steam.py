@@ -162,11 +162,9 @@ _AUTO_HIDE_DLC_RE = re.compile(
 _AUTO_HIDE_TITLE_RE = re.compile(r"\bbeta\b", re.IGNORECASE)
 
 # Steam app types that are gate-free auto-hidden (no is_dlc check needed).
-# "video" and "episode" can arrive as is_dlc=False when Steam tags them as
-# type=game but appdetails shows the real type.
-# "music" is intentionally NOT here — music products always arrive via the
-# DLC sync path (is_dlc=True), so we leave that check in the DLC-only tier.
-_AUTO_HIDE_TYPES_GATE_FREE: frozenset[str] = frozenset({"video", "episode"})
+# If Steam tags something as one of these types there is no completable game
+# inside it — hide unconditionally regardless of is_dlc.
+_AUTO_HIDE_TYPES_GATE_FREE: frozenset[str] = frozenset({"music", "video", "episode"})
 
 # Steam type "beta" always hides.
 # Steam type "demo" hides only when "demo" also appears in the title (to
@@ -189,7 +187,6 @@ def _should_auto_hide(title: str, appdetails: dict | None, is_dlc: bool) -> bool
         as type=game, e.g. "Elden Ring NIGHTREIGN Network Test Beta").
 
     Tier 2 — DLC-only (fires only when is_dlc=True):
-      * app type is music (belt-and-suspenders against the tier-1 check).
       * title matches _AUTO_HIDE_DLC_RE (soundtracks, cosmetic packs,
         season passes, bonus content, deluxe upgrades, etc.).
     """
@@ -208,10 +205,6 @@ def _should_auto_hide(title: str, appdetails: dict | None, is_dlc: bool) -> bool
     # --- Tier 2: DLC-only ---
     if not is_dlc:
         return False
-    # type=music is DLC-gated: music products always arrive as is_dlc=True via
-    # the DLC sync, so this gate is always satisfied for them in practice.
-    if app_type == "music":
-        return True
     return bool(_AUTO_HIDE_DLC_RE.search(title or ""))
 
 
