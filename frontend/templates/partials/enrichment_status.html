@@ -3,11 +3,19 @@
    auto-refresh on detail-pane open handles staleness invisibly, so there's
    nothing to surface to the user when the queue is empty.) #}
 {% if pending > 0 %}
-<p class="text-secondary mb-0" id="enrichment-status"
-   hx-get="/integrations/steam/enrichment-status"
-   hx-trigger="every 10s"
-   hx-target="#enrichment-status"
-   hx-swap="outerHTML">
-  <small>Enriching metadata — {{ "{:,}".format(pending) }} of {{ "{:,}".format(total) }} entries remaining&hellip;</small>
-</p>
+{% set done = total - pending %}
+{% set pct = ((done / total) * 100) | int if total else 0 %}
+<div id="enrichment-status"
+     hx-get="/integrations/steam/enrichment-status"
+     hx-trigger="every 10s"
+     hx-target="#enrichment-status"
+     hx-swap="outerHTML">
+  <div class="d-flex align-items-center gap-2 mb-1">
+    <div class="progress flex-grow-1" style="height: 4px;">
+      <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ pct }}%"></div>
+    </div>
+    <small class="text-secondary text-nowrap">{{ "{:,}".format(done) }} / {{ "{:,}".format(total) }}</small>
+  </div>
+  <small class="text-secondary">Enriching metadata&hellip;</small>
+</div>
 {% endif %}
