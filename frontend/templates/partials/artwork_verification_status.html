@@ -1,0 +1,24 @@
+{# Artwork URL verification status. Shows a progress bar while the background
+   worker is checking URLs, then a quiet summary once caught up.
+   Renders nothing while pending=0 and invalid=0 (all good, nothing to show). #}
+{% set done = total - pending %}
+{% set pct = ((done / total) * 100) | int if total else 100 %}
+{% if pending > 0 %}
+<div id="artwork-verification-status"
+     hx-get="/integrations/steam/artwork-verification-status"
+     hx-trigger="every 15s"
+     hx-target="#artwork-verification-status"
+     hx-swap="outerHTML">
+  <div class="d-flex align-items-center gap-2 mb-1">
+    <div class="progress flex-grow-1" style="height: 4px;">
+      <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ pct }}%"></div>
+    </div>
+    <small class="text-secondary text-nowrap">{{ "{:,}".format(done) }} / {{ "{:,}".format(total) }}</small>
+  </div>
+  <small class="text-secondary">Checking artwork URLs&hellip;</small>
+</div>
+{% elif invalid > 0 %}
+<div id="artwork-verification-status">
+  <small class="text-secondary">{{ "{:,}".format(total) }} URLs checked &mdash; {{ "{:,}".format(invalid) }} broken.</small>
+</div>
+{% endif %}

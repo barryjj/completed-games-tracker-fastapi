@@ -572,6 +572,44 @@ def steam_enrichment_status(
     )
 
 
+@router.get("/steam/artwork-verification-status")
+def steam_artwork_verification_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Artwork URL verification status for the current user's library entries."""
+    # Count GameArtwork rows scoped to releases the user owns.
+    user_release_ids = (
+        db.query(models.GameRelease.id)
+        .join(models.UserLibraryEntry)
+        .filter(models.UserLibraryEntry.user_id == current_user.id)
+        .scalar_subquery()
+    )
+    pending = (
+        db.query(models.GameArtwork)
+        .filter(
+            models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.verified_at == None,
+        )
+        .count()
+    )
+    total = db.query(models.GameArtwork).filter(models.GameArtwork.release_id.in_(user_release_ids)).count()
+    invalid = (
+        db.query(models.GameArtwork)
+        .filter(
+            models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.is_valid == False,
+        )
+        .count()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/artwork_verification_status.html",
+        context={"pending": pending, "total": total, "invalid": invalid},
+    )
+
+
 @router.post("/steam/enrichment-refresh")
 def steam_enrichment_refresh(
     request: Request,

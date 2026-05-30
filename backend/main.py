@@ -18,6 +18,7 @@ from . import models, users, worker_state
 from .models import SessionLocal, get_db
 
 _worker_logger = logging.getLogger("steam.enrichment")
+_verify_logger = logging.getLogger("steam.artwork_verification")
 
 
 async def _enrichment_worker():
@@ -49,6 +50,34 @@ async def _enrichment_worker():
                 db.close()
         except Exception as e:
             _worker_logger.warning("Enrichment worker error: %s", e)
+            await asyncio.sleep(30)
+
+
+async def _artwork_verification_worker():
+    """
+    Ambient background task: HEAD-checks GameArtwork URLs and stamps is_valid.
+    - Processes up to 50 URLs per cycle at 0.5s each (~25s of work per cycle)
+    - Sleeps 10min when caught up (URLs rarely change after initial import)
+    - Sleeps 5s between cycles when there's a backlog
+    - Naturally resumable: verified_at tracks what's done
+    """
+    await asyncio.sleep(30)  # let enrichment worker start first
+    while True:
+        try:
+            db = SessionLocal()
+            try:
+                from . import steam
+
+                pending = await asyncio.to_thread(steam.verify_artwork_batch, db)
+                if pending == 0:
+                    await asyncio.sleep(600)  # fully caught up, check again in 10 min
+                else:
+                    _verify_logger.debug("Artwork verification: %d URLs remaining", pending)
+                    await asyncio.sleep(5)
+            finally:
+                db.close()
+        except Exception as e:
+            _verify_logger.warning("Artwork verification worker error: %s", e)
             await asyncio.sleep(30)
 
 
@@ -86,6 +115,7 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logging.getLogger(__name__).warning("Alembic migration failed: %s", e)
         asyncio.create_task(_enrichment_worker())
+        asyncio.create_task(_artwork_verification_worker())
     yield
 
 
