@@ -936,7 +936,7 @@ def test_enrichment_syncs_header_url_from_appdetails(db_session):
     db_session.add(
         models.GameArtwork(
             release_id=release.id,
-            artwork_type="header",
+            artwork_type="cover_h",
             source="steam",
             url="https://cdn.akamai.steamstatic.com/steam/apps/3531720/header.jpg",
         )
@@ -952,7 +952,7 @@ def test_enrichment_syncs_header_url_from_appdetails(db_session):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
-    art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
+    art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="cover_h").first()
     assert art is not None
     assert art.url == new_url
 
@@ -985,7 +985,7 @@ def test_enrichment_creates_header_artwork_if_missing(db_session):
         steam.enrich_next_batch(db_session, batch_size=5)
 
     db_session.expire_all()
-    art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="header").first()
+    art = db_session.query(models.GameArtwork).filter_by(release_id=release.id, artwork_type="cover_h").first()
     assert art is not None
     assert art.url == url
 
@@ -1309,17 +1309,20 @@ def test_set_cover_override_applies_to_correct_orientation(client, db_session):
         data={"image_type": "v", "url": "https://cdn.sgdb/cover-v.png"},
     )
     assert r.status_code == 200
-    db_session.refresh(entry)
-    assert entry.cover_url_override_v == "https://cdn.sgdb/cover-v.png"
-    assert entry.cover_url_override_h is None
+    ua_v = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id, artwork_type="cover_v").first()
+    assert ua_v is not None
+    assert ua_v.url == "https://cdn.sgdb/cover-v.png"
+    ua_h = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id, artwork_type="cover_h").first()
+    assert ua_h is None
 
     r = client.post(
         f"/library/entries/{entry.id}/cover-override",
         data={"image_type": "h", "url": "https://cdn.sgdb/cover-h.png"},
     )
     assert r.status_code == 200
-    db_session.refresh(entry)
-    assert entry.cover_url_override_h == "https://cdn.sgdb/cover-h.png"
+    ua_h = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id, artwork_type="cover_h").first()
+    assert ua_h is not None
+    assert ua_h.url == "https://cdn.sgdb/cover-h.png"
 
 
 def test_set_cover_override_rejects_bad_orientation(client, db_session):
@@ -1343,8 +1346,8 @@ def test_set_cover_override_rejects_bad_orientation(client, db_session):
 
 
 def test_sgdb_bulk_fill_skips_entries_with_existing_artwork(db_session):
-    """An entry with a release-level GameArtwork cover row of the right type
-    should be skipped — we don't want to stomp Steam CDN art that works."""
+    """An entry with a valid release-level GameArtwork cover_v row should be
+    skipped — we don't want to stomp Steam CDN art that works."""
     from backend import steamgriddb
 
     user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
@@ -1356,15 +1359,15 @@ def test_sgdb_bulk_fill_skips_entries_with_existing_artwork(db_session):
     release = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="220")
     db_session.add(release)
     db_session.flush()
-    db_session.add(models.GameArtwork(release_id=release.id, artwork_type="cover", source="steam", url="https://steam/cover.jpg"))
+    db_session.add(models.GameArtwork(release_id=release.id, artwork_type="cover_v", source="steam", url="https://steam/cover.jpg"))
     entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="steam_import")
     db_session.add(entry)
     db_session.commit()
 
     result = steamgriddb.bulk_fill_missing(db_session, user, "v")
     assert result == {"filled": 0, "no_candidate": 0, "skipped": 1, "errored": 0}
-    db_session.refresh(entry)
-    assert entry.cover_url_override_v is None
+    ua = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id).first()
+    assert ua is None
 
 
 def test_sgdb_bulk_fill_applies_top_candidate(db_session, monkeypatch):
@@ -1393,8 +1396,9 @@ def test_sgdb_bulk_fill_applies_top_candidate(db_session, monkeypatch):
 
     result = steamgriddb.bulk_fill_missing(db_session, user, "v")
     assert result["filled"] == 1
-    db_session.refresh(entry)
-    assert entry.cover_url_override_v == "https://sgdb/top.png"
+    ua = db_session.query(models.UserArtwork).filter_by(entry_id=entry.id, artwork_type="cover_v").first()
+    assert ua is not None
+    assert ua.url == "https://sgdb/top.png"
 
 
 def test_sgdb_bulk_fill_counts_no_candidate(db_session, monkeypatch):

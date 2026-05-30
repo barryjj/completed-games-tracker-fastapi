@@ -67,6 +67,18 @@ class Game(Base):
     parent: Mapped["Game | None"] = relationship("Game", remote_side="Game.id", back_populates="children")
     children: Mapped[list["Game"]] = relationship("Game", back_populates="parent")
     releases: Mapped[list["GameRelease"]] = relationship("GameRelease", back_populates="game")
+    canonical_artwork: Mapped[list["GameArtwork"]] = relationship(
+        "GameArtwork",
+        back_populates="game",
+        primaryjoin="GameArtwork.game_id == Game.id",
+        foreign_keys="GameArtwork.game_id",
+    )
+    user_artwork: Mapped[list["UserArtwork"]] = relationship(
+        "UserArtwork",
+        back_populates="game",
+        primaryjoin="UserArtwork.game_id == Game.id",
+        foreign_keys="UserArtwork.game_id",
+    )
 
 
 class GameRelease(Base):
@@ -96,22 +108,90 @@ class GameRelease(Base):
 
 
 class GameArtwork(Base):
-    """All visual assets for a game release. Multiple rows per release, one per type+source combo."""
+    """Visual assets for a game release or game (platform-sourced or auto-fetched).
+
+    Scope:
+      - release_id set, game_id null  → platform-specific art (Steam CDN, PSN, etc.)
+      - game_id set, release_id null  → game-level canonical art for grouped view
+      At least one must be set.
+
+    artwork_type values: 'cover_v' | 'cover_h' | 'hero' | 'logo' | 'icon' | 'background'
+    source values:       'steam' | 'psn' | 'sgdb' | 'igdb'
+
+    Resolution priority (lower = more specific, wins first):
+      UserArtwork (entry or game level) > GameArtwork native (steam/psn) > GameArtwork sgdb
+
+    sort_order: within a (release/game, artwork_type, source) group, 0 = preferred candidate.
+    is_valid: set False when the URL is confirmed broken during the verification pass.
+    """
 
     __tablename__ = "game_artwork"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False)
-    # "cover" | "header" | "hero" | "logo" | "background" | "icon"
+    # One of release_id / game_id must be set.
+    release_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=True)
+    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True)
     artwork_type: Mapped[str] = mapped_column(String, nullable=False)
-    # "steam" | "psn" | "steamgriddb" | "manual"
     source: Mapped[str] = mapped_column(String, nullable=False)
+    # The native API field name this URL came from, e.g. 'header_image',
+    # 'GAMEHUB_COVER_ART'. Useful for debugging and future re-fetching.
+    source_type_raw: Mapped[str | None] = mapped_column(String, nullable=True)
     url: Mapped[str] = mapped_column(String, nullable=False)
+    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Verification state — set by the background URL-check pass.
+    is_valid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    verified_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Within a (release/game, artwork_type, source) group: 0 = preferred, higher = alternatives.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    release: Mapped["GameRelease"] = relationship("GameRelease", back_populates="artwork")
+    release: Mapped["GameRelease | None"] = relationship("GameRelease", back_populates="artwork")
+    game: Mapped["Game | None"] = relationship("Game", back_populates="canonical_artwork", foreign_keys=[game_id])
 
-    __table_args__ = (UniqueConstraint("release_id", "artwork_type", "source", name="uq_artwork_release_type_source"),)
+    __table_args__ = (
+        # SQLite treats NULLs as distinct in unique constraints, so:
+        #   release-level rows (release_id set, game_id null) → governed by first constraint
+        #   game-level rows (game_id set, release_id null)    → governed by second constraint
+        UniqueConstraint("release_id", "artwork_type", "source", name="uq_artwork_release_type_source"),
+        UniqueConstraint("game_id", "artwork_type", "source", name="uq_artwork_game_type_source"),
+    )
+
+
+class UserArtwork(Base):
+    """Artwork explicitly chosen by a user — overrides GameArtwork at render time.
+
+    Scope:
+      - entry_id set, game_id null → override for a specific platform entry (unique view)
+      - game_id set, entry_id null → canonical for this game in grouped/cross-platform view
+      One of the two must be set.
+
+    source values: 'sgdb' (auto-fill or picker), 'user_url', 'user_upload'
+    For user_upload, file_path is set; url is derived from the upload-serve route.
+    """
+
+    __tablename__ = "user_artwork"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True, index=True)
+    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True, index=True)
+    artwork_type: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    url: Mapped[str | None] = mapped_column(String, nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String, nullable=True)  # user_upload only
+    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+
+    user: Mapped["User"] = relationship("User")
+    entry: Mapped["UserLibraryEntry | None"] = relationship("UserLibraryEntry", back_populates="user_artwork")
+    game: Mapped["Game | None"] = relationship("Game", back_populates="user_artwork", foreign_keys=[game_id])
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "entry_id", "artwork_type", name="uq_user_artwork_entry_type"),
+        UniqueConstraint("user_id", "game_id", "artwork_type", name="uq_user_artwork_game_type"),
+    )
 
 
 class UserLibraryEntry(Base):
@@ -123,15 +203,13 @@ class UserLibraryEntry(Base):
     release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False, index=True)
     playtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_played_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Per-orientation cover overrides. Set to non-NULL when the user has picked
-    # custom art (SGDB lookup, manual upload, etc.). Falls through to the
-    # release's GameArtwork when NULL. Two orientations because vertical and
-    # horizontal art are different aspect ratios (600x900 vs 460x215-ish) and
-    # the right one to show depends on the grid view orientation / detail pane.
-    cover_url_override_v: Mapped[str | None] = mapped_column(String, nullable=True)  # 600x900 portrait
-    cover_url_override_h: Mapped[str | None] = mapped_column(String, nullable=True)  # 460x215 landscape header
-    hero_url_override: Mapped[str | None] = mapped_column(String, nullable=True)  # ~1920x620 detail pane hero
-    logo_url_override: Mapped[str | None] = mapped_column(String, nullable=True)  # transparent logo overlay
+    # DEPRECATED — migrated to UserArtwork. Kept readable during transition;
+    # will be dropped in the follow-on migration once all read/write paths
+    # use UserArtwork. Do not write to these columns in new code.
+    cover_url_override_v: Mapped[str | None] = mapped_column(String, nullable=True)
+    cover_url_override_h: Mapped[str | None] = mapped_column(String, nullable=True)
+    hero_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    logo_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
     # True = entry hidden from the default library view (soundtracks, artbooks, etc.)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
@@ -154,6 +232,7 @@ class UserLibraryEntry(Base):
     child_entries: Mapped[list["UserLibraryEntry"]] = relationship("UserLibraryEntry", back_populates="parent_entry")
     achievements: Mapped[list["UserAchievement"]] = relationship("UserAchievement", back_populates="library_entry")
     completions: Mapped[list["Completion"]] = relationship("Completion", back_populates="library_entry")
+    user_artwork: Mapped[list["UserArtwork"]] = relationship("UserArtwork", back_populates="entry")
 
     __table_args__ = (UniqueConstraint("user_id", "release_id", name="uq_library_user_release"),)
 

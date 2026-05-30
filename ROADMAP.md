@@ -225,21 +225,28 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ### Recently played sort + missing artwork filter ✅ (PR #93)
 - **Recently played sort.** Library `?sort=recently_played` orders by `last_played_at DESC NULLS LAST` (SQLAlchemy 2.x via `.desc().nulls_last()`). Sort dropdown added to library toolbar alongside existing name sort.
-- **Missing artwork filter.** `?missing_art=true` shows only entries with no cover art for the current orientation (no override AND no `GameArtwork` row of the matching type). Orientation-aware: grid_v checks vertical, grid_h checks horizontal. Checkbox in library toolbar.
+- **Missing artwork filter.** `?missing_art=true` shows only entries with no cover art for the current orientation (checked against UserArtwork and valid GameArtwork). Orientation-aware: grid_v checks vertical, grid_h checks horizontal. Checkbox in library toolbar.
+
+### Artwork framework ✅ (feature/artwork-framework)
+- **Two-table design.** `GameArtwork` (auto-sourced, shared across users) and `UserArtwork` (explicit user picks, per entry or per game). Replaces the deprecated `cover_url_override_*` / `hero_url_override` / `logo_url_override` columns on `UserLibraryEntry`.
+- **Resolution priority** (implemented in rendering, not data):
+  1. `UserArtwork` for this entry → user explicitly chose this
+  2. `UserArtwork` for this game → canonical for grouped view
+  3. Valid `GameArtwork` for this release, native sources (steam/psn) before sgdb
+  4. Valid `GameArtwork` for this game (game-level canonical)
+  5. Placeholder
+- **`GameArtwork` extended.** `release_id` now nullable (supports game-level rows with no release). Added: `game_id` FK, `is_valid` / `verified_at` for URL health tracking, `sort_order`, `mime_type`, `source_type_raw`, `created_at`. Two scoped unique constraints (release-level + game-level).
+- **Artwork type rename.** `'cover'` → `'cover_v'`, `'header'` → `'cover_h'` for consistency. Source `'steamgriddb'` → `'sgdb'`. All code and DB rows migrated.
+- **SGDB write paths switched.** Picker and bulk fill now write to `UserArtwork` instead of override columns. Auto-fetch logo/hero likewise.
+- **Data migration.** Override column values copied into `UserArtwork` (source='sgdb'). Override columns kept deprecated until rendering is confirmed stable; will be dropped in follow-on migration.
+- **Pending follow-on work:**
+  - URL verification background job: HEAD-check `GameArtwork` URLs, try alternate Steam patterns, set `is_valid=False` on 404
+  - Drop deprecated override columns from `UserLibraryEntry` (after rendering confirmed stable)
+  - Game-level artwork lookups (game_id set, release_id null) for the grouped/cross-platform view
 
 ---
 
 ## Near-term
-
-### Artwork URL resolution overhaul ⚠️ (blocks SGDB bulk fill fix)
-- **Root problem:** `_artwork_url()` constructs Steam CDN URLs for `library_600x900.jpg` and `library_hero.jpg` at sync time without verifying they exist. Steam has migrated newer/DLC content to hashed paths on `shared.fastly.steamstatic.com`; the constructed `cdn.akamai.steamstatic.com/{appid}/library_600x900.jpg` URL 404s for any game using the new format. Headers work because `appdetails.header_image` gives us the real URL; covers and heroes have no equivalent data source.
-- **Effect:** Library shows placeholder cards for any game whose `library_600x900.jpg` doesn't exist at the constructed path. The "Missing artwork" filter and SGDB bulk fill both treat `GameArtwork` rows as "has art" regardless of whether the URL resolves — so the bulk fill skips entries it should fill, and the filter doesn't surface entries it should surface.
-- **Options to investigate:**
-  - Pull cover URL from `appdetails` if Steam ever exposes it (they currently don't for `library_600x900.jpg`)
-  - Try multiple URL patterns at enrichment time (constructed path + known alternate hosts) and store whichever responds 200
-  - Add `is_verified` / `verified_at` flag to `GameArtwork`; a background pass HEAD-checks stored URLs and marks stale ones; bulk fill and filter use the verified flag
-  - Unified resolved-artwork table per `UserLibraryEntry`: source (steam_cdn / sgdb / manual), url, verified_at, is_valid — consolidates `GameArtwork` + override columns into one queryable place
-- **SGDB bulk fill fix is parked until this is resolved.** The correct fill logic is "entry has no verified working cover → fetch from SGDB"; implementing that on top of the current unverified URL storage is patching the wrong layer.
 
 ### Platforms table
 - `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`
