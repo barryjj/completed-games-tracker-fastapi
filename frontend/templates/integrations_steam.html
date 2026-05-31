@@ -13,7 +13,7 @@
        one click. API key and cookies still need manual paste below (Steam
        doesn't issue API keys via OpenID, and capturing session cookies
        requires Tauri). #}
-    <h5 class="mb-3">Sign in</h5>
+    <h5 class="cgt-config-section">Sign In</h5>
     {# Drop the success alert — the "Signed in as <persona>" line below conveys
        the same info without the extra chrome. Error states still need a flash. #}
     {% if openid_status == "bad_claim" %}
@@ -43,13 +43,13 @@
         <small class="text-secondary font-monospace">{{ current_user.steam_id64 }}</small>
       </div>
     </div>
-    <a href="/integrations/steam/openid/start" class="btn btn-outline-secondary btn-sm mb-4">Re-sign in through Steam</a>
+    <a href="/integrations/steam/openid/start" class="btn btn-surface btn-sm mb-4">Re-sign in through Steam</a>
     {% else %}
     <a href="/integrations/steam/openid/start" class="btn btn-primary mb-2">Sign in through Steam</a>
     <p class="text-secondary mb-4"><small>Auto-fills your Steam ID. You'll still need to paste an API key below for the sync to work.</small></p>
     {% endif %}
 
-    <h5 class="mb-3">Credentials</h5>
+    <h5 class="cgt-config-section">Credentials</h5>
     <form
       hx-post="/integrations/steam/credentials"
       hx-target="#steam-flash"
@@ -68,7 +68,7 @@
         <div class="form-text">Get yours at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a></div>
       </div>
       <hr class="my-3">
-      <h6 class="mb-1">Browser Cookies <span class="text-secondary fw-normal">(optional — enables faster DLC detection)</span></h6>
+      <p class="section-heading">Browser Cookies <span class="fw-normal" style="text-transform: none; letter-spacing: 0;">— optional, enables faster DLC detection</span></p>
       <p class="text-secondary mb-3"><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
       <div class="mb-3">
         <label class="form-label"><code>sessionid</code></label>
@@ -92,23 +92,23 @@
           autocomplete="off"
         >
       </div>
-      <div class="d-flex gap-2 flex-wrap">
+      <div class="d-flex gap-3 flex-wrap align-items-center">
         <button type="submit" class="btn btn-primary">Save Credentials</button>
         {% if current_user.steam_api_key or current_user.steam_session_id or current_user.steam_login_secure %}
         <button
           type="button"
-          class="btn btn-outline-danger"
+          class="btn btn-ghost-danger btn-sm"
           hx-post="/integrations/steam/credentials"
           hx-vals='{"steam_api_key": "", "steam_session_id": "", "steam_login_secure": ""}'
           hx-target="#steam-flash"
           hx-swap="innerHTML"
           hx-confirm="Clear your saved Steam API key and cookies? (Steam sign-in is kept — use 'Forget Steam sign-in' to drop that too.)"
-        >Clear Credentials</button>
+        >Clear credentials</button>
         {% endif %}
         {% if current_user.steam_id64 %}
         <button
           type="button"
-          class="btn btn-outline-danger btn-sm align-self-center"
+          class="btn btn-ghost-danger btn-sm"
           hx-post="/integrations/steam/openid/forget"
           hx-target="#steam-flash"
           hx-swap="innerHTML"
@@ -120,7 +120,7 @@
   </div>
 
   <div class="col-lg-6">
-    <h5 class="mb-3">Library Sync</h5>
+    <h5 class="cgt-config-section">Library Sync</h5>
     {% if current_user.steam_id64 and current_user.steam_api_key %}
     {% if current_user.steam_last_synced_at %}
     <p class="text-secondary mb-1"><small>Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
@@ -162,7 +162,7 @@
     {# Metadata enrichment status — visible by default since it tells you whether
        the background worker is still chewing through things. #}
     <div class="mt-4">
-      <h6 class="mb-2">Metadata Enrichment</h6>
+      <p class="section-heading mb-1">Metadata Enrichment</p>
       <p class="text-secondary mb-2"><small>Runs automatically in the background while the app is open. Fetches full details for each Steam entry at Steam's rate limit.</small></p>
       <div hx-get="/integrations/steam/enrichment-status"
            hx-trigger="load"
@@ -174,7 +174,7 @@
     {# Artwork URL verification status — shows progress while the background worker
        HEAD-checks artwork URLs; quiet once caught up unless broken URLs are found. #}
     <div class="mt-4">
-      <h6 class="mb-2">Artwork URL Verification</h6>
+      <p class="section-heading mb-1">Artwork URL Verification</p>
       <p class="text-secondary mb-2"><small>Runs automatically in the background. Checks each artwork URL and marks broken ones so they're skipped during display.</small></p>
       <div hx-get="/integrations/steam/artwork-verification-status"
            hx-trigger="load"
@@ -184,48 +184,48 @@
     </div>
 
     {# Power-user / diagnostic operations. Collapsed by default. #}
-    <details class="mt-4">
-      <summary class="text-secondary" style="cursor: pointer;"><small>More sync options</small></summary>
-      <div class="mt-3 d-flex flex-column gap-2">
+    <details class="cgt-details-subtle mt-4">
+      <summary>More sync options</summary>
+      <div class="d-flex flex-column gap-3 mt-3">
         {% if current_user.steam_session_id and current_user.steam_login_secure %}
-        <div>
-          <p class="text-secondary mb-1"><small>Re-fetch DLC only, using already-synced games as the baseline. Faster than a full sync.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Re-fetch DLC only, using already-synced games as the baseline.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/sync-dlc-only"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-disabled-elt="this"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Sync DLC Only</button>
+          >Sync DLC</button>
         </div>
-        <div>
-          <p class="text-secondary mb-1"><small>Re-fetch games only via GetOwnedGames (skips DLC). Diagnostic.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Re-fetch games only via GetOwnedGames, skipping DLC. Diagnostic.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/sync"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-disabled-elt="this"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Sync Games Only</button>
+          >Sync Games</button>
         </div>
         {% endif %}
-        <div>
-          <p class="text-secondary mb-1"><small>Force a fresh fetch of the full Steam app catalog (~200k names, cached 7 days otherwise).</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Force a fresh fetch of the full Steam app catalog (~200k names, cached 7 days otherwise).</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/refresh-app-catalog"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-disabled-elt="this"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Refresh App Catalog</button>
+          >Refresh Catalog</button>
         </div>
-        <div>
-          <p class="text-secondary mb-1"><small>Re-queue all Steam entries for metadata refresh. Existing data stays visible until the background worker updates each one.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Re-queue all Steam entries for metadata refresh. Existing data stays visible while the worker updates each one.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/enrichment-refresh"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -233,44 +233,44 @@
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
           >Refresh Metadata</button>
         </div>
-        <div>
-          <p class="text-secondary mb-1"><small>Run the auto-hide heuristic across your library — hides soundtracks, artbooks, cosmetic packs, character/season passes, bonus content, entries with "beta" in the title, and video/episode/beta/demo app types. Skips any entries you've manually hidden or unhidden.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Run the auto-hide heuristic — hides soundtracks, artbooks, cosmetic packs, passes, bonus content, betas, and video/episode/demo app types. Skips manually hidden/unhidden entries.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/library/backfill-hidden"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-confirm="Run the auto-hide heuristic across your library?"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Auto-hide non-games</button>
+          >Auto-Hide</button>
         </div>
-        <div>
-          <p class="text-secondary mb-1"><small>Re-run collection detection across your library using the current keyword rules. Flags new collections AND clears false positives from old rules. Skips any entry you've manually marked or unmarked as a collection.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Re-run collection detection using current keyword rules. Flags new collections and clears false positives. Skips manually marked entries.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/backfill-collection-flags"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-confirm="Re-run collection detection across your library?"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Re-detect collections</button>
+          >Re-detect</button>
         </div>
-        <div>
-          <p class="text-secondary mb-1"><small>Re-apply the display-name cleanup heuristic AND fix any "App NNNNNN" placeholder titles by pulling the real name from cached Steam metadata. Useful after we improve the heuristic, and to catch entries whose appid wasn't in the catalog cache at sync time. Skips any entry whose display name you've manually edited. No network calls.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Re-apply the display-name cleanup heuristic and fix any "App NNNNNN" placeholder titles from cached Steam metadata. Skips manually edited names.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/backfill-display-names"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-confirm="Re-clean display names across your Steam library?"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Re-clean display names</button>
+          >Re-clean Names</button>
         </div>
         {% if current_user.steam_session_id and current_user.steam_login_secure %}
-        <div>
-          <p class="text-secondary mb-1"><small>Sanity-check your saved cookies by hitting Steam's owned-app endpoint.</small></p>
+        <div class="d-flex justify-content-between align-items-center gap-3">
+          <small class="text-secondary">Sanity-check your saved cookies by hitting Steam's owned-app endpoint.</small>
           <button
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm flex-shrink-0"
             hx-post="/integrations/steam/test-cookies"
             hx-target="#steam-flash"
             hx-swap="innerHTML"

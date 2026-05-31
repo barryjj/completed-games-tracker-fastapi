@@ -9,7 +9,7 @@
 
 <div class="row g-4">
   <div class="col-lg-6">
-    <h5 class="mb-3">Credentials</h5>
+    <h5 class="cgt-config-section">Credentials</h5>
     <p class="text-secondary mb-3"><small>SteamGridDB hosts community-uploaded cover art. The key is used to look up candidate covers when you click "Find cover" on a library entry.</small></p>
     <form
       hx-post="/integrations/steamgriddb/credentials"
@@ -28,25 +28,25 @@
         >
         <div class="form-text">Get yours at <a href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noopener">steamgriddb.com/profile/preferences/api</a></div>
       </div>
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-3 align-items-center">
         <button type="submit" class="btn btn-primary">Save Credentials</button>
         {% if current_user.steamgriddb_api_key %}
         <button
           type="button"
-          class="btn btn-outline-danger"
+          class="btn btn-ghost-danger btn-sm"
           hx-post="/integrations/steamgriddb/credentials"
           hx-vals='{"steamgriddb_api_key": ""}'
           hx-target="#sgdb-flash"
           hx-swap="innerHTML"
           hx-confirm="Clear your saved SteamGridDB API key?"
-        >Clear Credentials</button>
+        >Clear credentials</button>
         {% endif %}
       </div>
     </form>
   </div>
 
   <div class="col-lg-6">
-    <h5 class="mb-3">How it works</h5>
+    <h5 class="cgt-config-section">How It Works</h5>
     <p class="text-secondary mb-2"><small>Once your API key is saved, the More menu on each library entry's detail pane gains options to find covers, hero images, and logos. The search term is pre-filled with the game title but can be edited in the picker.</small></p>
     <ul class="text-secondary mb-3">
       <li><small><strong>Find vertical cover</strong> — 600&times;900 portrait (library card art).</small></li>
@@ -57,69 +57,65 @@
     <p class="text-secondary mb-3"><small>For Steam entries, the lookup uses the appid directly. For other sources, it falls back to a title search.</small></p>
 
     {% if current_user.steamgriddb_api_key %}
-    <h5 class="mb-2 mt-4">Bulk fill</h5>
-    <p class="text-secondary mb-3"><small>Walk your library and apply the top SGDB candidate to every entry missing art of that type. Skips entries that already have Steam-CDN art or a custom override. Runs in the background; you'll get a toast when it finishes.</small></p>
-    <div class="dropdown">
-      <button
-        class="btn btn-outline-secondary btn-sm dropdown-toggle"
-        type="button"
-        data-bs-toggle="dropdown"
-        aria-expanded="false"
-      >Bulk fill&hellip;</button>
-      <ul class="dropdown-menu">
-        <li>
-          <button
-            class="dropdown-item"
-            type="button"
-            hx-post="/integrations/steamgriddb/fill-missing"
-            hx-vals='{"image_type": "v"}'
-            hx-target="#sgdb-flash"
-            hx-swap="innerHTML"
-            hx-disabled-elt="this"
-            hx-confirm="Fill in missing vertical covers across your library?"
-            hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
-          >Vertical covers</button>
-        </li>
-        <li>
-          <button
-            class="dropdown-item"
-            type="button"
-            hx-post="/integrations/steamgriddb/fill-missing"
-            hx-vals='{"image_type": "h"}'
-            hx-target="#sgdb-flash"
-            hx-swap="innerHTML"
-            hx-disabled-elt="this"
-            hx-confirm="Fill in missing horizontal covers across your library?"
-            hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
-          >Horizontal covers</button>
-        </li>
-        <li>
-          <button
-            class="dropdown-item"
-            type="button"
-            hx-post="/integrations/steamgriddb/fill-missing"
-            hx-vals='{"image_type": "hero"}'
-            hx-target="#sgdb-flash"
-            hx-swap="innerHTML"
-            hx-disabled-elt="this"
-            hx-confirm="Fill in missing hero images across your library?"
-            hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
-          >Hero images</button>
-        </li>
-        <li>
-          <button
-            class="dropdown-item"
-            type="button"
-            hx-post="/integrations/steamgriddb/fill-missing"
-            hx-vals='{"image_type": "logo"}'
-            hx-target="#sgdb-flash"
-            hx-swap="innerHTML"
-            hx-disabled-elt="this"
-            hx-confirm="Fill in missing logos across your library?"
-            hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
-          >Logos</button>
-        </li>
-      </ul>
+    <h5 class="cgt-config-section mt-4">Bulk Fill</h5>
+    <p class="text-secondary mb-3"><small>Walk your library and apply the top SGDB candidate to every entry missing art of that type. Skips entries that already have Steam CDN art or a custom override. Runs in the background; you'll get a toast when it finishes.</small></p>
+    <div class="d-flex flex-column gap-3">
+      <div class="d-flex justify-content-between align-items-center gap-3">
+        <small class="text-secondary">Vertical covers — 600&times;900 portrait (library card art)</small>
+        <button
+          class="btn btn-surface btn-sm flex-shrink-0"
+          type="button"
+          hx-post="/integrations/steamgriddb/fill-missing"
+          hx-vals='{"image_type": "v"}'
+          hx-target="#sgdb-flash"
+          hx-swap="innerHTML"
+          hx-disabled-elt="this"
+          hx-confirm="Fill in missing vertical covers across your library?"
+          hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+        >Fill</button>
+      </div>
+      <div class="d-flex justify-content-between align-items-center gap-3">
+        <small class="text-secondary">Horizontal covers — 460&times;215 landscape (header art)</small>
+        <button
+          class="btn btn-surface btn-sm flex-shrink-0"
+          type="button"
+          hx-post="/integrations/steamgriddb/fill-missing"
+          hx-vals='{"image_type": "h"}'
+          hx-target="#sgdb-flash"
+          hx-swap="innerHTML"
+          hx-disabled-elt="this"
+          hx-confirm="Fill in missing horizontal covers across your library?"
+          hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+        >Fill</button>
+      </div>
+      <div class="d-flex justify-content-between align-items-center gap-3">
+        <small class="text-secondary">Hero images — wide banner for the detail pane</small>
+        <button
+          class="btn btn-surface btn-sm flex-shrink-0"
+          type="button"
+          hx-post="/integrations/steamgriddb/fill-missing"
+          hx-vals='{"image_type": "hero"}'
+          hx-target="#sgdb-flash"
+          hx-swap="innerHTML"
+          hx-disabled-elt="this"
+          hx-confirm="Fill in missing hero images across your library?"
+          hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+        >Fill</button>
+      </div>
+      <div class="d-flex justify-content-between align-items-center gap-3">
+        <small class="text-secondary">Logos — transparent overlay in the detail pane hero</small>
+        <button
+          class="btn btn-surface btn-sm flex-shrink-0"
+          type="button"
+          hx-post="/integrations/steamgriddb/fill-missing"
+          hx-vals='{"image_type": "logo"}'
+          hx-target="#sgdb-flash"
+          hx-swap="innerHTML"
+          hx-disabled-elt="this"
+          hx-confirm="Fill in missing logos across your library?"
+          hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+        >Fill</button>
+      </div>
     </div>
     {% endif %}
   </div>
