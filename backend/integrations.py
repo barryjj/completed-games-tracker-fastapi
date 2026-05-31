@@ -527,9 +527,9 @@ def backfill_collection_flags(
     db.commit()
     parts = []
     if flagged:
-        parts.append(f"{flagged} flagged as collection{'s' if flagged != 1 else ''}")
+        parts.append(f"{flagged} newly marked as {'collections' if flagged != 1 else 'a collection'}")
     if cleared:
-        parts.append(f"{cleared} false positive{'s' if cleared != 1 else ''} cleared")
+        parts.append(f"collection flag removed from {cleared} {'entries' if cleared != 1 else 'entry'}")
     if not parts:
         parts.append("no changes needed")
     return templates.TemplateResponse(
