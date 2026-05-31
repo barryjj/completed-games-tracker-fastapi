@@ -161,13 +161,21 @@
       {% endif %}
 
       {% if steam_meta.metacritic_score is not none %}
+      {% set _mc = steam_meta.metacritic_score %}
+      {% if _mc >= 85 %}{% set _mc_color = "var(--ctp-green)" %}{% set _mc_label = "Great" %}
+      {% elif _mc >= 70 %}{% set _mc_color = "var(--ctp-teal)" %}{% set _mc_label = "Fair" %}
+      {% elif _mc >= 50 %}{% set _mc_color = "var(--ctp-yellow)" %}{% set _mc_label = "Mixed" %}
+      {% elif _mc >= 20 %}{% set _mc_color = "var(--ctp-peach)" %}{% set _mc_label = "Weak" %}
+      {% else %}{% set _mc_color = "var(--ctp-red)" %}{% set _mc_label = "Bad" %}{% endif %}
       <dt>Metacritic</dt>
       <dd>
-        {% if steam_meta.metacritic_url %}
-        <a href="{{ steam_meta.metacritic_url }}" target="_blank" rel="noopener">{{ steam_meta.metacritic_score }}/100 ↗</a>
-        {% else %}
-        {{ steam_meta.metacritic_score }}/100
-        {% endif %}
+        <span class="d-inline-flex align-items-center gap-1">
+          <span class="cgt-score-chip" style="background-color: {{ _mc_color }};">{{ _mc }}</span>
+          <span class="text-secondary">{{ _mc_label }}</span>
+          {% if steam_meta.metacritic_url %}
+          <a href="{{ steam_meta.metacritic_url }}" target="_blank" rel="noopener" class="ms-1">↗</a>
+          {% endif %}
+        </span>
       </dd>
       {% endif %}
 

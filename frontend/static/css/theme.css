@@ -1009,6 +1009,24 @@ body:has(.cgt-sticky-actions) {
   border-color: var(--ctp-surface0);
 }
 
+/* ─── Score chip (Metacritic, etc.) ─────────────────────────────────────── */
+/* Small colored square badge — score number in crust text on a Catppuccin
+   accent background. Size is expressed in em so it scales with parent font. */
+.cgt-score-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2em;
+  height: 1.75em;
+  padding: 0 0.3em;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ctp-crust);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
 /* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */
 /* The drawer toggles (Filters / View buttons) flip `hidden` on a div that
    also has `.d-flex` or `.row`, both of which set `display: flex !important`
