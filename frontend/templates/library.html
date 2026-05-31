@@ -317,11 +317,13 @@
           </div>
           <div class="mb-3">
             <label class="form-label">Platform</label>
-            <select class="form-select" name="platform">
+            <input type="text" class="form-control" name="platform" id="add-platform"
+                   list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required autocomplete="off">
+            <datalist id="platform-suggestions">
               {% for p in platforms %}
-              <option>{{ p }}</option>
+              <option value="{{ p | e }}">
               {% endfor %}
-            </select>
+            </datalist>
           </div>
           <div class="mb-3">
             <div class="form-check">
