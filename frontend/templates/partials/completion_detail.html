@@ -195,15 +195,6 @@
 </div>
 
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
-  <button class="btn btn-outline-secondary btn-sm"
-          onclick="closeCompletionDetailAndEdit(this.dataset)"
-          data-completion-id="{{ completion.id }}"
-          data-entry-id="{{ entry.id }}"
-          data-label="{{ (game.display_title ~ ' (' ~ release.platform ~ ')') | e }}"
-          data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
-          data-playthroughs="{{ (completion.playthroughs or '') | e }}"
-          data-notes="{{ (completion.notes or '') | e }}">Edit</button>
-
   {# No view= or q= — the pane opens by entry ID regardless of the grid's
      current filter state, so we leave the library in whatever state the user
      had it. Forcing a view would disrupt their context for no real gain now
@@ -215,6 +206,15 @@
     <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
     <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" href="#"
+             onclick="closeCompletionDetailAndEdit(this.dataset); return false;"
+             data-completion-id="{{ completion.id }}"
+             data-entry-id="{{ entry.id }}"
+             data-label="{{ (game.display_title ~ ' (' ~ release.platform ~ ')') | e }}"
+             data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
+             data-playthroughs="{{ (completion.playthroughs or '') | e }}"
+             data-notes="{{ (completion.notes or '') | e }}">Edit completion</a></li>
+      <li><hr class="dropdown-divider"></li>
       {% if release.source == "steam" %}
       <li><a class="dropdown-item" href="#"
              hx-post="/library/entries/{{ entry.id }}/refresh-metadata"

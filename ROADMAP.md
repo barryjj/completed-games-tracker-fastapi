@@ -135,10 +135,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - **Stale-only auto-refresh on detail-pane open.** Detail endpoints check `_needs_metadata_refresh` (Steam + null-or-7+-days-old). If stale, the rendered partial includes a hidden HTMX trigger that fires the refresh endpoint in the background. Current data shows immediately; the next pane open picks up the refresh.
 - Enrichment status messaging on the integrations hub updated to describe the new per-pane auto-refresh behavior instead of a stale "X enriched" count.
 
-### Periodic TTL metadata refresh (future)
-- Companion to the detail-pane auto-refresh: a background worker pass that re-queues Steam entries older than ~30 days even if the user hasn't opened their detail pane
-- Keeps cold entries from going stale indefinitely
-- Lower priority than the on-demand version — most metadata doesn't change that often
+### Periodic TTL metadata refresh ✅ (this session)
+- `requeue_stale_metadata()` in `steam.py`: when the NULL-queue is drained, re-queues the 50 most-recently-added Steam entries whose `metadata_fetched_at` is older than 30 days, ordered by appid DESC (newest releases first)
+- Enrichment worker calls it immediately after draining the queue; sleeps 5 minutes only when both passes return nothing
+- Keeps cold entries from going stale indefinitely without hammering Steam on every worker tick
+
+### Add-game modal stability + edit modal unification + detail pane consolidation ✅ (PR #101)
+- Add-game modal no longer closes when DLC/collection search results load — fixed with JS `addEventListener` + `event.target === this` to discriminate the form's own HTMX events from bubbled child inputs
+- Adding a game reloads the full library view (respecting active filters) via `htmx.ajax` instead of blindly prepending a row
+- Collection/DLC parent search inputs write the selected game's label back into the search box so selection is visible
+- Edit modal parent selection now uses live HTMX search (matching the add modal) instead of a static `<select>`; pre-fills correctly from `_parent_release_id` / `_parent_label` stamped server-side
+- Default view no longer hides Steam games assigned to a collection — removed the `parent_id IS NULL` constraint, keeping only `is_dlc == False`
+- Edit moved into the More dropdown on both library and completion detail panes ("Edit game" / "Edit completion") for a consistent single-action-menu; also fixed missing parent data attrs on the detail pane's Edit item
 
 ### Steam news / announcements in detail pane (future)
 - `ISteamNews/GetNewsForApp` returns dated announcements per appid; cached and shown in the library detail pane as a "Latest news" section
@@ -248,44 +256,51 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## Near-term
 
-### Platforms table
-- `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`
-- `GameRelease.platform` becomes FK to platforms instead of free text
-- Seed defaults: Steam, PS5, PS4, PS3, Switch, Xbox, iOS, Android, PC, Other
-- Users can add custom platforms (NES, Dreamcast, etc.) and rename display names
-- Color key maps to Catppuccin token — replaces current heuristic matching in `_platform_color_class`
+### IGDB / Twitch integration
+- Agreed priority: IGDB → Platforms → PSN → Historical import
+- Twitch Client Credentials OAuth (Client ID + Secret stored per-user on the integrations page, same pattern as SGDB)
+- Access token fetched and cached (expires hourly); auto-refreshed on use
+- `igdb_id` nullable column on `Game`; populated when a manual add is matched to IGDB
+- Manual add flow: typeahead search against IGDB `/games` endpoint, user picks a result, title + `igdb_id` auto-filled
+- Cover art pulled from IGDB `/covers` → written to `GameArtwork` (source `"igdb"`)
+- Platform data from IGDB `/platforms` used to seed the platforms table (see below)
+- Enrichment path: background worker can fill `igdb_id` on existing manual entries by title-matching (optional, user-triggered)
 
-### User-configurable DLC auto-hide keywords
-- Same model as the platforms table: system-default keywords (the current `_AUTO_HIDE_RE` patterns) seeded into a `dlc_hide_keywords` table with `is_system=True`, plus user rows for custom additions
-- Configure page UI: list current active keywords, add/remove user entries
-- System defaults can't be deleted but could be individually disabled if a user has a legit reason (e.g. a game called "Starter Pack" they actually want to track)
-- Merge logic: effective regex is built from `system (not disabled) + user` rows at request time, cached per-user
-- Useful for publisher-specific patterns that are too niche for the default list (e.g. a specific franchise's naming convention for cosmetic drops)
+### Platforms table (after IGDB)
+- `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`, **`igdb_id`** (nullable int)
+- Seeded from IGDB's `/platforms` endpoint so our IDs align with IGDB from day one — no reconciliation needed when IGDB integration lands
+- Platform taxonomy is complex (Xbox naming, handheld generations, backward-compat edge cases); IGDB has already solved it, so we don't invent our own
+- When this lands: `GameRelease.platform` free-text replaced by `platform_id` FK; `_platform_color_class` regex replaced by a table lookup; manual add modal gets a platform dropdown instead of free text
+- All current releases are Steam so the backfill migration is a trivial one-row update
 
-### Sort name field
-- `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create and edit unless the user has explicitly set it (`sort_name_user_set` flag, same pattern as display_name)
-- Sort query changes from `COALESCE(display_name, title)` to `sort_name` — always populated so the key space is consistent; no COALESCE fallback needed
-- User can override in the edit modal for cases where publisher naming is inconsistent across a franchise (e.g. "The Witcher: Enhanced Edition" → sort_name "Witcher 1" so it sorts before "Witcher 2" and "Witcher 3")
-- Migration backfills existing entries: `sort_name = COALESCE(display_name, title)` where sort_name is null
-- Inspired by Steam's old community sort-order tool (RIP) and standard media library practice (iTunes Sort Name etc.)
-
-### PSN integration
+### PSN integration (after platforms)
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
+- Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
+
+### Historical import (after PSN)
+- Import completions from CSV / Google Sheets: map columns to game title, platform, date completed
+- Requires platforms table + IGDB title-matching to resolve old games to proper `igdb_id` and `platform_id`
+- Target use case: 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration
+
+### Sort name field
+- `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
+- Lets users fix franchise sort order (e.g. "DmC: Devil May Cry" → sort as "Devil May Cry 0") without touching the display name
+- Low urgency — can land any time as a small standalone PR
+
+### User-configurable DLC auto-hide keywords
+- System-default patterns (current `_AUTO_HIDE_RE`) seeded into a `dlc_hide_keywords` table; users can add/disable entries
+- Low urgency; current heuristic covers the common cases well enough
 
 ---
 
 ## Medium-term
 
-### IGDB / Twitch
-- Twitch Client Credentials OAuth (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` env vars)
-- IGDB search on manual game add: typeahead lookup, select result, auto-fill title, store `igdb_id`
-- Cover art via IGDB → `GameArtwork`
-
 ### Stats & dashboard / home page
 - Customizable widget-based home page
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
 - User can pick which widgets are shown and arrange them
+- Deferred until library has more non-Steam data (PSN, historical import) so the stats are actually interesting
 
 ### Historical import
 - Import completions from Google Sheets / CSV
