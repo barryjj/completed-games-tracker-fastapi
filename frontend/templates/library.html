@@ -290,7 +290,7 @@
                    hx-get="/integrations/igdb/search"
                    hx-trigger="input changed delay:350ms"
                    hx-target="#igdb-results"
-                   hx-include="[name='q']"
+                   hx-include="this"
                    name="q"
                    hx-sync="this:abort"
                    hx-on::after-request="event.stopPropagation()">
@@ -318,7 +318,7 @@
           <div class="mb-3">
             <label class="form-label">Platform</label>
             <input type="text" class="form-control" name="platform" id="add-platform"
-                   list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required autocomplete="off">
+                   list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required>
             <datalist id="platform-suggestions">
               {% for p in platforms %}
               <option value="{{ p | e }}">
