@@ -693,12 +693,14 @@ def library_page(
         view = "default"
 
     if view == "default":
-        # Games + collections; hide DLC (even with no parent yet) and
-        # sub-collection games.  Manually added entries always show regardless
-        # of DLC/parent status — they were added intentionally.
+        # Show all non-DLC entries. Games that are part of a collection have a
+        # parent_id set but are still completable games — hiding them from
+        # Default just because they're organised into a collection is wrong.
+        # The manual-entry exception keeps manually added DLC visible (those
+        # were added intentionally and the user knows what they are).
         base_q = base_q.filter(
             or_(
-                ((models.Game.parent_id == None) & (models.Game.is_dlc == False)),
+                models.Game.is_dlc == False,
                 models.UserLibraryEntry.import_source == "manual",
             )
         )
