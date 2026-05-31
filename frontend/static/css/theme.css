@@ -227,6 +227,40 @@ html[data-bs-theme="light"] .btn-danger:hover { filter: none; }
   --bs-btn-hover-bg:           var(--ctp-red);
   --bs-btn-hover-color:        var(--ctp-crust);
 }
+/* Surface button — filled with surface0. More "present" than an outline button
+   without the visual weight of primary. For secondary config page actions. */
+.btn-surface {
+  --bs-btn-bg:                  var(--ctp-surface0);
+  --bs-btn-border-color:        var(--ctp-surface1);
+  --bs-btn-color:               var(--ctp-text);
+  --bs-btn-hover-bg:            var(--ctp-surface1);
+  --bs-btn-hover-border-color:  var(--ctp-mauve);
+  --bs-btn-hover-color:         var(--ctp-text);
+  --bs-btn-active-bg:           var(--ctp-surface1);
+  --bs-btn-active-border-color: var(--ctp-mauve);
+  --bs-btn-disabled-bg:         var(--ctp-surface0);
+  --bs-btn-disabled-border-color: var(--ctp-surface1);
+  --bs-btn-disabled-color:      var(--ctp-subtext);
+}
+html[data-bs-theme="light"] .btn-surface {
+  --bs-btn-bg:           var(--ctp-surface0);
+  --bs-btn-border-color: var(--ctp-surface1);
+  --bs-btn-hover-bg:     var(--ctp-surface1);
+}
+/* Ghost danger — transparent background, red text, faint red tint on hover.
+   For destructive secondary actions that should sit quietly until interacted. */
+.btn-ghost-danger {
+  --bs-btn-color:              var(--ctp-red);
+  --bs-btn-bg:                 transparent;
+  --bs-btn-border-color:       transparent;
+  --bs-btn-hover-color:        var(--ctp-red);
+  --bs-btn-hover-bg:           color-mix(in srgb, var(--ctp-red) 10%, transparent);
+  --bs-btn-hover-border-color: transparent;
+  --bs-btn-active-bg:          color-mix(in srgb, var(--ctp-red) 15%, transparent);
+  --bs-btn-active-border-color: transparent;
+  --bs-btn-disabled-color:     var(--ctp-red);
+  --bs-btn-disabled-bg:        transparent;
+}
 .btn-success {
   --bs-btn-bg:                 var(--ctp-green);
   --bs-btn-border-color:       var(--ctp-green);
@@ -398,6 +432,44 @@ html[data-bs-theme="light"] details summary:hover {
   background-color: #8f5cd4; border-color: #8f5cd4;
 }
 details > :not(summary) { margin-top: 1rem; }
+
+/* Subtle variant: plain text disclosure link, no button chrome.
+   Apply .cgt-details-subtle to the <details> element to opt out of the
+   global mauve-border-button style used for add/filter forms. */
+details.cgt-details-subtle > summary {
+  padding: 0;
+  color: var(--ctp-subtext);
+  border: none;
+  background: none;
+  border-radius: 0;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+details.cgt-details-subtle > summary:hover {
+  color: var(--ctp-text);
+  background: none;
+  border-color: transparent;
+}
+html[data-bs-theme="light"] details.cgt-details-subtle > summary,
+html[data-bs-theme="light"] details.cgt-details-subtle > summary:hover {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--ctp-subtext);
+}
+html[data-bs-theme="light"] details.cgt-details-subtle > summary:hover {
+  color: var(--ctp-text);
+}
+
+/* Config-page section heading (h5-level). Bottom rule separates major sections
+   without relying on whitespace alone. */
+.cgt-config-section {
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--ctp-surface1);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ctp-text);
+}
 
 /* ─── Custom theme picker ────────────────────────────────────────────────── */
 .theme-picker { position: relative; display: inline-block; }

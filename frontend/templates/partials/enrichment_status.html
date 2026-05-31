@@ -12,7 +12,7 @@
      hx-swap="outerHTML">
   <div class="d-flex align-items-center gap-2 mb-1">
     <div class="progress flex-grow-1" style="height: 4px;">
-      <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ pct }}%"></div>
+      <div class="progress-bar" role="progressbar" style="width: {{ pct }}%; background-color: var(--ctp-mauve);"></div>
     </div>
     <small class="text-secondary text-nowrap">{{ "{:,}".format(done) }} / {{ "{:,}".format(total) }}</small>
   </div>
