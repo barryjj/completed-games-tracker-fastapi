@@ -259,7 +259,7 @@
    layout on #library-detail-content. Always visible even when the user
    scrolls deep into a long DLC list. #}
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
-  <div class="dropdown">
+  <div class="dropdown ms-auto">
     <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
     <ul class="dropdown-menu dropdown-menu-end">
@@ -275,7 +275,7 @@
              data-parent-release-id="{{ parent_release_id or '' }}"
              data-parent-label="{{ parent_edit_label | e }}"
              data-source="{{ release.source }}"
-             data-label="{{ game.display_title | e }}">Edit</a></li>
+             data-label="{{ game.display_title | e }}">Edit game</a></li>
       <li><hr class="dropdown-divider"></li>
       {% if release.source == "steam" %}
       <li><a class="dropdown-item" href="#"
