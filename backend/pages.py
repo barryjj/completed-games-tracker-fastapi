@@ -320,17 +320,23 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     }
 
 
-def _attach_parent_fallbacks(db: Session, entries) -> None:
+def _attach_parent_fallbacks(db: Session, entries, current_user=None) -> None:
     """For each entry whose game has a parent (DLC -> base game), look up the
     parent's Steam artwork and stamp `_fallback_v` / `_fallback_h` URLs onto
     the entry as transient attributes. Templates read these and emit them as
     `data-fallback` so cgtCoverFallback() can degrade to parent art when the
     DLC's own cover/header 404s.
 
-    One batched query for all parents in the page — avoids N+1 across long
-    lists. Entries without a parent get None on both attributes."""
+    Also stamps `_parent_label` and `_parent_release_id` for the edit modal:
+    the parent's display title + platform, and its release ID in the user's
+    library. Requires current_user to look up the library entry — omit (or
+    pass None) for callers where the user isn't available (completions pane).
+
+    One batched query per data type — avoids N+1 across long lists."""
     parent_ids = {e.release.game.parent_id for e in entries if e.release.game.parent_id}
     parent_art: dict[int, dict[str, str | None]] = {}
+    parent_meta: dict[int, dict] = {}  # game_id → {label, release_id}
+
     if parent_ids:
         rows = (
             db.query(models.GameRelease)
@@ -348,11 +354,34 @@ def _attach_parent_fallbacks(db: Session, entries) -> None:
                     d[art.artwork_type] = art.url
             parent_art[r.game_id] = d
 
+        if current_user is not None:
+            # One query: find the user's library entry for each parent game so
+            # the edit modal can pre-select the right release.
+            parent_entries = (
+                db.query(models.UserLibraryEntry)
+                .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+                .join(models.GameRelease)
+                .filter(
+                    models.UserLibraryEntry.user_id == current_user.id,
+                    models.GameRelease.game_id.in_(parent_ids),
+                )
+                .all()
+            )
+            for pe in parent_entries:
+                game = pe.release.game
+                parent_meta[game.id] = {
+                    "label": f"{game.display_title} ({pe.release.platform})",
+                    "release_id": pe.release.id,
+                }
+
     for e in entries:
         parent_id = e.release.game.parent_id
         p = parent_art.get(parent_id) if parent_id else None
         e._fallback_v = (p or {}).get("cover_v")
         e._fallback_h = (p or {}).get("cover_h")
+        meta = parent_meta.get(parent_id) if parent_id else None
+        e._parent_label = meta["label"] if meta else ""
+        e._parent_release_id = meta["release_id"] if meta else ""
 
 
 PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
@@ -722,7 +751,7 @@ def library_page(
     # whose own header/cover URL 404s degrades to the base game's art instead
     # of vanishing. Done as a single batched query (vs. per-row joinedload) to
     # avoid N+1 across long pages.
-    _attach_parent_fallbacks(db, entries)
+    _attach_parent_fallbacks(db, entries, current_user=current_user)
 
     # base_game_options and collections are only needed to populate the add-form
     # and edit-modal dropdowns, which live outside #library-content and are never
@@ -1027,6 +1056,7 @@ def search_library_games(
     q: str = Query(""),
     is_dlc: bool | None = Query(None),
     is_collection: bool | None = Query(None),
+    callback: str = Query("selectLibraryParent"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -1052,7 +1082,7 @@ def search_library_games(
     return templates.TemplateResponse(
         request=request,
         name="partials/library_game_results.html",
-        context={"entries": entries, "q": q},
+        context={"entries": entries, "q": q, "callback": callback},
     )
 
 
