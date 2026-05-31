@@ -276,7 +276,7 @@
             hx-post="/library/games"
             hx-target="#library-tbody"
             hx-swap="afterbegin"
-            hx-on::after-request="if(event.detail.successful){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
+            hx-on::after-request="if(event.detail.successful && event.detail.elt === this){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
@@ -321,19 +321,21 @@
           <div class="mb-3" id="add-parent-row" hidden>
             <div id="add-parent-dlc-col">
               <label class="form-label">Base game</label>
-              <input type="text" class="form-control form-control-sm mb-2" id="add-dlc-search" placeholder="Search for base game…" autocomplete="off"
+              <input type="text" class="form-control form-control-sm mb-2" id="add-dlc-search" name="q" placeholder="Search for base game…" autocomplete="off"
                      hx-get="/library/games/search?is_dlc=false"
                      hx-trigger="input changed delay:300ms"
                      hx-target="#add-dlc-results"
+                     hx-include="this"
                      hx-sync="this:abort">
               <div id="add-dlc-results"></div>
             </div>
             <div id="add-parent-collection-col" hidden>
               <label class="form-label">Collection</label>
-              <input type="text" class="form-control form-control-sm mb-2" id="add-collection-search" placeholder="Search for collection…" autocomplete="off"
+              <input type="text" class="form-control form-control-sm mb-2" id="add-collection-search" name="q" placeholder="Search for collection…" autocomplete="off"
                      hx-get="/library/games/search?is_collection=true"
                      hx-trigger="input changed delay:300ms"
                      hx-target="#add-collection-results"
+                     hx-include="this"
                      hx-sync="this:abort">
               <div id="add-collection-results"></div>
             </div>
