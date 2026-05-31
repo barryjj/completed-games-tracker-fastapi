@@ -866,6 +866,7 @@ def add_game(
     is_dlc: bool = Form(False),
     is_collection: bool = Form(False),
     parent_game_id: int | None = Form(None),
+    igdb_game_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -888,6 +889,7 @@ def add_game(
         is_dlc=is_dlc,
         is_collection=is_collection,
         parent_id=parent_id,
+        igdb_id=igdb_game_id,
         # Manual entries are inherently user-set on every field we collect.
         display_name_user_set=True,
         is_dlc_user_set=True,
@@ -909,6 +911,21 @@ def add_game(
     db.add(entry)
     db.commit()
     db.refresh(entry)
+
+    # Fetch IGDB cover art in the background if we have an igdb_game_id and credentials.
+    if igdb_game_id and current_user.twitch_client_id and current_user.twitch_client_secret:
+        try:
+            from . import igdb as _igdb
+
+            _igdb.save_igdb_cover(
+                db,
+                entry,
+                igdb_game_id,
+                current_user.twitch_client_id,
+                current_user.twitch_client_secret,
+            )
+        except Exception:
+            pass  # Cover art failure never blocks the add
 
     return templates.TemplateResponse(
         request=request,

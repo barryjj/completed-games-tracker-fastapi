@@ -278,6 +278,27 @@
             hx-swap="none"
 >
         <div class="modal-body">
+          {# IGDB search — only shown when credentials are configured. #}
+          {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+          <div class="mb-3" id="igdb-search-section">
+            <label class="form-label">Search IGDB <span class="text-secondary fw-normal">(optional — auto-fills title)</span></label>
+            <input type="text"
+                   class="form-control"
+                   id="igdb-search-input"
+                   placeholder="e.g. Resident Evil Village"
+                   autocomplete="off"
+                   hx-get="/integrations/igdb/search"
+                   hx-trigger="input changed delay:350ms"
+                   hx-target="#igdb-results"
+                   hx-include="[name='q']"
+                   name="q"
+                   hx-sync="this:abort"
+                   hx-on::after-request="event.stopPropagation()">
+            <div id="igdb-results" class="mt-2"></div>
+            <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
+          </div>
+          <hr class="my-2">
+          {% endif %}
           <div class="mb-3">
             <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
             <input type="text" class="form-control" name="title" id="add-title-input" placeholder="e.g. Resident Evil Village" required
@@ -625,6 +646,25 @@ function resetAddGameForm() {
   document.getElementById('add-display-same').checked = true;
   document.getElementById('add-display-name').disabled = true;
   document.getElementById('add-display-name').value = '';
+  // Clear IGDB state if the search section is present.
+  var igdbInput = document.getElementById('igdb-search-input');
+  if (igdbInput) igdbInput.value = '';
+  var igdbResults = document.getElementById('igdb-results');
+  if (igdbResults) igdbResults.innerHTML = '';
+  var igdbId = document.getElementById('add-igdb-game-id');
+  if (igdbId) igdbId.value = '';
+}
+
+// Called when the user picks an IGDB result. Fills the title field and
+// stores the IGDB game ID. The user can still edit the title afterward.
+function selectIgdbGame(igdbId, name, coverUrl) {
+  document.getElementById('add-igdb-game-id').value = igdbId;
+  document.getElementById('igdb-results').innerHTML = '';
+  document.getElementById('igdb-search-input').value = name;
+  // Auto-fill title + display name.
+  var titleInput = document.getElementById('add-title-input');
+  titleInput.value = name;
+  titleInput.dispatchEvent(new Event('input')); // triggers hintIsCollection + syncAddDisplayFromTitle
 }
 
 // When "Display name is the same as title" is checked on the Add modal,
