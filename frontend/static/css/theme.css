@@ -1027,6 +1027,15 @@ body:has(.cgt-sticky-actions) {
   line-height: 1;
 }
 
+/* ─── Uniform-width action buttons (integrations pages) ─────────────────── */
+/* All buttons in a justify-content-between row share this width so they
+   align to a common right edge regardless of label length. Sized to the
+   widest label ("Refresh Metadata") plus a little breathing room. */
+.cgt-action-btn {
+  min-width: 9.5rem;
+  text-align: center;
+}
+
 /* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */
 /* The drawer toggles (Filters / View buttons) flip `hidden` on a div that
    also has `.d-flex` or `.row`, both of which set `display: flex !important`
