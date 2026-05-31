@@ -256,44 +256,51 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## Near-term
 
-### Platforms table (deferred — wait for IGDB integration)
+### IGDB / Twitch integration
+- Agreed priority: IGDB → Platforms → PSN → Historical import
+- Twitch Client Credentials OAuth (Client ID + Secret stored per-user on the integrations page, same pattern as SGDB)
+- Access token fetched and cached (expires hourly); auto-refreshed on use
+- `igdb_id` nullable column on `Game`; populated when a manual add is matched to IGDB
+- Manual add flow: typeahead search against IGDB `/games` endpoint, user picks a result, title + `igdb_id` auto-filled
+- Cover art pulled from IGDB `/covers` → written to `GameArtwork` (source `"igdb"`)
+- Platform data from IGDB `/platforms` used to seed the platforms table (see below)
+- Enrichment path: background worker can fill `igdb_id` on existing manual entries by title-matching (optional, user-triggered)
+
+### Platforms table (after IGDB)
 - `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`, **`igdb_id`** (nullable int)
-- `igdb_id` is the load-bearing design decision: IGDB has a comprehensive, stable numeric platform taxonomy covering everything from modern consoles to Atari. Building our seed data from IGDB IDs means platform matching when IGDB integration lands is a FK lookup, not fuzzy string reconciliation
-- Defer seeding until IGDB integration is underway so we only solve the taxonomy once — the platform list is far more complex than it looks (Xbox naming, handheld generations, backward-compat edge cases) and IGDB has already solved it
+- Seeded from IGDB's `/platforms` endpoint so our IDs align with IGDB from day one — no reconciliation needed when IGDB integration lands
+- Platform taxonomy is complex (Xbox naming, handheld generations, backward-compat edge cases); IGDB has already solved it, so we don't invent our own
 - When this lands: `GameRelease.platform` free-text replaced by `platform_id` FK; `_platform_color_class` regex replaced by a table lookup; manual add modal gets a platform dropdown instead of free text
-- All current releases are Steam so the migration is a trivial one-row backfill
+- All current releases are Steam so the backfill migration is a trivial one-row update
 
-### User-configurable DLC auto-hide keywords
-- Same model as the platforms table: system-default keywords (the current `_AUTO_HIDE_RE` patterns) seeded into a `dlc_hide_keywords` table with `is_system=True`, plus user rows for custom additions
-- Configure page UI: list current active keywords, add/remove user entries
-- System defaults can't be deleted but could be individually disabled if a user has a legit reason (e.g. a game called "Starter Pack" they actually want to track)
-- Merge logic: effective regex is built from `system (not disabled) + user` rows at request time, cached per-user
-- Useful for publisher-specific patterns that are too niche for the default list (e.g. a specific franchise's naming convention for cosmetic drops)
-
-### Sort name field
-- `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create and edit unless the user has explicitly set it (`sort_name_user_set` flag, same pattern as display_name)
-- Sort query changes from `COALESCE(display_name, title)` to `sort_name` — always populated so the key space is consistent; no COALESCE fallback needed
-- User can override in the edit modal for cases where publisher naming is inconsistent across a franchise (e.g. "The Witcher: Enhanced Edition" → sort_name "Witcher 1" so it sorts before "Witcher 2" and "Witcher 3")
-- Migration backfills existing entries: `sort_name = COALESCE(display_name, title)` where sort_name is null
-- Inspired by Steam's old community sort-order tool (RIP) and standard media library practice (iTunes Sort Name etc.)
-
-### PSN integration
+### PSN integration (after platforms)
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
+- Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
+
+### Historical import (after PSN)
+- Import completions from CSV / Google Sheets: map columns to game title, platform, date completed
+- Requires platforms table + IGDB title-matching to resolve old games to proper `igdb_id` and `platform_id`
+- Target use case: 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration
+
+### Sort name field
+- `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
+- Lets users fix franchise sort order (e.g. "DmC: Devil May Cry" → sort as "Devil May Cry 0") without touching the display name
+- Low urgency — can land any time as a small standalone PR
+
+### User-configurable DLC auto-hide keywords
+- System-default patterns (current `_AUTO_HIDE_RE`) seeded into a `dlc_hide_keywords` table; users can add/disable entries
+- Low urgency; current heuristic covers the common cases well enough
 
 ---
 
 ## Medium-term
 
-### IGDB / Twitch
-- Twitch Client Credentials OAuth (`TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET` env vars)
-- IGDB search on manual game add: typeahead lookup, select result, auto-fill title, store `igdb_id`
-- Cover art via IGDB → `GameArtwork`
-
 ### Stats & dashboard / home page
 - Customizable widget-based home page
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
 - User can pick which widgets are shown and arrange them
+- Deferred until library has more non-Steam data (PSN, historical import) so the stats are actually interesting
 
 ### Historical import
 - Import completions from Google Sheets / CSV
