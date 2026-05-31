@@ -599,8 +599,12 @@ def steam_artwork_verification_status(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Artwork URL verification status for the current user's library entries."""
-    # Count GameArtwork rows scoped to releases the user owns.
+    """Artwork URL verification status for the current user's library entries.
+
+    Only counts native-source rows (steam, psn) — SGDB rows are excluded from
+    verification to avoid hitting their rate limit.
+    """
+    _NATIVE = ("steam", "psn")
     user_release_ids = (
         db.query(models.GameRelease.id)
         .join(models.UserLibraryEntry)
@@ -611,15 +615,24 @@ def steam_artwork_verification_status(
         db.query(models.GameArtwork)
         .filter(
             models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.source.in_(_NATIVE),
             models.GameArtwork.verified_at == None,
         )
         .count()
     )
-    total = db.query(models.GameArtwork).filter(models.GameArtwork.release_id.in_(user_release_ids)).count()
+    total = (
+        db.query(models.GameArtwork)
+        .filter(
+            models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.source.in_(_NATIVE),
+        )
+        .count()
+    )
     invalid = (
         db.query(models.GameArtwork)
         .filter(
             models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.source.in_(_NATIVE),
             models.GameArtwork.is_valid == False,
         )
         .count()
