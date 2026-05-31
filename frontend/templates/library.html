@@ -276,7 +276,7 @@
             hx-post="/library/games"
             hx-target="#library-tbody"
             hx-swap="afterbegin"
-            hx-on::after-request="if(event.detail.successful && event.detail.elt === this){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
+            hx-on::after-request="if(event.detail.successful){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
@@ -326,7 +326,8 @@
                      hx-trigger="input changed delay:300ms"
                      hx-target="#add-dlc-results"
                      hx-include="this"
-                     hx-sync="this:abort">
+                     hx-sync="this:abort"
+                     hx-on::after-request="event.stopPropagation()">
               <div id="add-dlc-results"></div>
             </div>
             <div id="add-parent-collection-col" hidden>
@@ -336,7 +337,8 @@
                      hx-trigger="input changed delay:300ms"
                      hx-target="#add-collection-results"
                      hx-include="this"
-                     hx-sync="this:abort">
+                     hx-sync="this:abort"
+                     hx-on::after-request="event.stopPropagation()">
               <div id="add-collection-results"></div>
             </div>
             <input type="hidden" name="parent_game_id" id="add-parent-game-id">
