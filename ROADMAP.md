@@ -273,7 +273,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - When this lands: `GameRelease.platform` free-text replaced by `platform_id` FK; `_platform_color_class` regex replaced by a table lookup; manual add modal gets a platform dropdown instead of free text
 - All current releases are Steam so the backfill migration is a trivial one-row update
 
-### PSN integration (after platforms)
+### Sync match review (after platforms)
+- When a Steam (or later PSN) sync finds a game that looks like an existing manual entry on the same platform, queue it for review rather than silently creating a duplicate
+- Dedicated review page: side-by-side per match — manual entry vs. detected game; user picks Merge / Keep Separate / Always Separate
+- Merge: the manual `UserLibraryEntry` survives (preserving logged completions), `release` row gets the platform's `external_id` + `raw_data` + artwork, `source` flips from `"manual"` to `"steam"` / `"psn"`; `display_name_user_set=True` protects the user's display name
+- Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
+- Building this before PSN means the PSN sync gets proper duplicate handling from day one
+
+### PSN integration (after sync match review)
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
@@ -281,7 +288,9 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 ### Historical import (after PSN)
 - Import completions from CSV / Google Sheets: map columns to game title, platform, date completed
 - Requires platforms table + IGDB title-matching to resolve old games to proper `igdb_id` and `platform_id`
+- PSN must exist first: imported PS3/Vita/PSP entries should check against the PSN library to link properly rather than creating phantom manual entries
 - Target use case: 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration
+- Runs through the same sync match review queue so imported entries that overlap with PSN/Steam synced data surface for approval
 
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
