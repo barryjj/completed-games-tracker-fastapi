@@ -267,7 +267,7 @@
           >Re-clean Names</button>
         </div>
         <div class="d-flex justify-content-between align-items-center gap-3">
-          <small class="text-secondary">Re-queue entries with broken horizontal cover art for metadata refresh. Steam's new CDN uses hashed URLs — this picks up any entries the verification worker has confirmed broken since the last run.</small>
+          <small class="text-secondary">Re-queue entries whose horizontal cover URL needs updating to Steam's new hashed CDN format. Catches both confirmed-broken entries and any still using the old constructed URL pattern.</small>
           <button
             class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn"
             hx-post="/integrations/steam/requeue-broken-cover-art"
