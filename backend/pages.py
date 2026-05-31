@@ -194,9 +194,6 @@ def _extract_steam_meta(appdetails: dict) -> dict:
     features = [c["description"] for c in (appdetails.get("categories") or []) if c.get("id") in _GAMEPLAY_CATEGORY_IDS]
     devs = appdetails.get("developers") or []
     pubs = appdetails.get("publishers") or []
-    # Suppress publisher when it's identical to developer — avoids "Hello Games
-    # / Hello Games" redundancy, which is common for self-published studios.
-    pubs_display = pubs if pubs != devs else []
 
     metacritic = appdetails.get("metacritic") or {}
     release_date = _normalize_steam_date((appdetails.get("release_date") or {}).get("date") or "")
@@ -204,7 +201,7 @@ def _extract_steam_meta(appdetails: dict) -> dict:
     return {
         "released": release_date,
         "developers": devs,
-        "publishers": pubs_display,
+        "publishers": pubs,
         "genres": genres,
         "features": features,
         "metacritic_score": metacritic.get("score"),
