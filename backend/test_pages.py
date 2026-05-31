@@ -509,7 +509,7 @@ def test_extract_steam_meta_happy_path():
             {"id": 28, "description": "Full controller support"},
         ],
         "developers": ["Hello Games"],
-        "publishers": ["Hello Games"],  # same as dev — should be suppressed
+        "publishers": ["Hello Games"],
         "release_date": {"coming_soon": False, "date": "Aug 12, 2016"},
         "metacritic": {"score": 71, "url": "https://www.metacritic.com/game/no-mans-sky/"},
         "website": "https://www.no-mans-sky.com",
@@ -519,7 +519,7 @@ def test_extract_steam_meta_happy_path():
     assert meta["genres"] == ["Action", "Adventure"]
     assert meta["features"] == ["Single-player", "Full controller support"]
     assert meta["developers"] == ["Hello Games"]
-    assert meta["publishers"] == []  # suppressed — same as developer
+    assert meta["publishers"] == ["Hello Games"]
     assert meta["released"] == "August 12, 2016"  # normalized to full month name
     assert meta["metacritic_score"] == 71
     assert meta["metacritic_url"] == "https://www.metacritic.com/game/no-mans-sky/"

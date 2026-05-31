@@ -75,6 +75,39 @@ document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {
   el.textContent = d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
 });
 
+// Placeholder title fit: shrink font until the title fits within the
+// placeholder box. Runs after page load and after library content swaps.
+// Binary-searches between 8px and the CSS default size in ~8 iterations.
+window.cgtFitPlaceholderTitles = function(root) {
+  (root || document).querySelectorAll('.cgt-library-card__placeholder-title').forEach(function(title) {
+    title.style.fontSize = '';
+    var ph = title.closest('.cgt-library-card__placeholder');
+    if (!ph || !ph.clientHeight) return;
+    var cs = getComputedStyle(ph);
+    var available = ph.clientHeight
+      - parseFloat(cs.paddingTop)
+      - parseFloat(cs.paddingBottom);
+    // Subtract the platform line height if present
+    var platform = ph.querySelector('.cgt-library-card__placeholder-platform');
+    if (platform) available -= platform.offsetHeight + 4;
+    if (title.scrollHeight <= available) return;
+    var hi = parseFloat(getComputedStyle(title).fontSize);
+    var lo = 8;
+    for (var i = 0; i < 8; i++) {
+      var mid = (hi + lo) / 2;
+      title.style.fontSize = mid + 'px';
+      if (title.scrollHeight > available) hi = mid; else lo = mid;
+    }
+    title.style.fontSize = lo + 'px';
+  });
+};
+document.addEventListener('DOMContentLoaded', function() { window.cgtFitPlaceholderTitles(); });
+document.addEventListener('htmx:afterSettle', function(e) {
+  if (e.target.id === 'library-content' || e.target.closest('#library-content')) {
+    window.cgtFitPlaceholderTitles(e.target.closest('#library-content') || e.target);
+  }
+});
+
 // Toast initialisation.
 //
 // Background: the server emits toasts via HTMX out-of-band swap into

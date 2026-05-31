@@ -7,6 +7,7 @@ import re
 import time
 
 import httpx
+from sqlalchemy import Integer, cast
 from sqlalchemy.orm import Session, joinedload
 
 from . import models
@@ -939,6 +940,48 @@ def _pending_count(db: Session) -> int:
         )
         .count()
     )
+
+
+# How old metadata must be before the idle worker re-queues it.
+_METADATA_STALE_DAYS = 30
+# How many entries to re-queue per idle cycle. At _ENRICH_SLEEP_OK per entry
+# this is ~100s of work — well within Steam's rate limits.
+_METADATA_REQUEUE_BATCH = 50
+
+
+def requeue_stale_metadata(db: Session) -> int:
+    """
+    Re-queue Steam entries whose metadata is older than _METADATA_STALE_DAYS.
+
+    Called by the enrichment worker when the NULL queue is fully drained (idle).
+    Orders by appid DESC so recently released games — most likely to have
+    changing URLs, titles, or CDN paths — cycle through first. Older catalog
+    entries drift to the back naturally and still get refreshed, just later.
+
+    Returns the number of entries re-queued (0 means nothing stale yet).
+    """
+    cutoff = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=_METADATA_STALE_DAYS)
+    releases = (
+        db.query(models.GameRelease)
+        .filter(
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at != None,
+            models.GameRelease.metadata_fetched_at < cutoff,
+        )
+        .order_by(cast(models.GameRelease.external_id, Integer).desc())
+        .limit(_METADATA_REQUEUE_BATCH)
+        .all()
+    )
+    for release in releases:
+        release.metadata_fetched_at = None
+    if releases:
+        db.commit()
+        logger.debug(
+            "Enrichment idle: re-queued %d stale entries (oldest cutoff %s)",
+            len(releases),
+            cutoff.strftime("%Y-%m-%d"),
+        )
+    return len(releases)
 
 
 # ---------------------------------------------------------------------------

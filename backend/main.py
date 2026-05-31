@@ -42,7 +42,14 @@ async def _enrichment_worker():
 
                 pending = await asyncio.to_thread(steam.enrich_next_batch, db)
                 if pending == 0:
-                    await asyncio.sleep(300)  # fully caught up, check again in 5 min
+                    # NULL queue drained — re-queue a batch of stale entries
+                    # (metadata older than _METADATA_STALE_DAYS) so the worker
+                    # keeps cycling through the library on a rolling basis.
+                    requeued = await asyncio.to_thread(steam.requeue_stale_metadata, db)
+                    if requeued == 0:
+                        await asyncio.sleep(300)  # nothing stale yet, check again in 5 min
+                    # if entries were re-queued, loop immediately so the next
+                    # enrich_next_batch call picks them up without delay
                 else:
                     _worker_logger.debug("Enrichment: %d entries remaining", pending)
                     await asyncio.sleep(2)

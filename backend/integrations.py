@@ -758,23 +758,41 @@ def requeue_broken_cover_art(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Re-queue enrichment for any Steam release in the user's library that has
-    a confirmed-invalid cover_h row. The enrichment worker will re-fetch
-    appdetails and pull the real CDN URL from header_image.
+    """Re-queue enrichment for Steam releases whose cover_h URL needs to be
+    updated to Steam's new hashed CDN format.
 
-    Safe to run repeatedly — the verification worker discovers newly-invalid
-    URLs over time, so running this again after a verification pass picks up
-    any additional broken entries."""
-    # Find all releases that (a) belong to this user's library, (b) have a
-    # cover_h GameArtwork row that is confirmed invalid, and (c) have already
-    # been enriched (metadata_fetched_at IS NOT NULL) — so resetting it actually
-    # triggers a re-fetch rather than being a no-op.
-    subq = (
+    Two cases are caught:
+      1. Confirmed-invalid: is_valid=False — the verification worker confirmed
+         the constructed URL 404s.
+      2. Old constructed URL, not yet verified: is_valid=True, verified_at=NULL,
+         URL matches the legacy cdn.akamai.steamstatic.com pattern. These were
+         enriched before _sync_header_artwork_from_appdetails existed so never
+         got the real hashed URL from appdetails. For old games the URL will
+         match and nothing changes; for new-CDN games (like PRAGMATA) it gets
+         corrected.
+
+    Safe to run repeatedly."""
+    from sqlalchemy import or_
+
+    # Case 1: confirmed invalid
+    invalid_subq = (
         db.query(models.GameArtwork.release_id)
         .filter(
             models.GameArtwork.artwork_type == "cover_h",
             models.GameArtwork.source == "steam",
             models.GameArtwork.is_valid.is_(False),
+        )
+        .subquery()
+    )
+    # Case 2: old constructed URL, not yet verified by the worker
+    old_cdn_subq = (
+        db.query(models.GameArtwork.release_id)
+        .filter(
+            models.GameArtwork.artwork_type == "cover_h",
+            models.GameArtwork.source == "steam",
+            models.GameArtwork.is_valid.is_(True),
+            models.GameArtwork.verified_at.is_(None),
+            models.GameArtwork.url.like("%cdn.akamai.steamstatic.com/steam/apps/%"),
         )
         .subquery()
     )
@@ -785,7 +803,10 @@ def requeue_broken_cover_art(
             models.UserLibraryEntry.user_id == current_user.id,
             models.GameRelease.source == "steam",
             models.GameRelease.metadata_fetched_at.isnot(None),
-            models.GameRelease.id.in_(subq),
+            or_(
+                models.GameRelease.id.in_(invalid_subq),
+                models.GameRelease.id.in_(old_cdn_subq),
+            ),
         )
         .all()
     )
