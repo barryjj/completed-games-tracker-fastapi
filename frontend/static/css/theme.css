@@ -698,6 +698,7 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   padding: 0.75rem;
   text-align: center;
   background: linear-gradient(135deg, var(--ctp-surface0), var(--ctp-mantle));
+  overflow: hidden; /* enforce aspect-ratio as hard ceiling; long titles clip instead of growing the row */
 }
 .cgt-library-card__placeholder-title {
   font-size: 0.875rem;
