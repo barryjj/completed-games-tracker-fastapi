@@ -682,7 +682,10 @@ function resetAddGameForm() {
 
 // Called when the user picks an IGDB result. Fills the title, platform,
 // and stores the IGDB game ID. The user can still edit any field afterward.
-function selectIgdbGame(igdbId, name, coverUrl, platforms) {
+function selectIgdbGame(ds) {
+  var igdbId   = ds.igdbId;
+  var name     = ds.name;
+  var platforms = JSON.parse(ds.platforms || '[]');
   document.getElementById('add-igdb-game-id').value = igdbId;
   document.getElementById('igdb-results').innerHTML = '';
   document.getElementById('igdb-search-input').value = name;

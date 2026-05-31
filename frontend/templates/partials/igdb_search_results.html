@@ -10,7 +10,11 @@
   <button
     type="button"
     class="list-group-item list-group-item-action text-start d-flex align-items-center gap-3 py-2"
-    onclick="selectIgdbGame({{ game.id }}, {{ game.name | tojson }}, {{ (game.cover_url or '') | tojson }}, {{ game.platforms | tojson }})"
+    onclick="selectIgdbGame(this.dataset)"
+    data-igdb-id="{{ game.id }}"
+    data-name="{{ game.name | e }}"
+    data-cover-url="{{ (game.cover_url or '') | e }}"
+    data-platforms="{{ game.platforms | tojson | e }}"
   >
     {% if game.cover_url %}
     <img src="{{ game.cover_url }}" alt="" width="32" height="42"
