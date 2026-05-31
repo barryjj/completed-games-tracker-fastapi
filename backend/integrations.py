@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
+from . import igdb as _igdb
 from . import jobs, models, steam, worker_state
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
@@ -1014,4 +1015,102 @@ async def steamgriddb_fill_missing(
         request=request,
         name="partials/sgdb_fill_status.html",
         context={"job": job},
+    )
+
+
+# ---------------------------------------------------------------------------
+# IGDB / Twitch
+# ---------------------------------------------------------------------------
+
+
+@router.get("/igdb")
+def igdb_page(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="integrations_igdb.html",
+        context={"current_user": current_user},
+    )
+
+
+@router.post("/igdb/credentials")
+def save_igdb_credentials(
+    request: Request,
+    twitch_client_id: str = Form(""),
+    twitch_client_secret: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    current_user.twitch_client_id = twitch_client_id.strip() or None
+    current_user.twitch_client_secret = twitch_client_secret.strip() or None
+    db.commit()
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "IGDB credentials saved."},
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@router.post("/igdb/test")
+def test_igdb_credentials(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    if not current_user.twitch_client_id or not current_user.twitch_client_secret:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Set your Client ID and Secret first."},
+            status_code=422,
+        )
+    ok, message = _igdb.test_credentials(
+        current_user.twitch_client_id,
+        current_user.twitch_client_secret,
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": message} if ok else {"error": message},
+        status_code=200 if ok else 502,
+    )
+
+
+@router.get("/igdb/search")
+def igdb_search(
+    request: Request,
+    q: str = "",
+    current_user: models.User = Depends(get_web_user),
+):
+    """Typeahead game search against IGDB. Returns a results partial."""
+    if not current_user.twitch_client_id or not current_user.twitch_client_secret:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/igdb_search_results.html",
+            context={"results": [], "error": "IGDB not configured."},
+        )
+    q = q.strip()
+    if not q:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/igdb_search_results.html",
+            context={"results": []},
+        )
+    try:
+        results = _igdb.search_games(
+            current_user.twitch_client_id,
+            current_user.twitch_client_secret,
+            q,
+            limit=8,
+        )
+    except Exception as e:
+        _logger.warning("IGDB search error: %s", e)
+        results = []
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/igdb_search_results.html",
+        context={"results": results},
     )

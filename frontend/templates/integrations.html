@@ -103,9 +103,16 @@
   <div class="col-md-5">
     <div class="card h-100">
       <div class="card-body">
-        <h5 class="card-title mb-1">IGDB / Twitch</h5>
-        <p class="text-secondary mb-0"><small><em>Coming soon</em></small></p>
-        <p class="card-text text-secondary mt-2 mb-0">Game metadata, cover art, and search for manual additions.</p>
+        <div class="d-flex align-items-center gap-2 mb-2">
+          <h5 class="card-title mb-0">IGDB / Twitch</h5>
+          {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+          <span class="badge bg-success">Connected</span>
+          {% else %}
+          <span class="badge bg-secondary">Not connected</span>
+          {% endif %}
+        </div>
+        <p class="card-text text-secondary mb-3">Game metadata, cover art, and typeahead search when adding games manually.</p>
+        <a href="/integrations/igdb" class="btn btn-primary btn-sm">Configure</a>
       </div>
     </div>
   </div>

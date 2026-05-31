@@ -1,0 +1,35 @@
+{# IGDB game search results for the manual add modal.
+   Each result is a button that calls selectIgdbGame() with the game data.
+   `error` is set when IGDB is unavailable or not configured. #}
+
+{% if error %}
+<div class="text-secondary"><small>{{ error }}</small></div>
+{% elif results %}
+<div class="list-group">
+  {% for game in results %}
+  <button
+    type="button"
+    class="list-group-item list-group-item-action text-start d-flex align-items-center gap-3 py-2"
+    onclick="selectIgdbGame({{ game.id }}, {{ game.name | tojson }}, {{ (game.cover_url or '') | tojson }})"
+  >
+    {% if game.cover_url %}
+    <img src="{{ game.cover_url }}" alt="" width="32" height="42"
+         style="object-fit: cover; border-radius: 2px; flex-shrink: 0;"
+         onerror="this.remove()">
+    {% else %}
+    <div style="width:32px; height:42px; flex-shrink:0; background:var(--ctp-surface1); border-radius:2px;"></div>
+    {% endif %}
+    <div class="min-w-0">
+      <div class="text-truncate">{{ game.name }}</div>
+      <small class="text-secondary">
+        {% if game.year %}{{ game.year }}{% endif %}
+        {% if game.year and game.platforms %} &middot; {% endif %}
+        {% if game.platforms %}{{ game.platforms[:3] | join(", ") }}{% if game.platforms | length > 3 %}&hellip;{% endif %}{% endif %}
+      </small>
+    </div>
+  </button>
+  {% endfor %}
+</div>
+{% elif results is defined %}
+<div class="text-secondary"><small>No matches found</small></div>
+{% endif %}

@@ -34,6 +34,10 @@ class User(Base):
     # SteamGridDB API key — used to look up community cover art for manual
     # entries, PSN entries, or any DLC/game whose Steam art is missing/ugly.
     steamgriddb_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Twitch / IGDB credentials (client credentials flow — no user OAuth).
+    # Used for IGDB game search, cover art, and platform data.
+    twitch_client_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    twitch_client_secret: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 
