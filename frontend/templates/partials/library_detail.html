@@ -259,22 +259,24 @@
    layout on #library-detail-content. Always visible even when the user
    scrolls deep into a long DLC list. #}
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
-  <button class="btn btn-outline-secondary btn-sm"
-          onclick="closeDetailAndEdit(this.dataset)"
-          data-entry-id="{{ entry.id }}"
-          data-title="{{ game.title | e }}"
-          data-display-name="{{ (game.display_name or '') | e }}"
-          data-is-dlc="{{ 'true' if game.is_dlc else 'false' }}"
-          data-is-collection="{{ 'true' if game.is_collection else 'false' }}"
-          data-is-part-of-collection="{{ 'true' if (game.parent_id and not game.is_dlc) else 'false' }}"
-          data-parent-id="{{ game.parent_id or '' }}"
-          data-source="{{ release.source }}"
-          data-label="{{ game.display_title | e }}">Edit</button>
-
-  <div class="dropdown ms-auto">
+  <div class="dropdown">
     <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
     <ul class="dropdown-menu dropdown-menu-end">
+      <li><a class="dropdown-item" href="#"
+             onclick="closeDetailAndEdit(this.dataset); return false;"
+             data-entry-id="{{ entry.id }}"
+             data-title="{{ game.title | e }}"
+             data-display-name="{{ (game.display_name or '') | e }}"
+             data-is-dlc="{{ 'true' if game.is_dlc else 'false' }}"
+             data-is-collection="{{ 'true' if game.is_collection else 'false' }}"
+             data-is-part-of-collection="{{ 'true' if (game.parent_id and not game.is_dlc) else 'false' }}"
+             data-parent-id="{{ game.parent_id or '' }}"
+             data-parent-release-id="{{ parent_release_id or '' }}"
+             data-parent-label="{{ parent_edit_label | e }}"
+             data-source="{{ release.source }}"
+             data-label="{{ game.display_title | e }}">Edit</a></li>
+      <li><hr class="dropdown-divider"></li>
       {% if release.source == "steam" %}
       <li><a class="dropdown-item" href="#"
              hx-post="/library/entries/{{ entry.id }}/refresh-metadata"

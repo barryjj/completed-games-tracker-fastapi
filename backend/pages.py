@@ -305,6 +305,11 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
             parent_label = "Collection"
             parent_label_class = "tag-in-collection"
 
+    # parent_release_id + parent_edit_label are used by the Edit button in the
+    # detail pane to pre-fill the edit modal's parent search input.
+    parent_release_id = parent_release.id if parent_release else None
+    parent_edit_label = f"{parent_game.display_title} ({parent_release.platform})" if parent_game and parent_release else ""
+
     return {
         "header_url": header_url,
         "fallback_header_url": fallback_header_url,
@@ -317,6 +322,8 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
         "parent_appid": parent_appid,
         "parent_label": parent_label,
         "parent_label_class": parent_label_class,
+        "parent_release_id": parent_release_id,
+        "parent_edit_label": parent_edit_label,
     }
 
 
