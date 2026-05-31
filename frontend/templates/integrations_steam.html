@@ -191,7 +191,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Re-fetch DLC only, using already-synced games as the baseline.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/sync-dlc-only"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -202,7 +202,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Re-fetch games only via GetOwnedGames, skipping DLC. Diagnostic.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/sync"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -214,7 +214,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Force a fresh fetch of the full Steam app catalog (~200k names, cached 7 days otherwise).</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/refresh-app-catalog"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -225,7 +225,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Re-queue all Steam entries for metadata refresh. Existing data stays visible while the worker updates each one.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/enrichment-refresh"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -236,7 +236,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Run the auto-hide heuristic — hides soundtracks, artbooks, cosmetic packs, passes, bonus content, betas, and video/episode/demo app types. Skips manually hidden/unhidden entries.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/library/backfill-hidden"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -247,7 +247,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Re-run collection detection using current keyword rules. Flags new collections and clears false positives. Skips manually marked entries.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/backfill-collection-flags"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -258,7 +258,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Re-apply the display-name cleanup heuristic and fix any "App NNNNNN" placeholder titles from cached Steam metadata. Skips manually edited names.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/backfill-display-names"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
@@ -270,7 +270,7 @@
         <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Sanity-check your saved cookies by hitting Steam's owned-app endpoint.</small>
           <button
-            class="btn btn-surface btn-sm flex-shrink-0"
+            class="btn btn-primary btn-sm flex-shrink-0"
             hx-post="/integrations/steam/test-cookies"
             hx-target="#steam-flash"
             hx-swap="innerHTML"

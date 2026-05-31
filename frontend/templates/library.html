@@ -146,7 +146,11 @@
 {% endif %}
 
 {% if not entries %}
+{% if q or platform or (view and view != 'default') or missing_art or show_hidden %}
+<p id="library-empty" class="text-secondary"><em>No entries match your current filters.</em></p>
+{% else %}
 <p id="library-empty" class="text-secondary"><em>No games in your library yet. Add one above.</em></p>
+{% endif %}
 {% endif %}
 
 {% if total_pages > 1 %}
