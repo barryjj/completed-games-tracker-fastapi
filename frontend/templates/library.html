@@ -276,7 +276,7 @@
             hx-post="/library/games"
             hx-target="#library-tbody"
             hx-swap="afterbegin"
-            hx-on::after-request="if(event.detail.successful){ document.getElementById('add-game-form').reset(); resetAddGameForm(); var e=document.getElementById('library-empty'); if(e) e.remove(); _addGameModal.hide(); }">
+>
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">Title <span class="text-secondary fw-normal">(canonical / for lookups)</span></label>
@@ -532,6 +532,20 @@ var _editEntryId = null;
 var _editModal = null;
 var _addGameModal = null;
 var _libraryDetailOffcanvas = null;
+
+// Close the add-game modal only when the form's OWN POST succeeds.
+// hx-on::after-request on the form fires for all htmx:afterRequest events
+// that bubble up from child elements (e.g. the collection/DLC search inputs),
+// so we use a JS listener instead and gate on event.target === the form element.
+document.getElementById('add-game-form').addEventListener('htmx:afterRequest', function(event) {
+  if (event.detail.successful && event.target === this) {
+    this.reset();
+    resetAddGameForm();
+    var e = document.getElementById('library-empty');
+    if (e) e.remove();
+    if (_addGameModal) _addGameModal.hide();
+  }
+});
 
 // Delegated click handler on the tbody: clicking anywhere on a row opens its
 // detail pane, EXCEPT clicks inside .row-actions (Edit / Hide / Remove buttons),
