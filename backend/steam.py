@@ -954,9 +954,16 @@ def verify_artwork_batch(db: Session, batch_size: int = 50) -> int:
 
     Returns the count of rows still pending verification (verified_at IS NULL).
     """
+    # Only verify native platform sources (Steam CDN, PSN, etc.).
+    # SGDB art lives in UserArtwork now; old GameArtwork rows with source="sgdb"
+    # would hammer SGDB's rate limit for no benefit — skip them.
+    _NATIVE_SOURCES = ("steam", "psn")
     rows = (
         db.query(models.GameArtwork)
-        .filter(models.GameArtwork.verified_at == None)
+        .filter(
+            models.GameArtwork.verified_at == None,
+            models.GameArtwork.source.in_(_NATIVE_SOURCES),
+        )
         .order_by(models.GameArtwork.id.asc())
         .limit(batch_size)
         .all()
@@ -1000,7 +1007,14 @@ def verify_artwork_batch(db: Session, batch_size: int = 50) -> int:
 
 
 def _artwork_pending_count(db: Session) -> int:
-    return db.query(models.GameArtwork).filter(models.GameArtwork.verified_at == None).count()
+    return (
+        db.query(models.GameArtwork)
+        .filter(
+            models.GameArtwork.verified_at == None,
+            models.GameArtwork.source.in_(("steam", "psn")),
+        )
+        .count()
+    )
 
 
 def sync_dlc_flags(db: Session, user: models.User) -> dict:
