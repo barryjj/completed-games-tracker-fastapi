@@ -280,14 +280,18 @@
         <div class="modal-body">
           {# IGDB search — only shown when credentials are configured. #}
           {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
-          <div class="mb-3" id="igdb-search-section">
+          <div class="mb-3" id="igdb-search-section" style="position:relative;">
             <label class="form-label">Search IGDB <span class="text-secondary fw-normal">(optional — auto-fills title)</span></label>
             <input type="text"
                    class="form-control"
                    id="igdb-search-input"
                    placeholder="e.g. Resident Evil Village"
                    autocomplete="off">
-            <div id="igdb-results" class="mt-2"></div>
+            {# Results are absolutely positioned so they overlay the form below
+               instead of pushing it down. z-index stays below Bootstrap modal (1055)
+               but above everything inside it. #}
+            <div id="igdb-results"
+                 style="position:absolute;left:0;right:0;z-index:50;max-height:300px;overflow-y:auto;border-radius:0.375rem;box-shadow:0 4px 16px rgba(0,0,0,.35);"></div>
             <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
           </div>
           <hr class="my-2">
@@ -677,6 +681,14 @@ function resetAddGameForm() {
         swap: 'innerHTML',
       });
     }, 350);
+  });
+
+  // Event delegation for result clicks — attach to document so the scroll
+  // container on #igdb-results can't swallow the event before it reaches us.
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('#igdb-results .igdb-result-btn');
+    if (!btn) return;
+    selectIgdbGame(btn.dataset);
   });
 })();
 

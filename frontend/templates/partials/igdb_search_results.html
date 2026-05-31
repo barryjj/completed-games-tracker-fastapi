@@ -9,8 +9,7 @@
   {% for game in results %}
   <button
     type="button"
-    class="list-group-item list-group-item-action text-start d-flex align-items-center gap-3 py-2"
-    onclick="selectIgdbGame(this.dataset)"
+    class="list-group-item list-group-item-action text-start d-flex align-items-center gap-3 py-2 igdb-result-btn"
     data-igdb-id="{{ game.id }}"
     data-name="{{ game.name | e }}"
     data-cover-url="{{ (game.cover_url or '') | e }}"
