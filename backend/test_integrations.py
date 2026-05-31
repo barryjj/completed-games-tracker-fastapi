@@ -609,7 +609,7 @@ def test_infer_is_collection_regex():
     assert _infer_is_collection("Game Complete Pack") is True
 
     # Should NOT match — false positives removed from keyword list
-    assert _infer_is_collection("Castlevania Anthology") is False      # "anthology" removed — series name, not a set
+    assert _infer_is_collection("Castlevania Anthology") is False  # "anthology" removed — series name, not a set
     assert _infer_is_collection("Mass Effect Complete Edition") is False  # "complete edition" removed — bundling, not a set
     assert _infer_is_collection("Dark Pictures Anthology: House of Ashes") is False
     assert _infer_is_collection("Dirt 3 Complete Edition") is False
@@ -688,6 +688,10 @@ def test_should_auto_hide_only_fires_for_dlc():
     assert _should_auto_hide("Some Game - Open Beta", {"type": "game"}, is_dlc=False) is True
     # No word boundary → should NOT match
     assert _should_auto_hide("Roberta Williams Collection", None, is_dlc=False) is False
+
+    # --- Tier 1: "public test" in title ---
+    assert _should_auto_hide("For Honor - Public Test", None, is_dlc=False) is True
+    assert _should_auto_hide("Some MMO Public Test Server", {"type": "game"}, is_dlc=False) is True
 
     # --- Tier 1: demo type + "demo" in title ---
     assert _should_auto_hide("DOOM Eternal Demo", {"type": "demo"}, is_dlc=False) is True

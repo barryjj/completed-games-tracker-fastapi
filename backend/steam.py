@@ -162,10 +162,12 @@ _AUTO_HIDE_DLC_RE = re.compile(
 
 # Title patterns that auto-hide regardless of is_dlc.
 # - beta: real games don't ship with "beta" in the title.
+# - public test: same idea as beta; "Public Test" is Steam's label for
+#   opt-in beta branches surfaced as separate library entries.
 # - friend's pass: Steam reports these as type=game, but they are co-op
 #   access tokens, not completable games. Must be Tier 1 (gate-free) because
 #   the DLC-only tier never fires when is_dlc=False.
-_AUTO_HIDE_TITLE_RE = re.compile(r"\bbeta\b|\bfriend'?s\s+pass\b", re.IGNORECASE)
+_AUTO_HIDE_TITLE_RE = re.compile(r"\bbeta\b|\bpublic\s+test\b|\bfriend'?s\s+pass\b", re.IGNORECASE)
 
 # Steam app types that are gate-free auto-hidden (no is_dlc check needed).
 # If Steam tags something as one of these types there is no completable game
