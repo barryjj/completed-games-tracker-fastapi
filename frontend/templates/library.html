@@ -286,14 +286,7 @@
                    class="form-control"
                    id="igdb-search-input"
                    placeholder="e.g. Resident Evil Village"
-                   autocomplete="off"
-                   hx-get="/integrations/igdb/search"
-                   hx-trigger="input changed delay:350ms"
-                   hx-target="#igdb-results"
-                   hx-include="[name='q']"
-                   name="q"
-                   hx-sync="this:abort"
-                   hx-on::after-request="event.stopPropagation()">
+                   autocomplete="off">
             <div id="igdb-results" class="mt-2"></div>
             <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
           </div>
@@ -318,7 +311,7 @@
           <div class="mb-3">
             <label class="form-label">Platform</label>
             <input type="text" class="form-control" name="platform" id="add-platform"
-                   list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required autocomplete="off">
+                   list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required>
             <datalist id="platform-suggestions">
               {% for p in platforms %}
               <option value="{{ p | e }}">
@@ -554,6 +547,12 @@ var COLLECTION_KEYWORDS = ["anthology","trilogy","compilation","complete edition
 var _editEntryId = null;
 var _editModal = null;
 var _addGameModal = null;
+// Cache the server-rendered platform suggestions so resetAddGameForm can
+// restore them after selectIgdbGame replaces them with game-specific options.
+var _platformSuggestionsDefault = (function() {
+  var dl = document.getElementById('platform-suggestions');
+  return dl ? dl.innerHTML : '';
+})();
 var _libraryDetailOffcanvas = null;
 
 // Close the add-game modal only when the form's OWN POST succeeds.
@@ -655,11 +654,38 @@ function resetAddGameForm() {
   if (igdbResults) igdbResults.innerHTML = '';
   var igdbId = document.getElementById('add-igdb-game-id');
   if (igdbId) igdbId.value = '';
+  // Restore the default platform datalist (library platforms, not IGDB game platforms).
+  var dl = document.getElementById('platform-suggestions');
+  if (dl) dl.innerHTML = _platformSuggestionsDefault;
 }
 
-// Called when the user picks an IGDB result. Fills the title field and
-// stores the IGDB game ID. The user can still edit the title afterward.
-function selectIgdbGame(igdbId, name, coverUrl) {
+// IGDB typeahead — driven by plain JS rather than HTMX to avoid form
+// interaction quirks (the input lives inside add-game-form which has its
+// own hx-post, which can confuse HTMX's trigger/include logic).
+(function() {
+  var input = document.getElementById('igdb-search-input');
+  if (!input) return; // not present when IGDB not configured
+  var timer = null;
+  input.addEventListener('input', function() {
+    var q = this.value.trim();
+    clearTimeout(timer);
+    document.getElementById('igdb-results').innerHTML = '';
+    if (!q) return;
+    timer = setTimeout(function() {
+      htmx.ajax('GET', '/integrations/igdb/search?q=' + encodeURIComponent(q), {
+        target: '#igdb-results',
+        swap: 'innerHTML',
+      });
+    }, 350);
+  });
+})();
+
+// Called when the user picks an IGDB result. Fills the title, platform,
+// and stores the IGDB game ID. The user can still edit any field afterward.
+function selectIgdbGame(ds) {
+  var igdbId   = ds.igdbId;
+  var name     = ds.name;
+  var platforms = JSON.parse(ds.platforms || '[]');
   document.getElementById('add-igdb-game-id').value = igdbId;
   document.getElementById('igdb-results').innerHTML = '';
   document.getElementById('igdb-search-input').value = name;
@@ -667,6 +693,22 @@ function selectIgdbGame(igdbId, name, coverUrl) {
   var titleInput = document.getElementById('add-title-input');
   titleInput.value = name;
   titleInput.dispatchEvent(new Event('input')); // triggers hintIsCollection + syncAddDisplayFromTitle
+
+  // Update platform datalist with this game's platforms from IGDB.
+  // Replace the datalist options so the user sees only relevant platforms.
+  // If there's exactly one, auto-fill; otherwise leave it for the user to pick.
+  var datalist = document.getElementById('platform-suggestions');
+  if (datalist && platforms && platforms.length > 0) {
+    datalist.innerHTML = platforms.map(function(p) {
+      return '<option value="' + p.replace(/"/g, '&quot;') + '">';
+    }).join('');
+    if (platforms.length === 1) {
+      document.getElementById('add-platform').value = platforms[0];
+    } else {
+      document.getElementById('add-platform').value = '';
+      document.getElementById('add-platform').focus();
+    }
+  }
 }
 
 // When "Display name is the same as title" is checked on the Add modal,
