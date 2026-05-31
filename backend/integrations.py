@@ -752,6 +752,55 @@ def backfill_steam_display_names(
     )
 
 
+@router.post("/steam/requeue-broken-cover-art")
+def requeue_broken_cover_art(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Re-queue enrichment for any Steam release in the user's library that has
+    a confirmed-invalid cover_h row. The enrichment worker will re-fetch
+    appdetails and pull the real CDN URL from header_image.
+
+    Safe to run repeatedly — the verification worker discovers newly-invalid
+    URLs over time, so running this again after a verification pass picks up
+    any additional broken entries."""
+    # Find all releases that (a) belong to this user's library, (b) have a
+    # cover_h GameArtwork row that is confirmed invalid, and (c) have already
+    # been enriched (metadata_fetched_at IS NOT NULL) — so resetting it actually
+    # triggers a re-fetch rather than being a no-op.
+    subq = (
+        db.query(models.GameArtwork.release_id)
+        .filter(
+            models.GameArtwork.artwork_type == "cover_h",
+            models.GameArtwork.source == "steam",
+            models.GameArtwork.is_valid.is_(False),
+        )
+        .subquery()
+    )
+    releases = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at.isnot(None),
+            models.GameRelease.id.in_(subq),
+        )
+        .all()
+    )
+    for release in releases:
+        release.metadata_fetched_at = None
+    db.commit()
+    n = len(releases)
+    msg = f"Re-queued {n} entr{'y' if n == 1 else 'ies'} for cover art refresh." if n else "No broken cover art found."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": msg},
+    )
+
+
 # ─── SteamGridDB ──────────────────────────────────────────────────────────
 
 

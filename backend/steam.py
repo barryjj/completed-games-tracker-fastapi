@@ -711,6 +711,10 @@ def _sync_header_artwork_from_appdetails(db: Session, release: "models.GameRelea
             if art.url != header_url:
                 art.url = header_url
                 art.source = "steam"
+                # Reset validation state — the URL changed, so any prior
+                # is_valid=False from the verification pass is stale.
+                art.is_valid = True
+                art.verified_at = None
             return
     # No cover_h row yet — create one
     db.add(
