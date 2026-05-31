@@ -225,26 +225,27 @@
           </div>
           <div class="mb-3" id="edit-dlc-parent-row" hidden>
             <label class="form-label">Base game</label>
-            <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
-                   oninput="filterSelect(this, 'edit-dlc-parent-select')">
-            <select class="form-select" id="edit-dlc-parent-select">
-              <option value="">— none —</option>
-              {% for e in base_game_options %}
-              <option value="{{ e.release.id }}" data-game-id="{{ e.release.game.id }}">{{ e.release.game.display_title }} ({{ e.release.platform }})</option>
-              {% endfor %}
-            </select>
+            <input type="text" class="form-control form-control-sm mb-2" id="edit-dlc-search" name="q" placeholder="Search for base game…" autocomplete="off"
+                   hx-get="/library/games/search?is_dlc=false&callback=selectEditParent"
+                   hx-trigger="input changed delay:300ms"
+                   hx-target="#edit-dlc-results"
+                   hx-include="this"
+                   hx-sync="this:abort"
+                   hx-on::after-request="event.stopPropagation()">
+            <div id="edit-dlc-results"></div>
           </div>
           <div class="mb-3" id="edit-collection-parent-row" hidden>
             <label class="form-label">Collection</label>
-            <input type="text" class="form-control form-control-sm mb-1" placeholder="Filter…" autocomplete="off"
-                   oninput="filterSelect(this, 'edit-collection-parent-select')">
-            <select class="form-select" id="edit-collection-parent-select">
-              <option value="">— none —</option>
-              {% for c in collections %}
-              <option value="{{ c.release.id }}" data-game-id="{{ c.release.game.id }}">{{ c.release.game.display_title }} ({{ c.release.platform }})</option>
-              {% endfor %}
-            </select>
+            <input type="text" class="form-control form-control-sm mb-2" id="edit-collection-search" name="q" placeholder="Search for collection…" autocomplete="off"
+                   hx-get="/library/games/search?is_collection=true&callback=selectEditParent"
+                   hx-trigger="input changed delay:300ms"
+                   hx-target="#edit-collection-results"
+                   hx-include="this"
+                   hx-sync="this:abort"
+                   hx-on::after-request="event.stopPropagation()">
+            <div id="edit-collection-results"></div>
           </div>
+          <input type="hidden" id="edit-parent-game-id">
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -678,6 +679,17 @@ function selectLibraryParent(releaseId, label) {
   document.getElementById('add-parent-selected').hidden = true;
 }
 
+function selectEditParent(releaseId, label) {
+  document.getElementById('edit-parent-game-id').value = releaseId;
+  document.getElementById('edit-dlc-results').innerHTML = '';
+  document.getElementById('edit-collection-results').innerHTML = '';
+  if (!document.getElementById('edit-collection-parent-row').hidden) {
+    document.getElementById('edit-collection-search').value = label;
+  } else {
+    document.getElementById('edit-dlc-search').value = label;
+  }
+}
+
 function hintIsCollection() {
   var title = document.getElementById('add-title-input').value.toLowerCase();
   var matches = COLLECTION_KEYWORDS.some(function(kw) { return title.includes(kw); });
@@ -695,6 +707,18 @@ function updateEditParentRows() {
   var isPartOf = document.getElementById('edit-part-of-collection').checked;
   document.getElementById('edit-dlc-parent-row').hidden = !isDlc;
   document.getElementById('edit-collection-parent-row').hidden = !isPartOf;
+  // Clear parent selection when rows are hidden so stale values don't linger
+  if (!isDlc) {
+    document.getElementById('edit-dlc-search').value = '';
+    document.getElementById('edit-dlc-results').innerHTML = '';
+  }
+  if (!isPartOf) {
+    document.getElementById('edit-collection-search').value = '';
+    document.getElementById('edit-collection-results').innerHTML = '';
+  }
+  if (!isDlc && !isPartOf) {
+    document.getElementById('edit-parent-game-id').value = '';
+  }
 }
 
 function editLibraryEntry(ds) {
@@ -735,21 +759,16 @@ function editLibraryEntry(ds) {
   document.getElementById('edit-part-of-collection').checked = isPartOfCollection;
   updateEditParentRows();
 
-  // Pre-populate the right parent select using game id from data attribute
-  if (isDlc && ds.parentId) {
-    var dlcSel = document.getElementById('edit-dlc-parent-select');
-    var match = dlcSel.querySelector('option[data-game-id="' + ds.parentId + '"]');
-    dlcSel.value = match ? match.value : '';
-  } else {
-    document.getElementById('edit-dlc-parent-select').value = '';
+  // Pre-fill parent search box + hidden release-id from data attributes.
+  // parentReleaseId and parentLabel are stamped server-side via _attach_parent_info.
+  var parentReleaseId = ds.parentReleaseId || '';
+  var parentLabel = ds.parentLabel || '';
+  document.getElementById('edit-parent-game-id').value = parentReleaseId;
+  if (isDlc && parentLabel) {
+    document.getElementById('edit-dlc-search').value = parentLabel;
   }
-
-  if (isPartOfCollection && ds.parentId) {
-    var colSel = document.getElementById('edit-collection-parent-select');
-    var match = colSel.querySelector('option[data-game-id="' + ds.parentId + '"]');
-    colSel.value = match ? match.value : '';
-  } else {
-    document.getElementById('edit-collection-parent-select').value = '';
+  if (isPartOfCollection && parentLabel) {
+    document.getElementById('edit-collection-search').value = parentLabel;
   }
 
   document.getElementById('editEntryModalLabel').textContent = 'Edit: ' + ds.label;
@@ -779,13 +798,9 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
   body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
   body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
 
-  // Pick the parent from whichever section is visible
-  var parentVal = '';
-  if (form.is_dlc.checked) {
-    parentVal = document.getElementById('edit-dlc-parent-select').value;
-  } else if (document.getElementById('edit-part-of-collection').checked) {
-    parentVal = document.getElementById('edit-collection-parent-select').value;
-  }
+  // Pick the parent from the hidden release-id input (set by selectEditParent
+  // or pre-filled from data attributes when the modal opened).
+  var parentVal = document.getElementById('edit-parent-game-id').value;
   if (parentVal) body.append('parent_game_id', parentVal);
 
   fetch('/library/entries/' + _editEntryId, {
