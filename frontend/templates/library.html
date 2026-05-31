@@ -286,14 +286,7 @@
                    class="form-control"
                    id="igdb-search-input"
                    placeholder="e.g. Resident Evil Village"
-                   autocomplete="off"
-                   hx-get="/integrations/igdb/search"
-                   hx-trigger="input changed delay:350ms"
-                   hx-target="#igdb-results"
-                   hx-include="this"
-                   name="q"
-                   hx-sync="this:abort"
-                   hx-on::after-request="event.stopPropagation()">
+                   autocomplete="off">
             <div id="igdb-results" class="mt-2"></div>
             <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
           </div>
@@ -665,6 +658,27 @@ function resetAddGameForm() {
   var dl = document.getElementById('platform-suggestions');
   if (dl) dl.innerHTML = _platformSuggestionsDefault;
 }
+
+// IGDB typeahead — driven by plain JS rather than HTMX to avoid form
+// interaction quirks (the input lives inside add-game-form which has its
+// own hx-post, which can confuse HTMX's trigger/include logic).
+(function() {
+  var input = document.getElementById('igdb-search-input');
+  if (!input) return; // not present when IGDB not configured
+  var timer = null;
+  input.addEventListener('input', function() {
+    var q = this.value.trim();
+    clearTimeout(timer);
+    document.getElementById('igdb-results').innerHTML = '';
+    if (!q) return;
+    timer = setTimeout(function() {
+      htmx.ajax('GET', '/integrations/igdb/search?q=' + encodeURIComponent(q), {
+        target: '#igdb-results',
+        swap: 'innerHTML',
+      });
+    }, 350);
+  });
+})();
 
 // Called when the user picks an IGDB result. Fills the title, platform,
 // and stores the IGDB game ID. The user can still edit any field afterward.
