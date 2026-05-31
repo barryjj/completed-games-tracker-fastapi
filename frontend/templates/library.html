@@ -274,8 +274,7 @@
       </div>
       <form id="add-game-form"
             hx-post="/library/games"
-            hx-target="#library-tbody"
-            hx-swap="afterbegin"
+            hx-swap="none"
 >
         <div class="modal-body">
           <div class="mb-3">
@@ -541,9 +540,13 @@ document.getElementById('add-game-form').addEventListener('htmx:afterRequest', f
   if (event.detail.successful && event.target === this) {
     this.reset();
     resetAddGameForm();
-    var e = document.getElementById('library-empty');
-    if (e) e.remove();
     if (_addGameModal) _addGameModal.hide();
+    // Reload library content so the new entry appears (or not) according to
+    // current filters and sort, rather than blindly prepending to the grid.
+    htmx.ajax('GET', window.location.pathname + window.location.search, {
+      target: '#library-content',
+      select: '#library-content',
+    });
   }
 });
 
@@ -663,8 +666,16 @@ function selectLibraryParent(releaseId, label) {
   document.getElementById('add-parent-game-id').value = releaseId;
   document.getElementById('add-dlc-results').innerHTML = '';
   document.getElementById('add-collection-results').innerHTML = '';
-  document.getElementById('add-parent-selected-label').textContent = label;
-  document.getElementById('add-parent-selected').hidden = false;
+  // Write the selected name back into whichever search box is active so
+  // there's clear visual feedback without a separate "Selected:" line.
+  // Setting .value programmatically does not fire the input event, so HTMX
+  // won't re-trigger the search.
+  if (!document.getElementById('add-parent-collection-col').hidden) {
+    document.getElementById('add-collection-search').value = label;
+  } else {
+    document.getElementById('add-dlc-search').value = label;
+  }
+  document.getElementById('add-parent-selected').hidden = true;
 }
 
 function hintIsCollection() {
