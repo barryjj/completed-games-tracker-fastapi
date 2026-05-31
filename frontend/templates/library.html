@@ -554,6 +554,12 @@ var COLLECTION_KEYWORDS = ["anthology","trilogy","compilation","complete edition
 var _editEntryId = null;
 var _editModal = null;
 var _addGameModal = null;
+// Cache the server-rendered platform suggestions so resetAddGameForm can
+// restore them after selectIgdbGame replaces them with game-specific options.
+var _platformSuggestionsDefault = (function() {
+  var dl = document.getElementById('platform-suggestions');
+  return dl ? dl.innerHTML : '';
+})();
 var _libraryDetailOffcanvas = null;
 
 // Close the add-game modal only when the form's OWN POST succeeds.
@@ -655,11 +661,14 @@ function resetAddGameForm() {
   if (igdbResults) igdbResults.innerHTML = '';
   var igdbId = document.getElementById('add-igdb-game-id');
   if (igdbId) igdbId.value = '';
+  // Restore the default platform datalist (library platforms, not IGDB game platforms).
+  var dl = document.getElementById('platform-suggestions');
+  if (dl) dl.innerHTML = _platformSuggestionsDefault;
 }
 
-// Called when the user picks an IGDB result. Fills the title field and
-// stores the IGDB game ID. The user can still edit the title afterward.
-function selectIgdbGame(igdbId, name, coverUrl) {
+// Called when the user picks an IGDB result. Fills the title, platform,
+// and stores the IGDB game ID. The user can still edit any field afterward.
+function selectIgdbGame(igdbId, name, coverUrl, platforms) {
   document.getElementById('add-igdb-game-id').value = igdbId;
   document.getElementById('igdb-results').innerHTML = '';
   document.getElementById('igdb-search-input').value = name;
@@ -667,6 +676,22 @@ function selectIgdbGame(igdbId, name, coverUrl) {
   var titleInput = document.getElementById('add-title-input');
   titleInput.value = name;
   titleInput.dispatchEvent(new Event('input')); // triggers hintIsCollection + syncAddDisplayFromTitle
+
+  // Update platform datalist with this game's platforms from IGDB.
+  // Replace the datalist options so the user sees only relevant platforms.
+  // If there's exactly one, auto-fill; otherwise leave it for the user to pick.
+  var datalist = document.getElementById('platform-suggestions');
+  if (datalist && platforms && platforms.length > 0) {
+    datalist.innerHTML = platforms.map(function(p) {
+      return '<option value="' + p.replace(/"/g, '&quot;') + '">';
+    }).join('');
+    if (platforms.length === 1) {
+      document.getElementById('add-platform').value = platforms[0];
+    } else {
+      document.getElementById('add-platform').value = '';
+      document.getElementById('add-platform').focus();
+    }
+  }
 }
 
 // When "Display name is the same as title" is checked on the Add modal,
