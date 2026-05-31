@@ -478,11 +478,15 @@ def backfill_collection_flags(
 ):
     """Re-run collection detection across the whole library.
 
-    Sets is_collection=True or False for every game where
-    is_collection_user_set=False, so this also corrects false positives left
-    over from an earlier keyword run.  Manual overrides (is_collection_user_set)
-    are always respected.
+    Sets is_collection=True or False for every non-DLC game where
+    is_collection_user_set=False.  Also clears is_collection on any DLC that
+    was wrongly flagged (DLC can never be a collection).
+    Manual overrides (is_collection_user_set) are always respected.
     """
+    flagged = 0
+    cleared = 0
+
+    # Re-detect on non-DLC games only.
     games = (
         db.query(models.Game)
         .join(models.GameRelease)
@@ -490,11 +494,10 @@ def backfill_collection_flags(
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.Game.is_collection_user_set == False,
+            models.Game.is_dlc == False,
         )
         .all()
     )
-    flagged = 0
-    cleared = 0
     for game in games:
         should_be = steam._infer_is_collection(game.display_title)
         if should_be and not game.is_collection:
@@ -503,12 +506,30 @@ def backfill_collection_flags(
         elif not should_be and game.is_collection:
             game.is_collection = False
             cleared += 1
+
+    # Clear is_collection on any DLC that was previously wrongly flagged.
+    wrongly_flagged = (
+        db.query(models.Game)
+        .join(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.Game.is_dlc == True,
+            models.Game.is_collection == True,
+            models.Game.is_collection_user_set == False,
+        )
+        .all()
+    )
+    for game in wrongly_flagged:
+        game.is_collection = False
+        cleared += 1
+
     db.commit()
     parts = []
     if flagged:
-        parts.append(f"{flagged} flagged as collection{'s' if flagged != 1 else ''}")
+        parts.append(f"{flagged} newly marked as {'collections' if flagged != 1 else 'a collection'}")
     if cleared:
-        parts.append(f"{cleared} false positive{'s' if cleared != 1 else ''} cleared")
+        parts.append(f"collection flag removed from {cleared} {'entries' if cleared != 1 else 'entry'}")
     if not parts:
         parts.append("no changes needed")
     return templates.TemplateResponse(
@@ -578,8 +599,12 @@ def steam_artwork_verification_status(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Artwork URL verification status for the current user's library entries."""
-    # Count GameArtwork rows scoped to releases the user owns.
+    """Artwork URL verification status for the current user's library entries.
+
+    Only counts native-source rows (steam, psn) — SGDB rows are excluded from
+    verification to avoid hitting their rate limit.
+    """
+    _NATIVE = ("steam", "psn")
     user_release_ids = (
         db.query(models.GameRelease.id)
         .join(models.UserLibraryEntry)
@@ -590,15 +615,24 @@ def steam_artwork_verification_status(
         db.query(models.GameArtwork)
         .filter(
             models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.source.in_(_NATIVE),
             models.GameArtwork.verified_at == None,
         )
         .count()
     )
-    total = db.query(models.GameArtwork).filter(models.GameArtwork.release_id.in_(user_release_ids)).count()
+    total = (
+        db.query(models.GameArtwork)
+        .filter(
+            models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.source.in_(_NATIVE),
+        )
+        .count()
+    )
     invalid = (
         db.query(models.GameArtwork)
         .filter(
             models.GameArtwork.release_id.in_(user_release_ids),
+            models.GameArtwork.source.in_(_NATIVE),
             models.GameArtwork.is_valid == False,
         )
         .count()
@@ -715,6 +749,55 @@ def backfill_steam_display_names(
         request=request,
         name="partials/integrations_flash.html",
         context={"message": f"Display-name cleanup complete — {updated} entries updated."},
+    )
+
+
+@router.post("/steam/requeue-broken-cover-art")
+def requeue_broken_cover_art(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Re-queue enrichment for any Steam release in the user's library that has
+    a confirmed-invalid cover_h row. The enrichment worker will re-fetch
+    appdetails and pull the real CDN URL from header_image.
+
+    Safe to run repeatedly — the verification worker discovers newly-invalid
+    URLs over time, so running this again after a verification pass picks up
+    any additional broken entries."""
+    # Find all releases that (a) belong to this user's library, (b) have a
+    # cover_h GameArtwork row that is confirmed invalid, and (c) have already
+    # been enriched (metadata_fetched_at IS NOT NULL) — so resetting it actually
+    # triggers a re-fetch rather than being a no-op.
+    subq = (
+        db.query(models.GameArtwork.release_id)
+        .filter(
+            models.GameArtwork.artwork_type == "cover_h",
+            models.GameArtwork.source == "steam",
+            models.GameArtwork.is_valid.is_(False),
+        )
+        .subquery()
+    )
+    releases = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "steam",
+            models.GameRelease.metadata_fetched_at.isnot(None),
+            models.GameRelease.id.in_(subq),
+        )
+        .all()
+    )
+    for release in releases:
+        release.metadata_fetched_at = None
+    db.commit()
+    n = len(releases)
+    msg = f"Re-queued {n} entr{'y' if n == 1 else 'ies'} for cover art refresh." if n else "No broken cover art found."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": msg},
     )
 
 

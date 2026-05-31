@@ -595,7 +595,8 @@ def test_detail_pane_shows_steam_meta_fields(client, db_session):
     assert b"id Software" in r.content
     assert b"Bethesda Softworks" in r.content
     assert b"March 20, 2020" in r.content
-    assert b"88/100" in r.content
+    assert b"88" in r.content
+    assert b"Great" in r.content
     assert b"Single-player" in r.content
 
 

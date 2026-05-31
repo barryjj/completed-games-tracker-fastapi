@@ -227,6 +227,43 @@ html[data-bs-theme="light"] .btn-danger:hover { filter: none; }
   --bs-btn-hover-bg:           var(--ctp-red);
   --bs-btn-hover-color:        var(--ctp-crust);
 }
+/* Surface button — filled with surface0. More "present" than an outline button
+   without the visual weight of primary. For secondary config page actions. */
+.btn-surface {
+  --bs-btn-bg:                  var(--ctp-surface0);
+  --bs-btn-border-color:        var(--ctp-surface1);
+  --bs-btn-color:               var(--ctp-text);
+  --bs-btn-hover-bg:            var(--ctp-surface1);
+  --bs-btn-hover-border-color:  var(--ctp-mauve);
+  --bs-btn-hover-color:         var(--ctp-text);
+  --bs-btn-active-bg:           var(--ctp-surface1);
+  --bs-btn-active-border-color: var(--ctp-mauve);
+  --bs-btn-disabled-bg:         var(--ctp-surface0);
+  --bs-btn-disabled-border-color: var(--ctp-surface1);
+  --bs-btn-disabled-color:      var(--ctp-subtext);
+}
+html[data-bs-theme="light"] .btn-surface {
+  --bs-btn-bg:           var(--ctp-surface0);
+  --bs-btn-border-color: var(--ctp-surface1);
+  --bs-btn-hover-bg:     var(--ctp-surface1);
+}
+/* Danger button with surface backing — red text on surface0, inverts to red
+   fill on hover. Modeled on the GitHub "Danger Zone" pattern: grounded enough
+   to not read as pure warning text, but clearly distinct from primary. */
+.btn-ghost-danger {
+  --bs-btn-color:               var(--ctp-red);
+  --bs-btn-bg:                  var(--ctp-surface0);
+  --bs-btn-border-color:        color-mix(in srgb, var(--ctp-red) 30%, var(--ctp-surface1));
+  --bs-btn-hover-color:         var(--ctp-crust);
+  --bs-btn-hover-bg:            var(--ctp-red);
+  --bs-btn-hover-border-color:  var(--ctp-red);
+  --bs-btn-active-color:        var(--ctp-crust);
+  --bs-btn-active-bg:           var(--ctp-red);
+  --bs-btn-active-border-color: var(--ctp-red);
+  --bs-btn-disabled-color:      var(--ctp-red);
+  --bs-btn-disabled-bg:         var(--ctp-surface0);
+  --bs-btn-disabled-border-color: color-mix(in srgb, var(--ctp-red) 20%, var(--ctp-surface1));
+}
 .btn-success {
   --bs-btn-bg:                 var(--ctp-green);
   --bs-btn-border-color:       var(--ctp-green);
@@ -398,6 +435,44 @@ html[data-bs-theme="light"] details summary:hover {
   background-color: #8f5cd4; border-color: #8f5cd4;
 }
 details > :not(summary) { margin-top: 1rem; }
+
+/* Subtle variant: plain text disclosure link, no button chrome.
+   Apply .cgt-details-subtle to the <details> element to opt out of the
+   global mauve-border-button style used for add/filter forms. */
+details.cgt-details-subtle > summary {
+  padding: 0;
+  color: var(--ctp-subtext);
+  border: none;
+  background: none;
+  border-radius: 0;
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+details.cgt-details-subtle > summary:hover {
+  color: var(--ctp-text);
+  background: none;
+  border-color: transparent;
+}
+html[data-bs-theme="light"] details.cgt-details-subtle > summary,
+html[data-bs-theme="light"] details.cgt-details-subtle > summary:hover {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--ctp-subtext);
+}
+html[data-bs-theme="light"] details.cgt-details-subtle > summary:hover {
+  color: var(--ctp-text);
+}
+
+/* Config-page section heading (h5-level). Bottom rule separates major sections
+   without relying on whitespace alone. */
+.cgt-config-section {
+  padding-bottom: 0.4rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid var(--ctp-surface1);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--ctp-text);
+}
 
 /* ─── Custom theme picker ────────────────────────────────────────────────── */
 .theme-picker { position: relative; display: inline-block; }
@@ -932,6 +1007,33 @@ body:has(.cgt-sticky-actions) {
 }
 .cgt-detail-block .table > tbody > tr > td {
   border-color: var(--ctp-surface0);
+}
+
+/* ─── Score chip (Metacritic, etc.) ─────────────────────────────────────── */
+/* Small colored square badge — score number in crust text on a Catppuccin
+   accent background. Size is expressed in em so it scales with parent font. */
+.cgt-score-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2em;
+  height: 1.75em;
+  padding: 0 0.3em;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ctp-crust);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* ─── Uniform-width action buttons (integrations pages) ─────────────────── */
+/* All buttons in a justify-content-between row share this width so they
+   align to a common right edge regardless of label length. Sized to the
+   widest label ("Refresh Metadata") plus a little breathing room. */
+.cgt-action-btn {
+  min-width: 9.5rem;
+  text-align: center;
 }
 
 /* ─── [hidden] needs !important to win against Bootstrap utilities ──────── */

@@ -12,7 +12,7 @@
   {% set pct = ((job.progress.done / job.progress.total) * 100) | int if job.progress.total else 0 %}
   <div class="d-flex align-items-center gap-2 mb-1">
     <div class="progress flex-grow-1" style="height: 4px;">
-      <div class="progress-bar bg-secondary" role="progressbar" style="width: {{ pct }}%"></div>
+      <div class="progress-bar" role="progressbar" style="width: {{ pct }}%; background-color: var(--ctp-mauve);"></div>
     </div>
     <small class="text-secondary text-nowrap">{{ job.progress.done + 1 }} / {{ job.progress.total }}</small>
   </div>
