@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}IGDB Integration{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <a href="/integrations" class="text-secondary text-decoration-none">&larr; Integrations</a>
+</div>
+<h1 class="mb-4">IGDB / Twitch</h1>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <h5 class="cgt-config-section">Credentials</h5>
+    <p class="text-secondary mb-3"><small>IGDB is the game database behind Twitch. Register a Confidential app at <a href="https://dev.twitch.tv/console" target="_blank" rel="noopener">dev.twitch.tv/console</a> to get a Client ID and Secret. Uses Client Credentials — no user login required.</small></p>
+    <form
+      hx-post="/integrations/igdb/credentials"
+      hx-target="#igdb-flash"
+      hx-swap="innerHTML"
+    >
+      <div class="mb-3">
+        <label class="form-label">Twitch Client ID</label>
+        <input
+          type="text"
+          class="form-control font-monospace"
+          name="twitch_client_id"
+          value="{{ current_user.twitch_client_id or '' }}"
+          placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          autocomplete="off"
+        >
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Twitch Client Secret</label>
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="twitch_client_secret"
+          value="{{ current_user.twitch_client_secret or '' }}"
+          placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          autocomplete="off"
+        >
+      </div>
+      <div class="d-flex gap-3 align-items-center flex-wrap">
+        <button type="submit" class="btn btn-primary">Save Credentials</button>
+        {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+        <button
+          type="button"
+          class="btn btn-outline-secondary btn-sm"
+          hx-post="/integrations/igdb/test"
+          hx-target="#igdb-flash"
+          hx-swap="innerHTML"
+        >Test connection</button>
+        <button
+          type="button"
+          class="btn btn-ghost-danger btn-sm"
+          hx-post="/integrations/igdb/credentials"
+          hx-vals='{"twitch_client_id": "", "twitch_client_secret": ""}'
+          hx-target="#igdb-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Clear your saved IGDB credentials?"
+        >Clear credentials</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-6">
+    <h5 class="cgt-config-section">How It Works</h5>
+    <p class="text-secondary mb-2"><small>Once configured, adding a game manually gains a live search field backed by IGDB. Select a result and the title is auto-filled along with the IGDB ID, which enables cover art lookups and richer metadata.</small></p>
+    <ul class="text-secondary mb-3">
+      <li><small><strong>Typeahead search</strong> — search IGDB by title when adding a game manually; results show cover art, platform tags, and release year to help pick the right entry.</small></li>
+      <li><small><strong>Cover art</strong> — IGDB cover (portrait, ~600&times;900) written to the artwork table on add, used as a fallback when Steam art is unavailable.</small></li>
+      <li><small><strong>IGDB ID</strong> — stored on the game record; enables future enrichment (more metadata, platform data) without re-searching.</small></li>
+    </ul>
+    <p class="text-secondary mb-0"><small>Token management is automatic — the Twitch bearer token is fetched on first use and refreshed hourly.</small></p>
+  </div>
+</div>
+
+<div id="igdb-flash" class="mt-4"></div>
+{% endblock %}
