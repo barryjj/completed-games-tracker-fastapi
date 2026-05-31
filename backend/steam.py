@@ -21,12 +21,12 @@ _JUNK_RE = re.compile(r"[™®©]+")
 # trailing words push it past the anchor.
 _COLLECTION_RE = re.compile(
     r"""
-    \banthology\b |
     \btrilogy\b |
     \bcompilation\b |
-    \bcomplete\s+edition\b |
     \bcomplete\s+pack\b |
-    # "collection" only qualifies at/near end of title
+    # "collection" only qualifies at/near end of title — e.g. "Mega Man
+    # Legacy Collection" yes, "Post Modern Collection" (DLC) handled by
+    # the is_dlc guard in _infer_is_collection.
     \bcollection\b ( \s* (vol\.?\s*\d+ | volume\s+\d+) )? \s* $
     """,
     re.IGNORECASE | re.VERBOSE,
@@ -118,7 +118,10 @@ def _smart_title_case(s: str) -> str:
     return " ".join(out)
 
 
-def _infer_is_collection(title: str) -> bool:
+def _infer_is_collection(title: str, is_dlc: bool = False) -> bool:
+    """DLC can never be a collection regardless of title keywords."""
+    if is_dlc:
+        return False
     return bool(_COLLECTION_RE.search(title or ""))
 
 
@@ -158,8 +161,11 @@ _AUTO_HIDE_DLC_RE = re.compile(
 )
 
 # Title patterns that auto-hide regardless of is_dlc.
-# A real completable game will not have "\bbeta\b" in its Steam title.
-_AUTO_HIDE_TITLE_RE = re.compile(r"\bbeta\b", re.IGNORECASE)
+# - beta: real games don't ship with "beta" in the title.
+# - friend's pass: Steam reports these as type=game, but they are co-op
+#   access tokens, not completable games. Must be Tier 1 (gate-free) because
+#   the DLC-only tier never fires when is_dlc=False.
+_AUTO_HIDE_TITLE_RE = re.compile(r"\bbeta\b|\bfriend'?s\s+pass\b", re.IGNORECASE)
 
 # Steam app types that are gate-free auto-hidden (no is_dlc check needed).
 # If Steam tags something as one of these types there is no completable game
@@ -496,6 +502,8 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
         if release is not None:
             if not release.game.is_dlc:
                 release.game.is_dlc = True
+                if not release.game.is_collection_user_set:
+                    release.game.is_collection = False
                 newly_marked += 1
             if release.id not in user_release_ids:
                 db.add(
@@ -731,6 +739,8 @@ def _promote_dlc_children(db: Session, parent_game_id: int, dlc_appids: list[int
         child_game = child_release.game
         if not child_game.is_dlc_user_set and not child_game.is_dlc:
             child_game.is_dlc = True
+            if not child_game.is_collection_user_set:
+                child_game.is_collection = False
         if not child_game.parent_id_user_set and child_game.parent_id is None:
             child_game.parent_id = parent_game_id
 
@@ -844,6 +854,8 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
             if not game.is_dlc_user_set:
                 if app_type == "dlc" and not game.is_dlc:
                     game.is_dlc = True
+                    if not game.is_collection_user_set:
+                        game.is_collection = False
                 elif app_type == "game" and game.is_dlc:
                     # Steam sometimes tags season passes and bundle wrappers as
                     # type=game even though they are not completable games.
@@ -869,6 +881,8 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
                     looks_like_dlc = _should_auto_hide(game.title, details, is_dlc=True)
                     if has_fullgame or looks_like_dlc:
                         game.is_dlc = True
+                        if not game.is_collection_user_set:
+                            game.is_collection = False
 
             # Link DLC to its base game if not already linked — but respect
             # user override on parent_id.

@@ -599,24 +599,30 @@ def test_clean_title_unescapes_html_entities():
 def test_infer_is_collection_regex():
     from backend.steam import _infer_is_collection
 
-    # Should match
+    # Should match — real multi-game sets
     assert _infer_is_collection("The Bioshock Collection") is True
     assert _infer_is_collection("Mass Effect Legendary Edition Trilogy") is True
     assert _infer_is_collection("Metal Gear Solid: Master Collection Vol.1") is True
     assert _infer_is_collection("Metal Gear Solid: Master Collection Vol. 2") is True
-    assert _infer_is_collection("Castlevania Anthology") is True
     assert _infer_is_collection("The Dark Knight Trilogy") is True
     assert _infer_is_collection("Games Compilation") is True
-    assert _infer_is_collection("Mass Effect Complete Edition") is True
     assert _infer_is_collection("Game Complete Pack") is True
 
-    # Should NOT match — false positives from old keyword list
+    # Should NOT match — false positives removed from keyword list
+    assert _infer_is_collection("Castlevania Anthology") is False      # "anthology" removed — series name, not a set
+    assert _infer_is_collection("Mass Effect Complete Edition") is False  # "complete edition" removed — bundling, not a set
+    assert _infer_is_collection("Dark Pictures Anthology: House of Ashes") is False
+    assert _infer_is_collection("Dirt 3 Complete Edition") is False
     assert _infer_is_collection("Elven Legacy") is False
     assert _infer_is_collection("Assassin's Creed Origins") is False
     assert _infer_is_collection("Lost Chronicles of Zerzura") is False
     assert _infer_is_collection("Bundle of Joy") is False
     assert _infer_is_collection("Archives of the Deep") is False
     assert _infer_is_collection("Recollection") is False  # sub-word of "collection"
+
+    # DLC is never a collection regardless of title
+    assert _infer_is_collection("Cepheus Protocol Post Modern Collection", is_dlc=True) is False
+    assert _infer_is_collection("The Bioshock Collection", is_dlc=True) is False
 
     # "collection" must be at/near end of title — "Bonus Content" after kills it
     assert _infer_is_collection("Metal Gear Solid: Master Collection Vol.1 Bonus Content") is False

@@ -478,11 +478,15 @@ def backfill_collection_flags(
 ):
     """Re-run collection detection across the whole library.
 
-    Sets is_collection=True or False for every game where
-    is_collection_user_set=False, so this also corrects false positives left
-    over from an earlier keyword run.  Manual overrides (is_collection_user_set)
-    are always respected.
+    Sets is_collection=True or False for every non-DLC game where
+    is_collection_user_set=False.  Also clears is_collection on any DLC that
+    was wrongly flagged (DLC can never be a collection).
+    Manual overrides (is_collection_user_set) are always respected.
     """
+    flagged = 0
+    cleared = 0
+
+    # Re-detect on non-DLC games only.
     games = (
         db.query(models.Game)
         .join(models.GameRelease)
@@ -490,11 +494,10 @@ def backfill_collection_flags(
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
             models.Game.is_collection_user_set == False,
+            models.Game.is_dlc == False,
         )
         .all()
     )
-    flagged = 0
-    cleared = 0
     for game in games:
         should_be = steam._infer_is_collection(game.display_title)
         if should_be and not game.is_collection:
@@ -503,6 +506,24 @@ def backfill_collection_flags(
         elif not should_be and game.is_collection:
             game.is_collection = False
             cleared += 1
+
+    # Clear is_collection on any DLC that was previously wrongly flagged.
+    wrongly_flagged = (
+        db.query(models.Game)
+        .join(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.Game.is_dlc == True,
+            models.Game.is_collection == True,
+            models.Game.is_collection_user_set == False,
+        )
+        .all()
+    )
+    for game in wrongly_flagged:
+        game.is_collection = False
+        cleared += 1
+
     db.commit()
     parts = []
     if flagged:
