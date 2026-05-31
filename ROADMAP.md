@@ -135,10 +135,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - **Stale-only auto-refresh on detail-pane open.** Detail endpoints check `_needs_metadata_refresh` (Steam + null-or-7+-days-old). If stale, the rendered partial includes a hidden HTMX trigger that fires the refresh endpoint in the background. Current data shows immediately; the next pane open picks up the refresh.
 - Enrichment status messaging on the integrations hub updated to describe the new per-pane auto-refresh behavior instead of a stale "X enriched" count.
 
-### Periodic TTL metadata refresh (future)
-- Companion to the detail-pane auto-refresh: a background worker pass that re-queues Steam entries older than ~30 days even if the user hasn't opened their detail pane
-- Keeps cold entries from going stale indefinitely
-- Lower priority than the on-demand version — most metadata doesn't change that often
+### Periodic TTL metadata refresh ✅ (this session)
+- `requeue_stale_metadata()` in `steam.py`: when the NULL-queue is drained, re-queues the 50 most-recently-added Steam entries whose `metadata_fetched_at` is older than 30 days, ordered by appid DESC (newest releases first)
+- Enrichment worker calls it immediately after draining the queue; sleeps 5 minutes only when both passes return nothing
+- Keeps cold entries from going stale indefinitely without hammering Steam on every worker tick
+
+### Add-game modal stability + edit modal unification + detail pane consolidation ✅ (PR #101)
+- Add-game modal no longer closes when DLC/collection search results load — fixed with JS `addEventListener` + `event.target === this` to discriminate the form's own HTMX events from bubbled child inputs
+- Adding a game reloads the full library view (respecting active filters) via `htmx.ajax` instead of blindly prepending a row
+- Collection/DLC parent search inputs write the selected game's label back into the search box so selection is visible
+- Edit modal parent selection now uses live HTMX search (matching the add modal) instead of a static `<select>`; pre-fills correctly from `_parent_release_id` / `_parent_label` stamped server-side
+- Default view no longer hides Steam games assigned to a collection — removed the `parent_id IS NULL` constraint, keeping only `is_dlc == False`
+- Edit moved into the More dropdown on both library and completion detail panes ("Edit game" / "Edit completion") for a consistent single-action-menu; also fixed missing parent data attrs on the detail pane's Edit item
 
 ### Steam news / announcements in detail pane (future)
 - `ISteamNews/GetNewsForApp` returns dated announcements per appid; cached and shown in the library detail pane as a "Latest news" section
@@ -248,12 +256,12 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## Near-term
 
-### Platforms table
-- `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`
-- `GameRelease.platform` becomes FK to platforms instead of free text
-- Seed defaults: Steam, PS5, PS4, PS3, Switch, Xbox, iOS, Android, PC, Other
-- Users can add custom platforms (NES, Dreamcast, etc.) and rename display names
-- Color key maps to Catppuccin token — replaces current heuristic matching in `_platform_color_class`
+### Platforms table (deferred — wait for IGDB integration)
+- `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`, **`igdb_id`** (nullable int)
+- `igdb_id` is the load-bearing design decision: IGDB has a comprehensive, stable numeric platform taxonomy covering everything from modern consoles to Atari. Building our seed data from IGDB IDs means platform matching when IGDB integration lands is a FK lookup, not fuzzy string reconciliation
+- Defer seeding until IGDB integration is underway so we only solve the taxonomy once — the platform list is far more complex than it looks (Xbox naming, handheld generations, backward-compat edge cases) and IGDB has already solved it
+- When this lands: `GameRelease.platform` free-text replaced by `platform_id` FK; `_platform_color_class` regex replaced by a table lookup; manual add modal gets a platform dropdown instead of free text
+- All current releases are Steam so the migration is a trivial one-row backfill
 
 ### User-configurable DLC auto-hide keywords
 - Same model as the platforms table: system-default keywords (the current `_AUTO_HIDE_RE` patterns) seeded into a `dlc_hide_keywords` table with `is_system=True`, plus user rows for custom additions
