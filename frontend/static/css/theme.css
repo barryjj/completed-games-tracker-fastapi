@@ -247,19 +247,22 @@ html[data-bs-theme="light"] .btn-surface {
   --bs-btn-border-color: var(--ctp-surface1);
   --bs-btn-hover-bg:     var(--ctp-surface1);
 }
-/* Ghost danger — transparent background, red text, faint red tint on hover.
-   For destructive secondary actions that should sit quietly until interacted. */
+/* Danger button with surface backing — red text on surface0, inverts to red
+   fill on hover. Modeled on the GitHub "Danger Zone" pattern: grounded enough
+   to not read as pure warning text, but clearly distinct from primary. */
 .btn-ghost-danger {
-  --bs-btn-color:              var(--ctp-red);
-  --bs-btn-bg:                 transparent;
-  --bs-btn-border-color:       transparent;
-  --bs-btn-hover-color:        var(--ctp-red);
-  --bs-btn-hover-bg:           color-mix(in srgb, var(--ctp-red) 10%, transparent);
-  --bs-btn-hover-border-color: transparent;
-  --bs-btn-active-bg:          color-mix(in srgb, var(--ctp-red) 15%, transparent);
-  --bs-btn-active-border-color: transparent;
-  --bs-btn-disabled-color:     var(--ctp-red);
-  --bs-btn-disabled-bg:        transparent;
+  --bs-btn-color:               var(--ctp-red);
+  --bs-btn-bg:                  var(--ctp-surface0);
+  --bs-btn-border-color:        color-mix(in srgb, var(--ctp-red) 30%, var(--ctp-surface1));
+  --bs-btn-hover-color:         var(--ctp-crust);
+  --bs-btn-hover-bg:            var(--ctp-red);
+  --bs-btn-hover-border-color:  var(--ctp-red);
+  --bs-btn-active-color:        var(--ctp-crust);
+  --bs-btn-active-bg:           var(--ctp-red);
+  --bs-btn-active-border-color: var(--ctp-red);
+  --bs-btn-disabled-color:      var(--ctp-red);
+  --bs-btn-disabled-bg:         var(--ctp-surface0);
+  --bs-btn-disabled-border-color: color-mix(in srgb, var(--ctp-red) 20%, var(--ctp-surface1));
 }
 .btn-success {
   --bs-btn-bg:                 var(--ctp-green);
