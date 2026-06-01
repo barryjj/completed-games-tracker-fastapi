@@ -51,7 +51,9 @@ def _grid_cover_url(entry, orientation: str) -> str | None:
          sgdb to prefer the authoritative art when it exists.
 
     Vertical mode wants cover_v (library_600x900.jpg / portrait art).
-    Horizontal mode wants cover_h (header.jpg / landscape header)."""
+    Horizontal mode wants cover_h (header.jpg / landscape header).
+    IGDB/manual entries without a horizontal cover should use the SGDB picker
+    to find one; that UserArtwork is then found in step 1."""
     wanted = "cover_v" if orientation == "grid_v" else "cover_h"
     # 1. Explicit user pick
     for ua in entry.user_artwork:
@@ -1296,7 +1298,13 @@ def library_entry_detail(
     if not game.is_dlc:  # only base games / collections show children
         child_entries = (
             db.query(models.UserLibraryEntry)
-            .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+            .options(
+                joinedload(models.UserLibraryEntry.release)
+                    .joinedload(models.GameRelease.game),
+                joinedload(models.UserLibraryEntry.release)
+                    .selectinload(models.GameRelease.artwork),
+                selectinload(models.UserLibraryEntry.user_artwork),
+            )
             .join(models.GameRelease)
             .join(models.Game)
             .filter(
