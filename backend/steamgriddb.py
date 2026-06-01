@@ -94,7 +94,12 @@ def get_grids_for_game(
     dimensions = _DIMENSIONS_V if orientation == "v" else _DIMENSIONS_H
     resp = httpx.get(
         f"{_BASE}/grids/game/{sgdb_game_id}",
-        params={"dimensions": dimensions, "limit": str(_GRID_PAGE_SIZE), "page": str(page)},
+        params={
+            "dimensions": dimensions,
+            "types": "static,animated",
+            "limit": str(_GRID_PAGE_SIZE),
+            "page": str(page),
+        },
         headers=_headers(api_key),
         timeout=15,
     )
@@ -112,7 +117,7 @@ def get_heroes_for_game(
     heroes. Pagination mirrors get_grids_for_game."""
     resp = httpx.get(
         f"{_BASE}/heroes/game/{sgdb_game_id}",
-        params={"limit": str(_GRID_PAGE_SIZE), "page": str(page)},
+        params={"types": "static,animated", "limit": str(_GRID_PAGE_SIZE), "page": str(page)},
         headers=_headers(api_key),
         timeout=15,
     )
@@ -129,7 +134,7 @@ def get_logos_for_game(
     Pagination mirrors get_grids_for_game."""
     resp = httpx.get(
         f"{_BASE}/logos/game/{sgdb_game_id}",
-        params={"limit": str(_GRID_PAGE_SIZE), "page": str(page)},
+        params={"types": "static,animated", "limit": str(_GRID_PAGE_SIZE), "page": str(page)},
         headers=_headers(api_key),
         timeout=15,
     )
