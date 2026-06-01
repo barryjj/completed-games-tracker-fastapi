@@ -10,6 +10,7 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - Run: `python -m uvicorn backend.main:app --reload`
 - Tests: `.venv/bin/pytest backend/ -q`
 - Always use the project-local `.venv` — never global Python.
+- **Before touching any template, CSS, or JS: read `DESIGN.md`.**
 
 ## Git rules
 
