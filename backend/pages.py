@@ -1299,10 +1299,8 @@ def library_entry_detail(
         child_entries = (
             db.query(models.UserLibraryEntry)
             .options(
-                joinedload(models.UserLibraryEntry.release)
-                    .joinedload(models.GameRelease.game),
-                joinedload(models.UserLibraryEntry.release)
-                    .selectinload(models.GameRelease.artwork),
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+                joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
                 selectinload(models.UserLibraryEntry.user_artwork),
             )
             .join(models.GameRelease)
