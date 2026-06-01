@@ -328,38 +328,66 @@
         <h5 class="modal-title" id="addGameModalLabel">Add Game to Library</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      {# The title input doubles as the IGDB typeahead when IGDB is configured.
-         Results drop into an absolutely-positioned overlay so the modal doesn't
-         resize. Result buttons use inline onclick so HTMX can't interfere. #}
+      {# Title input drives display-name sync and collection hint.
+         IGDB search (when credentials are set) lives in its own tabbed section below. #}
       <form id="add-game-form"
             hx-post="/library/games"
             hx-swap="none"
       >
         <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
         <div class="modal-body">
-          <div class="mb-3" id="igdb-search-section">
+          <div class="mb-3">
             <label class="form-label" for="add-title-input">Title
-              <span class="text-secondary fw-normal">(canonical / for lookups{% if current_user.twitch_client_id and current_user.twitch_client_secret %} — search IGDB as you type{% endif %})</span>
+              <span class="text-secondary fw-normal">(canonical / for lookups)</span>
             </label>
-            <div style="position:relative;">
-              <input type="text" class="form-control" name="title" id="add-title-input"
-                     placeholder="e.g. Resident Evil Village" required autocomplete="off"
-                     oninput="hintIsCollection(); syncAddDisplayFromTitle();">
-              {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
-              <div id="igdb-results"
-                   style="position:absolute;left:0;right:0;top:100%;z-index:100;max-height:300px;overflow-y:auto;border-radius:0.375rem;box-shadow:0 4px 16px rgba(0,0,0,.4);"></div>
-              {% endif %}
-            </div>
-            {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
-            <div class="d-flex gap-2 align-items-center mt-1">
-              <small class="text-secondary text-nowrap">or IGDB ID:</small>
-              <input type="number" class="form-control form-control-sm" id="add-igdb-id-direct"
-                     placeholder="e.g. 1114" min="1" style="max-width:110px;">
-              <button type="button" class="btn btn-sm btn-outline-secondary"
-                      onclick="lookupIgdbById('add-igdb-id-direct', 'igdb-results')">Lookup</button>
-            </div>
-            {% endif %}
+            <input type="text" class="form-control" name="title" id="add-title-input"
+                   placeholder="e.g. Resident Evil Village" required autocomplete="off"
+                   oninput="hintIsCollection(); syncAddDisplayFromTitle();">
           </div>
+          {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+          <div class="mb-3" id="add-igdb-section">
+            <div class="small fw-medium text-secondary mb-2">IGDB link <span class="fw-normal">· optional — links cover art and metadata</span></div>
+            <div id="add-igdb-linked-card" class="d-none rounded p-2 mb-2"
+                 style="border-left:3px solid var(--ctp-green);background:var(--ctp-surface1);">
+              <div class="d-flex align-items-center gap-2">
+                <span style="color:var(--ctp-green);line-height:1;">&#10003;</span>
+                <span id="add-igdb-linked-name" class="fw-medium small"></span>
+                <span id="add-igdb-linked-id" class="text-secondary small ms-1"></span>
+                <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-secondary"
+                        onclick="clearAddIgdbSelection()">Change</button>
+              </div>
+            </div>
+            <div id="add-igdb-unlinked-status" class="small text-secondary mb-2">Search or enter an ID to link a game.</div>
+            <ul class="nav nav-tabs mb-0" id="add-igdb-tabs" style="font-size:.85rem;">
+              <li class="nav-item">
+                <button type="button" class="nav-link active px-3 py-1" id="add-igdb-tab-search"
+                        onclick="switchAddIgdbTab('search')">Search</button>
+              </li>
+              <li class="nav-item">
+                <button type="button" class="nav-link px-3 py-1" id="add-igdb-tab-id"
+                        onclick="switchAddIgdbTab('id')">by ID</button>
+              </li>
+            </ul>
+            <div class="border border-top-0 rounded-bottom p-2" id="add-igdb-tab-panel">
+              <div id="add-igdb-pane-search">
+                <input type="text" class="form-control form-control-sm" id="add-igdb-search-input"
+                       placeholder="Search IGDB…" autocomplete="off">
+                <div id="add-igdb-search-results" class="mt-1"
+                     style="max-height:200px;overflow-y:auto;"></div>
+              </div>
+              <div id="add-igdb-pane-id" hidden>
+                <div class="input-group input-group-sm">
+                  <input type="number" class="form-control" id="add-igdb-id-input"
+                         placeholder="e.g. 1114" min="1">
+                  <button type="button" class="btn btn-outline-secondary"
+                          onclick="lookupIgdbById('add-igdb-id-input', 'add-igdb-id-results')">Lookup</button>
+                </div>
+                <div id="add-igdb-id-results" class="mt-1"
+                     style="max-height:200px;overflow-y:auto;"></div>
+              </div>
+            </div>
+          </div>
+          {% endif %}
           <div class="mb-2 form-check">
             <input class="form-check-input" type="checkbox" id="add-display-same" checked
                    onchange="toggleAddDisplaySame()">
@@ -699,28 +727,40 @@ function resetAddGameForm() {
   document.getElementById('add-display-same').checked = true;
   document.getElementById('add-display-name').disabled = true;
   document.getElementById('add-display-name').value = '';
-  // form.reset() clears form inputs (title, igdb_game_id, platform, etc.).
-  // Clear divs that form.reset() doesn't touch.
-  var igdbResults = document.getElementById('igdb-results');
-  if (igdbResults) igdbResults.innerHTML = '';
+  // form.reset() clears form inputs but not divs or elements outside the form.
+  // Reset IGDB section state explicitly.
   var chips = document.getElementById('igdb-platform-chips');
   if (chips) chips.innerHTML = '';
   // Restore the default platform datalist (library platforms, not IGDB game platforms).
   var dl = document.getElementById('platform-suggestions');
   if (dl) dl.innerHTML = _platformSuggestionsDefault;
-  // Clear direct-ID input (form.reset() handles regular inputs, not number fields that may
-  // persist visually; explicit clear is cheap insurance).
-  var directId = document.getElementById('add-igdb-id-direct');
-  if (directId) directId.value = '';
+  // Clear IGDB search/ID results and inputs.
+  ['add-igdb-search-results', 'add-igdb-id-results'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.innerHTML = '';
+  });
+  var si = document.getElementById('add-igdb-search-input');
+  if (si) si.value = '';
+  var di = document.getElementById('add-igdb-id-input');
+  if (di) di.value = '';
+  // Reset the linked card and tabs back to initial state.
+  var card = document.getElementById('add-igdb-linked-card');
+  if (card) { card.classList.add('d-none'); card.style.display = ''; }
+  var tabs = document.getElementById('add-igdb-tabs');
+  var panel = document.getElementById('add-igdb-tab-panel');
+  var status = document.getElementById('add-igdb-unlinked-status');
+  if (tabs) tabs.hidden = false;
+  if (panel) panel.hidden = false;
+  if (status) { status.style.display = ''; status.textContent = 'Search or enter an ID to link a game.'; }
+  switchAddIgdbTab('search');
 }
 
 {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
-// IGDB typeahead: the title input drives the search with a short debounce.
-// Results render into an absolutely-positioned overlay so the modal doesn't resize.
-// Result buttons use inline onclick="selectIgdbGame(this)" — no addEventListener needed.
+// IGDB typeahead for the add modal — listens on the dedicated search input
+// (not the title field) and renders results into the tab panel.
 (function() {
-  var input = document.getElementById('add-title-input');
-  var resultsDiv = document.getElementById('igdb-results');
+  var input = document.getElementById('add-igdb-search-input');
+  var resultsDiv = document.getElementById('add-igdb-search-results');
+  if (!input || !resultsDiv) return;
   var timer = null;
 
   input.addEventListener('input', function() {
@@ -733,17 +773,9 @@ function resetAddGameForm() {
         .then(function(r) { return r.text(); })
         .then(function(html) { resultsDiv.innerHTML = html; })
         .catch(function() {
-          resultsDiv.innerHTML = '<div class="text-secondary"><small>Search failed — check IGDB credentials.</small></div>';
+          resultsDiv.innerHTML = '<div class="text-secondary p-2"><small>Search failed — check IGDB credentials.</small></div>';
         });
     }, 350);
-  });
-
-  // Close the overlay when the user clicks outside the title/search section.
-  document.addEventListener('click', function(e) {
-    var section = document.getElementById('igdb-search-section');
-    if (section && !section.contains(e.target)) {
-      resultsDiv.innerHTML = '';
-    }
   });
 })();
 
@@ -823,11 +855,31 @@ function selectIgdbGame(el) {
 
   // Safe to mutate DOM now.
   document.getElementById('add-igdb-game-id').value = igdbId;
-  document.getElementById('igdb-results').innerHTML = '';
 
-  // Fill title (this input is also the search box).
-  // Call helpers directly — dispatching 'input' would re-trigger the IGDB
-  // search listener and pop the dropdown back open after 350 ms.
+  // Clear result divs.
+  ['add-igdb-search-results', 'add-igdb-id-results'].forEach(function(id) {
+    var d = document.getElementById(id); if (d) d.innerHTML = '';
+  });
+
+  // Show linked confirmation card, hide tabs/panel/status.
+  var card = document.getElementById('add-igdb-linked-card');
+  if (card) {
+    var nameEl = document.getElementById('add-igdb-linked-name');
+    var idEl   = document.getElementById('add-igdb-linked-id');
+    if (nameEl) nameEl.textContent = name;
+    if (idEl)   idEl.textContent   = '· IGDB #' + igdbId;
+    card.classList.remove('d-none');
+    card.style.display = 'flex';
+  }
+  var tabs   = document.getElementById('add-igdb-tabs');
+  var panel  = document.getElementById('add-igdb-tab-panel');
+  var status = document.getElementById('add-igdb-unlinked-status');
+  if (tabs)   tabs.hidden   = true;
+  if (panel)  panel.hidden  = true;
+  if (status) status.style.display = 'none';
+
+  // Fill title. Call helpers directly — dispatching 'input' would re-trigger
+  // the search listener and flash the dropdown open again.
   var titleInput = document.getElementById('add-title-input');
   titleInput.value = name;
   hintIsCollection();
@@ -894,6 +946,47 @@ function lookupIgdbById(idInputId, resultsDivId) {
     .catch(function() {
       resultsDiv.innerHTML = '<div class="text-secondary p-2"><small>Lookup failed — check IGDB credentials.</small></div>';
     });
+}
+
+// Toggle the Search / by-ID tab in the add modal IGDB section.
+function switchAddIgdbTab(tab) {
+  var isSearch = (tab === 'search');
+  var sp = document.getElementById('add-igdb-pane-search');
+  var ip = document.getElementById('add-igdb-pane-id');
+  var ts = document.getElementById('add-igdb-tab-search');
+  var ti = document.getElementById('add-igdb-tab-id');
+  if (sp) sp.hidden = !isSearch;
+  if (ip) ip.hidden = isSearch;
+  if (ts) ts.classList.toggle('active', isSearch);
+  if (ti) ti.classList.toggle('active', !isSearch);
+}
+
+// "Change" button on the add modal linked card — hides the card and shows search again.
+function clearAddIgdbSelection() {
+  document.getElementById('add-igdb-game-id').value = '';
+  var card = document.getElementById('add-igdb-linked-card');
+  if (card) { card.classList.add('d-none'); card.style.display = ''; }
+  var tabs   = document.getElementById('add-igdb-tabs');
+  var panel  = document.getElementById('add-igdb-tab-panel');
+  var status = document.getElementById('add-igdb-unlinked-status');
+  if (tabs)   tabs.hidden  = false;
+  if (panel)  panel.hidden = false;
+  if (status) { status.style.display = ''; status.textContent = 'Search or enter an ID to link a game.'; }
+  // Clear platform chips and reset platform field.
+  var chips = document.getElementById('igdb-platform-chips');
+  if (chips) chips.innerHTML = '';
+  var dl = document.getElementById('platform-suggestions');
+  if (dl) dl.innerHTML = _platformSuggestionsDefault;
+  document.getElementById('add-platform').value = '';
+  // Clear result divs and inputs.
+  ['add-igdb-search-results', 'add-igdb-id-results'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.innerHTML = '';
+  });
+  var si = document.getElementById('add-igdb-search-input');
+  if (si) si.value = '';
+  var di = document.getElementById('add-igdb-id-input');
+  if (di) di.value = '';
+  switchAddIgdbTab('search');
 }
 
 // Toggle the Search / by-ID tab in the edit modal IGDB section.
