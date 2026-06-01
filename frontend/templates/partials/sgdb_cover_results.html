@@ -27,7 +27,7 @@
 <p class="text-secondary mb-0 w-100"><small>No candidates found on SteamGridDB for this image type.</small></p>
 {% else %}
   {% for c in candidates %}
-  <div class="text-center" style="cursor: pointer;"
+  <div class="text-center" style="cursor: pointer; position: relative;"
        onclick="applySgdbCover({{ entry_id }}, '{{ image_type }}', '{{ c.url }}')"
        title="Click to apply">
     <img src="{{ c.thumb or c.url }}" alt=""
@@ -39,6 +39,9 @@
            {%- endif -%}
            border-radius:4px;display:block;"
          loading="lazy">
+    {% if c.animated %}
+    <span style="position:absolute;top:4px;right:4px;font-size:.65rem;padding:1px 5px;border-radius:3px;background:var(--ctp-mauve);color:var(--ctp-base);font-weight:600;pointer-events:none;">GIF</span>
+    {% endif %}
     {% if c.author and c.author.name %}
     <small class="text-secondary d-block mt-1">by {{ c.author.name }}</small>
     {% endif %}
