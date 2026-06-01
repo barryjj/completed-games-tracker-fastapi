@@ -1104,10 +1104,44 @@ def igdb_search(
             current_user.twitch_client_id,
             current_user.twitch_client_secret,
             q,
-            limit=8,
+            limit=15,
         )
     except Exception as e:
         _logger.warning("IGDB search error: %s", e)
+        results = []
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/igdb_search_results.html",
+        context={"results": results},
+    )
+
+
+@router.get("/igdb/game/{igdb_id}")
+def igdb_game_lookup(
+    request: Request,
+    igdb_id: int,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Look up a single IGDB game by numeric ID — used by the paste-ID Lookup flow.
+
+    Returns the same igdb_search_results.html partial with one result card so the
+    user can confirm the game name/platforms before clicking to link it.
+    """
+    if not current_user.twitch_client_id or not current_user.twitch_client_secret:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/igdb_search_results.html",
+            context={"results": []},
+        )
+    try:
+        game = _igdb.fetch_game_brief(
+            current_user.twitch_client_id,
+            current_user.twitch_client_secret,
+            igdb_id,
+        )
+        results = [game] if game else []
+    except Exception as e:
+        _logger.warning("IGDB game lookup error for id=%d: %s", igdb_id, e)
         results = []
     return templates.TemplateResponse(
         request=request,

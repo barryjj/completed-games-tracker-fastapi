@@ -8,8 +8,10 @@ client credentials tokens are cheap to replace).
 Public API surface:
   get_token(client_id, client_secret)  → bearer token string (cached)
   search_games(client_id, secret, query, limit) → list of game dicts
-  fetch_cover(client_id, secret, igdb_game_id) → cover URL or None
+  fetch_cover_url(client_id, secret, igdb_game_id) → cover URL or None
   save_igdb_cover(db, entry, igdb_game_id, client_id, secret) → GameArtwork or None
+  fetch_game_details(client_id, secret, igdb_game_id) → metadata dict
+  save_igdb_metadata(db, release, igdb_game_id, client_id, secret) → None
 """
 
 import datetime
@@ -92,7 +94,7 @@ def search_games(
     body = (
         f'search "{query}"; '
         f"fields id, name, cover.url, platforms.name, first_release_date, version_parent; "
-        f"where version_parent = null; "  # exclude version variants (GOTY etc.) from top results
+        f"where version_parent = null; "  # exclude regional/hardware variants from search
         f"limit {limit};"
     )
     resp = httpx.post(
@@ -146,6 +148,57 @@ def _igdb_image_url(raw_url: str, size: str) -> str:
 
     url = re.sub(r"/t_[^/]+/", f"/{size}/", url)
     return url
+
+
+# ---------------------------------------------------------------------------
+# Direct game lookup (by ID)
+# ---------------------------------------------------------------------------
+
+
+def fetch_game_brief(
+    client_id: str,
+    client_secret: str,
+    igdb_game_id: int,
+) -> dict | None:
+    """Fetch name/cover/platforms for a single game by IGDB ID.
+
+    Returns a dict with the same shape as each item in search_games results:
+    {id, name, cover_url, platforms, year}.  Returns None if not found.
+    Used by the "paste ID → Lookup" flow so users can confirm a game before linking.
+    """
+    token = get_token(client_id, client_secret)
+    body = f"fields id, name, cover.url, platforms.name, first_release_date; where id = {igdb_game_id}; limit 1;"
+    resp = httpx.post(
+        f"{_IGDB_BASE}/games",
+        headers=_igdb_headers(client_id, token),
+        content=body,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    games = resp.json()
+    if not games:
+        return None
+    g = games[0]
+
+    cover_url = None
+    raw_cover = g.get("cover")
+    if raw_cover and raw_cover.get("url"):
+        cover_url = _igdb_image_url(raw_cover["url"], "t_cover_big")
+
+    year = None
+    ts = g.get("first_release_date")
+    if ts:
+        year = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).year
+
+    platforms = [p["name"] for p in (g.get("platforms") or [])]
+
+    return {
+        "id": g["id"],
+        "name": g["name"],
+        "cover_url": cover_url,
+        "platforms": platforms,
+        "year": year,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +279,135 @@ def save_igdb_cover(
     db.refresh(art)
     logger.debug("IGDB: saved cover_v for release %d from IGDB game %d", release.id, igdb_game_id)
     return art
+
+
+# ---------------------------------------------------------------------------
+# Rich metadata
+# ---------------------------------------------------------------------------
+
+
+def fetch_game_details(
+    client_id: str,
+    client_secret: str,
+    igdb_game_id: int,
+) -> dict:
+    """Fetch rich metadata for a single IGDB game.
+
+    Returns a dict with keys:
+        summary      – plain-text description (may be "")
+        genres       – list of genre name strings (may be [])
+        year         – release year int or None
+        artwork_urls – list of landscape artwork URLs (1080p, may be [])
+    """
+    token = get_token(client_id, client_secret)
+    body = f"fields summary, genres.name, first_release_date, artworks.url; where id = {igdb_game_id}; limit 1;"
+    resp = httpx.post(
+        f"{_IGDB_BASE}/games",
+        headers=_igdb_headers(client_id, token),
+        content=body,
+        timeout=10,
+    )
+    resp.raise_for_status()
+    games = resp.json()
+    if not games:
+        return {}
+    g = games[0]
+
+    year = None
+    ts = g.get("first_release_date")
+    if ts:
+        year = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).year
+
+    genres = [genre["name"] for genre in (g.get("genres") or [])]
+
+    artwork_urls = []
+    for art in g.get("artworks") or []:
+        if art.get("url"):
+            artwork_urls.append(_igdb_image_url(art["url"], "t_1080p"))
+
+    return {
+        "summary": (g.get("summary") or "").strip(),
+        "genres": genres,
+        "year": year,
+        "artwork_urls": artwork_urls,
+    }
+
+
+def save_igdb_metadata(
+    db,
+    release: "models.GameRelease",
+    igdb_game_id: int,
+    client_id: str,
+    client_secret: str,
+) -> None:
+    """Fetch IGDB metadata for a game and persist it on the release.
+
+    Writes:
+      - summary  → release.description (only if not already set)
+      - genres, year → release.raw_data['igdb']
+      - first landscape artwork → GameArtwork(type='hero', source='igdb')
+
+    Commits to DB if anything changed. Skips gracefully on empty IGDB response.
+    """
+    details = fetch_game_details(client_id, client_secret, igdb_game_id)
+    if not details:
+        return
+
+    changed = False
+
+    # Summary → release.description (don't overwrite user-provided descriptions).
+    if details["summary"] and not release.description:
+        release.description = details["summary"]
+        changed = True
+
+    # Genres + year → release.raw_data['igdb'].
+    if details["genres"] or details["year"]:
+        raw = dict(release.raw_data or {})
+        igdb_block = dict(raw.get("igdb", {}))
+        if details["genres"]:
+            igdb_block["genres"] = details["genres"]
+        if details["year"]:
+            igdb_block["year"] = details["year"]
+        raw["igdb"] = igdb_block
+        release.raw_data = raw
+        changed = True
+
+    # First landscape artwork → hero GameArtwork.
+    if details["artwork_urls"]:
+        url = details["artwork_urls"][0]
+        existing = next(
+            (a for a in release.artwork if a.artwork_type == "hero" and a.source == "igdb"),
+            None,
+        )
+        if existing:
+            existing.url = url
+            existing.is_valid = True
+            existing.verified_at = datetime.datetime.now(datetime.UTC)
+        else:
+            db.add(
+                models.GameArtwork(
+                    release_id=release.id,
+                    game_id=release.game_id,
+                    artwork_type="hero",
+                    source="igdb",
+                    url=url,
+                    is_valid=True,
+                    verified_at=datetime.datetime.now(datetime.UTC),
+                )
+            )
+        changed = True
+
+    if changed:
+        db.commit()
+        db.refresh(release)
+        logger.debug(
+            "IGDB: saved metadata for release %d (igdb game %d) — summary=%s genres=%s hero=%s",
+            release.id,
+            igdb_game_id,
+            bool(details["summary"]),
+            details["genres"],
+            bool(details["artwork_urls"]),
+        )
 
 
 # ---------------------------------------------------------------------------

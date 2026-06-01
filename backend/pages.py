@@ -182,6 +182,20 @@ def _normalize_steam_date(raw: str) -> str:
     return raw  # Q1 2024, Coming soon, bare year, etc. — pass through as-is
 
 
+def _extract_igdb_meta(release: "models.GameRelease") -> dict:
+    """Pull IGDB metadata from release.description and release.raw_data['igdb'].
+
+    Returns a dict with keys: summary, genres, year.
+    Callers should guard with `if igdb_meta.summary` etc.
+    """
+    igdb = (release.raw_data or {}).get("igdb") or {}
+    return {
+        "summary": release.description or "",
+        "genres": igdb.get("genres") or [],
+        "year": igdb.get("year"),
+    }
+
+
 def _extract_steam_meta(appdetails: dict) -> dict:
     """Pull display-ready fields from a cached appdetails payload.
 
@@ -251,19 +265,26 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
         return None
 
     def _art_url(rel, art_type: str) -> str | None:
-        """Best valid GameArtwork URL for a release. Native sources preferred."""
+        """Best valid GameArtwork URL for a release.
+
+        Priority: steam/psn (first-party) > igdb (official) > sgdb (community).
+        """
         if not rel:
             return None
-        native = None
-        sgdb = None
+        native = None  # steam / psn
+        igdb_url = None  # igdb official art
+        sgdb_url = None  # sgdb / other
         for art in rel.artwork:
             if art.artwork_type == art_type and art.is_valid and art.url:
                 if art.source in ("steam", "psn"):
                     if native is None:
                         native = art.url
-                elif sgdb is None:
-                    sgdb = art.url
-        return native or sgdb
+                elif art.source == "igdb":
+                    if igdb_url is None:
+                        igdb_url = art.url
+                elif sgdb_url is None:
+                    sgdb_url = art.url
+        return native or igdb_url or sgdb_url
 
     def _steam_logo_url(rel) -> str | None:
         # Logo isn't captured as GameArtwork — construct it from the appid.
@@ -912,11 +933,12 @@ def add_game(
     db.commit()
     db.refresh(entry)
 
-    # Fetch IGDB cover art in the background if we have an igdb_game_id and credentials.
+    # Fetch IGDB cover art and metadata if we have an igdb_game_id and credentials.
+    # Each fetch is wrapped independently so one failure can't suppress the other.
     if igdb_game_id and current_user.twitch_client_id and current_user.twitch_client_secret:
-        try:
-            from . import igdb as _igdb
+        from . import igdb as _igdb
 
+        try:
             _igdb.save_igdb_cover(
                 db,
                 entry,
@@ -925,7 +947,18 @@ def add_game(
                 current_user.twitch_client_secret,
             )
         except Exception:
-            pass  # Cover art failure never blocks the add
+            pass  # cover failure never blocks the add
+
+        try:
+            _igdb.save_igdb_metadata(
+                db,
+                entry.release,
+                igdb_game_id,
+                current_user.twitch_client_id,
+                current_user.twitch_client_secret,
+            )
+        except Exception:
+            pass  # metadata failure never blocks the add
 
     return templates.TemplateResponse(
         request=request,
@@ -943,6 +976,8 @@ def edit_library_entry(
     is_dlc: bool = Form(False),
     is_collection: bool = Form(False),
     parent_game_id: int | None = Form(None),
+    igdb_game_id: int | None = Form(None),
+    platform: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -963,6 +998,11 @@ def edit_library_entry(
     if title_clean and is_fully_manual:
         game.title = title_clean
 
+    # Platform is editable for fully-manual entries (no sync to break).
+    platform_clean = platform.strip()
+    if platform_clean and is_fully_manual:
+        entry.release.platform = platform_clean
+
     # display_name: empty string means "use raw title" (display_name stored as NULL)
     game.display_name = display_name.strip() or None
     game.display_name_user_set = True
@@ -981,13 +1021,121 @@ def edit_library_entry(
         game.parent_id = None
     game.parent_id_user_set = True
 
+    # IGDB link — only for fully-manual games (never overwrite a sync'd game's ID).
+    if igdb_game_id and is_fully_manual:
+        game.igdb_id = igdb_game_id
+
     db.commit()
     db.refresh(entry)
+
+    # Fetch IGDB art + metadata if a new IGDB ID was supplied.
+    if igdb_game_id and is_fully_manual and current_user.twitch_client_id and current_user.twitch_client_secret:
+        from . import igdb as _igdb
+
+        try:
+            _igdb.save_igdb_cover(
+                db,
+                entry,
+                igdb_game_id,
+                current_user.twitch_client_id,
+                current_user.twitch_client_secret,
+            )
+        except Exception:
+            pass
+
+        try:
+            _igdb.save_igdb_metadata(
+                db,
+                entry.release,
+                igdb_game_id,
+                current_user.twitch_client_id,
+                current_user.twitch_client_secret,
+            )
+        except Exception:
+            pass
+
     return templates.TemplateResponse(
         request=request,
         name="partials/library_row.html",
         context={"entry": entry},
     )
+
+
+@router.post("/library/entries/{entry_id}/fetch-igdb-metadata")
+def fetch_igdb_metadata_for_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Re-fetch IGDB cover art and metadata for a game that has an IGDB ID linked.
+
+    Called from the detail pane's "Refresh IGDB metadata" dropdown item.
+    Returns 200 on success; the HTMX caller reloads the pane.
+    """
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
+    if not entry:
+        return Response(status_code=404)
+    game = entry.release.game
+    if not game.igdb_id:
+        return Response(status_code=400)
+    cid = current_user.twitch_client_id
+    secret = current_user.twitch_client_secret
+    if not cid or not secret:
+        return Response(status_code=400)
+
+    from . import igdb as _igdb
+
+    try:
+        _igdb.save_igdb_cover(db, entry, game.igdb_id, cid, secret)
+    except Exception as exc:
+        logger.warning("IGDB cover refresh failed for entry %d: %s", entry_id, exc)
+    try:
+        _igdb.save_igdb_metadata(db, entry.release, game.igdb_id, cid, secret)
+    except Exception as exc:
+        logger.warning("IGDB metadata refresh failed for entry %d: %s", entry_id, exc)
+
+    return Response(status_code=200)
+
+
+@router.post("/library/entries/{entry_id}/unlink-igdb")
+def unlink_igdb_for_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Clear the IGDB link and all IGDB-sourced metadata on a game.
+
+    Clears:
+      - game.igdb_id
+      - release.raw_data['igdb'] (genres / year)
+      - release.description if it came from IGDB (no separate flag, so always cleared)
+      - GameArtwork rows where source='igdb' (marked invalid, not deleted)
+    """
+    entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
+    if not entry:
+        return Response(status_code=404)
+
+    game = entry.release.game
+    release = entry.release
+
+    # Clear the IGDB game link.
+    game.igdb_id = None
+
+    # Clear IGDB metadata block from raw_data.
+    raw = dict(release.raw_data or {})
+    raw.pop("igdb", None)
+    release.raw_data = raw
+
+    # Clear description (IGDB is the only non-Steam source for this field on manual games).
+    release.description = None
+
+    # Mark IGDB artwork rows invalid so they stop showing in the detail pane.
+    for art in release.artwork:
+        if art.source == "igdb":
+            art.is_valid = False
+
+    db.commit()
+    return Response(status_code=200)
 
 
 @router.delete("/library/entries/{entry_id}")
@@ -1175,6 +1323,7 @@ def library_entry_detail(
             "release": entry.release,
             "appdetails": appdetails,
             "steam_meta": _extract_steam_meta(appdetails),
+            "igdb_meta": _extract_igdb_meta(entry.release),
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
@@ -1750,6 +1899,7 @@ def completion_detail(
             "game": game,
             "appdetails": appdetails,
             "steam_meta": _extract_steam_meta(appdetails),
+            "igdb_meta": _extract_igdb_meta(release),
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
             "current_user": current_user,
