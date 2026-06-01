@@ -267,7 +267,7 @@
 
 <!-- Add Game Modal -->
 <div class="modal fade" id="addGameModal" tabindex="-1" aria-labelledby="addGameModalLabel" aria-hidden="true">
-  <div class="modal-dialog">
+  <div class="modal-dialog modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="addGameModalLabel">Add Game to Library</h5>
@@ -280,18 +280,14 @@
         <div class="modal-body">
           {# IGDB search — only shown when credentials are configured. #}
           {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
-          <div class="mb-3" id="igdb-search-section" style="position:relative;">
+          <div class="mb-3" id="igdb-search-section">
             <label class="form-label">Search IGDB <span class="text-secondary fw-normal">(optional — auto-fills title)</span></label>
             <input type="text"
                    class="form-control"
                    id="igdb-search-input"
                    placeholder="e.g. Resident Evil Village"
                    autocomplete="off">
-            {# Results are absolutely positioned so they overlay the form below
-               instead of pushing it down. z-index stays below Bootstrap modal (1055)
-               but above everything inside it. #}
-            <div id="igdb-results"
-                 style="position:absolute;left:0;right:0;z-index:50;max-height:300px;overflow-y:auto;border-radius:0.375rem;box-shadow:0 4px 16px rgba(0,0,0,.35);"></div>
+            <div id="igdb-results" class="mt-2" style="max-height:260px;overflow-y:auto;"></div>
             <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
           </div>
           <hr class="my-2">
@@ -341,24 +337,12 @@
           <div class="mb-3" id="add-parent-row" hidden>
             <div id="add-parent-dlc-col">
               <label class="form-label">Base game</label>
-              <input type="text" class="form-control form-control-sm mb-2" id="add-dlc-search" name="q" placeholder="Search for base game…" autocomplete="off"
-                     hx-get="/library/games/search?is_dlc=false"
-                     hx-trigger="input changed delay:300ms"
-                     hx-target="#add-dlc-results"
-                     hx-include="this"
-                     hx-sync="this:abort"
-                     hx-on::after-request="event.stopPropagation()">
+              <input type="text" class="form-control form-control-sm mb-2" id="add-dlc-search" placeholder="Search for base game…" autocomplete="off">
               <div id="add-dlc-results"></div>
             </div>
             <div id="add-parent-collection-col" hidden>
               <label class="form-label">Collection</label>
-              <input type="text" class="form-control form-control-sm mb-2" id="add-collection-search" name="q" placeholder="Search for collection…" autocomplete="off"
-                     hx-get="/library/games/search?is_collection=true"
-                     hx-trigger="input changed delay:300ms"
-                     hx-target="#add-collection-results"
-                     hx-include="this"
-                     hx-sync="this:abort"
-                     hx-on::after-request="event.stopPropagation()">
+              <input type="text" class="form-control form-control-sm mb-2" id="add-collection-search" placeholder="Search for collection…" autocomplete="off">
               <div id="add-collection-results"></div>
             </div>
             <input type="hidden" name="parent_game_id" id="add-parent-game-id">
@@ -663,33 +647,66 @@ function resetAddGameForm() {
   if (dl) dl.innerHTML = _platformSuggestionsDefault;
 }
 
-// IGDB typeahead — driven by plain JS rather than HTMX to avoid form
-// interaction quirks (the input lives inside add-game-form which has its
-// own hx-post, which can confuse HTMX's trigger/include logic).
+// IGDB typeahead and collection/DLC searches all use plain fetch() instead
+// of htmx.ajax() / hx-* attributes.  add-game-form has hx-post, and HTMX 2
+// intercepts events for elements inside hx-post forms in ways that break both
+// injection and result clicks.  fetch() + direct addEventListener is immune.
 (function() {
   var input = document.getElementById('igdb-search-input');
   if (!input) return; // not present when IGDB not configured
+  var resultsDiv = document.getElementById('igdb-results');
   var timer = null;
+
   input.addEventListener('input', function() {
     var q = this.value.trim();
     clearTimeout(timer);
-    document.getElementById('igdb-results').innerHTML = '';
+    resultsDiv.innerHTML = '';
     if (!q) return;
     timer = setTimeout(function() {
-      htmx.ajax('GET', '/integrations/igdb/search?q=' + encodeURIComponent(q), {
-        target: '#igdb-results',
-        swap: 'innerHTML',
-      });
+      fetch('/integrations/igdb/search?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.text(); })
+        .then(function(html) {
+          resultsDiv.innerHTML = html;
+          // Attach listeners directly — bypasses HTMX form-event interception.
+          resultsDiv.querySelectorAll('.igdb-result-btn').forEach(function(btn) {
+            btn.addEventListener('click', function() { selectIgdbGame(this.dataset); });
+          });
+        })
+        .catch(function() {
+          resultsDiv.innerHTML = '<div class="text-secondary"><small>Search failed — check IGDB credentials.</small></div>';
+        });
     }, 350);
   });
 
-  // Event delegation for result clicks — attach to document so the scroll
-  // container on #igdb-results can't swallow the event before it reaches us.
-  document.addEventListener('click', function(e) {
-    var btn = e.target.closest('#igdb-results .igdb-result-btn');
-    if (!btn) return;
-    selectIgdbGame(btn.dataset);
+  // Clear results on blur so they don't sit over the form forever.
+  // The 150 ms delay lets a result click register before clearing.
+  input.addEventListener('blur', function() {
+    setTimeout(function() { resultsDiv.innerHTML = ''; }, 150);
   });
+})();
+
+// Collection and DLC parent searches inside add-game-form — same reason as
+// above: plain fetch() so HTMX 2 can't interfere.
+(function() {
+  function addSearchListener(inputId, resultsId, url) {
+    var input = document.getElementById(inputId);
+    var results = document.getElementById(resultsId);
+    if (!input || !results) return;
+    var timer = null;
+    input.addEventListener('input', function() {
+      var q = this.value.trim();
+      clearTimeout(timer);
+      results.innerHTML = '';
+      if (!q) return;
+      timer = setTimeout(function() {
+        fetch(url + encodeURIComponent(q))
+          .then(function(r) { return r.text(); })
+          .then(function(html) { results.innerHTML = html; });
+      }, 300);
+    });
+  }
+  addSearchListener('add-dlc-search',        'add-dlc-results',        '/library/games/search?is_dlc=false&q=');
+  addSearchListener('add-collection-search', 'add-collection-results', '/library/games/search?is_collection=true&q=');
 })();
 
 // Called when the user picks an IGDB result. Fills the title, platform,
