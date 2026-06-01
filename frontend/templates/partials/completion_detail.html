@@ -112,6 +112,9 @@
         {% if steam_meta.released %}
         <dt>Released</dt>
         <dd>{{ steam_meta.released }}</dd>
+        {% elif igdb_meta.year %}
+        <dt>Released</dt>
+        <dd>{{ igdb_meta.year }}</dd>
         {% endif %}
 
         {% if steam_meta.developers %}
@@ -127,6 +130,9 @@
         {% if steam_meta.genres %}
         <dt>Genre</dt>
         <dd>{{ steam_meta.genres | join(", ") }}</dd>
+        {% elif igdb_meta.genres %}
+        <dt>Genre</dt>
+        <dd>{{ igdb_meta.genres | join(", ") }}</dd>
         {% endif %}
 
         {% if steam_meta.features %}
@@ -166,6 +172,11 @@
     <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="cgt-detail-description mb-0">{{ appdetails.short_description | html_unescape }}</p>
+    </div>
+    {% elif igdb_meta.summary %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Description</h6>
+      <p class="cgt-detail-description mb-0">{{ igdb_meta.summary }}</p>
     </div>
     {% endif %}
 
@@ -221,6 +232,24 @@
              hx-swap="none"
              hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
            Refresh game metadata
+         </a></li>
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}
+      {% if game.igdb_id %}
+      {% if current_user and current_user.twitch_client_id and current_user.twitch_client_secret %}
+      <li><a class="dropdown-item" href="#"
+             hx-post="/library/entries/{{ entry.id }}/fetch-igdb-metadata"
+             hx-swap="none"
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+           Refresh IGDB metadata
+         </a></li>
+      {% endif %}
+      <li><a class="dropdown-item" href="#"
+             hx-post="/library/entries/{{ entry.id }}/unlink-igdb"
+             hx-swap="none"
+             hx-confirm="Remove the IGDB link for {{ game.display_title | e }}? Saved artwork is kept."
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+           Unlink IGDB
          </a></li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}

@@ -1,5 +1,5 @@
 {# IGDB game search results for the manual add modal.
-   Each result is a button that calls selectIgdbGame() with the game data.
+   Each result is a button that calls selectIgdbGame(this) via inline onclick.
    `error` is set when IGDB is unavailable or not configured. #}
 
 {% if error %}
@@ -10,10 +10,11 @@
   <button
     type="button"
     class="list-group-item list-group-item-action text-start d-flex align-items-center gap-3 py-2 igdb-result-btn"
+    onclick="selectIgdbGame(this)"
     data-igdb-id="{{ game.id }}"
     data-name="{{ game.name | e }}"
     data-cover-url="{{ (game.cover_url or '') | e }}"
-    data-platforms="{{ game.platforms | tojson | e }}"
+    data-platforms="{{ game.platforms | tojson | forceescape }}"
   >
     {% if game.cover_url %}
     <img src="{{ game.cover_url }}" alt="" width="32" height="42"
