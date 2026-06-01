@@ -1,5 +1,6 @@
 import datetime
 import html as _html
+import logging
 import os
 
 from fastapi import APIRouter, Depends, Form, Query, Request
@@ -10,6 +11,8 @@ from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import models, users
 from .models import get_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
