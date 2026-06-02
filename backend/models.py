@@ -207,13 +207,6 @@ class UserLibraryEntry(Base):
     release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False, index=True)
     playtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_played_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # DEPRECATED — migrated to UserArtwork. Kept readable during transition;
-    # will be dropped in the follow-on migration once all read/write paths
-    # use UserArtwork. Do not write to these columns in new code.
-    cover_url_override_v: Mapped[str | None] = mapped_column(String, nullable=True)
-    cover_url_override_h: Mapped[str | None] = mapped_column(String, nullable=True)
-    hero_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
-    logo_url_override: Mapped[str | None] = mapped_column(String, nullable=True)
     # True = entry hidden from the default library view (soundtracks, artbooks, etc.)
     is_hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
