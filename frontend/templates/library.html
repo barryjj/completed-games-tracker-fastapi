@@ -466,9 +466,9 @@ cgtInitDrawer('lib-view-drawer',    'cgt-lib-view-open',    'lib-toggle-view');
 // are also available on the completions page.
 
 // Auto-fetch hero: called from cgtHeroFailed when the hero img 404s.
-// Mirrors cgtAutoFetchLogo — fires a background POST to store the SGDB top
-// result as hero_url_override, then un-hides/un-collapses the hero block and
-// sets img.src so the hero appears without a full page reload.
+// Mirrors cgtAutoFetchLogo — fires a background POST to save the SGDB top
+// result as a UserArtwork hero row, then un-hides/un-collapses the hero block
+// and sets img.src so the hero appears without a full page reload.
 function cgtAutoFetchHero(img, entryId) {
   img.onerror = null;
   fetch('/library/entries/' + entryId + '/auto-fetch-hero', {method: 'POST'})
@@ -488,7 +488,7 @@ function cgtAutoFetchHero(img, entryId) {
 }
 
 // Auto-fetch logo: called from onerror on the hero logo img when it 404s.
-// Fires a background POST to store the SGDB top result as logo_url_override,
+// Fires a background POST to save the SGDB top result as a UserArtwork logo row,
 // then un-hides and updates the img src in-place so it appears without a reload.
 function cgtAutoFetchLogo(img, entryId) {
   // Prevent onerror from firing again if our fetched URL also fails.
