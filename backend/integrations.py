@@ -1148,3 +1148,38 @@ def igdb_game_lookup(
         name="partials/igdb_search_results.html",
         context={"results": results},
     )
+
+
+@router.get("/igdb/platforms")
+def igdb_platform_list(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Fetch IGDB's full platform catalogue and render it as a reference table.
+
+    Read-only — no DB writes. Intended so the user can look up IGDB platform
+    IDs when they want to add new platforms via migration.
+    """
+    if not current_user.twitch_client_id or not current_user.twitch_client_secret:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/igdb_platform_list.html",
+            context={"platforms": [], "error": "IGDB credentials not configured."},
+        )
+    try:
+        platforms = _igdb.fetch_platforms(
+            current_user.twitch_client_id,
+            current_user.twitch_client_secret,
+        )
+    except Exception as e:
+        _logger.warning("IGDB platform list fetch failed: %s", e)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/igdb_platform_list.html",
+            context={"platforms": [], "error": f"IGDB request failed: {e}"},
+        )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/igdb_platform_list.html",
+        context={"platforms": platforms},
+    )

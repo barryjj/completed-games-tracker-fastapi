@@ -202,6 +202,48 @@ def fetch_game_brief(
 
 
 # ---------------------------------------------------------------------------
+# Platform list
+# ---------------------------------------------------------------------------
+
+# IGDB platform category IDs → human-readable label.
+_PLATFORM_CATEGORIES = {
+    1: "console",
+    2: "arcade",
+    3: "platform",
+    4: "operating_system",
+    5: "portable_console",
+    6: "computer",
+}
+
+
+def fetch_platforms(client_id: str, client_secret: str) -> list[dict]:
+    """Return IGDB's full platform list sorted by id.
+
+    Each dict has: id, name, category (human label), generation (int or None).
+    Fetches up to 500 rows — IGDB's platform catalogue is well under that.
+    """
+    token = get_token(client_id, client_secret)
+    body = "fields id, name, category, generation; sort id asc; limit 500;"
+    resp = httpx.post(
+        f"{_IGDB_BASE}/platforms",
+        headers=_igdb_headers(client_id, token),
+        content=body,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    platforms = resp.json()
+    return [
+        {
+            "id": p["id"],
+            "name": p.get("name", ""),
+            "category": _PLATFORM_CATEGORIES.get(p.get("category"), "unknown"),
+            "generation": p.get("generation"),
+        }
+        for p in platforms
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Cover art
 # ---------------------------------------------------------------------------
 
