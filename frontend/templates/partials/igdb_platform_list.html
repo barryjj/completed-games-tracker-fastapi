@@ -1,0 +1,29 @@
+{% if error %}
+<p class="text-danger small mb-0">{{ error }}</p>
+{% elif not platforms %}
+<p class="text-secondary small mb-0">No platforms returned.</p>
+{% else %}
+<p class="text-secondary small mb-2">{{ platforms | length }} platforms from IGDB.</p>
+<div class="table-responsive" style="max-height: 480px; overflow-y: auto;">
+  <table class="table table-sm table-hover align-middle mb-0" style="font-size: .8rem; font-family: var(--bs-font-monospace);">
+    <thead class="table-sticky-top">
+      <tr>
+        <th style="width: 4rem;">ID</th>
+        <th>Name</th>
+        <th style="width: 8rem;">Category</th>
+        <th style="width: 4rem;">Gen</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in platforms %}
+      <tr>
+        <td class="text-secondary">{{ p.id }}</td>
+        <td>{{ p.name }}</td>
+        <td class="text-secondary">{{ p.category }}</td>
+        <td class="text-secondary">{{ p.generation or '' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
