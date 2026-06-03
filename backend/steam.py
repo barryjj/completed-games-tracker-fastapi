@@ -752,6 +752,102 @@ def _promote_dlc_children(db: Session, parent_game_id: int, dlc_appids: list[int
             child_game.parent_id = parent_game_id
 
 
+_STEAMSPY_BASE = "https://steamspy.com/api.php"
+_STEAMSPY_SLEEP = 0.7  # stay under their 1 req/sec guideline
+
+
+def _lookup_steamspy_name(appid: str) -> str | None:
+    """Look up a game name from SteamSpy by Steam appid.
+
+    SteamSpy caches data from Steam directly and retains it for delisted apps,
+    making it a reliable fallback when Steam's own appdetails returns success=false.
+    Returns the name string on success, None if not found or on error.
+    """
+    try:
+        resp = httpx.get(
+            _STEAMSPY_BASE,
+            params={"request": "appdetails", "appid": appid},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        name = (data.get("name") or "").strip()
+        return name if name else None
+    except Exception as e:
+        logger.debug("SteamSpy lookup failed for appid %s: %s", appid, e)
+        return None
+
+
+def backfill_steamspy_names(
+    db: Session,
+    user: models.User,
+    on_progress=None,
+) -> dict:
+    """Fix 'App NNNNNN' placeholder titles using SteamSpy.
+
+    Finds all distinct games in the user's Steam library whose title is still
+    the sync-time fallback (App + 5+ digit appid) and queries SteamSpy for the
+    real name.  Only processes entries the user hasn't manually named
+    (display_name_user_set=False).
+
+    Calls on_progress(done, total, current_title) if supplied.
+    Returns {"fixed": N, "not_found": M, "total": P}.
+    """
+    # Distinct (game_id, external_id) pairs — one SteamSpy call per unique game.
+    from sqlalchemy import text as _text
+
+    pairs = (
+        db.query(models.Game.id, models.GameRelease.external_id)
+        .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
+        .join(
+            models.UserLibraryEntry,
+            models.UserLibraryEntry.release_id == models.GameRelease.id,
+        )
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.source == "steam",
+            models.GameRelease.external_id.isnot(None),
+            models.Game.title.op("GLOB")("App [0-9][0-9][0-9][0-9][0-9]*"),
+            models.Game.display_name_user_set == False,
+        )
+        .distinct()
+        .all()
+    )
+
+    # Deduplicate: one lookup per unique game_id (take first external_id seen).
+    seen: dict[int, str] = {}
+    for game_id, ext_id in pairs:
+        if game_id not in seen:
+            seen[game_id] = ext_id
+
+    total = len(seen)
+    fixed = 0
+    not_found = 0
+
+    for done, (game_id, appid) in enumerate(seen.items(), start=1):
+        game = db.query(models.Game).filter(models.Game.id == game_id).first()
+        if game is None:
+            continue
+
+        if on_progress:
+            on_progress(done, total, game.title)
+
+        spy_name = _lookup_steamspy_name(appid)
+        if spy_name:
+            game.title = spy_name
+            cleaned = _clean_title(spy_name)
+            game.display_name = cleaned if cleaned != spy_name else None
+            db.commit()
+            fixed += 1
+            logger.debug("SteamSpy: fixed App %s → %s", appid, spy_name)
+        else:
+            not_found += 1
+
+        time.sleep(_STEAMSPY_SLEEP)
+
+    return {"fixed": fixed, "not_found": not_found, "total": total}
+
+
 def _fetch_appdetails(appid: int) -> dict | None:
     """
     Fetch app metadata from the Steam store API.
@@ -832,6 +928,24 @@ def enrich_next_batch(db: Session, batch_size: int = 5) -> int:
             )
             time.sleep(_ENRICH_SLEEP_OK)
             continue
+
+        if details is None:
+            # Steam confirmed unavailable (success=false). Try SteamSpy for
+            # the name if the title is still an "App NNNNNN" placeholder so
+            # delisted/obscure apps get a human-readable title.
+            game = release.game
+            _is_placeholder = game.title.startswith("App ") and game.title[4:].strip().isdigit() and len(game.title[4:].strip()) >= 5
+            if _is_placeholder and not game.display_name_user_set:
+                spy_name = _lookup_steamspy_name(release.external_id)
+                if spy_name:
+                    game.title = spy_name
+                    cleaned = _clean_title(spy_name)
+                    game.display_name = cleaned if cleaned != spy_name else None
+                    logger.debug(
+                        "SteamSpy fallback: App %s → %s",
+                        release.external_id,
+                        spy_name,
+                    )
 
         if details is not None:
             raw = dict(release.raw_data or {})
