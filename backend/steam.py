@@ -794,8 +794,6 @@ def backfill_steamspy_names(
     Returns {"fixed": N, "not_found": M, "total": P}.
     """
     # Distinct (game_id, external_id) pairs — one SteamSpy call per unique game.
-    from sqlalchemy import text as _text
-
     pairs = (
         db.query(models.Game.id, models.GameRelease.external_id)
         .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
