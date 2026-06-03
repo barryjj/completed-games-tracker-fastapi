@@ -2,6 +2,7 @@ import datetime
 import html as _html
 import logging
 import os
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -707,7 +708,7 @@ def delete_account(
     return response
 
 
-PAGE_SIZE = 100
+PAGE_SIZE = 200  # rows per infinite-scroll page
 
 # --- Library ---
 
@@ -716,6 +717,128 @@ SORT_OPTIONS = ["name", "recently_played"]
 
 
 VIEW_MODES = {"list", "grid_v", "grid_h"}
+
+
+def _build_lib_query(
+    db: Session,
+    user: "models.User",
+    q: str,
+    platform: str,
+    view: str,
+    sort: str,
+    show_hidden: bool,
+    missing_art: bool,
+    view_mode: str,
+):
+    """Build and filter the library query.
+
+    Returns (base_q, view, sort) with view/sort normalisation applied.
+    Shared by library_page (full render) and library_more (scroll continuation).
+    """
+    base_q = (
+        db.query(models.UserLibraryEntry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .options(
+            contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game),
+            contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+            contains_eager(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter(models.UserLibraryEntry.user_id == user.id)
+        .order_by(func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE"))
+    )
+    if sort not in SORT_OPTIONS:
+        sort = "name"
+    if sort == "recently_played":
+        base_q = base_q.order_by(None).order_by(models.UserLibraryEntry.last_played_at.desc().nulls_last())
+    if not show_hidden:
+        base_q = base_q.filter(models.UserLibraryEntry.is_hidden == False)
+    q = q.strip()
+    if q:
+        base_q = base_q.filter(
+            or_(
+                models.Game.title.ilike(f"%{q}%"),
+                models.Game.display_name.ilike(f"%{q}%"),
+            )
+        )
+    if platform:
+        base_q = base_q.filter(models.GameRelease.platform == platform)
+    if view not in VIEW_OPTIONS:
+        view = "default"
+    if view == "default":
+        base_q = base_q.filter(
+            or_(
+                models.Game.is_dlc == False,
+                models.UserLibraryEntry.import_source == "manual",
+            )
+        )
+    elif view == "dlc":
+        base_q = base_q.filter(models.Game.is_dlc == True)
+    elif view == "collections":
+        base_q = base_q.filter(models.Game.is_collection == True)
+    elif view == "in_collection":
+        base_q = base_q.filter(
+            models.Game.parent_id != None,
+            models.Game.is_dlc == False,
+        )
+    elif view == "manual":
+        base_q = base_q.filter(models.UserLibraryEntry.import_source == "manual")
+    if missing_art:
+        art_type = "cover_v" if view_mode == "grid_v" else "cover_h"
+        has_user_art_ids = (
+            db.query(models.UserArtwork.entry_id)
+            .filter(
+                models.UserArtwork.artwork_type == art_type,
+                models.UserArtwork.entry_id.isnot(None),
+                models.UserArtwork.url.isnot(None),
+            )
+            .scalar_subquery()
+        )
+        has_art_release_ids = (
+            db.query(models.GameArtwork.release_id)
+            .filter(
+                models.GameArtwork.artwork_type == art_type,
+                models.GameArtwork.is_valid.is_(True),
+            )
+            .scalar_subquery()
+        )
+        base_q = base_q.filter(
+            models.UserLibraryEntry.id.not_in(has_user_art_ids),
+            models.GameRelease.id.not_in(has_art_release_ids),
+        )
+    return base_q, view, sort
+
+
+def _library_next_url(
+    page: int,
+    total_pages: int,
+    q: str,
+    platform: str,
+    view: str,
+    sort: str,
+    show_hidden: bool,
+    missing_art: bool,
+    view_mode: str,
+) -> str | None:
+    """Return the /library/more URL for the next scroll page, or None if done."""
+    if page >= total_pages:
+        return None
+    params: dict[str, str] = {"page": str(page + 1)}
+    if q:
+        params["q"] = q
+    if platform:
+        params["platform"] = platform
+    if view != "default":
+        params["view"] = view
+    if sort != "name":
+        params["sort"] = sort
+    if show_hidden:
+        params["show_hidden"] = "true"
+    if missing_art:
+        params["missing_art"] = "true"
+    params["view_mode"] = view_mode
+    return "/library/more?" + urlencode(params)
 
 
 def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: str) -> str:
@@ -758,111 +881,15 @@ def library_page(
     # without the visible flicker the old JS-only redirect caused.
     view_mode = _resolve_view_mode(request, view_mode, "cgt-library-view-mode")
 
-    base_q = (
-        db.query(models.UserLibraryEntry)
-        .join(models.UserLibraryEntry.release)
-        .join(models.GameRelease.game)
-        .options(
-            # Both branches start with contains_eager(release) — same strategy
-            # on the shared path prefix, then diverge. Adding a separate
-            # joinedload(release) would conflict.
-            contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game),
-            contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
-            contains_eager(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
-            selectinload(models.UserLibraryEntry.user_artwork),
-        )
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
-        # Default order — overridden below when sort != "name".
-        .order_by(func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE"))
-    )
-
-    # Normalise sort param
-    if sort not in SORT_OPTIONS:
-        sort = "name"
-    if sort == "recently_played":
-        # NULL last so entries with no play date (manual, un-launched games)
-        # sink to the bottom rather than surfacing at the top.
-        base_q = base_q.order_by(None).order_by(models.UserLibraryEntry.last_played_at.desc().nulls_last())
-    # Hidden entries (soundtracks, artbooks, etc.) are excluded by default.
-    # The "Show hidden" toggle flips this off so the user can review or unhide.
-    if not show_hidden:
-        base_q = base_q.filter(models.UserLibraryEntry.is_hidden == False)
-    q = q.strip()
-    if q:
-        base_q = base_q.filter(
-            or_(
-                models.Game.title.ilike(f"%{q}%"),
-                models.Game.display_name.ilike(f"%{q}%"),
-            )
-        )
-    if platform:
-        base_q = base_q.filter(models.GameRelease.platform == platform)
-
-    # Normalise view param — unknown values fall back to default
-    if view not in VIEW_OPTIONS:
-        view = "default"
-
-    if view == "default":
-        # Show all non-DLC entries. Games that are part of a collection have a
-        # parent_id set but are still completable games — hiding them from
-        # Default just because they're organised into a collection is wrong.
-        # The manual-entry exception keeps manually added DLC visible (those
-        # were added intentionally and the user knows what they are).
-        base_q = base_q.filter(
-            or_(
-                models.Game.is_dlc == False,
-                models.UserLibraryEntry.import_source == "manual",
-            )
-        )
-    elif view == "dlc":
-        base_q = base_q.filter(models.Game.is_dlc == True)
-    elif view == "collections":
-        base_q = base_q.filter(models.Game.is_collection == True)
-    elif view == "in_collection":
-        base_q = base_q.filter(
-            models.Game.parent_id != None,
-            models.Game.is_dlc == False,
-        )
-    elif view == "manual":
-        base_q = base_q.filter(models.UserLibraryEntry.import_source == "manual")
-    # "all" — no additional filter
-
-    # Missing-artwork filter — orientation-aware.
-    # grid_v → needs cover_v; grid_h / list → needs cover_h.
-    # An entry "has art" if it has a UserArtwork pick OR a valid GameArtwork row.
-    if missing_art:
-        art_type = "cover_v" if view_mode == "grid_v" else "cover_h"
-        # Entry IDs that already have a UserArtwork pick for this type
-        has_user_art_ids = (
-            db.query(models.UserArtwork.entry_id)
-            .filter(
-                models.UserArtwork.artwork_type == art_type,
-                models.UserArtwork.entry_id.isnot(None),
-                models.UserArtwork.url.isnot(None),
-            )
-            .scalar_subquery()
-        )
-        # Release IDs that have a valid GameArtwork row of this type
-        has_art_release_ids = (
-            db.query(models.GameArtwork.release_id)
-            .filter(models.GameArtwork.artwork_type == art_type, models.GameArtwork.is_valid.is_(True))
-            .scalar_subquery()
-        )
-        base_q = base_q.filter(
-            models.UserLibraryEntry.id.not_in(has_user_art_ids),
-            models.GameRelease.id.not_in(has_art_release_ids),
-        )
+    base_q, view, sort = _build_lib_query(db, current_user, q, platform, view, sort, show_hidden, missing_art, view_mode)
 
     total = base_q.count()
     total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(page, total_pages)
     entries = base_q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
 
-    # Attach parent-game artwork fallbacks to each DLC entry. The list/grid
-    # cover img uses these via data-fallback + cgtCoverFallback() so a DLC
-    # whose own header/cover URL 404s degrades to the base game's art instead
-    # of vanishing. Done as a single batched query (vs. per-row joinedload) to
-    # avoid N+1 across long pages.
+    # Attach parent-game artwork fallbacks for DLC entries (single batched
+    # query to avoid N+1 across large pages).
     _attach_parent_fallbacks(db, entries, current_user=current_user)
 
     # base_game_options and collections are only needed to populate the add-form
@@ -925,23 +952,7 @@ def library_page(
             {"value": raw, "label": (_pmap[pid].display_title if pid and pid in _pmap else raw)} for raw, pid in lib_platforms_raw
         ]
 
-    # Build filter_qs for pagination links (preserves active filters)
-    filter_parts = []
-    if q:
-        filter_parts.append(f"q={q}")
-    if platform:
-        filter_parts.append(f"platform={platform}")
-    if view != "default":
-        filter_parts.append(f"view={view}")
-    if sort != "name":
-        filter_parts.append(f"sort={sort}")
-    if show_hidden:
-        filter_parts.append("show_hidden=true")
-    if missing_art:
-        filter_parts.append("missing_art=true")
-    if view_mode != "list":
-        filter_parts.append(f"view_mode={view_mode}")
-    filter_qs = ("&" + "&".join(filter_parts)) if filter_parts else ""
+    next_page_url = _library_next_url(page, total_pages, q, platform, view, sort, show_hidden, missing_art, view_mode)
 
     return templates.TemplateResponse(
         request=request,
@@ -952,8 +963,6 @@ def library_page(
             "collections": collections,
             "base_game_options": base_game_options,
             "platforms": _get_all_platforms(db),
-            "page": page,
-            "total_pages": total_pages,
             "total": total,
             "q": q,
             "platform": platform,
@@ -962,8 +971,51 @@ def library_page(
             "view_mode": view_mode,
             "show_hidden": show_hidden,
             "missing_art": missing_art,
-            "filter_qs": filter_qs,
+            "next_page_url": next_page_url,
             "lib_platforms": lib_platform_list,
+        },
+    )
+
+
+@router.get("/library/more")
+def library_more(
+    request: Request,
+    page: int = Query(1, ge=1),
+    q: str = Query(""),
+    platform: str = Query(""),
+    view: str = Query("default"),
+    sort: str = Query("name"),
+    view_mode: str = Query("list"),
+    show_hidden: bool = Query(False),
+    missing_art: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Infinite-scroll continuation: returns the next batch of rows/cards + sentinel.
+
+    Called by the sentinel element at the bottom of #library-tbody when it
+    scrolls into view.  Response is plain rows/cards (no wrapper) so HTMX
+    outerHTML-swaps them in place of the sentinel inside the container.
+    """
+    view_mode = view_mode if view_mode in VIEW_MODES else "list"
+    base_q, view, sort = _build_lib_query(db, current_user, q, platform, view, sort, show_hidden, missing_art, view_mode)
+
+    total = base_q.count()
+    total_pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+    page = min(page, total_pages)
+    entries = base_q.offset((page - 1) * PAGE_SIZE).limit(PAGE_SIZE).all()
+
+    _attach_parent_fallbacks(db, entries, current_user=current_user)
+
+    next_page_url = _library_next_url(page, total_pages, q, platform, view, sort, show_hidden, missing_art, view_mode)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/library_more.html",
+        context={
+            "entries": entries,
+            "next_page_url": next_page_url,
+            "view_mode": view_mode,
         },
     )
 
