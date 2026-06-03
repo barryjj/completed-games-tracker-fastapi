@@ -30,13 +30,13 @@
            style="width:220px;"
            id="lib-q" name="q" placeholder="Search titles…"
            value="{{ q }}" autocomplete="off">
-    <select class="form-select form-select-sm" id="lib-platform" name="platform">
+    <select class="form-select form-select-sm w-auto" id="lib-platform" name="platform">
       <option value="">All platforms</option>
       {% for p in lib_platforms %}
       <option value="{{ p.value }}" {% if p.value == platform %}selected{% endif %}>{{ p.label }}</option>
       {% endfor %}
     </select>
-    <select class="form-select form-select-sm" id="lib-view" name="view">
+    <select class="form-select form-select-sm w-auto" id="lib-view" name="view">
       <option value="default"      {% if view == 'default'       %}selected{% endif %}>Default</option>
       <option value="dlc"          {% if view == 'dlc'           %}selected{% endif %}>DLC</option>
       <option value="collections"  {% if view == 'collections'   %}selected{% endif %}>Collections</option>
@@ -44,7 +44,7 @@
       <option value="manual"       {% if view == 'manual'        %}selected{% endif %}>Manually added</option>
       <option value="all"          {% if view == 'all'           %}selected{% endif %}>Everything</option>
     </select>
-    <select class="form-select form-select-sm" id="lib-sort" name="sort">
+    <select class="form-select form-select-sm w-auto" id="lib-sort" name="sort">
       <option value="name"           {% if sort == 'name'           %}selected{% endif %}>A – Z</option>
       <option value="recently_played"{% if sort == 'recently_played'%}selected{% endif %}>Recently played</option>
     </select>
