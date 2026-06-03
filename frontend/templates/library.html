@@ -2,11 +2,9 @@
 {% block title %}Library{% endblock %}
 
 {% block content %}
-{# Toolbar: filter + view controls live in #lib-toolbar-drawers which
-   auto-collapses when the user scrolls down and expands when they scroll
-   up. No toggle buttons — scroll direction is the only trigger. #}
-<div class="cgt-lib-toolbar">
-<div id="lib-toolbar-drawers">
+{# Toolbar: filter + view controls. Not sticky — use the ↑ button in the
+   bottom bar to jump back here when needed. #}
+<div class="mb-3">
 <form
   id="lib-filters-form"
   class="d-flex align-items-center gap-2 flex-wrap mb-2"
@@ -70,8 +68,7 @@
     </div>
   </div>
 </div>
-</div>{# /#lib-toolbar-drawers #}
-</div>{# /.cgt-lib-toolbar #}
+</div>{# /.mb-3 toolbar wrapper #}
 
 <div id="library-content">
 <div class="d-flex align-items-center justify-content-end gap-2 mb-2">
@@ -136,7 +133,7 @@
    behind it (see .cgt-sticky-actions in theme.css). #}
 <div class="cgt-sticky-actions">
   <button type="button" id="lib-back-to-top"
-          class="btn btn-outline-primary btn-sm"
+          class="btn btn-surface btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"
           hidden>↑</button>
   <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
@@ -437,38 +434,13 @@
 
 {% block scripts %}
 <script>
-// Set --cgt-navbar-height so the sticky toolbar sits flush below the navbar.
+// Back-to-top button: appears after scrolling 300px, smooth-scrolls to top.
 (function () {
-  var nav = document.querySelector('.navbar');
-  if (nav) {
-    document.documentElement.style.setProperty('--cgt-navbar-height', nav.offsetHeight + 'px');
-  }
-})();
-
-// Scroll-aware toolbar: collapse filter/view drawers on scroll-down, expand
-// on scroll-up. 80px grace zone before collapsing kicks in.
-// Back-to-top button appears once scrolled past the grace zone.
-(function () {
-  var drawers = document.getElementById('lib-toolbar-drawers');
-  var backToTop = document.getElementById('lib-back-to-top');
-  var lastY = window.scrollY;
-  var GRACE = 80;
-
-  function update() {
-    var y = window.scrollY;
-    if (drawers) {
-      if (y > lastY && y > GRACE) {
-        drawers.classList.add('cgt-collapsed');
-      } else if (y < lastY) {
-        drawers.classList.remove('cgt-collapsed');
-      }
-    }
-    if (backToTop) backToTop.hidden = y < GRACE;
-    lastY = y;
-  }
-
-  window.addEventListener('scroll', update, { passive: true });
-  update();
+  var btn = document.getElementById('lib-back-to-top');
+  if (!btn) return;
+  function onScroll() { btn.hidden = window.scrollY < 300; }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
 })();
 
 // openSgdbPicker / rerunSgdbSearch / applySgdbCover moved to app.js so they
