@@ -47,7 +47,7 @@ _PLATFORMS = [
 
     # -- Nintendo (modern) --
     (130,  "Nintendo Switch",        "Switch",    "red",      False),
-    # Nintendo Switch 2: confirm IGDB platform ID before adding
+    # Nintendo Switch 2 (igdb_id=162) added in migration d2e3f4a5b6c7
     (41,   "Wii U",                  None,        "red",      False),
     (5,    "Wii",                    None,        "red",      False),
 
