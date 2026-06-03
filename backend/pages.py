@@ -20,21 +20,15 @@ TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
-def _platform_color_class(platform: str) -> str:
-    p = platform.lower()
-    if "steam" in p:
-        return "tag-platform-steam"
-    if "ps" in p or "playstation" in p or "psn" in p:
-        return "tag-platform-playstation"
-    if "switch" in p or "nintendo" in p:
-        return "tag-platform-nintendo"
-    if "xbox" in p:
-        return "tag-platform-xbox"
-    if "ios" in p or "mac" in p or "apple" in p or "iphone" in p or "ipad" in p:
-        return "tag-platform-apple"
-    if "pc" in p or "windows" in p:
-        return "tag-platform-pc"
-    return "tag-platform-other"
+def _platform_color_class(val) -> str:
+    """Jinja filter — accepts a Platform model instance or a raw platform name string.
+
+    For linked Platform rows, returns tag-platform-{color} using the stored accent.
+    Falls back to models._platform_heuristic_css() for unlinked string values.
+    """
+    if hasattr(val, "css_class"):
+        return val.css_class
+    return models._platform_heuristic_css(str(val))
 
 
 templates.env.filters["platform_color"] = _platform_color_class
@@ -417,7 +411,10 @@ def _attach_parent_fallbacks(db: Session, entries, current_user=None) -> None:
         e._parent_release_id = meta["release_id"] if meta else ""
 
 
-PLATFORMS = ["Steam", "PS5", "PS4", "PS3", "Switch", "Xbox", "iOS", "Android", "Other"]
+def _get_all_platforms(db: Session) -> list[models.Platform]:
+    """Return all Platform rows ordered by name for dropdown/datalist use."""
+    return db.query(models.Platform).order_by(models.Platform.name).all()
+
 
 COLLECTION_KEYWORDS = [
     "collection",
@@ -525,12 +522,50 @@ def logout():
 @router.get("/account")
 def account_page(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     return templates.TemplateResponse(
         request=request,
         name="account.html",
-        context={"current_user": current_user},
+        context={
+            "current_user": current_user,
+            "platforms": _get_all_platforms(db),
+            "ctp_accents": models.CTP_ACCENTS,
+        },
+    )
+
+
+@router.post("/account/platforms/{platform_id}")
+def update_platform(
+    request: Request,
+    platform_id: int,
+    display_name: str = Form(""),
+    color: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Update a platform's display_name and/or color. Returns the updated row partial."""
+    platform = db.query(models.Platform).filter(models.Platform.id == platform_id).first()
+    if not platform:
+        return Response(status_code=404)
+    display_name = display_name.strip()
+    color = color.strip()
+    platform.display_name = display_name if display_name else None
+    if color in models.CTP_ACCENTS:
+        platform.color = color
+    elif color == "":
+        platform.color = None
+    db.commit()
+    db.refresh(platform)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_row.html",
+        context={
+            "platform": platform,
+            "ctp_accents": models.CTP_ACCENTS,
+            "saved": True,
+        },
     )
 
 
@@ -692,6 +727,7 @@ def library_page(
             # joinedload(release) would conflict.
             contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game),
             contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+            contains_eager(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
             selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter(models.UserLibraryEntry.user_id == current_user.id)
@@ -830,15 +866,23 @@ def library_page(
     if is_htmx:
         lib_platform_list = []
     else:
-        lib_platforms = (
-            db.query(models.GameRelease.platform)
+        # Distinct (platform_string, platform_id) pairs for the dropdown.
+        # GROUP BY is SQLite-safe; DISTINCT ON is PostgreSQL-only.
+        lib_platforms_raw = (
+            db.query(models.GameRelease.platform, models.GameRelease.platform_id)
             .join(models.UserLibraryEntry)
             .filter(models.UserLibraryEntry.user_id == current_user.id)
-            .distinct()
+            .group_by(models.GameRelease.platform)
             .order_by(models.GameRelease.platform)
             .all()
         )
-        lib_platform_list = [p[0] for p in lib_platforms]
+        # Bulk-load Platform rows for linked entries.
+        _pids = {pid for _, pid in lib_platforms_raw if pid}
+        _pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(_pids)).all()} if _pids else {}
+        # Each item: {"value": raw_string, "label": display_title}
+        lib_platform_list = [
+            {"value": raw, "label": (_pmap[pid].display_title if pid and pid in _pmap else raw)} for raw, pid in lib_platforms_raw
+        ]
 
     # Build filter_qs for pagination links (preserves active filters)
     filter_parts = []
@@ -866,7 +910,7 @@ def library_page(
             "entries": entries,
             "collections": collections,
             "base_game_options": base_game_options,
-            "platforms": PLATFORMS,
+            "platforms": _get_all_platforms(db),
             "page": page,
             "total_pages": total_pages,
             "total": total,
@@ -1281,6 +1325,7 @@ def library_entry_detail(
         .options(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
             joinedload(models.UserLibraryEntry.completions),
             selectinload(models.UserLibraryEntry.user_artwork),
         )
@@ -1301,6 +1346,7 @@ def library_entry_detail(
             .options(
                 joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
                 joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
                 selectinload(models.UserLibraryEntry.user_artwork),
             )
             .join(models.GameRelease)
@@ -1677,6 +1723,9 @@ def completions_page(
             contains_eager(models.Completion.library_entry)
             .contains_eager(models.UserLibraryEntry.release)
             .selectinload(models.GameRelease.artwork),
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.platform_obj),
             contains_eager(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
         )
         .filter(models.Completion.user_id == current_user.id)

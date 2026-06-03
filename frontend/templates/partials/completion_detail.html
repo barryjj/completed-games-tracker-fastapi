@@ -35,7 +35,7 @@
 
   <div class="cgt-detail-body">
     <div class="mb-2 d-flex flex-wrap gap-1">
-      <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
+      <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
     </div>
@@ -221,7 +221,7 @@
              onclick="closeCompletionDetailAndEdit(this.dataset); return false;"
              data-completion-id="{{ completion.id }}"
              data-entry-id="{{ entry.id }}"
-             data-label="{{ (game.display_title ~ ' (' ~ release.platform ~ ')') | e }}"
+             data-label="{{ (game.display_title ~ ' (' ~ release.display_platform ~ ')') | e }}"
              data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
              data-playthroughs="{{ (completion.playthroughs or '') | e }}"
              data-notes="{{ (completion.notes or '') | e }}">Edit completion</a></li>

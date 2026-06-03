@@ -2,7 +2,7 @@
 {% block title %}Account{% endblock %}
 
 {% block content %}
-<div style="max-width: 520px;">
+<div id="account-page-wrap">
 
   <ul class="nav nav-tabs mb-4" id="account-tabs">
     <li class="nav-item">
@@ -13,6 +13,9 @@
     </li>
     <li class="nav-item">
       <a class="nav-link" href="#" data-tab="appearance">Appearance</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" href="#" data-tab="platforms">Platforms</a>
     </li>
   </ul>
 
@@ -150,9 +153,41 @@
     </script>
   </div>
 
+  <!-- Platforms -->
+  <div id="tab-platforms" class="tab-pane" hidden>
+    <p class="section-heading">Platforms</p>
+    <p class="text-secondary small mb-3">
+      Rename the display name shown in the library and pick a badge color.
+      The canonical name (shown in grey) is used for sync matching and cannot be changed.
+    </p>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle" style="font-size:.85rem;">
+        <thead>
+          <tr>
+            <th>Badge</th>
+            <th>Canonical name</th>
+            <th>Display name &amp; color</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in platforms %}
+          {% include "partials/platform_row.html" with context %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
 </div>
 
 <script>
+  function selectPlatformSwatch(el) {
+    var form = el.closest('form');
+    form.querySelectorAll('.cgt-color-swatch').forEach(function(s) { s.classList.remove('selected'); });
+    el.classList.add('selected');
+    form.querySelector('.platform-color-input').value = el.dataset.color;
+  }
+
   (function () {
     var tabs = document.querySelectorAll('#account-tabs .nav-link');
     var panels = document.querySelectorAll('.tab-pane');
@@ -163,8 +198,13 @@
         panels.forEach(function (p) { p.hidden = true; });
         link.classList.add('active');
         document.getElementById('tab-' + link.dataset.tab).hidden = false;
+        // Widen the container for the platforms table
+        document.getElementById('account-page-wrap').style.maxWidth =
+          link.dataset.tab === 'platforms' ? '' : '520px';
       });
     });
+    // Set initial max-width
+    document.getElementById('account-page-wrap').style.maxWidth = '520px';
   })();
 </script>
 {% endblock %}
