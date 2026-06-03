@@ -8,6 +8,7 @@ Auth: Bearer token (the user's API key).
 from __future__ import annotations
 
 import logging
+import re
 
 import httpx
 from sqlalchemy.orm import Session, joinedload
@@ -329,6 +330,13 @@ def bulk_fill_missing(
             title = (g.display_title or g.title or "") if g else ""
             progress_callback(i, total, title)
         if _entry_already_has_image(entry, image_type):
+            skipped += 1
+            continue
+        # Skip entries whose title is still an "App NNNNNN" placeholder —
+        # searching SGDB by "App 317740" returns nothing useful or, worse,
+        # a random wrong match. Let the title get fixed first.
+        _game = entry.release.game if entry.release else None
+        if _game and re.match(r"^App \d+$", _game.title or ""):
             skipped += 1
             continue
         try:

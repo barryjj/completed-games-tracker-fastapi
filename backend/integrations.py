@@ -968,6 +968,21 @@ def steamgriddb_search(
     game = release.game
     search_term = query.strip() if query and query.strip() else game.display_title
 
+    # Refuse to search SGDB by an "App NNNNNN" placeholder — it returns
+    # nothing useful (or a random wrong match). If the user supplied a custom
+    # query override that's fine; otherwise tell them to fix the title first.
+    import re as _re
+
+    if not query and _re.match(r"^App \d+$", game.title or ""):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/sgdb_cover_results.html",
+            context={
+                "error": "This entry still has a placeholder title (App NNNNNN) — fix the title before searching for art.",
+                "candidates": [],
+            },
+        )
+
     try:
         sgdb_game = None
         # Steam appid lookup only when no custom query is supplied — a custom
