@@ -4,9 +4,9 @@
   <li
     class="list-group-item list-group-item-action"
     style="cursor:pointer"
-    onclick="selectCompletionGame({{ entry.id }}, '{{ entry.release.game.display_title | e }} ({{ entry.release.platform | e }})')"
+    onclick="selectCompletionGame({{ entry.id }}, '{{ entry.release.game.display_title | e }} ({{ entry.release.display_platform | e }})')"
   >
-    {{ entry.release.game.display_title }} <span class="text-secondary">{{ entry.release.platform }}</span>
+    {{ entry.release.game.display_title }} <span class="text-secondary">{{ entry.release.display_platform }}</span>
   </li>
   {% endfor %}
 </ul>

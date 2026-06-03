@@ -7,7 +7,7 @@
                        onerror="cgtCoverFallback(this)">{% endif %}
   </td>
   <td>{{ completion.library_entry.release.game.display_title }}</td>
-  <td><span class="tag-badge {{ completion.library_entry.release.platform | platform_color }}">{{ completion.library_entry.release.platform }}</span></td>
+  <td><span class="tag-badge {{ completion.library_entry.release.platform_tag_class }}">{{ completion.library_entry.release.display_platform }}</span></td>
   <td class="text-nowrap">{{ completion.completed_at.strftime("%B %-d, %Y") }}</td>
   <td>{{ completion.playthroughs or "" }}</td>
   <td>{{ completion.notes or "" }}</td>
@@ -18,7 +18,7 @@
         onclick="editCompletion(this.dataset)"
         data-completion-id="{{ completion.id }}"
         data-entry-id="{{ completion.library_entry_id }}"
-        data-label="{{ (completion.library_entry.release.game.display_title ~ ' (' ~ completion.library_entry.release.platform ~ ')') | e }}"
+        data-label="{{ (completion.library_entry.release.game.display_title ~ ' (' ~ completion.library_entry.release.display_platform ~ ')') | e }}"
         data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
         data-playthroughs="{{ (completion.playthroughs or '') | e }}"
         data-notes="{{ (completion.notes or '') | e }}"

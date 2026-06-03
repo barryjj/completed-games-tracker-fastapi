@@ -44,23 +44,34 @@ These are the vars actually used in templates and CSS. All resolve correctly in 
 
 ## Platform Badge Colors
 
-Defined by `_platform_color_class()` in `backend/pages.py` and rendered via the `platform_color` Jinja2 filter.
-Usage: `<span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>`
+Platforms are stored in the `platforms` table. Each row has a `color` field (Catppuccin accent key)
+that drives the badge CSS class. Use `release.platform_tag_class` for the CSS class and
+`release.display_platform` for the label text — these properties handle linked/unlinked cases.
 
-| Class | Color var | Matches |
-|-------|-----------|---------|
-| `tag-platform-steam` | `--ctp-blue` | "steam" |
-| `tag-platform-playstation` | `--ctp-lavender` | "ps", "playstation", "psn" |
-| `tag-platform-nintendo` | `--ctp-red` | "switch", "nintendo" |
-| `tag-platform-xbox` | `--ctp-green` | "xbox" |
-| `tag-platform-apple` | `--ctp-sky` | "ios", "mac", "apple", "iphone", "ipad" |
-| `tag-platform-pc` | `--ctp-sapphire` | "pc", "windows" |
-| `tag-platform-other` | `--ctp-subtext0` | everything else (NES, PS2, Game Boy, etc.) |
+Usage: `<span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>`
+
+CSS classes are `tag-platform-{accent}` where accent is any of the 14 Catppuccin accent names:
+
+| Accent | Default group |
+|--------|--------------|
+| `red` | Nintendo (all) |
+| `green` | Xbox, Android |
+| `lavender` | PlayStation (all) |
+| `teal` | Steam |
+| `sapphire` | PC (Windows), Linux |
+| `sky` | Apple / iOS / Mac |
+| `yellow` | Sega (all) |
+| `peach` | Atari |
+| `blue`, `mauve`, `pink`, `flamingo`, `maroon`, `rosewater` | Available for user customisation |
+| `other` | Unmatched string fallback (grey, uses `--ctp-subtext0`) |
+
+The `platform_color` Jinja filter still exists for legacy uses — it now accepts either a
+`Platform` model instance or a raw string, falling back to the string heuristic.
+
+**Legacy semantic classes** (`tag-platform-steam`, `tag-platform-nintendo`, etc.) are kept for
+unlinked entries using the string heuristic. New code should use the accent-key classes.
 
 Other badge classes: `tag-dlc`, `tag-collection`, `tag-in-collection`.
-
-**Note:** The `tag-platform-other` bucket is where all retro/manual platforms land today.
-A platform table (with per-platform color assignment) is the next major feature — see ROADMAP.md.
 
 ---
 

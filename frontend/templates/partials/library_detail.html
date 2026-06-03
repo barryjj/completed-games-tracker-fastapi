@@ -72,7 +72,7 @@
   <div class="cgt-detail-body">
     {# Badges row: platform + flags. #}
     <div class="mb-2 d-flex flex-wrap gap-1">
-      <span class="tag-badge {{ release.platform | platform_color }}">{{ release.platform }}</span>
+      <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
       {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
@@ -234,7 +234,7 @@
                 {% if child.is_hidden %}<small class="text-secondary ms-1">(hidden)</small>{% endif %}
               </td>
               <td class="text-end text-nowrap">
-                <span class="tag-badge {{ child.release.platform | platform_color }}">{{ child.release.platform }}</span>
+                <span class="tag-badge {{ child.release.platform_tag_class }}">{{ child.release.display_platform }}</span>
               </td>
             </tr>
             {% endfor %}
@@ -287,7 +287,7 @@
              data-parent-label="{{ parent_edit_label | e }}"
              data-source="{{ release.source }}"
              data-igdb-id="{{ game.igdb_id or '' }}"
-             data-platform="{{ release.platform | e }}"
+             data-platform="{{ release.display_platform | e }}"
              data-label="{{ game.display_title | e }}">Edit game</a></li>
       <li><hr class="dropdown-divider"></li>
       {% if release.source == "steam" %}

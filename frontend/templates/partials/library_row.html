@@ -11,7 +11,7 @@
     {{ entry.release.game.display_title }}
     {% if entry.is_hidden %}<span class="tag-badge tag-in-collection ms-1">Hidden</span>{% endif %}
   </td>
-  <td><span class="tag-badge {{ entry.release.platform | platform_color }}">{{ entry.release.platform }}</span></td>
+  <td><span class="tag-badge {{ entry.release.platform_tag_class }}">{{ entry.release.display_platform }}</span></td>
   <td>
     {% if entry.release.game.is_dlc %}
       <span class="tag-badge tag-dlc">DLC</span>

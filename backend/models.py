@@ -6,6 +6,51 @@ from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Tex
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column, relationship, sessionmaker
 from sqlalchemy.types import JSON
 
+# All 14 Catppuccin accent names valid for the Platform.color field.
+CTP_ACCENTS = (
+    "rosewater",
+    "flamingo",
+    "pink",
+    "mauve",
+    "red",
+    "maroon",
+    "peach",
+    "yellow",
+    "green",
+    "teal",
+    "sky",
+    "sapphire",
+    "blue",
+    "lavender",
+)
+
+
+def _platform_heuristic_css(name: str) -> str:
+    """Return a tag-platform-* CSS class from a raw platform name string.
+
+    Used when no Platform row is linked (fallback). Outputs Catppuccin accent
+    class names (tag-platform-red, etc.) to match the DB-driven path.
+    """
+    p = name.lower()
+    if "steam" in p:
+        return "tag-platform-teal"
+    if "ps" in p or "playstation" in p or "psn" in p:
+        return "tag-platform-lavender"
+    if any(kw in p for kw in ("switch", "nintendo", "wii", "nes", "snes", "game boy", "gameboy", "n64", "gamecube")):
+        return "tag-platform-red"
+    if "xbox" in p:
+        return "tag-platform-green"
+    if any(kw in p for kw in ("ios", "mac", "apple", "iphone", "ipad")):
+        return "tag-platform-sky"
+    if "pc" in p or "windows" in p:
+        return "tag-platform-sapphire"
+    if any(kw in p for kw in ("sega", "genesis", "saturn", "dreamcast", "master system", "game gear", "mega drive")):
+        return "tag-platform-yellow"
+    if "atari" in p:
+        return "tag-platform-peach"
+    return "tag-platform-other"
+
+
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///backend/app.db")
 engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -39,6 +84,39 @@ class User(Base):
     twitch_client_id: Mapped[str | None] = mapped_column(String, nullable=True)
     twitch_client_secret: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+
+
+class Platform(Base):
+    """A gaming platform — either sourced from IGDB or user-created.
+
+    name: IGDB canonical name (immutable for IGDB rows). For custom rows, the
+          user-set name used for matching against GameRelease.platform strings.
+    display_name: What shows in the UI. Defaults to name. User can rename freely
+                  (e.g. "Nintendo Entertainment System" → "NES").
+    color: A Catppuccin accent key ("red", "green", "teal", …). None = use the
+           string-heuristic fallback. See CTP_ACCENTS for valid values.
+    is_custom: True for non-IGDB entries (e.g. the "Steam" custom platform).
+    """
+
+    __tablename__ = "platforms"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    display_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    color: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    releases: Mapped[list["GameRelease"]] = relationship("GameRelease", back_populates="platform_obj")
+
+    @property
+    def display_title(self) -> str:
+        return self.display_name or self.name
+
+    @property
+    def css_class(self) -> str:
+        if self.color:
+            return f"tag-platform-{self.color}"
+        return _platform_heuristic_css(self.name)
 
 
 class Game(Base):
@@ -93,6 +171,8 @@ class GameRelease(Base):
     game_id: Mapped[int] = mapped_column(Integer, ForeignKey("games.id"), nullable=False, index=True)
     # e.g. "Steam", "PS5", "PS4", "Switch", "iOS", "Manual"
     platform: Mapped[str] = mapped_column(String, nullable=False)
+    # FK to the platforms table — nullable so old/unrecognised strings still work.
+    platform_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=True, index=True)
     # "steam" | "psn" | "manual"
     source: Mapped[str] = mapped_column(String, nullable=False, index=True)
     # steam_app_id or psn_title_id — stored as string to handle both
@@ -105,10 +185,25 @@ class GameRelease(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     game: Mapped["Game"] = relationship("Game", back_populates="releases")
+    platform_obj: Mapped["Platform | None"] = relationship("Platform", back_populates="releases")
     artwork: Mapped[list["GameArtwork"]] = relationship("GameArtwork", back_populates="release")
     library_entries: Mapped[list["UserLibraryEntry"]] = relationship("UserLibraryEntry", back_populates="release")
 
     __table_args__ = (UniqueConstraint("game_id", "platform", name="uq_release_game_platform"),)
+
+    @property
+    def display_platform(self) -> str:
+        """Display label — linked Platform's display_title when available, else raw string."""
+        if self.platform_obj:
+            return self.platform_obj.display_title
+        return self.platform
+
+    @property
+    def platform_tag_class(self) -> str:
+        """CSS class for the platform badge — DB colour when linked, heuristic fallback."""
+        if self.platform_obj:
+            return self.platform_obj.css_class
+        return _platform_heuristic_css(self.platform)
 
 
 class GameArtwork(Base):

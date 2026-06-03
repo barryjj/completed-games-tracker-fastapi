@@ -3,10 +3,11 @@ html[data-bs-theme="dark"] {
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
   --ctp-overlay0: #6c7086; --ctp-text:     #cdd6f4; --ctp-subtext:  #a6adc8;
+  --ctp-rosewater:#f5e0dc; --ctp-flamingo:  #f2cdcd; --ctp-pink:     #f5c2e7;
   --ctp-mauve:    #cba6f7; --ctp-lavender: #b4befe; --ctp-blue:     #89b4fa;
-  --ctp-green:    #a6e3a1; --ctp-peach:    #fab387; --ctp-red:      #f38ba8;
-  --ctp-yellow:   #f9e2af; --ctp-teal:     #94e2d5; --ctp-sky:      #89dceb;
-  --ctp-sapphire: #74c7ec;
+  --ctp-maroon:   #eba0ac; --ctp-red:      #f38ba8; --ctp-peach:    #fab387;
+  --ctp-yellow:   #f9e2af; --ctp-green:    #a6e3a1; --ctp-teal:     #94e2d5;
+  --ctp-sky:      #89dceb; --ctp-sapphire: #74c7ec;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #1e1e2e;
@@ -64,10 +65,11 @@ html[data-bs-theme="light"] {
   --ctp-base:     #eff1f5; --ctp-mantle:   #e6e9ef; --ctp-crust:    #dce0e8;
   --ctp-surface0: #ccd0da; --ctp-surface1: #bcc0cc; --ctp-surface2: #acb0be;
   --ctp-overlay0: #9ca0b0; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
+  --ctp-rosewater:#dc8a78; --ctp-flamingo:  #dd7878; --ctp-pink:     #ea76cb;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
-  --ctp-green:    #40a02b; --ctp-peach:    #fe640b; --ctp-red:      #d20f39;
-  --ctp-yellow:   #df8e1d; --ctp-teal:     #179299; --ctp-sky:      #04a5e5;
-  --ctp-sapphire: #209fb5;
+  --ctp-maroon:   #e64553; --ctp-red:      #d20f39; --ctp-peach:    #fe640b;
+  --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
+  --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #eff1f5;
@@ -383,14 +385,30 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 }
 .tag-badge:last-child { margin-right: 0; }
 
-/* Platform colors */
-.tag-platform-steam       { color: var(--ctp-blue);    background: color-mix(in srgb, var(--ctp-blue)    15%, transparent); }
+/* Platform colors — Catppuccin accent keys (used by linked Platform rows) */
+.tag-platform-rosewater { color: var(--ctp-rosewater); background: color-mix(in srgb, var(--ctp-rosewater) 15%, transparent); }
+.tag-platform-flamingo  { color: var(--ctp-flamingo);  background: color-mix(in srgb, var(--ctp-flamingo)  15%, transparent); }
+.tag-platform-pink      { color: var(--ctp-pink);      background: color-mix(in srgb, var(--ctp-pink)      15%, transparent); }
+.tag-platform-mauve     { color: var(--ctp-mauve);     background: color-mix(in srgb, var(--ctp-mauve)     15%, transparent); }
+.tag-platform-red       { color: var(--ctp-red);       background: color-mix(in srgb, var(--ctp-red)       15%, transparent); }
+.tag-platform-maroon    { color: var(--ctp-maroon);    background: color-mix(in srgb, var(--ctp-maroon)    15%, transparent); }
+.tag-platform-peach     { color: var(--ctp-peach);     background: color-mix(in srgb, var(--ctp-peach)     15%, transparent); }
+.tag-platform-yellow    { color: var(--ctp-yellow);    background: color-mix(in srgb, var(--ctp-yellow)    15%, transparent); }
+.tag-platform-green     { color: var(--ctp-green);     background: color-mix(in srgb, var(--ctp-green)     15%, transparent); }
+.tag-platform-teal      { color: var(--ctp-teal);      background: color-mix(in srgb, var(--ctp-teal)      15%, transparent); }
+.tag-platform-sky       { color: var(--ctp-sky);       background: color-mix(in srgb, var(--ctp-sky)       15%, transparent); }
+.tag-platform-sapphire  { color: var(--ctp-sapphire);  background: color-mix(in srgb, var(--ctp-sapphire)  15%, transparent); }
+.tag-platform-blue      { color: var(--ctp-blue);      background: color-mix(in srgb, var(--ctp-blue)      15%, transparent); }
+.tag-platform-lavender  { color: var(--ctp-lavender);  background: color-mix(in srgb, var(--ctp-lavender)  15%, transparent); }
+.tag-platform-other     { color: var(--ctp-subtext0);  background: color-mix(in srgb, var(--ctp-subtext0)  12%, transparent); }
+
+/* Legacy semantic aliases — kept for any unlinked entries using the string heuristic */
+.tag-platform-steam       { color: var(--ctp-teal);     background: color-mix(in srgb, var(--ctp-teal)     15%, transparent); }
 .tag-platform-playstation { color: var(--ctp-lavender); background: color-mix(in srgb, var(--ctp-lavender) 15%, transparent); }
-.tag-platform-nintendo    { color: var(--ctp-red);     background: color-mix(in srgb, var(--ctp-red)     15%, transparent); }
-.tag-platform-xbox        { color: var(--ctp-green);   background: color-mix(in srgb, var(--ctp-green)   15%, transparent); }
-.tag-platform-apple       { color: var(--ctp-sky);     background: color-mix(in srgb, var(--ctp-sky)     15%, transparent); }
+.tag-platform-nintendo    { color: var(--ctp-red);      background: color-mix(in srgb, var(--ctp-red)      15%, transparent); }
+.tag-platform-xbox        { color: var(--ctp-green);    background: color-mix(in srgb, var(--ctp-green)    15%, transparent); }
+.tag-platform-apple       { color: var(--ctp-sky);      background: color-mix(in srgb, var(--ctp-sky)      15%, transparent); }
 .tag-platform-pc          { color: var(--ctp-sapphire); background: color-mix(in srgb, var(--ctp-sapphire) 15%, transparent); }
-.tag-platform-other       { color: var(--ctp-subtext0); background: color-mix(in srgb, var(--ctp-subtext0) 12%, transparent); }
 
 /* Game type tag colors */
 .tag-dlc {
@@ -1110,3 +1128,31 @@ body:has(.cgt-sticky-actions) {
   margin: 0;
   min-width: 0; /* lets long values wrap inside the grid cell */
 }
+
+/* Platform color swatches (settings page) */
+.cgt-color-swatch {
+  display: inline-block;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: border-color 0.1s, transform 0.1s;
+}
+.cgt-color-swatch:hover        { transform: scale(1.15); }
+.cgt-color-swatch.selected     { border-color: var(--ctp-text); }
+.cgt-color-swatch[data-color="rosewater"] { background: var(--ctp-rosewater); }
+.cgt-color-swatch[data-color="flamingo"]  { background: var(--ctp-flamingo); }
+.cgt-color-swatch[data-color="pink"]      { background: var(--ctp-pink); }
+.cgt-color-swatch[data-color="mauve"]     { background: var(--ctp-mauve); }
+.cgt-color-swatch[data-color="red"]       { background: var(--ctp-red); }
+.cgt-color-swatch[data-color="maroon"]    { background: var(--ctp-maroon); }
+.cgt-color-swatch[data-color="peach"]     { background: var(--ctp-peach); }
+.cgt-color-swatch[data-color="yellow"]    { background: var(--ctp-yellow); }
+.cgt-color-swatch[data-color="green"]     { background: var(--ctp-green); }
+.cgt-color-swatch[data-color="teal"]      { background: var(--ctp-teal); }
+.cgt-color-swatch[data-color="sky"]       { background: var(--ctp-sky); }
+.cgt-color-swatch[data-color="sapphire"]  { background: var(--ctp-sapphire); }
+.cgt-color-swatch[data-color="blue"]      { background: var(--ctp-blue); }
+.cgt-color-swatch[data-color="lavender"]  { background: var(--ctp-lavender); }

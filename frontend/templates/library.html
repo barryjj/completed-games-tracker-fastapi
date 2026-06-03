@@ -46,7 +46,7 @@
     <select class="form-select form-select-sm" id="lib-platform" name="platform">
       <option value="">All platforms</option>
       {% for p in lib_platforms %}
-      <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
+      <option value="{{ p.value }}" {% if p.value == platform %}selected{% endif %}>{{ p.label }}</option>
       {% endfor %}
     </select>
   </div>
@@ -409,7 +409,7 @@
                    list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required>
             <datalist id="platform-suggestions">
               {% for p in platforms %}
-              <option value="{{ p | e }}">
+              <option value="{{ p.display_title | e }}">
               {% endfor %}
             </datalist>
             <div id="igdb-platform-chips" class="mt-2"></div>

@@ -1,0 +1,40 @@
+{# One platform row in the Settings > Platforms table.
+   Posted back via hx-post="/account/platforms/{id}" and swapped outerHTML.
+   saved=True briefly shows a tick before reverting via CSS animation. #}
+<tr id="platform-row-{{ platform.id }}">
+  <td style="width:2.5rem;">
+    <span class="tag-badge {{ platform.css_class }}">{{ platform.display_title }}</span>
+  </td>
+  <td>
+    <small class="text-secondary">{{ platform.name }}</small>
+  </td>
+  <td>
+    <form hx-post="/account/platforms/{{ platform.id }}"
+          hx-target="#platform-row-{{ platform.id }}"
+          hx-swap="outerHTML"
+          class="d-flex align-items-center gap-2 flex-wrap">
+      <input type="text" class="form-control form-control-sm"
+             style="max-width:14rem;"
+             name="display_name"
+             value="{{ platform.display_name or '' }}"
+             placeholder="{{ platform.name }}">
+      <input type="hidden" name="color" class="platform-color-input" value="{{ platform.color or '' }}">
+      <div class="d-flex gap-1 flex-wrap" style="max-width:14rem;">
+        {% for accent in ctp_accents %}
+        <span class="cgt-color-swatch {% if platform.color == accent %}selected{% endif %}"
+              data-color="{{ accent }}"
+              title="{{ accent }}"
+              onclick="selectPlatformSwatch(this)"></span>
+        {% endfor %}
+        <span class="cgt-color-swatch {% if not platform.color %}selected{% endif %}"
+              data-color=""
+              title="None (auto)"
+              style="background: var(--ctp-surface1); border: 1px dashed var(--ctp-overlay0);"
+              onclick="selectPlatformSwatch(this)"></span>
+      </div>
+      <button type="submit" class="btn btn-sm btn-outline-secondary">
+        {% if saved %}Saved{% else %}Save{% endif %}
+      </button>
+    </form>
+  </td>
+</tr>
