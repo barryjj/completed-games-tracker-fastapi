@@ -892,9 +892,25 @@ body:has(.cgt-sticky-actions) {
   z-index: 1015;  /* below site navbar (1020) but above content */
   background-color: var(--ctp-base);
   padding-top: 0.5rem;
-  padding-bottom: 0.25rem;
   border-bottom: 1px solid var(--ctp-surface0);
   margin-bottom: 0.75rem;
+}
+
+/* Scroll-collapsible drawer wrapper. Collapses on scroll-down (JS adds
+   .cgt-collapsed), expands on scroll-up. Grid-row trick animates to the
+   actual content height without a hardcoded max-height value. */
+#lib-toolbar-drawers {
+  display: grid;
+  grid-template-rows: 1fr;
+  transition: grid-template-rows 0.2s ease, opacity 0.15s ease, padding 0.2s ease;
+  opacity: 1;
+  padding-bottom: 0.25rem;
+}
+#lib-toolbar-drawers > * { overflow: hidden; }
+#lib-toolbar-drawers.cgt-collapsed {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  padding-bottom: 0;
 }
 
 /* ─── Detail-pane body layout ───────────────────────────────────────────── */
