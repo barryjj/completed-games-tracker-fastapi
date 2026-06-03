@@ -1,7 +1,9 @@
 {# One platform row in the Settings > Platforms table.
    Posted back via hx-post="/account/platforms/{id}" and swapped outerHTML.
    saved=True briefly shows a tick before reverting via CSS animation. #}
-<tr id="platform-row-{{ platform.id }}">
+<tr id="platform-row-{{ platform.id }}"
+    data-platform-name="{{ (platform.display_name or platform.name) | lower }}"
+    data-in-library="{{ 'true' if platform.in_library else 'false' }}">
   <td style="width:2.5rem;">
     <span class="tag-badge {{ platform.css_class }}">{{ platform.display_title }}</span>
   </td>

@@ -54,15 +54,20 @@ CSS classes are `tag-platform-{accent}` where accent is any of the 14 Catppuccin
 
 | Accent | Default group |
 |--------|--------------|
-| `red` | Nintendo (all) |
-| `green` | Xbox, Android |
-| `lavender` | PlayStation (all) |
+| `red` | Nintendo (all: NES/SNES/N64/GameCube/Wii/Wii U/Switch/Switch 2/handhelds/add-ons) |
+| `lavender` | PlayStation (all: PS1–5/PSP/Vita/PSVR/PSVR2) |
+| `green` | Xbox (all), Android |
+| `yellow` | Sega (all: Genesis/Saturn/Dreamcast/Game Gear/Master System/Sega CD/32X/SG-1000) |
+| `peach` | Atari (all), 3DO, Evercade |
+| `sapphire` | PC (Windows), Linux, DOS, Amiga |
+| `sky` | Mac, iOS, Web browser |
 | `teal` | Steam |
-| `sapphire` | PC (Windows), Linux |
-| `sky` | Apple / iOS / Mac |
-| `yellow` | Sega (all) |
-| `peach` | Atari |
-| `blue`, `mauve`, `pink`, `flamingo`, `maroon`, `rosewater` | Available for user customisation |
+| `mauve` | TurboGrafx / NEC PC Engine family |
+| `maroon` | Neo Geo family |
+| `blue` | Meta Quest / Oculus VR headsets |
+| `flamingo` | Arcade |
+| `pink` | WonderSwan family |
+| `rosewater` | Playdate |
 | `other` | Unmatched string fallback (grey, uses `--ctp-subtext0`) |
 
 The `platform_color` Jinja filter still exists for legacy uses — it now accepts either a

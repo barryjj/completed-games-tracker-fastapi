@@ -160,8 +160,22 @@
       Rename the display name shown in the library and pick a badge color.
       The canonical name (shown in grey) is used for sync matching and cannot be changed.
     </p>
+    <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+      <input type="text" id="platform-name-filter"
+             class="form-control form-control-sm"
+             style="max-width: 200px;"
+             placeholder="Filter by name...">
+      <div class="form-check mb-0">
+        <input class="form-check-input" type="checkbox" id="platform-library-only"
+               {% if has_library_platforms %}checked{% endif %}>
+        <label class="form-check-label small text-secondary" for="platform-library-only">
+          Show only in library
+        </label>
+      </div>
+      <span id="platform-visible-count" class="text-secondary small"></span>
+    </div>
     <div class="table-responsive">
-      <table class="table table-sm align-middle" style="font-size:.85rem;">
+      <table class="table table-sm align-middle" id="platform-table" style="font-size:.85rem;">
         <thead>
           <tr>
             <th>Badge</th>
@@ -176,6 +190,7 @@
         </tbody>
       </table>
     </div>
+    <p id="platform-no-results" class="text-secondary small" hidden>No platforms match.</p>
   </div>
 
 </div>
@@ -205,6 +220,35 @@
     });
     // Set initial max-width
     document.getElementById('account-page-wrap').style.maxWidth = '520px';
+  })();
+
+  (function () {
+    var filterInput  = document.getElementById('platform-name-filter');
+    var libraryCheck = document.getElementById('platform-library-only');
+    var countEl      = document.getElementById('platform-visible-count');
+    var noResults    = document.getElementById('platform-no-results');
+
+    function applyFilter() {
+      var text        = filterInput.value.toLowerCase().trim();
+      var libraryOnly = libraryCheck.checked;
+      var rows        = document.querySelectorAll('#platform-table tbody tr');
+      var visible     = 0;
+
+      rows.forEach(function (row) {
+        var name      = row.dataset.platformName || '';
+        var inLibrary = row.dataset.inLibrary === 'true';
+        var show      = (!text || name.includes(text)) && (!libraryOnly || inLibrary);
+        row.hidden    = !show;
+        if (show) visible++;
+      });
+
+      countEl.textContent = visible + ' platform' + (visible === 1 ? '' : 's');
+      noResults.hidden    = visible > 0;
+    }
+
+    filterInput.addEventListener('input', applyFilter);
+    libraryCheck.addEventListener('change', applyFilter);
+    applyFilter();
   })();
 </script>
 {% endblock %}

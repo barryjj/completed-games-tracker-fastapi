@@ -30,24 +30,62 @@ def _platform_heuristic_css(name: str) -> str:
 
     Used when no Platform row is linked (fallback). Outputs Catppuccin accent
     class names (tag-platform-red, etc.) to match the DB-driven path.
+    Checks are ordered from most-specific to least to avoid false matches
+    (e.g. "pc engine" must come before the generic "pc" check).
     """
     p = name.lower()
     if "steam" in p:
         return "tag-platform-teal"
-    if "ps" in p or "playstation" in p or "psn" in p:
+    if "playdate" in p:
+        return "tag-platform-rosewater"
+    if "wonderswan" in p:
+        return "tag-platform-pink"
+    if "arcade" in p:
+        return "tag-platform-flamingo"
+    if any(kw in p for kw in ("quest", "oculus")):
+        return "tag-platform-blue"
+    if "neo geo" in p:
+        return "tag-platform-maroon"
+    if any(kw in p for kw in ("turbografx", "pc engine", "supergrafx")):
+        return "tag-platform-mauve"
+    if any(kw in p for kw in ("atari", "3do", "evercade")):
+        return "tag-platform-peach"
+    if any(kw in p for kw in ("sega", "dreamcast", "genesis", "saturn", "master system", "game gear", "mega drive", "sg-1000")):
+        return "tag-platform-yellow"
+    if "ps" in p or "playstation" in p:
         return "tag-platform-lavender"
-    if any(kw in p for kw in ("switch", "nintendo", "wii", "nes", "snes", "game boy", "gameboy", "n64", "gamecube")):
+    if any(
+        kw in p
+        for kw in (
+            "switch",
+            "nintendo",
+            "wii",
+            "nes",
+            "snes",
+            "famicom",
+            "virtual boy",
+            "game boy",
+            "gameboy",
+            "n64",
+            "gamecube",
+            "satellaview",
+            "64dd",
+            "dsi",
+        )
+    ):
         return "tag-platform-red"
     if "xbox" in p:
         return "tag-platform-green"
-    if any(kw in p for kw in ("ios", "mac", "apple", "iphone", "ipad")):
+    if "android" in p:
+        return "tag-platform-green"
+    if any(kw in p for kw in ("ios", "mac", "apple", "iphone", "ipad", "browser")):
         return "tag-platform-sky"
-    if "pc" in p or "windows" in p:
+    if any(kw in p for kw in ("amiga", "dos", "linux")):
         return "tag-platform-sapphire"
-    if any(kw in p for kw in ("sega", "genesis", "saturn", "dreamcast", "master system", "game gear", "mega drive")):
-        return "tag-platform-yellow"
-    if "atari" in p:
-        return "tag-platform-peach"
+    if "pc" in p and "engine" not in p:
+        return "tag-platform-sapphire"
+    if "windows" in p:
+        return "tag-platform-sapphire"
     return "tag-platform-other"
 
 

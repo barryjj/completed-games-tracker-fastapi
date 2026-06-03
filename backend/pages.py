@@ -519,19 +519,48 @@ def logout():
 # --- Account ---
 
 
+def _annotate_platforms_in_library(
+    db: Session,
+    user: "models.User",
+    platforms: list["models.Platform"],
+) -> tuple[list["models.Platform"], bool]:
+    """Set .in_library on each Platform and return (platforms, has_any).
+
+    .in_library is True when the user has at least one GameRelease linked to
+    that platform via platform_id.  has_any is True when any platform matched.
+    """
+    used_ids: set[int] = {
+        row[0]
+        for row in db.query(models.GameRelease.platform_id)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.platform_id.isnot(None),
+        )
+        .distinct()
+        .all()
+    }
+    for p in platforms:
+        p.in_library = p.id in used_ids
+    return platforms, bool(used_ids)
+
+
 @router.get("/account")
 def account_page(
     request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    platforms = _get_all_platforms(db)
+    platforms, has_library_platforms = _annotate_platforms_in_library(db, current_user, platforms)
     return templates.TemplateResponse(
         request=request,
         name="account.html",
         context={
             "current_user": current_user,
-            "platforms": _get_all_platforms(db),
+            "platforms": platforms,
             "ctp_accents": models.CTP_ACCENTS,
+            "has_library_platforms": has_library_platforms,
         },
     )
 
@@ -558,6 +587,18 @@ def update_platform(
         platform.color = None
     db.commit()
     db.refresh(platform)
+    in_library = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.platform_id == platform.id,
+        )
+        .limit(1)
+        .first()
+        is not None
+    )
+    platform.in_library = in_library
     return templates.TemplateResponse(
         request=request,
         name="partials/platform_row.html",
