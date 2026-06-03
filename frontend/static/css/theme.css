@@ -882,6 +882,21 @@ body:has(.cgt-sticky-actions) {
   padding-bottom: 5rem;
 }
 
+/* ─── Library toolbar (sticky filters + view controls) ─────────────────── */
+/* Sticks below the site navbar on scroll so filter/view controls are always
+   reachable. JS sets --cgt-navbar-height from the navbar's actual offsetHeight;
+   the 56px fallback covers the initial paint before JS runs. */
+.cgt-lib-toolbar {
+  position: sticky;
+  top: var(--cgt-navbar-height, 56px);
+  z-index: 1015;  /* below site navbar (1020) but above content */
+  background-color: var(--ctp-base);
+  padding-top: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--ctp-surface0);
+  margin-bottom: 0.75rem;
+}
+
 /* ─── Detail-pane body layout ───────────────────────────────────────────── */
 
 /* Wrapper for everything below the hero image. Tighter padding than

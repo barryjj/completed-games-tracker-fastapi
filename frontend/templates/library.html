@@ -7,7 +7,10 @@
    state in localStorage. The filters drawer IS the HTMX form; the view
    drawer is a sibling. The hidden view_mode input lives inside the filters
    form so it travels with HTMX filter submits — its visible buttons are in
-   the view drawer and write to that same hidden input. #}
+   the view drawer and write to that same hidden input.
+   The whole toolbar is wrapped in .cgt-lib-toolbar so it sticks below the
+   site navbar while the user scrolls through results. #}
+<div class="cgt-lib-toolbar">
 <div class="d-flex align-items-center gap-2 mb-2">
   <div class="ms-auto d-flex gap-1">
     <button type="button" id="lib-toggle-filters"
@@ -101,6 +104,7 @@
     </div>
   </div>
 </div>
+</div>{# /.cgt-lib-toolbar #}
 
 <div id="library-content">
 <div class="d-flex align-items-center justify-content-end gap-2 mb-2">
@@ -165,6 +169,10 @@
    that pushes #library-content above the bar so the last row isn't hidden
    behind it (see .cgt-sticky-actions in theme.css). #}
 <div class="cgt-sticky-actions">
+  <button type="button" id="lib-back-to-top"
+          class="btn btn-outline-secondary"
+          onclick="window.scrollTo({top:0,behavior:'smooth'})"
+          hidden>↑ Top</button>
   <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
 </div>
 
@@ -466,6 +474,23 @@
 // Restore Filters / View drawer collapsed state.
 cgtInitDrawer('lib-filters-drawer', 'cgt-lib-filters-open', 'lib-toggle-filters');
 cgtInitDrawer('lib-view-drawer',    'cgt-lib-view-open',    'lib-toggle-view');
+
+// Set --cgt-navbar-height so the sticky toolbar sits flush below the navbar.
+(function () {
+  var nav = document.querySelector('.navbar');
+  if (nav) {
+    document.documentElement.style.setProperty('--cgt-navbar-height', nav.offsetHeight + 'px');
+  }
+})();
+
+// Back-to-top button: show after scrolling 400px, smooth-scroll on click.
+(function () {
+  var btn = document.getElementById('lib-back-to-top');
+  if (!btn) return;
+  function onScroll() { btn.hidden = window.scrollY < 400; }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
 
 // openSgdbPicker / rerunSgdbSearch / applySgdbCover moved to app.js so they
 // are also available on the completions page.
