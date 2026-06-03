@@ -75,4 +75,24 @@
 </div>
 
 <div id="igdb-flash" class="mt-4"></div>
+
+<hr class="my-4">
+
+<div class="d-flex align-items-center gap-3 mb-3">
+  <h5 class="cgt-config-section mb-0">Platform Reference</h5>
+  {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+  <button
+    type="button"
+    class="btn btn-outline-secondary btn-sm"
+    hx-get="/integrations/igdb/platforms"
+    hx-target="#igdb-platform-list"
+    hx-swap="innerHTML"
+    hx-indicator="#igdb-platform-spinner"
+  >Fetch platform list</button>
+  <span id="igdb-platform-spinner" class="htmx-indicator text-secondary small">Loading&hellip;</span>
+  {% endif %}
+</div>
+<p class="text-secondary small mb-3">Full IGDB platform catalogue — use this to look up numeric IDs when writing migrations to add new platforms.</p>
+<div id="igdb-platform-list"></div>
+
 {% endblock %}
