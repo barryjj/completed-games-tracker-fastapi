@@ -323,6 +323,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
 - Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
 - Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
+- **List view**: the "Added" date column was removed as low-value; the vacated column slot is the natural home for an achievement/trophy progress cell (e.g. "23 / 47" or a small progress bar) once sync exists
 - Filter / sort by achievement progress (e.g. "show games close to 100%")
 - Phases TBD — at minimum: schema + Steam fetch, then UI surfaces, then PSN trophy mapping when PSN integration exists
 
