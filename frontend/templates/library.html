@@ -104,17 +104,7 @@
 
 <div id="library-content">
 <div class="d-flex align-items-center justify-content-end gap-2 mb-2">
-  <small class="text-secondary">{{ total }} game{{ 's' if total != 1 }}{% if total_pages > 1 %} — {{ page }} / {{ total_pages }}{% endif %}</small>
-  {% if total_pages > 1 %}
-  <div class="btn-group btn-group-sm" role="navigation" aria-label="Page navigation">
-    <a href="/library?page={{ page - 1 }}{{ filter_qs }}"
-       class="btn btn-outline-secondary{% if page <= 1 %} disabled{% endif %}"
-       {% if page <= 1 %}aria-disabled="true"{% endif %}>&larr;</a>
-    <a href="/library?page={{ page + 1 }}{{ filter_qs }}"
-       class="btn btn-outline-secondary{% if page >= total_pages %} disabled{% endif %}"
-       {% if page >= total_pages %}aria-disabled="true"{% endif %}>&rarr;</a>
-  </div>
-  {% endif %}
+  <small class="text-secondary">{{ total }} game{{ 's' if total != 1 }}</small>
 </div>
 
 {% if view_mode == 'list' %}
@@ -133,6 +123,14 @@
     {% for entry in entries %}
     {% include "partials/library_row.html" %}
     {% endfor %}
+    {% if next_page_url %}
+    <tr id="library-scroll-sentinel"
+        hx-get="{{ next_page_url }}"
+        hx-trigger="revealed"
+        hx-swap="outerHTML">
+      <td colspan="6"></td>
+    </tr>
+    {% endif %}
   </tbody>
 </table>
 {% else %}
@@ -142,6 +140,13 @@
   {% for entry in entries %}
   {% include "partials/library_card.html" %}
   {% endfor %}
+  {% if next_page_url %}
+  <div id="library-scroll-sentinel"
+       hx-get="{{ next_page_url }}"
+       hx-trigger="revealed"
+       hx-swap="outerHTML">
+  </div>
+  {% endif %}
 </div>
 {% endif %}
 
