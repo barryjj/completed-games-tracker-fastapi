@@ -2,31 +2,14 @@
 {% block title %}Library{% endblock %}
 
 {% block content %}
-{# Toolbar layout: a top strip with the primary action + two drawer toggles
-   (Filters / View). Each drawer collapses independently and remembers its
-   state in localStorage. The filters drawer IS the HTMX form; the view
-   drawer is a sibling. The hidden view_mode input lives inside the filters
-   form so it travels with HTMX filter submits — its visible buttons are in
-   the view drawer and write to that same hidden input.
-   The whole toolbar is wrapped in .cgt-lib-toolbar so it sticks below the
-   site navbar while the user scrolls through results. #}
+{# Toolbar: toggle buttons share the same flex row as the filter inputs so
+   the whole thing fits on one line. The form wraps both buttons and inputs;
+   #lib-filters-inner is the collapsible target so the buttons stay visible
+   even when the filter inputs are collapsed. #}
 <div class="cgt-lib-toolbar">
-<div class="d-flex align-items-center gap-2 mb-2">
-  <div class="ms-auto d-flex gap-1">
-    <button type="button" id="lib-toggle-filters"
-            class="btn btn-outline-secondary btn-sm"
-            onclick="cgtToggleDrawer('lib-filters-drawer', 'cgt-lib-filters-open', this)"
-            aria-expanded="true">Filters <span class="cgt-chevron">▾</span></button>
-    <button type="button" id="lib-toggle-view"
-            class="btn btn-outline-secondary btn-sm"
-            onclick="cgtToggleDrawer('lib-view-drawer', 'cgt-lib-view-open', this)"
-            aria-expanded="true">View <span class="cgt-chevron">▾</span></button>
-  </div>
-</div>
-
 <form
-  id="lib-filters-drawer"
-  class="row g-2 mb-2 align-items-center"
+  id="lib-filters-form"
+  class="d-flex align-items-center gap-2 flex-wrap mb-2"
   hx-get="/library"
   hx-target="#library-content"
   hx-select="#library-content"
@@ -34,26 +17,25 @@
   hx-trigger="input changed delay:300ms from:#lib-q, change from:#lib-platform, change from:#lib-view, change from:#lib-sort, change from:#lib-show-hidden, change from:#lib-missing-art"
 >
   <input type="hidden" name="view_mode" id="lib-view-mode" value="{{ view_mode }}">
-  <div class="col-md-4">
-    <input
-      type="text"
-      class="form-control form-control-sm"
-      id="lib-q"
-      name="q"
-      placeholder="Search titles…"
-      value="{{ q }}"
-      autocomplete="off"
-    >
-  </div>
-  <div class="col-auto">
+  <button type="button" id="lib-toggle-filters"
+          class="btn btn-outline-secondary btn-sm flex-shrink-0"
+          onclick="cgtToggleDrawer('lib-filters-inner', 'cgt-lib-filters-open', this)"
+          aria-expanded="true">Filters <span class="cgt-chevron">▾</span></button>
+  <button type="button" id="lib-toggle-view"
+          class="btn btn-outline-secondary btn-sm flex-shrink-0"
+          onclick="cgtToggleDrawer('lib-view-drawer', 'cgt-lib-view-open', this)"
+          aria-expanded="true">View <span class="cgt-chevron">▾</span></button>
+  <div id="lib-filters-inner" class="d-flex align-items-center gap-2 flex-wrap">
+    <input type="text" class="form-control form-control-sm"
+           style="min-width:160px; flex:1 1 160px;"
+           id="lib-q" name="q" placeholder="Search titles…"
+           value="{{ q }}" autocomplete="off">
     <select class="form-select form-select-sm" id="lib-platform" name="platform">
       <option value="">All platforms</option>
       {% for p in lib_platforms %}
       <option value="{{ p.value }}" {% if p.value == platform %}selected{% endif %}>{{ p.label }}</option>
       {% endfor %}
     </select>
-  </div>
-  <div class="col-auto">
     <select class="form-select form-select-sm" id="lib-view" name="view">
       <option value="default"      {% if view == 'default'       %}selected{% endif %}>Default</option>
       <option value="dlc"          {% if view == 'dlc'           %}selected{% endif %}>DLC</option>
@@ -62,21 +44,15 @@
       <option value="manual"       {% if view == 'manual'        %}selected{% endif %}>Manually added</option>
       <option value="all"          {% if view == 'all'           %}selected{% endif %}>Everything</option>
     </select>
-  </div>
-  <div class="col-auto">
     <select class="form-select form-select-sm" id="lib-sort" name="sort">
       <option value="name"           {% if sort == 'name'           %}selected{% endif %}>A – Z</option>
       <option value="recently_played"{% if sort == 'recently_played'%}selected{% endif %}>Recently played</option>
     </select>
-  </div>
-  <div class="col-auto">
-    <div class="form-check">
+    <div class="form-check mb-0">
       <input class="form-check-input" type="checkbox" id="lib-show-hidden" name="show_hidden" value="true" {% if show_hidden %}checked{% endif %}>
       <label class="form-check-label text-secondary" for="lib-show-hidden"><small>Show hidden</small></label>
     </div>
-  </div>
-  <div class="col-auto">
-    <div class="form-check">
+    <div class="form-check mb-0">
       <input class="form-check-input" type="checkbox" id="lib-missing-art" name="missing_art" value="true" {% if missing_art %}checked{% endif %}>
       <label class="form-check-label text-secondary" for="lib-missing-art"><small>Missing artwork</small></label>
     </div>
@@ -170,9 +146,9 @@
    behind it (see .cgt-sticky-actions in theme.css). #}
 <div class="cgt-sticky-actions">
   <button type="button" id="lib-back-to-top"
-          class="btn btn-outline-secondary"
+          class="btn btn-outline-secondary btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"
-          hidden>↑ Top</button>
+          hidden>↑</button>
   <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
 </div>
 
@@ -472,8 +448,8 @@
 {% block scripts %}
 <script>
 // Restore Filters / View drawer collapsed state.
-cgtInitDrawer('lib-filters-drawer', 'cgt-lib-filters-open', 'lib-toggle-filters');
-cgtInitDrawer('lib-view-drawer',    'cgt-lib-view-open',    'lib-toggle-view');
+cgtInitDrawer('lib-filters-inner', 'cgt-lib-filters-open', 'lib-toggle-filters');
+cgtInitDrawer('lib-view-drawer',   'cgt-lib-view-open',    'lib-toggle-view');
 
 // Set --cgt-navbar-height so the sticky toolbar sits flush below the navbar.
 (function () {
@@ -652,6 +628,8 @@ function cgtAutoFetchLogo(img, entryId) {
   // use CSS vars on documentElement; borderless needs this extra re-apply.
   document.body.addEventListener('htmx:afterSwap', function(e) {
     if (e.detail.target.id !== 'library-content') return;
+    // Scroll back to top instantly so the user sees results from row 1.
+    window.scrollTo({top: 0, behavior: 'instant'});
     var on = localStorage.getItem(BORDERLESS_KEY) === '1';
     if (on) applyBorderless(true);
   });
