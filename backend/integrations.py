@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, models, steam, worker_state
+from . import jobs, match_review, models, steam, worker_state
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
 from .pages import get_web_user
@@ -58,6 +58,7 @@ def integrations_hub(
         context={
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
+            "pending_matches": match_review.pending_count(db, current_user),
         },
     )
 

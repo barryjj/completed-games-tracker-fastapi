@@ -136,6 +136,9 @@
           class="btn btn-surface btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"
           hidden>↑</button>
+  {% if pending_matches %}
+  <a href="/library/match-review" class="btn btn-warning btn-sm">Review {{ pending_matches }} match{{ 'es' if pending_matches != 1 else '' }}</a>
+  {% endif %}
   <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
 </div>
 
