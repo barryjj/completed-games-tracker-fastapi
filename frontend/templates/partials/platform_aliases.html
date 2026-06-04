@@ -1,0 +1,30 @@
+{# Alias list + add-alias form for a single platform.
+   Swapped in-place by the add and delete endpoints. #}
+<div id="platform-aliases-{{ platform.id }}">
+  <div class="d-flex flex-wrap gap-1 mb-1">
+    {% for a in platform.aliases %}
+    <span class="d-inline-flex align-items-center gap-1 badge rounded-pill"
+          style="background: var(--ctp-surface1); color: var(--ctp-text); font-weight: normal; font-size: .75rem;">
+      {{ a.alias }}
+      <button type="button"
+              class="btn-close btn-close-white"
+              style="font-size: .5rem;"
+              hx-delete="/account/platforms/aliases/{{ a.id }}"
+              hx-target="#platform-aliases-{{ platform.id }}"
+              hx-swap="outerHTML"
+              aria-label="Remove alias {{ a.alias }}"></button>
+    </span>
+    {% endfor %}
+  </div>
+  <form class="d-flex gap-1 align-items-center"
+        hx-post="/account/platforms/{{ platform.id }}/aliases"
+        hx-target="#platform-aliases-{{ platform.id }}"
+        hx-swap="outerHTML"
+        hx-on::after-request="this.reset()">
+    <input type="text" name="alias" class="form-control form-control-sm"
+           style="max-width: 10rem;"
+           placeholder="Add alias…"
+           autocomplete="off">
+    <button type="submit" class="btn btn-sm btn-surface">Add</button>
+  </form>
+</div>

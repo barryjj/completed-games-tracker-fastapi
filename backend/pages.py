@@ -414,7 +414,12 @@ def _attach_parent_fallbacks(db: Session, entries, current_user=None) -> None:
 
 def _get_all_platforms(db: Session) -> list[models.Platform]:
     """Return all Platform rows ordered by name for dropdown/datalist use."""
-    return db.query(models.Platform).order_by(models.Platform.name).all()
+    return (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .order_by(models.Platform.name)
+        .all()
+    )
 
 
 COLLECTION_KEYWORDS = [
@@ -576,7 +581,12 @@ def update_platform(
     current_user: models.User = Depends(get_web_user),
 ):
     """Update a platform's display_name and/or color. Returns the updated row partial."""
-    platform = db.query(models.Platform).filter(models.Platform.id == platform_id).first()
+    platform = (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .filter(models.Platform.id == platform_id)
+        .first()
+    )
     if not platform:
         return Response(status_code=404)
     display_name = display_name.strip()
@@ -608,6 +618,53 @@ def update_platform(
             "ctp_accents": models.CTP_ACCENTS,
             "saved": True,
         },
+    )
+
+
+@router.post("/account/platforms/{platform_id}/aliases")
+def add_platform_alias(
+    request: Request,
+    platform_id: int,
+    alias: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Add an alias to a platform. Returns the updated aliases partial."""
+    platform = db.query(models.Platform).options(joinedload(models.Platform.aliases)).filter(models.Platform.id == platform_id).first()
+    if not platform:
+        return Response(status_code=404)
+    alias = alias.strip()
+    if alias:
+        db.add(models.PlatformAlias(platform_id=platform_id, alias=alias))
+        db.commit()
+        db.expire(platform)
+        db.refresh(platform)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_aliases.html",
+        context={"platform": platform},
+    )
+
+
+@router.delete("/account/platforms/aliases/{alias_id}")
+def delete_platform_alias(
+    request: Request,
+    alias_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete a platform alias. Returns the updated aliases partial."""
+    alias = db.query(models.PlatformAlias).filter(models.PlatformAlias.id == alias_id).first()
+    if not alias:
+        return Response(status_code=404)
+    platform_id = alias.platform_id
+    db.delete(alias)
+    db.commit()
+    platform = db.query(models.Platform).options(joinedload(models.Platform.aliases)).filter(models.Platform.id == platform_id).first()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_aliases.html",
+        context={"platform": platform},
     )
 
 

@@ -9,6 +9,9 @@
   </td>
   <td>
     <small class="text-secondary">{{ platform.name }}</small>
+    {% if platform.family %}
+    <br><small class="text-secondary" style="font-size:.7rem; opacity:.7;">{{ platform.family.name }}</small>
+    {% endif %}
   </td>
   <td>
     <form hx-post="/account/platforms/{{ platform.id }}"
@@ -38,5 +41,9 @@
         {% if saved %}Saved{% else %}Save{% endif %}
       </button>
     </form>
+    {# Aliases — inline below the name/color form #}
+    <div class="mt-2">
+      {% include "partials/platform_aliases.html" %}
+    </div>
   </td>
 </tr>

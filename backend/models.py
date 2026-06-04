@@ -124,6 +124,23 @@ class User(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
 
+class PlatformFamily(Base):
+    """Groups platforms by manufacturer / ecosystem (PlayStation, Nintendo, etc.).
+
+    color: default Catppuccin accent for all member platforms. Individual
+           Platform.color still wins when set — family color is the fallback.
+    igdb_id: IGDB platform_family id, nullable for custom families.
+    """
+
+    __tablename__ = "platform_families"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
+    color: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    platforms: Mapped[list["Platform"]] = relationship("Platform", back_populates="family")
+
+
 class Platform(Base):
     """A gaming platform — either sourced from IGDB or user-created.
 
@@ -131,8 +148,10 @@ class Platform(Base):
           user-set name used for matching against GameRelease.platform strings.
     display_name: What shows in the UI. Defaults to name. User can rename freely
                   (e.g. "Nintendo Entertainment System" → "NES").
-    color: A Catppuccin accent key ("red", "green", "teal", …). None = use the
-           string-heuristic fallback. See CTP_ACCENTS for valid values.
+    color: A Catppuccin accent key ("red", "green", "teal", …). None = inherit
+           from family, then fall back to string heuristic.
+    family_id: FK to PlatformFamily — nullable, used for grouping and bulk
+               color assignment.
     is_custom: True for non-IGDB entries (e.g. the "Steam" custom platform).
     """
 
@@ -142,30 +161,57 @@ class Platform(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     color: Mapped[str | None] = mapped_column(String, nullable=True)
+    family_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platform_families.id"), nullable=True)
     is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
+    family: Mapped["PlatformFamily | None"] = relationship("PlatformFamily", back_populates="platforms")
     releases: Mapped[list["GameRelease"]] = relationship("GameRelease", back_populates="platform_obj")
+    aliases: Mapped[list["PlatformAlias"]] = relationship("PlatformAlias", back_populates="platform", cascade="all, delete-orphan")
 
     @property
     def display_title(self) -> str:
         return self.display_name or self.name
 
     @property
+    def effective_color(self) -> str | None:
+        """Own color → family color → None."""
+        return self.color or (self.family.color if self.family else None)
+
+    @property
     def css_class(self) -> str:
-        if self.color:
-            return f"tag-platform-{self.color}"
+        c = self.effective_color
+        if c:
+            return f"tag-platform-{c}"
         return _platform_heuristic_css(self.name)
 
 
+class PlatformAlias(Base):
+    """User-managed alternate names / abbreviations for a platform.
+
+    e.g. "PS4", "PSX", "SNES" all resolve to their canonical Platform rows
+    via resolve_platform_id(). No restrictions on alias content — users can
+    add whatever they recognise.
+    """
+
+    __tablename__ = "platform_aliases"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    platform_id: Mapped[int] = mapped_column(Integer, ForeignKey("platforms.id", ondelete="CASCADE"), nullable=False, index=True)
+    alias: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+
+    platform: Mapped["Platform"] = relationship("Platform", back_populates="aliases")
+
+
 def resolve_platform_id(db: Session, platform_name: str) -> int | None:
-    """Look up a Platform row by name or display_name and return its id.
+    """Look up a Platform row by name, display_name, or alias and return its id.
 
     Checks in order:
       1. Exact match on Platform.name (canonical IGDB / custom name)
       2. Case-insensitive match on Platform.display_name (user-renamed label)
+      3. Case-insensitive match on PlatformAlias.alias (abbreviations / nicknames)
 
-    Returns None if no match — callers should leave platform_id NULL rather
-    than inventing a row. Never creates new Platform rows.
+    Returns None if no match — callers leave platform_id NULL rather than
+    inventing a row. Never creates new Platform rows.
     """
     if not platform_name:
         return None
@@ -174,7 +220,10 @@ def resolve_platform_id(db: Session, platform_name: str) -> int | None:
     if row:
         return row.id
     row = db.query(Platform).filter(Platform.display_name.ilike(name)).first()
-    return row.id if row else None
+    if row:
+        return row.id
+    alias = db.query(PlatformAlias).filter(PlatformAlias.alias.ilike(name)).first()
+    return alias.platform_id if alias else None
 
 
 class Game(Base):
