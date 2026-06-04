@@ -536,9 +536,9 @@ function cgtAutoFetchLogo(img, entryId) {
   // stale values (e.g. a grid_v value accidentally saved under the grid_h key
   // from an old bug). Slider and CSS are always set together from the same
   // clamped value so they can never get out of sync.
-  var SIZE_MIN = viewMode === 'grid_h' ? 200 : 100;
+  var SIZE_MIN = viewMode === 'grid_h' ? 120 : 100;
   var SIZE_MAX = viewMode === 'grid_h' ? 480 : 320;
-  var SIZE_DEF = viewMode === 'grid_h' ? 320 : 200;
+  var SIZE_DEF = viewMode === 'grid_h' ? 240 : 200;
   var rawSaved = parseInt(localStorage.getItem(sizeKey), 10);
   var effectiveSize = (rawSaved && rawSaved >= SIZE_MIN && rawSaved <= SIZE_MAX) ? rawSaved : SIZE_DEF;
   applySize(effectiveSize);
@@ -579,7 +579,7 @@ function cgtAutoFetchLogo(img, entryId) {
   if (sizeEl) {
     sizeEl.min  = SIZE_MIN;
     sizeEl.max  = SIZE_MAX;
-    sizeEl.step = viewMode === 'grid_h' ? 20 : 10;
+    sizeEl.step = viewMode === 'grid_h' ? 10 : 10;
     sizeEl.value = effectiveSize;
     sizeEl.addEventListener('input', function() {
       var px = parseInt(sizeEl.value, 10);
