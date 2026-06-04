@@ -1,49 +1,38 @@
-{# One platform row in the Settings > Platforms table.
-   Posted back via hx-post="/account/platforms/{id}" and swapped outerHTML.
-   saved=True briefly shows a tick before reverting via CSS animation. #}
+{# Compact platform row — default/saved state.
+   Edit button swaps this row for platform_row_edit.html.
+   Save/Cancel in the edit row swap back to this. #}
 <tr id="platform-row-{{ platform.id }}"
     data-platform-name="{{ (platform.display_name or platform.name) | lower }}"
     data-in-library="{{ 'true' if platform.in_library else 'false' }}">
-  <td style="width:2.5rem;">
+  <td style="width:2.5rem; white-space:nowrap;">
     <span class="tag-badge {{ platform.css_class }}">{{ platform.display_title }}</span>
   </td>
   <td>
-    <small class="text-secondary">{{ platform.name }}</small>
-    {% if platform.family %}
-    <br><small class="text-secondary" style="font-size:.7rem; opacity:.7;">{{ platform.family.name }}</small>
-    {% endif %}
+    <div class="small fw-medium">{{ platform.display_title }}</div>
+    <div class="text-secondary" style="font-size:.72rem;">
+      {{ platform.name }}{% if platform.family %} · {{ platform.family.name }}{% endif %}
+    </div>
   </td>
   <td>
-    <form hx-post="/account/platforms/{{ platform.id }}"
-          hx-target="#platform-row-{{ platform.id }}"
-          hx-swap="outerHTML"
-          class="d-flex align-items-center gap-2 flex-wrap">
-      <input type="text" class="form-control form-control-sm"
-             style="max-width:14rem;"
-             name="display_name"
-             value="{{ platform.display_name or '' }}"
-             placeholder="{{ platform.name }}">
-      <input type="hidden" name="color" class="platform-color-input" value="{{ platform.color or '' }}">
-      <div class="d-flex gap-1 flex-wrap" style="max-width:14rem;">
-        {% for accent in ctp_accents %}
-        <span class="cgt-color-swatch {% if platform.color == accent %}selected{% endif %}"
-              data-color="{{ accent }}"
-              title="{{ accent }}"
-              onclick="selectPlatformSwatch(this)"></span>
-        {% endfor %}
-        <span class="cgt-color-swatch {% if not platform.color %}selected{% endif %}"
-              data-color=""
-              title="None (auto)"
-              style="background: var(--ctp-surface1); border: 1px dashed var(--ctp-overlay0);"
-              onclick="selectPlatformSwatch(this)"></span>
-      </div>
-      <button type="submit" class="btn btn-sm btn-outline-secondary">
-        {% if saved %}Saved{% else %}Save{% endif %}
-      </button>
-    </form>
-    {# Aliases — inline below the name/color form #}
-    <div class="mt-2">
-      {% include "partials/platform_aliases.html" %}
+    {% if platform.aliases %}
+    <div class="d-flex flex-wrap gap-1">
+      {% for a in platform.aliases %}
+      <span class="badge rounded-pill"
+            style="background: var(--ctp-surface1); color: var(--ctp-subtext); font-weight:normal; font-size:.72rem;">
+        {{ a.alias }}
+      </span>
+      {% endfor %}
     </div>
+    {% else %}
+    <span class="text-secondary" style="font-size:.75rem;">No aliases</span>
+    {% endif %}
+  </td>
+  <td style="width:4rem; text-align:right;">
+    <button class="btn btn-sm btn-surface"
+            hx-get="/account/platforms/{{ platform.id }}/edit"
+            hx-target="#platform-row-{{ platform.id }}"
+            hx-swap="outerHTML">
+      Edit
+    </button>
   </td>
 </tr>
