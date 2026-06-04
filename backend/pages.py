@@ -1797,6 +1797,8 @@ def auto_fetch_logo(
 def match_review_page(
     request: Request,
     show_skipped: bool = Query(False),
+    scanned: bool = Query(False),
+    msg: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -1828,6 +1830,7 @@ def match_review_page(
             "enriched": enriched,
             "pending": pending,
             "show_skipped": show_skipped,
+            "scan_msg": msg if scanned else "",
         },
     )
 
@@ -1841,18 +1844,10 @@ def match_review_scan(
     result = match_review.scan_for_matches(db, current_user)
     added = result["candidates_added"]
     checked = result["pairs_checked"]
-    if added:
-        body = f"Scan complete — {added} new match{'es' if added != 1 else ''} found ({checked} pairs checked)."
-    else:
-        body = f"Scan complete — no new matches ({checked} pairs checked)."
-    # HX-Refresh causes HTMX to do a full page reload after processing the
-    # response (including the OOB toast swap), so the toast is visible briefly
-    # before the review page reloads with updated candidates.
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/_toast.html",
-        context={"kind": "success", "body": body},
-        headers={"HX-Refresh": "true"},
+    msg = f"{added} new match{'es' if added != 1 else ''} found" if added else "No new matches found"
+    return RedirectResponse(
+        url=f"/library/match-review?scanned=1&msg={msg} ({checked} pairs checked).",
+        status_code=303,
     )
 
 
@@ -1931,14 +1926,8 @@ def match_review_merge_bulk(
     parts = [f"{merged} merged"]
     if failed:
         parts.append(f"{failed} failed")
-    body = "Bulk merge complete — " + ", ".join(parts) + "."
-    kind = "danger" if failed and not merged else "success"
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/_toast.html",
-        context={"kind": kind, "body": body},
-        headers={"HX-Refresh": "true"},
-    )
+    msg = "Bulk merge complete — " + ", ".join(parts) + "."
+    return RedirectResponse(url=f"/library/match-review?scanned=1&msg={msg}", status_code=303)
 
 
 # --- Completions ---
