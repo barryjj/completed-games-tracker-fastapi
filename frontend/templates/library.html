@@ -532,8 +532,16 @@ function cgtAutoFetchLogo(img, entryId) {
   if (savedGap || savedGap === 0) applyGap(savedGap);
 
   var sizeKey = viewMode === 'grid_h' ? GRID_SIZE_KEY_H : GRID_SIZE_KEY_V;
-  var savedSize = parseInt(localStorage.getItem(sizeKey), 10);
-  if (savedSize) applySize(savedSize);
+  // Bounds must be established before applying saved size so we can clamp
+  // stale values (e.g. a grid_v value accidentally saved under the grid_h key
+  // from an old bug). Slider and CSS are always set together from the same
+  // clamped value so they can never get out of sync.
+  var SIZE_MIN = viewMode === 'grid_h' ? 200 : 100;
+  var SIZE_MAX = viewMode === 'grid_h' ? 480 : 320;
+  var SIZE_DEF = viewMode === 'grid_h' ? 320 : 200;
+  var rawSaved = parseInt(localStorage.getItem(sizeKey), 10);
+  var effectiveSize = (rawSaved && rawSaved >= SIZE_MIN && rawSaved <= SIZE_MAX) ? rawSaved : SIZE_DEF;
+  applySize(effectiveSize);
 
   var savedBorderless = localStorage.getItem(BORDERLESS_KEY) === '1';
   if (savedBorderless) applyBorderless(true);
@@ -565,21 +573,14 @@ function cgtAutoFetchLogo(img, entryId) {
     });
   }
 
-  // Size slider: live update + persist. Range and default depend on current
-  // orientation so portrait/landscape have sensible bounds independently.
+  // Size slider: bounds, default, and initial value all derived from the same
+  // SIZE_* vars used above so slider position always matches the CSS.
   var sizeEl = document.getElementById('lib-grid-size');
   if (sizeEl) {
-    if (viewMode === 'grid_h') {
-      sizeEl.min = 200;
-      sizeEl.max = 480;
-      sizeEl.step = 20;
-      sizeEl.value = savedSize || 280;
-    } else {
-      sizeEl.min = 100;
-      sizeEl.max = 320;
-      sizeEl.step = 10;
-      sizeEl.value = savedSize || 170;
-    }
+    sizeEl.min  = SIZE_MIN;
+    sizeEl.max  = SIZE_MAX;
+    sizeEl.step = viewMode === 'grid_h' ? 20 : 10;
+    sizeEl.value = effectiveSize;
     sizeEl.addEventListener('input', function() {
       var px = parseInt(sizeEl.value, 10);
       applySize(px);

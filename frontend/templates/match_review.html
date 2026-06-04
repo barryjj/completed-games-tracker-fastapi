@@ -2,27 +2,33 @@
 {% block title %}Match Review{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
-  <div>
-    <h4 class="mb-0">Match Review</h4>
-    <p class="text-secondary small mb-0">
-      Potential duplicates between your manual entries and synced library games.
-    </p>
-  </div>
-  <div class="d-flex gap-2 align-items-center flex-wrap">
-    <label class="form-check form-switch mb-0 d-flex align-items-center gap-2 small">
-      <input class="form-check-input" type="checkbox" id="show-skipped-toggle"
-             {% if show_skipped %}checked{% endif %}
-             onchange="window.location = '/library/match-review?show_skipped=' + this.checked">
-      Show previously skipped
-    </label>
-    <button class="btn btn-primary btn-sm"
-            hx-post="/library/match-review/scan"
-            hx-swap="none">
-      Scan for matches
-    </button>
-  </div>
+<div class="mb-3">
+  <h4 class="mb-0">Match Review</h4>
+  <p class="text-secondary small mb-0">
+    Potential duplicates between your manual entries and synced library games.
+  </p>
 </div>
+
+{# Toolbar — mirrors library/completions toolbar style #}
+<div class="d-flex align-items-center gap-3 flex-wrap mb-3">
+  <form method="post" action="/library/match-review/scan" class="mb-0">
+    <button type="submit" class="btn btn-primary btn-sm">Scan for matches</button>
+  </form>
+  <label class="form-check d-flex align-items-center gap-2 mb-0 small">
+    <input class="form-check-input mt-0" type="checkbox" id="show-skipped-toggle"
+           {% if show_skipped %}checked{% endif %}
+           onchange="window.location = '/library/match-review?show_skipped=' + this.checked">
+    Show previously skipped
+  </label>
+</div>
+
+{# Scan result flash #}
+{% if scan_msg %}
+<div class="alert alert-surface small py-2 mb-3" role="alert"
+     style="background: var(--ctp-surface0); border: 1px solid var(--ctp-surface1); color: var(--ctp-text);">
+  {{ scan_msg }}
+</div>
+{% endif %}
 
 {% if enriched %}
 {# Bulk action bar — only shown when pending candidates are visible #}
@@ -168,12 +174,9 @@
 </div>
 
 {% else %}
-<div class="text-secondary text-center py-5">
-  <p class="mb-2">No matches pending review.</p>
-  <p class="small mb-0">
-    Use the <strong>Scan for matches</strong> button above to compare your manual entries against your synced library.
-  </p>
-</div>
+<p class="text-secondary small">
+  No matches pending review. Use <strong>Scan for matches</strong> to compare your manual entries against your synced library.
+</p>
 {% endif %}
 
 <script>
