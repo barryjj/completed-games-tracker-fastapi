@@ -157,6 +157,26 @@ class Platform(Base):
         return _platform_heuristic_css(self.name)
 
 
+def resolve_platform_id(db: Session, platform_name: str) -> int | None:
+    """Look up a Platform row by name or display_name and return its id.
+
+    Checks in order:
+      1. Exact match on Platform.name (canonical IGDB / custom name)
+      2. Case-insensitive match on Platform.display_name (user-renamed label)
+
+    Returns None if no match — callers should leave platform_id NULL rather
+    than inventing a row. Never creates new Platform rows.
+    """
+    if not platform_name:
+        return None
+    name = platform_name.strip()
+    row = db.query(Platform).filter(Platform.name == name).first()
+    if row:
+        return row.id
+    row = db.query(Platform).filter(Platform.display_name.ilike(name)).first()
+    return row.id if row else None
+
+
 class Game(Base):
     __tablename__ = "games"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
