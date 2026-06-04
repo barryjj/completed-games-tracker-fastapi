@@ -1,0 +1,72 @@
+{# Expanded editing row — swapped in when user clicks Edit on a platform row.
+   Save POSTs to update_platform which returns platform_row.html (compact).
+   Cancel GETs the compact row directly without saving. #}
+<tr id="platform-row-{{ platform.id }}"
+    data-platform-name="{{ (platform.display_name or platform.name) | lower }}"
+    data-in-library="{{ 'true' if platform.in_library else 'false' }}"
+    style="background: var(--ctp-surface0);">
+  <td colspan="4" class="p-3">
+    <div class="d-flex align-items-center gap-2 mb-3">
+      <span class="tag-badge {{ platform.css_class }}">{{ platform.display_title }}</span>
+      <span class="small text-secondary">{{ platform.name }}</span>
+      {% if platform.family %}
+      <span class="small text-secondary">· {{ platform.family.name }}</span>
+      {% endif %}
+    </div>
+
+    <form hx-post="/account/platforms/{{ platform.id }}"
+          hx-target="#platform-row-{{ platform.id }}"
+          hx-swap="outerHTML"
+          class="d-flex flex-column gap-3">
+
+      {# Display name #}
+      <div>
+        <label class="form-label small mb-1">Display name</label>
+        <input type="text" class="form-control form-control-sm"
+               style="max-width:20rem;"
+               name="display_name"
+               value="{{ platform.display_name or '' }}"
+               placeholder="{{ platform.name }}">
+        <div class="form-text">Shown in badges and dropdowns. Leave blank to use canonical name.</div>
+      </div>
+
+      {# Color picker #}
+      <div>
+        <label class="form-label small mb-1">Badge color</label>
+        <input type="hidden" name="color" class="platform-color-input" value="{{ platform.color or '' }}">
+        <div class="d-flex gap-1 flex-wrap" style="max-width:22rem;">
+          {% for accent in ctp_accents %}
+          <span class="cgt-color-swatch {% if platform.color == accent %}selected{% endif %}"
+                data-color="{{ accent }}"
+                title="{{ accent }}"
+                onclick="selectPlatformSwatch(this)"></span>
+          {% endfor %}
+          <span class="cgt-color-swatch {% if not platform.color %}selected{% endif %}"
+                data-color=""
+                title="None (inherit from family or auto)"
+                style="background: var(--ctp-surface1); border: 1px dashed var(--ctp-overlay0);"
+                onclick="selectPlatformSwatch(this)"></span>
+        </div>
+        {% if platform.family and platform.family.color and not platform.color %}
+        <div class="form-text">Inheriting <strong>{{ platform.family.color }}</strong> from {{ platform.family.name }} family.</div>
+        {% endif %}
+      </div>
+
+      {# Aliases #}
+      <div>
+        <label class="form-label small mb-1">Aliases</label>
+        {% include "partials/platform_aliases.html" %}
+        <div class="form-text">Alternate names resolved when adding games (e.g. "PS4", "SNES", "N64").</div>
+      </div>
+
+      {# Actions #}
+      <div class="d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary">Save</button>
+        <button type="button" class="btn btn-sm btn-surface"
+                hx-get="/account/platforms/{{ platform.id }}/cancel"
+                hx-target="#platform-row-{{ platform.id }}"
+                hx-swap="outerHTML">Cancel</button>
+      </div>
+    </form>
+  </td>
+</tr>

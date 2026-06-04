@@ -571,6 +571,64 @@ def account_page(
     )
 
 
+@router.get("/account/platforms/{platform_id}/cancel")
+def cancel_platform_edit(
+    request: Request,
+    platform_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the compact row, discarding any unsaved edits."""
+    platform = (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .filter(models.Platform.id == platform_id)
+        .first()
+    )
+    if not platform:
+        return Response(status_code=404)
+    in_library = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.platform_id == platform.id,
+        )
+        .limit(1)
+        .first()
+        is not None
+    )
+    platform.in_library = in_library
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_row.html",
+        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS},
+    )
+
+
+@router.get("/account/platforms/{platform_id}/edit")
+def edit_platform_row(
+    request: Request,
+    platform_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the expanded editing row for a platform."""
+    platform = (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .filter(models.Platform.id == platform_id)
+        .first()
+    )
+    if not platform:
+        return Response(status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_row_edit.html",
+        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS},
+    )
+
+
 @router.post("/account/platforms/{platform_id}")
 def update_platform(
     request: Request,
@@ -616,7 +674,6 @@ def update_platform(
         context={
             "platform": platform,
             "ctp_accents": models.CTP_ACCENTS,
-            "saved": True,
         },
     )
 
