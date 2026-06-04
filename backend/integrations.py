@@ -12,7 +12,8 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, match_review as _match_review, models, steam, worker_state
+from . import jobs, models, steam, worker_state
+from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
 from .pages import get_web_user

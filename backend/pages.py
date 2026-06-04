@@ -1914,6 +1914,7 @@ def match_review_merge_bulk(
     if failed:
         parts.append(f"{failed} failed")
     msg = "Bulk merge complete — " + ", ".join(parts) + "."
+    kind = "danger" if failed and not merged else "success"
     return templates.TemplateResponse(
         request=request,
         name="partials/_toast.html",
