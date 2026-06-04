@@ -517,14 +517,8 @@ function cgtAutoFetchLogo(img, entryId) {
   var GRID_SIZE_KEY_H = 'cgt-library-grid-size-h';
   var BORDERLESS_KEY = 'cgt-library-grid-borderless';
 
-  // Detect current orientation. Server resolves: URL param → cookie → default.
-  // JS must use the same priority so slider bounds match the rendered view.
-  var urlParams = new URLSearchParams(window.location.search);
-  function _getCookie(name) {
-    var m = document.cookie.match('(?:^|;)\\s*' + name + '=([^;]*)');
-    return m ? decodeURIComponent(m[1]) : null;
-  }
-  var viewMode = urlParams.get('view_mode') || _getCookie('cgt-library-view-mode') || 'list';
+  // viewMode injected server-side — always matches what was actually rendered.
+  var viewMode = {{ view_mode | tojson }};
 
   // Apply saved values immediately so the layout is final on first paint.
   function applyGap(px) { document.documentElement.style.setProperty('--cgt-grid-gap', px + 'px'); }

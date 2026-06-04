@@ -16,24 +16,23 @@
              onchange="window.location = '/library/match-review?show_skipped=' + this.checked">
       Show previously skipped
     </label>
-    <button class="btn btn-surface btn-sm"
+    <button class="btn btn-primary btn-sm"
             hx-post="/library/match-review/scan"
-            hx-swap="none"
-            hx-on::after-request="window.location.reload()">
+            hx-swap="none">
       Scan for matches
     </button>
   </div>
 </div>
 
 {% if enriched %}
-{# Bulk action bar — only shown when at least one pending candidate is visible #}
+{# Bulk action bar — only shown when pending candidates are visible #}
 {% set pending_rows = enriched | selectattr("candidate.status", "equalto", "pending") | list %}
 {% if pending_rows %}
 <div class="d-flex align-items-center gap-2 mb-3" id="bulk-bar">
   <input type="checkbox" id="select-all-cb" class="form-check-input"
          onchange="cgtToggleSelectAll(this)">
   <label for="select-all-cb" class="small text-secondary mb-0">Select all</label>
-  <button class="btn btn-sm btn-success ms-2" id="merge-selected-btn"
+  <button class="btn btn-sm btn-primary ms-2" id="merge-selected-btn"
           onclick="cgtMergeSelected()" disabled>
     Merge selected
   </button>
@@ -124,8 +123,8 @@
 
     {# Actions #}
     {% if c.status == "pending" %}
-    <div class="d-flex flex-column gap-1 ms-auto" style="min-width:100px;">
-      <button class="btn btn-sm btn-success"
+    <div class="d-flex flex-column gap-1 ms-auto" style="min-width:110px;">
+      <button class="btn btn-sm btn-primary"
               hx-post="/library/match-review/{{ c.id }}/merge"
               hx-swap="none"
               hx-on::after-request="cgtCandidateDone('{{ c.id }}')">
@@ -138,7 +137,7 @@
     </div>
     {% else %}
     <div class="ms-auto">
-      <button class="btn btn-sm btn-outline-secondary btn-surface"
+      <button class="btn btn-sm btn-surface"
               hx-post="/library/match-review/{{ c.id }}/merge"
               hx-swap="none"
               hx-on::after-request="window.location.reload()">
@@ -155,9 +154,9 @@
            id="skip-note-{{ c.id }}"
            placeholder="Optional note (e.g. different region release)"
            style="max-width:360px;">
-    <button class="btn btn-sm btn-surface"
+    <button class="btn btn-sm btn-primary"
             onclick="cgtSubmitSkip('{{ c.id }}')">Confirm</button>
-    <button class="btn btn-sm btn-link text-secondary"
+    <button class="btn btn-sm btn-link text-secondary p-0"
             onclick="cgtHideSkipForm('{{ c.id }}')">Cancel</button>
   </div>
   {% elif c.note %}
@@ -171,15 +170,9 @@
 {% else %}
 <div class="text-secondary text-center py-5">
   <p class="mb-2">No matches pending review.</p>
-  <p class="small mb-3">
-    Run a scan to compare your manual entries against your synced library.
+  <p class="small mb-0">
+    Use the <strong>Scan for matches</strong> button above to compare your manual entries against your synced library.
   </p>
-  <button class="btn btn-surface btn-sm"
-          hx-post="/library/match-review/scan"
-          hx-swap="none"
-          hx-on::after-request="window.location.reload()">
-    Scan for matches
-  </button>
 </div>
 {% endif %}
 
@@ -203,14 +196,13 @@ function cgtMergeSelected() {
   htmx.ajax('POST', '/library/match-review/merge-bulk', {
     values: { candidate_ids: ids },
     swap: 'none',
-  }).then(() => window.location.reload());
+  });
 }
 
 function cgtCandidateDone(id) {
   const row = document.getElementById('candidate-' + id);
   if (row) row.remove();
   cgtUpdateBulkBar();
-  // Update pending count in bottom bar if present
   const link = document.querySelector('a[href="/library/match-review"]');
   if (link) {
     const remaining = document.querySelectorAll('.candidate-row[data-status="pending"]').length;

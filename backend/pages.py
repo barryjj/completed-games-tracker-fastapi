@@ -1840,26 +1840,19 @@ def match_review_scan(
 ):
     result = match_review.scan_for_matches(db, current_user)
     added = result["candidates_added"]
-    updated = result["candidates_updated"]
     checked = result["pairs_checked"]
     if added:
         body = f"Scan complete — {added} new match{'es' if added != 1 else ''} found ({checked} pairs checked)."
-        kind = "success"
     else:
         body = f"Scan complete — no new matches ({checked} pairs checked)."
-        kind = "success"
-    toast = templates.TemplateResponse(
+    # HX-Refresh causes HTMX to do a full page reload after processing the
+    # response (including the OOB toast swap), so the toast is visible briefly
+    # before the review page reloads with updated candidates.
+    return templates.TemplateResponse(
         request=request,
         name="partials/_toast.html",
-        context={"kind": kind, "body": body},
-    )
-    # Return the toast + a redirect trigger so the page reloads
-    from fastapi.responses import HTMLResponse
-
-    toast_html = toast.body.decode() if hasattr(toast, "body") else ""
-    return HTMLResponse(
-        content=toast_html,
-        headers={"HX-Redirect": "/library/match-review"},
+        context={"kind": "success", "body": body},
+        headers={"HX-Refresh": "true"},
     )
 
 
@@ -1944,7 +1937,7 @@ def match_review_merge_bulk(
         request=request,
         name="partials/_toast.html",
         context={"kind": kind, "body": body},
-        headers={"HX-Redirect": "/library/match-review"},
+        headers={"HX-Refresh": "true"},
     )
 
 
