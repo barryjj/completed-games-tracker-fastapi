@@ -5,16 +5,33 @@ Detection pass
 --------------
 For each manual UserLibraryEntry owned by the user, compare its title against
 every synced game on the same platform.  A confidence score (0.0–1.0) is
-computed from a small set of normalised-title heuristics.  Pairs above the
-minimum threshold are written to sync_match_candidates (upserted — re-running
-is safe; already-reviewed pairs are not touched).
+computed via token-based matching (see _score).  Only the single best-scoring
+synced game is kept per manual entry — no spam of franchise-name matches.
 
-Scoring tiers (approximate guidance shown in the UI):
-  >= 0.90  High    — exact or near-exact normalised match
-  >= 0.70  Medium  — strong token overlap or subtitle difference
-  >= 0.40  Low     — partial overlap, worth a look
+Already-reviewed pairs (merged/kept_separate) are never re-queued.
+Re-running the scan is safe; pending candidates get updated scores.
 
-Pairs below MIN_SCORE (0.40) are not queued — too noisy to be useful.
+Scoring tiers:
+  >= 0.90  High    — exact or near-exact token match (possibly with trailing subtitle)
+  >= 0.70  Medium  — strong overlap, slight spelling differences or short title ambiguity
+  >= 0.65  Low     — threshold; below this the match is too noisy to surface
+
+Algorithm summary
+-----------------
+1. Normalise: lowercase, HTML-unescape, ASCII-fold, & → and, roman numerals → arabic,
+   strip non-alphanumeric, collapse whitespace, drop leading articles.
+2. Tokenise both titles.
+3. Greedy token matching: for each token in the shorter title find the best
+   fuzzy-matched token in the longer (SequenceMatcher per token, threshold 0.75).
+4. Base score = matched / max(len_a, len_b)  — extra tokens in either direction
+   drag the score down, so "Castlevania" vs "Castlevania Lords of Shadow 2"
+   scores 1/5 = 0.20 and is dropped.
+5. Trailing-number subtitle rule: if every manual token is present in the
+   synced title AND the last manual token is a number AND the manual title has
+   ≥ 2 tokens, treat the synced title as the same game with a marketing subtitle
+   and boost to 0.88.  Handles "Witcher 3" → "Witcher 3: Wild Hunt",
+   "Halo 3" → "Halo 3: ODST", "Devil May Cry 4" → "Devil May Cry 4: Special Edition".
+   Does NOT fire for single-token titles like "Castlevania".
 """
 
 from __future__ import annotations
@@ -29,7 +46,8 @@ from sqlalchemy.orm import Session
 
 from backend import models
 
-MIN_SCORE: float = 0.40
+MIN_SCORE: float = 0.65
+_TOKEN_FUZZY_THRESHOLD: float = 0.75
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Title normalisation
@@ -38,31 +56,45 @@ MIN_SCORE: float = 0.40
 _ARTICLE_RE = re.compile(r"^(the|a|an)\s+", re.IGNORECASE)
 _NONALNUM_RE = re.compile(r"[^a-z0-9\s]")
 _MULTI_SPACE = re.compile(r"\s{2,}")
-# Strip common subtitle patterns: ": Subtitle", "- Subtitle", "(Subtitle)"
-_SUBTITLE_RE = re.compile(r"\s*[:\-–]\s+.+$")
-_PAREN_SUFFIX = re.compile(r"\s*\([^)]+\)\s*$")
+
+# Roman numeral tokens → arabic.  Whole-word only (applied after tokenising).
+_ROMAN_MAP: dict[str, str] = {
+    "i": "1",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "v": "5",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "x": "10",
+    "xi": "11",
+    "xii": "12",
+    "xiii": "13",
+    "xiv": "14",
+    "xv": "15",
+}
 
 
-def _normalise(title: str) -> str:
-    """Lowercase, unescape HTML entities, strip punctuation and articles."""
+def _normalise_tokens(title: str) -> list[str]:
+    """Return a list of normalised tokens for a title."""
     t = html.unescape(title)
-    # Unicode normalise to strip accents etc.
     t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
     t = t.lower()
+    t = t.replace("&", "and")
     t = _NONALNUM_RE.sub(" ", t)
     t = _MULTI_SPACE.sub(" ", t).strip()
     t = _ARTICLE_RE.sub("", t).strip()
-    return t
+    tokens = t.split()
+    # Roman numeral conversion — whole tokens only
+    return [_ROMAN_MAP.get(tok, tok) for tok in tokens]
 
 
-def _without_subtitle(title: str) -> str:
-    t = _SUBTITLE_RE.sub("", title)
-    t = _PAREN_SUFFIX.sub("", t)
-    return _normalise(t)
-
-
-def _token_set(s: str) -> set[str]:
-    return set(s.split())
+def _tok_sim(a: str, b: str) -> float:
+    if a == b:
+        return 1.0
+    return SequenceMatcher(None, a, b).ratio()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -71,41 +103,75 @@ def _token_set(s: str) -> set[str]:
 
 
 def _score(manual_title: str, synced_title: str) -> float:
-    """Return a 0.0–1.0 confidence score for the pair."""
-    a = _normalise(manual_title)
-    b = _normalise(synced_title)
+    """Return a 0.0–1.0 confidence score for the pair.
 
-    if not a or not b:
+    See module docstring for full algorithm description.
+    """
+    a_toks = _normalise_tokens(manual_title)
+    b_toks = _normalise_tokens(synced_title)
+
+    if not a_toks or not b_toks:
         return 0.0
 
-    # Exact normalised match
-    if a == b:
+    # Exact token-sequence match
+    if a_toks == b_toks:
         return 1.0
 
-    # One is a prefix/suffix of the other (handles edition suffixes like "GOTY Edition")
-    if a.startswith(b) or b.startswith(a):
-        shorter = min(len(a), len(b))
-        longer = max(len(a), len(b))
-        return 0.85 + 0.10 * (shorter / longer)
+    max_len = max(len(a_toks), len(b_toks))
 
-    # Subtitle-stripped match
-    a_short = _without_subtitle(manual_title)
-    b_short = _without_subtitle(synced_title)
-    if a_short and b_short and a_short == b_short:
-        return 0.88
-
-    # SequenceMatcher ratio
-    seq = SequenceMatcher(None, a, b).ratio()
-
-    # Token overlap bonus
-    ta, tb = _token_set(a), _token_set(b)
-    if ta and tb:
-        overlap = len(ta & tb) / max(len(ta), len(tb))
+    # Greedy token matching — shorter title's tokens matched against longer's
+    if len(a_toks) <= len(b_toks):
+        shorter, longer = a_toks, b_toks
     else:
-        overlap = 0.0
+        shorter, longer = b_toks, a_toks
 
-    score = seq * 0.6 + overlap * 0.4
-    return round(min(score, 0.99), 4)
+    used: set[int] = set()
+    matched = 0.0
+    for tok in shorter:
+        best_sim = 0.0
+        best_j = -1
+        for j, ltok in enumerate(longer):
+            if j in used:
+                continue
+            sim = _tok_sim(tok, ltok)
+            if sim > best_sim:
+                best_sim = sim
+                best_j = j
+        if best_sim >= _TOKEN_FUZZY_THRESHOLD:
+            matched += best_sim
+            used.add(best_j)
+
+    base_score = matched / max_len
+
+    # ── Trailing-number subtitle rule ──────────────────────────────────────
+    # If ALL manual tokens are present in the synced title AND the last manual
+    # token is a digit AND the manual title has ≥ 2 tokens, the synced title
+    # is almost certainly the same game with a marketing subtitle tacked on.
+    # Boost to 0.88 (Medium-high) so it surfaces clearly without claiming
+    # a perfect match.
+    #
+    # Guard: single-token manual titles (e.g. "Castlevania") are excluded so
+    # "Castlevania" doesn't boost against "Castlevania: Lords of Shadow 2".
+    manual_toks = _normalise_tokens(manual_title)
+    if len(manual_toks) >= 2 and manual_toks[-1].isdigit() and base_score < 0.88:
+        # Check all manual tokens appear in synced (with fuzzy tolerance)
+        synced_toks = _normalise_tokens(synced_title)
+        remaining = list(synced_toks)
+        all_present = True
+        for mt in manual_toks:
+            found = False
+            for i, st in enumerate(remaining):
+                if _tok_sim(mt, st) >= _TOKEN_FUZZY_THRESHOLD:
+                    remaining.pop(i)
+                    found = True
+                    break
+            if not found:
+                all_present = False
+                break
+        if all_present:
+            base_score = max(base_score, 0.88)
+
+    return round(min(base_score, 0.99), 4)
 
 
 def confidence_label(score: float) -> str:
@@ -133,9 +199,11 @@ def confidence_css(score: float) -> str:
 def scan_for_matches(db: Session, user: models.User) -> dict:
     """Compare manual entries against all synced games on the same platform.
 
+    For each manual entry, only the single highest-scoring synced game above
+    MIN_SCORE is kept as a candidate — no multiple hits per manual entry.
+
     Returns counts: {"candidates_added": N, "candidates_updated": N, "pairs_checked": N}
     """
-    # Load all manual library entries for this user (not hidden, not already merged)
     manual_entries = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
@@ -149,7 +217,6 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
     if not manual_entries:
         return {"candidates_added": 0, "candidates_updated": 0, "pairs_checked": 0}
 
-    # Load all synced releases for this user (steam_import / psn_import)
     synced_entries = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
@@ -160,7 +227,7 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         .all()
     )
 
-    # Build a lookup of existing candidates so we don't re-evaluate reviewed pairs
+    # Build lookup of existing candidates keyed by (manual_entry_id, platform_source, external_id)
     existing_candidates: dict[tuple, models.SyncMatchCandidate] = {
         (c.manual_entry_id, c.platform_source, c.external_id): c
         for c in db.query(models.SyncMatchCandidate)
@@ -176,46 +243,55 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         manual_title = manual.release.game.display_name or manual.release.game.title
         manual_platform_id = manual.release.platform_id
 
+        # Collect all scores for this manual entry, then take only the best
+        best_score = 0.0
+        best_synced = None
+
         for synced in synced_entries:
-            # Only compare same platform (by platform_id if both linked, else by
-            # normalised platform string)
+            # Platform filter — prefer linked platform_id match; fall back to
+            # normalised platform string when either side lacks a linked row.
             if manual_platform_id and synced.release.platform_id:
                 if manual_platform_id != synced.release.platform_id:
                     continue
             else:
-                if _normalise(manual.release.platform) != _normalise(synced.release.platform):
+                if _normalise_tokens(manual.release.platform) != _normalise_tokens(synced.release.platform):
                     continue
 
-            synced_title = synced.release.game.display_name or synced.release.game.title
-            external_id = synced.release.external_id or str(synced.release.id)
-            platform_source = synced.release.source  # "steam" | "psn"
-
             pairs_checked += 1
+            synced_title = synced.release.game.display_name or synced.release.game.title
             score = _score(manual_title, synced_title)
 
-            if score < MIN_SCORE:
-                continue
+            if score >= MIN_SCORE and score > best_score:
+                best_score = score
+                best_synced = synced
 
-            key = (manual.id, platform_source, external_id)
-            existing = existing_candidates.get(key)
+        if best_synced is None:
+            continue
 
-            if existing is None:
-                candidate = models.SyncMatchCandidate(
+        synced_title = best_synced.release.game.display_name or best_synced.release.game.title
+        external_id = best_synced.release.external_id or str(best_synced.release.id)
+        platform_source = best_synced.release.source
+
+        key = (manual.id, platform_source, external_id)
+        existing = existing_candidates.get(key)
+
+        if existing is None:
+            db.add(
+                models.SyncMatchCandidate(
                     manual_entry_id=manual.id,
                     platform_source=platform_source,
                     external_id=external_id,
                     synced_title=synced_title,
-                    match_score=score,
+                    match_score=best_score,
                     status="pending",
                 )
-                db.add(candidate)
-                added += 1
-            elif existing.status == "pending":
-                # Update score in case titles changed
-                existing.match_score = score
-                existing.synced_title = synced_title
-                updated += 1
-            # If already merged or kept_separate — leave it alone
+            )
+            added += 1
+        elif existing.status == "pending":
+            existing.match_score = best_score
+            existing.synced_title = synced_title
+            updated += 1
+        # merged / kept_separate — leave alone
 
     db.commit()
     return {"candidates_added": added, "candidates_updated": updated, "pairs_checked": pairs_checked}
@@ -242,7 +318,6 @@ def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: mod
     manual_entry = candidate.manual_entry
     manual_release = manual_entry.release
 
-    # Copy platform data onto the manual release
     manual_release.external_id = synced_release.external_id
     manual_release.source = synced_release.source
     manual_release.raw_data = synced_release.raw_data
@@ -250,28 +325,22 @@ def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: mod
     if synced_release.platform_id and not manual_release.platform_id:
         manual_release.platform_id = synced_release.platform_id
 
-    # Re-home artwork from synced release to manual release
     for artwork in list(synced_release.artwork):
-        # Skip if manual release already has artwork of this type+source
         already = any(a.artwork_type == artwork.artwork_type and a.source == artwork.source for a in manual_release.artwork)
         if not already:
             artwork.release_id = manual_release.id
 
-    # Update the manual library entry import source
     manual_entry.import_source = f"{candidate.platform_source}_import"
 
-    # Remove the synced UserLibraryEntry (manual entry keeps its completions)
     synced_entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=synced_release.id).first()
     if synced_entry:
         db.delete(synced_entry)
 
-    # If the synced release now has no entries, clean it up too
     db.flush()
     remaining = db.query(models.UserLibraryEntry).filter_by(release_id=synced_release.id).count()
     if remaining == 0 and synced_release.id != manual_release.id:
         db.delete(synced_release)
 
-    # Mark candidate
     candidate.status = "merged"
     candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
     db.commit()
@@ -304,7 +373,7 @@ def pending_count(db: Session, user: models.User) -> int:
 
 
 def get_candidates(db: Session, user: models.User, include_skipped: bool = False):
-    """Return candidates for the review page, newest first."""
+    """Return candidates for the review page, sorted by score descending."""
     q = (
         db.query(models.SyncMatchCandidate)
         .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
