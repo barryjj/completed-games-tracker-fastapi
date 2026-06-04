@@ -1797,8 +1797,6 @@ def auto_fetch_logo(
 def match_review_page(
     request: Request,
     show_skipped: bool = Query(False),
-    scanned: bool = Query(False),
-    msg: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -1830,24 +1828,7 @@ def match_review_page(
             "enriched": enriched,
             "pending": pending,
             "show_skipped": show_skipped,
-            "scan_msg": msg if scanned else "",
         },
-    )
-
-
-@router.post("/library/match-review/scan")
-def match_review_scan(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    result = match_review.scan_for_matches(db, current_user)
-    added = result["candidates_added"]
-    checked = result["pairs_checked"]
-    msg = f"{added} new match{'es' if added != 1 else ''} found" if added else "No new matches found"
-    return RedirectResponse(
-        url="/library/match-review?" + urlencode({"scanned": "1", "msg": f"{msg} ({checked} pairs checked)."}),
-        status_code=303,
     )
 
 
@@ -1927,7 +1908,12 @@ def match_review_merge_bulk(
     if failed:
         parts.append(f"{failed} failed")
     msg = "Bulk merge complete — " + ", ".join(parts) + "."
-    return RedirectResponse(url="/library/match-review?" + urlencode({"scanned": "1", "msg": msg}), status_code=303)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": kind, "body": msg},
+        headers={"HX-Refresh": "true"},
+    )
 
 
 # --- Completions ---

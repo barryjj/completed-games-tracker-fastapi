@@ -196,56 +196,74 @@ def confidence_css(score: float) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _platform_compatible(
-    manual_pid: int | None, manual_pstr: str, synced_pid: int | None, synced_pstr: str, compat_map: dict[int, set[int]]
-) -> bool:
-    """Return True if the two platform specs are compatible for match purposes.
-
-    Compatibility means either:
-    - Both have linked platform_ids that are equal or in each other's compat set
-    - Neither is linked and the normalised platform strings match
-    - One is unlinked but its string normalises to something in the other's compat set names
-    """
-    if manual_pid and synced_pid:
-        if manual_pid == synced_pid:
-            return True
-        # Check cross-platform compatibility (e.g. Steam ↔ PC Windows)
-        return synced_pid in compat_map.get(manual_pid, set()) or manual_pid in compat_map.get(synced_pid, set())
-    # Fallback: string comparison
-    return _normalise_tokens(manual_pstr) == _normalise_tokens(synced_pstr)
-
-
-def _build_compat_map(db: Session) -> dict[int, set[int]]:
-    """Build a platform compatibility map for matching purposes.
+def _build_compat_map(db: Session) -> tuple[dict[int, set[int]], dict[str, set[str]]]:
+    """Build platform compatibility maps for matching purposes.
 
     Steam (the custom distribution platform) is compatible with PC platforms
     because Steam games run on Windows/Linux/Mac. When a user manually adds a
     game as "PC (Microsoft Windows)" and then syncs Steam, we still want to
-    find the match.
+    find the match — even when the manual entry has no linked platform_id.
 
-    Returns {platform_id: {compatible_platform_ids, ...}}
+    Returns:
+        id_compat:   {platform_id → set of compatible platform_ids}
+        name_compat: {normalised_platform_name → set of compatible normalised names}
+                     Used as a fallback when one side has no linked platform_id.
     """
-    # Look up by name so this works regardless of DB-assigned IDs
     pc_names = {"PC (Microsoft Windows)", "Linux", "Mac", "PC"}
     steam_names = {"Steam"}
 
     pc_ids: set[int] = set()
     steam_ids: set[int] = set()
+    all_platforms = db.query(models.Platform).all()
 
-    for p in db.query(models.Platform).all():
+    for p in all_platforms:
         if p.name in pc_names:
             pc_ids.add(p.id)
         if p.name in steam_names:
             steam_ids.add(p.id)
 
-    compat: dict[int, set[int]] = {}
-    # Steam ↔ all PC platforms
+    id_compat: dict[int, set[int]] = {}
     for sid in steam_ids:
-        compat.setdefault(sid, set()).update(pc_ids)
+        id_compat.setdefault(sid, set()).update(pc_ids)
     for pid in pc_ids:
-        compat.setdefault(pid, set()).update(steam_ids)
+        id_compat.setdefault(pid, set()).update(steam_ids)
 
-    return compat
+    # Build normalised name → compatible normalised names map so entries with
+    # no linked platform_id can still be matched by string.
+    pid_to_norm = {p.id: " ".join(_normalise_tokens(p.name)) for p in all_platforms}
+    name_compat: dict[str, set[str]] = {}
+    for pid, compat_ids in id_compat.items():
+        pn = pid_to_norm.get(pid, "")
+        for cid in compat_ids:
+            cn = pid_to_norm.get(cid, "")
+            if pn and cn:
+                name_compat.setdefault(pn, set()).add(cn)
+                name_compat.setdefault(cn, set()).add(pn)
+
+    return id_compat, name_compat
+
+
+def _platform_compatible(
+    manual_pid: int | None,
+    manual_pstr: str,
+    synced_pid: int | None,
+    synced_pstr: str,
+    id_compat: dict[int, set[int]],
+    name_compat: dict[str, set[str]],
+) -> bool:
+    """Return True if the two platform specs are compatible for match purposes."""
+    if manual_pid and synced_pid:
+        if manual_pid == synced_pid:
+            return True
+        return synced_pid in id_compat.get(manual_pid, set()) or manual_pid in id_compat.get(synced_pid, set())
+
+    # At least one side lacks a linked platform_id — fall back to normalised
+    # string comparison, with compat name map as a secondary check.
+    manual_norm = " ".join(_normalise_tokens(manual_pstr))
+    synced_norm = " ".join(_normalise_tokens(synced_pstr))
+    if manual_norm == synced_norm:
+        return True
+    return synced_norm in name_compat.get(manual_norm, set()) or manual_norm in name_compat.get(synced_norm, set())
 
 
 def scan_for_matches(db: Session, user: models.User) -> dict:
@@ -279,7 +297,7 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         .all()
     )
 
-    compat_map = _build_compat_map(db)
+    id_compat, name_compat = _build_compat_map(db)
 
     # Build lookup of existing candidates keyed by (manual_entry_id, platform_source, external_id)
     existing_candidates: dict[tuple, models.SyncMatchCandidate] = {
@@ -307,7 +325,8 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
                 manual.release.platform,
                 synced.release.platform_id,
                 synced.release.platform,
-                compat_map,
+                id_compat,
+                name_compat,
             ):
                 continue
 

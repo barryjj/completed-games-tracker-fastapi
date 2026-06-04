@@ -11,9 +11,11 @@
 
 {# Toolbar — mirrors library/completions toolbar style #}
 <div class="d-flex align-items-center gap-3 flex-wrap mb-3">
-  <form method="post" action="/library/match-review/scan" class="mb-0">
-    <button type="submit" class="btn btn-primary btn-sm">Scan for matches</button>
-  </form>
+  <button class="btn btn-primary btn-sm"
+          hx-post="/integrations/match-review/scan"
+          hx-swap="none">
+    Scan for matches
+  </button>
   <label class="form-check d-flex align-items-center gap-2 mb-0 small">
     <input class="form-check-input mt-0" type="checkbox" id="show-skipped-toggle"
            {% if show_skipped %}checked{% endif %}
@@ -21,14 +23,6 @@
     Show previously skipped
   </label>
 </div>
-
-{# Scan result flash #}
-{% if scan_msg %}
-<div class="alert alert-surface small py-2 mb-3" role="alert"
-     style="background: var(--ctp-surface0); border: 1px solid var(--ctp-surface1); color: var(--ctp-text);">
-  {{ scan_msg }}
-</div>
-{% endif %}
 
 {% if enriched %}
 {# Bulk action bar — only shown when pending candidates are visible #}

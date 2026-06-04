@@ -12,7 +12,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, match_review, models, steam, worker_state
+from . import jobs, match_review as _match_review, models, steam, worker_state
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
 from .pages import get_web_user
@@ -58,7 +58,7 @@ def integrations_hub(
         context={
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
-            "pending_matches": match_review.pending_count(db, current_user),
+            "pending_matches": _match_review.pending_count(db, current_user),
         },
     )
 
@@ -427,6 +427,53 @@ def _credential_error(current_user: models.User, kind: str) -> str | None:
         if not current_user.steam_session_id or not current_user.steam_login_secure:
             return "Browser cookies (sessionid + steamLoginSecure) are required for this operation."
     return None
+
+
+async def _run_match_scan_job(job_id: str, user_id: int) -> None:
+    """Background runner for match-review scan jobs."""
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter_by(id=user_id).first()
+        if user is None:
+            jobs.mark_failed(job_id, "User not found.")
+            return
+        result = await asyncio.to_thread(_match_review.scan_for_matches, db, user)
+        added = result["candidates_added"]
+        checked = result["pairs_checked"]
+        if added:
+            msg = f"Scan complete — {added} new match{'es' if added != 1 else ''} found ({checked:,} pairs checked)."
+        else:
+            msg = f"Scan complete — no new matches ({checked:,} pairs checked)."
+        jobs.mark_done(job_id, msg)
+    except Exception as e:
+        _logger.exception("Match scan job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Scan failed: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/match-review/scan")
+async def match_review_scan(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Kick off a background match-review scan. Returns a started toast immediately."""
+    active = jobs.active_jobs_for(current_user.id)
+    if active:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_toast.html",
+            context={"kind": "danger", "body": "A sync job is already running — please wait for it to finish."},
+        )
+    job = jobs.create(user_id=current_user.id, kind="match_scan")
+    asyncio.create_task(_run_match_scan_job(job.id, current_user.id))
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": "Scanning for matches — you'll get a toast when it's done."},
+    )
 
 
 @router.post("/steam/sync-all")
