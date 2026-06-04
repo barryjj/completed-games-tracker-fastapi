@@ -413,6 +413,7 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
             release = models.GameRelease(
                 game_id=game.id,
                 platform="Steam",
+                platform_id=models.resolve_platform_id(db, "Steam"),
                 source="steam",
                 external_id=appid,
                 raw_data=g,
@@ -534,6 +535,7 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
             release = models.GameRelease(
                 game_id=game.id,
                 platform="Steam",
+                platform_id=models.resolve_platform_id(db, "Steam"),
                 source="steam",
                 external_id=appid_str,
             )

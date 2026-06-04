@@ -1065,12 +1065,10 @@ def add_game(
     db.add(game)
     db.flush()
 
-    # Link to the platforms table if we can find an exact match by name.
-    platform_row = db.query(models.Platform).filter_by(name=platform).first()
     release = models.GameRelease(
         game_id=game.id,
         platform=platform,
-        platform_id=platform_row.id if platform_row else None,
+        platform_id=models.resolve_platform_id(db, platform),
         source="manual",
     )
     db.add(release)
@@ -1154,8 +1152,7 @@ def edit_library_entry(
     platform_clean = platform.strip()
     if platform_clean and is_fully_manual:
         entry.release.platform = platform_clean
-        platform_row = db.query(models.Platform).filter_by(name=platform_clean).first()
-        entry.release.platform_id = platform_row.id if platform_row else None
+        entry.release.platform_id = models.resolve_platform_id(db, platform_clean)
 
     # display_name: empty string means "use raw title" (display_name stored as NULL)
     game.display_name = display_name.strip() or None
