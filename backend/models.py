@@ -2,7 +2,7 @@ import datetime
 import os
 from collections.abc import Iterator
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column, relationship, sessionmaker
 from sqlalchemy.types import JSON
 
@@ -387,6 +387,41 @@ class UserAchievement(Base):
     library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="achievements")
 
     __table_args__ = (UniqueConstraint("library_entry_id", "external_id", name="uq_achievement_entry_external"),)
+
+
+class SyncMatchCandidate(Base):
+    """Potential duplicate match between a manual library entry and a synced platform game.
+
+    Created by the match-detection pass (run automatically after sync, or on demand).
+    Reviewed by the user on /library/match-review.
+
+    status values:
+      pending       – awaiting review
+      merged        – user approved the merge; manual entry absorbed the synced data
+      kept_separate – user chose to keep entries distinct (filtered from default view,
+                      re-surfaceable via "Show previously skipped" toggle)
+    """
+
+    __tablename__ = "sync_match_candidates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    # The manual UserLibraryEntry that may be a duplicate
+    manual_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=False, index=True)
+    # The platform source and external ID of the synced game
+    platform_source: Mapped[str] = mapped_column(String, nullable=False)  # "steam" | "psn"
+    external_id: Mapped[str] = mapped_column(String, nullable=False)  # appid or psn title id
+    synced_title: Mapped[str] = mapped_column(String, nullable=False)  # title from the sync source
+    # 0.0–1.0 confidence score
+    match_score: Mapped[float] = mapped_column(Float, nullable=False)
+    # pending | merged | kept_separate
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
+    # optional user note when keeping separate
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    manual_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", foreign_keys=[manual_entry_id])
+
+    __table_args__ = (UniqueConstraint("manual_entry_id", "platform_source", "external_id", name="uq_match_candidate"),)
 
 
 class Completion(Base):

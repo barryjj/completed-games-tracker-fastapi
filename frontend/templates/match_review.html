@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}Match Review{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3 flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0">Match Review</h4>
+    <p class="text-secondary small mb-0">
+      Potential duplicates between your manual entries and synced library games.
+    </p>
+  </div>
+  <div class="d-flex gap-2 align-items-center flex-wrap">
+    <label class="form-check form-switch mb-0 d-flex align-items-center gap-2 small">
+      <input class="form-check-input" type="checkbox" id="show-skipped-toggle"
+             {% if show_skipped %}checked{% endif %}
+             onchange="window.location = '/library/match-review?show_skipped=' + this.checked">
+      Show previously skipped
+    </label>
+    <button class="btn btn-surface btn-sm"
+            hx-post="/library/match-review/scan"
+            hx-swap="none"
+            hx-on::after-request="window.location.reload()">
+      Scan for matches
+    </button>
+  </div>
+</div>
+
+{% if enriched %}
+{# Bulk action bar — only shown when at least one pending candidate is visible #}
+{% set pending_rows = enriched | selectattr("candidate.status", "equalto", "pending") | list %}
+{% if pending_rows %}
+<div class="d-flex align-items-center gap-2 mb-3" id="bulk-bar">
+  <input type="checkbox" id="select-all-cb" class="form-check-input"
+         onchange="cgtToggleSelectAll(this)">
+  <label for="select-all-cb" class="small text-secondary mb-0">Select all</label>
+  <button class="btn btn-sm btn-success ms-2" id="merge-selected-btn"
+          onclick="cgtMergeSelected()" disabled>
+    Merge selected
+  </button>
+  <span class="text-secondary small ms-2" id="selected-count"></span>
+</div>
+{% endif %}
+
+<div class="d-flex flex-column gap-3" id="candidate-list">
+{% for row in enriched %}
+{% set c = row.candidate %}
+{% set manual = row.manual_entry %}
+{% set synced = row.synced_entry %}
+{% set manual_game = manual.release.game %}
+{% set manual_cover = manual | grid_cover_url('grid_h') %}
+{% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
+
+<div class="rounded p-3 candidate-row {% if c.status == 'kept_separate' %}opacity-50{% endif %}"
+     style="background: var(--ctp-surface0); border-left: 3px solid {{ row.color }};"
+     id="candidate-{{ c.id }}"
+     data-candidate-id="{{ c.id }}"
+     data-status="{{ c.status }}">
+
+  <div class="d-flex align-items-start gap-3 flex-wrap">
+    {# Select checkbox — only for pending #}
+    {% if c.status == "pending" %}
+    <div class="pt-1">
+      <input type="checkbox" class="form-check-input candidate-cb"
+             value="{{ c.id }}"
+             onchange="cgtUpdateBulkBar()">
+    </div>
+    {% endif %}
+
+    {# Confidence badge #}
+    <div class="d-flex flex-column align-items-center" style="min-width:56px;">
+      <span class="badge rounded-pill fw-semibold"
+            style="background: {{ row.color }}; color: var(--ctp-crust); font-size:.75rem;">
+        {{ row.label }}
+      </span>
+      <span class="text-secondary" style="font-size:.7rem;">{{ (c.match_score * 100) | int }}%</span>
+      {% if c.status == "kept_separate" %}
+      <span class="badge bg-secondary mt-1" style="font-size:.65rem;">Skipped</span>
+      {% endif %}
+    </div>
+
+    {# Manual entry card #}
+    <div class="d-flex gap-2 flex-grow-1" style="min-width:200px; max-width:400px;">
+      {% if manual_cover %}
+      <img src="{{ manual_cover }}" alt="" loading="lazy"
+           style="width:80px; height:38px; object-fit:cover; border-radius:4px; flex-shrink:0;">
+      {% else %}
+      <div style="width:80px; height:38px; background:var(--ctp-surface1); border-radius:4px; flex-shrink:0;"></div>
+      {% endif %}
+      <div>
+        <div class="fw-medium small">{{ manual_game.display_title }}</div>
+        <div class="text-secondary" style="font-size:.75rem;">
+          <span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>
+          Manual entry
+        </div>
+        {% if manual.completions %}
+        <div class="text-secondary" style="font-size:.72rem;">
+          {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Arrow #}
+    <div class="d-flex align-items-center text-secondary px-1" style="font-size:1.1rem;">&#8644;</div>
+
+    {# Synced entry card #}
+    <div class="d-flex gap-2 flex-grow-1" style="min-width:200px; max-width:400px;">
+      {% if synced_cover %}
+      <img src="{{ synced_cover }}" alt="" loading="lazy"
+           style="width:80px; height:38px; object-fit:cover; border-radius:4px; flex-shrink:0;">
+      {% else %}
+      <div style="width:80px; height:38px; background:var(--ctp-surface1); border-radius:4px; flex-shrink:0;"></div>
+      {% endif %}
+      <div>
+        <div class="fw-medium small">{{ c.synced_title }}</div>
+        <div class="text-secondary" style="font-size:.75rem;">
+          {% if row.synced_release %}
+          <span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>
+          {% endif %}
+          {{ c.platform_source | title }} — #{{ c.external_id }}
+        </div>
+      </div>
+    </div>
+
+    {# Actions #}
+    {% if c.status == "pending" %}
+    <div class="d-flex flex-column gap-1 ms-auto" style="min-width:100px;">
+      <button class="btn btn-sm btn-success"
+              hx-post="/library/match-review/{{ c.id }}/merge"
+              hx-swap="none"
+              hx-on::after-request="cgtCandidateDone('{{ c.id }}')">
+        Merge
+      </button>
+      <button class="btn btn-sm btn-surface"
+              onclick="cgtShowSkipForm('{{ c.id }}')">
+        Keep separate
+      </button>
+    </div>
+    {% else %}
+    <div class="ms-auto">
+      <button class="btn btn-sm btn-outline-secondary btn-surface"
+              hx-post="/library/match-review/{{ c.id }}/merge"
+              hx-swap="none"
+              hx-on::after-request="window.location.reload()">
+        Merge anyway
+      </button>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Skip note form — hidden by default #}
+  {% if c.status == "pending" %}
+  <div id="skip-form-{{ c.id }}" hidden class="mt-2 d-flex gap-2 align-items-center">
+    <input type="text" class="form-control form-control-sm"
+           id="skip-note-{{ c.id }}"
+           placeholder="Optional note (e.g. different region release)"
+           style="max-width:360px;">
+    <button class="btn btn-sm btn-surface"
+            onclick="cgtSubmitSkip('{{ c.id }}')">Confirm</button>
+    <button class="btn btn-sm btn-link text-secondary"
+            onclick="cgtHideSkipForm('{{ c.id }}')">Cancel</button>
+  </div>
+  {% elif c.note %}
+  <div class="mt-1 small text-secondary">Note: {{ c.note }}</div>
+  {% endif %}
+
+</div>
+{% endfor %}
+</div>
+
+{% else %}
+<div class="text-secondary text-center py-5">
+  <p class="mb-2">No matches pending review.</p>
+  <p class="small mb-3">
+    Run a scan to compare your manual entries against your synced library.
+  </p>
+  <button class="btn btn-surface btn-sm"
+          hx-post="/library/match-review/scan"
+          hx-swap="none"
+          hx-on::after-request="window.location.reload()">
+    Scan for matches
+  </button>
+</div>
+{% endif %}
+
+<script>
+function cgtToggleSelectAll(cb) {
+  document.querySelectorAll('.candidate-cb').forEach(c => c.checked = cb.checked);
+  cgtUpdateBulkBar();
+}
+
+function cgtUpdateBulkBar() {
+  const checked = document.querySelectorAll('.candidate-cb:checked');
+  const btn = document.getElementById('merge-selected-btn');
+  const countEl = document.getElementById('selected-count');
+  if (btn) btn.disabled = checked.length === 0;
+  if (countEl) countEl.textContent = checked.length > 0 ? checked.length + ' selected' : '';
+}
+
+function cgtMergeSelected() {
+  const ids = Array.from(document.querySelectorAll('.candidate-cb:checked')).map(c => c.value).join(',');
+  if (!ids) return;
+  htmx.ajax('POST', '/library/match-review/merge-bulk', {
+    values: { candidate_ids: ids },
+    swap: 'none',
+  }).then(() => window.location.reload());
+}
+
+function cgtCandidateDone(id) {
+  const row = document.getElementById('candidate-' + id);
+  if (row) row.remove();
+  cgtUpdateBulkBar();
+  // Update pending count in bottom bar if present
+  const link = document.querySelector('a[href="/library/match-review"]');
+  if (link) {
+    const remaining = document.querySelectorAll('.candidate-row[data-status="pending"]').length;
+    if (remaining === 0) link.remove();
+    else link.textContent = 'Review ' + remaining + ' match' + (remaining === 1 ? '' : 'es');
+  }
+}
+
+function cgtShowSkipForm(id) {
+  document.getElementById('skip-form-' + id).hidden = false;
+}
+
+function cgtHideSkipForm(id) {
+  document.getElementById('skip-form-' + id).hidden = true;
+}
+
+function cgtSubmitSkip(id) {
+  const note = document.getElementById('skip-note-' + id).value;
+  htmx.ajax('POST', '/library/match-review/' + id + '/skip', {
+    values: { note: note },
+    swap: 'none',
+  }).then(() => cgtCandidateDone(id));
+}
+</script>
+{% endblock %}
