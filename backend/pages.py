@@ -1846,7 +1846,7 @@ def match_review_scan(
     checked = result["pairs_checked"]
     msg = f"{added} new match{'es' if added != 1 else ''} found" if added else "No new matches found"
     return RedirectResponse(
-        url=f"/library/match-review?scanned=1&msg={msg} ({checked} pairs checked).",
+        url="/library/match-review?" + urlencode({"scanned": "1", "msg": f"{msg} ({checked} pairs checked)."}),
         status_code=303,
     )
 
@@ -1927,7 +1927,7 @@ def match_review_merge_bulk(
     if failed:
         parts.append(f"{failed} failed")
     msg = "Bulk merge complete — " + ", ".join(parts) + "."
-    return RedirectResponse(url=f"/library/match-review?scanned=1&msg={msg}", status_code=303)
+    return RedirectResponse(url="/library/match-review?" + urlencode({"scanned": "1", "msg": msg}), status_code=303)
 
 
 # --- Completions ---
