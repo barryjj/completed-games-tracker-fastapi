@@ -135,9 +135,6 @@
   </div>
 </div>
 
-<hr class="my-4">
-<h5 class="mb-3">Library tools</h5>
-<div class="row g-3">
   <div class="col-md-5">
     <div class="card h-100">
       <div class="card-body">
@@ -147,13 +144,11 @@
           <span class="badge" style="background: var(--ctp-yellow); color: var(--ctp-crust);">
             {{ pending_matches }} pending
           </span>
-          {% else %}
-          <span class="badge bg-secondary">No pending matches</span>
           {% endif %}
         </div>
         <p class="card-text text-secondary mb-3">
           Review potential duplicates between manual entries and synced library games.
-          Merge them to consolidate playtime, artwork, and metadata, or keep them separate.
+          Merge to consolidate playtime, artwork, and metadata, or keep them separate.
         </p>
         <a href="/library/match-review" class="btn btn-primary btn-sm">
           {% if pending_matches %}Review {{ pending_matches }} match{{ 'es' if pending_matches != 1 else '' }}{% else %}Open{% endif %}
