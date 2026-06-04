@@ -196,6 +196,58 @@ def confidence_css(score: float) -> str:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _platform_compatible(
+    manual_pid: int | None, manual_pstr: str, synced_pid: int | None, synced_pstr: str, compat_map: dict[int, set[int]]
+) -> bool:
+    """Return True if the two platform specs are compatible for match purposes.
+
+    Compatibility means either:
+    - Both have linked platform_ids that are equal or in each other's compat set
+    - Neither is linked and the normalised platform strings match
+    - One is unlinked but its string normalises to something in the other's compat set names
+    """
+    if manual_pid and synced_pid:
+        if manual_pid == synced_pid:
+            return True
+        # Check cross-platform compatibility (e.g. Steam ↔ PC Windows)
+        return synced_pid in compat_map.get(manual_pid, set()) or manual_pid in compat_map.get(synced_pid, set())
+    # Fallback: string comparison
+    return _normalise_tokens(manual_pstr) == _normalise_tokens(synced_pstr)
+
+
+def _build_compat_map(db: Session) -> dict[int, set[int]]:
+    """Build a platform compatibility map for matching purposes.
+
+    Steam (the custom distribution platform) is compatible with PC platforms
+    because Steam games run on Windows/Linux/Mac. When a user manually adds a
+    game as "PC (Microsoft Windows)" and then syncs Steam, we still want to
+    find the match.
+
+    Returns {platform_id: {compatible_platform_ids, ...}}
+    """
+    # Look up by name so this works regardless of DB-assigned IDs
+    pc_names = {"PC (Microsoft Windows)", "Linux", "Mac", "PC"}
+    steam_names = {"Steam"}
+
+    pc_ids: set[int] = set()
+    steam_ids: set[int] = set()
+
+    for p in db.query(models.Platform).all():
+        if p.name in pc_names:
+            pc_ids.add(p.id)
+        if p.name in steam_names:
+            steam_ids.add(p.id)
+
+    compat: dict[int, set[int]] = {}
+    # Steam ↔ all PC platforms
+    for sid in steam_ids:
+        compat.setdefault(sid, set()).update(pc_ids)
+    for pid in pc_ids:
+        compat.setdefault(pid, set()).update(steam_ids)
+
+    return compat
+
+
 def scan_for_matches(db: Session, user: models.User) -> dict:
     """Compare manual entries against all synced games on the same platform.
 
@@ -227,6 +279,8 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         .all()
     )
 
+    compat_map = _build_compat_map(db)
+
     # Build lookup of existing candidates keyed by (manual_entry_id, platform_source, external_id)
     existing_candidates: dict[tuple, models.SyncMatchCandidate] = {
         (c.manual_entry_id, c.platform_source, c.external_id): c
@@ -248,14 +302,14 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         best_synced = None
 
         for synced in synced_entries:
-            # Platform filter — prefer linked platform_id match; fall back to
-            # normalised platform string when either side lacks a linked row.
-            if manual_platform_id and synced.release.platform_id:
-                if manual_platform_id != synced.release.platform_id:
-                    continue
-            else:
-                if _normalise_tokens(manual.release.platform) != _normalise_tokens(synced.release.platform):
-                    continue
+            if not _platform_compatible(
+                manual_platform_id,
+                manual.release.platform,
+                synced.release.platform_id,
+                synced.release.platform,
+                compat_map,
+            ):
+                continue
 
             pairs_checked += 1
             synced_title = synced.release.game.display_name or synced.release.game.title
