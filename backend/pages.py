@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from . import models, users
+from . import match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
@@ -954,6 +954,8 @@ def library_page(
 
     next_page_url = _library_next_url(page, total_pages, q, platform, view, sort, show_hidden, missing_art, view_mode)
 
+    pending_matches = match_review.pending_count(db, current_user)
+
     return templates.TemplateResponse(
         request=request,
         name="library.html",
@@ -973,6 +975,7 @@ def library_page(
             "missing_art": missing_art,
             "next_page_url": next_page_url,
             "lib_platforms": lib_platform_list,
+            "pending_matches": pending_matches,
         },
     )
 
@@ -1062,7 +1065,14 @@ def add_game(
     db.add(game)
     db.flush()
 
-    release = models.GameRelease(game_id=game.id, platform=platform, source="manual")
+    # Link to the platforms table if we can find an exact match by name.
+    platform_row = db.query(models.Platform).filter_by(name=platform).first()
+    release = models.GameRelease(
+        game_id=game.id,
+        platform=platform,
+        platform_id=platform_row.id if platform_row else None,
+        source="manual",
+    )
     db.add(release)
     db.flush()
 
@@ -1144,6 +1154,8 @@ def edit_library_entry(
     platform_clean = platform.strip()
     if platform_clean and is_fully_manual:
         entry.release.platform = platform_clean
+        platform_row = db.query(models.Platform).filter_by(name=platform_clean).first()
+        entry.release.platform_id = platform_row.id if platform_row else None
 
     # display_name: empty string means "use raw title" (display_name stored as NULL)
     game.display_name = display_name.strip() or None
@@ -1785,6 +1797,132 @@ def auto_fetch_logo(
     if url:
         return JSONResponse({"url": url})
     return Response(status_code=204)
+
+
+# --- Match Review ---
+
+
+@router.get("/library/match-review")
+def match_review_page(
+    request: Request,
+    show_skipped: bool = Query(False),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidates = match_review.get_candidates(db, current_user, include_skipped=show_skipped)
+    # Attach the synced release object to each candidate for the template
+    # (look up by platform_source + external_id)
+    enriched = []
+    for c in candidates:
+        synced_release = db.query(models.GameRelease).filter_by(source=c.platform_source, external_id=c.external_id).first()
+        synced_entry = None
+        if synced_release:
+            synced_entry = db.query(models.UserLibraryEntry).filter_by(user_id=current_user.id, release_id=synced_release.id).first()
+        enriched.append(
+            {
+                "candidate": c,
+                "manual_entry": c.manual_entry,
+                "synced_release": synced_release,
+                "synced_entry": synced_entry,
+                "label": match_review.confidence_label(c.match_score),
+                "color": match_review.confidence_css(c.match_score),
+            }
+        )
+    pending = match_review.pending_count(db, current_user)
+    return templates.TemplateResponse(
+        request=request,
+        name="match_review.html",
+        context={
+            "current_user": current_user,
+            "enriched": enriched,
+            "pending": pending,
+            "show_skipped": show_skipped,
+        },
+    )
+
+
+@router.post("/library/match-review/{candidate_id}/merge")
+def match_review_merge(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(models.SyncMatchCandidate.id == candidate_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    ok = match_review.merge_candidate(db, candidate, current_user)
+    kind = "success" if ok else "danger"
+    body = "Entries merged." if ok else "Merge failed — synced entry not found."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": kind, "body": body},
+        headers={"HX-Reswap": "none"},
+    )
+
+
+@router.post("/library/match-review/{candidate_id}/skip")
+def match_review_skip(
+    candidate_id: int,
+    request: Request,
+    note: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(models.SyncMatchCandidate.id == candidate_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    match_review.dismiss_candidate(db, candidate, note=note or None)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": "Kept separate."},
+        headers={"HX-Reswap": "none"},
+    )
+
+
+@router.post("/library/match-review/merge-bulk")
+def match_review_merge_bulk(
+    request: Request,
+    candidate_ids: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    ids = [int(x) for x in candidate_ids.split(",") if x.strip().isdigit()]
+    merged = 0
+    failed = 0
+    for cid in ids:
+        candidate = (
+            db.query(models.SyncMatchCandidate)
+            .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+            .filter(models.SyncMatchCandidate.id == cid, models.UserLibraryEntry.user_id == current_user.id)
+            .first()
+        )
+        if candidate and match_review.merge_candidate(db, candidate, current_user):
+            merged += 1
+        else:
+            failed += 1
+    parts = [f"{merged} merged"]
+    if failed:
+        parts.append(f"{failed} failed")
+    msg = "Bulk merge complete — " + ", ".join(parts) + "."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": kind, "body": msg},
+        headers={"HX-Refresh": "true"},
+    )
 
 
 # --- Completions ---
