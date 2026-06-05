@@ -513,11 +513,16 @@ def jobs_poll(
     reported again.
     """
     pending = jobs.pending_notifications_for(current_user.id)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="partials/job_poller.html",
         context={"completed_jobs": pending},
     )
+    # If a match scan job just finished, fire a custom event so the match
+    # review page can reload the candidate list without a full page refresh.
+    if any(j.kind == "match_scan" for j in pending):
+        response.headers["HX-Trigger"] = "cgt:matchScanDone"
+    return response
 
 
 @router.post("/steam/backfill-collection-flags")
