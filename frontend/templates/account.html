@@ -239,15 +239,12 @@
       badge.classList.add('tag-platform-' + accent);
     }
 
-    // Update alias chip colors to match
+    // Update alias chip colors to match — chips use tag-badge classes
     var chips = document.querySelectorAll('#alias-chips-' + pid + ' .cgt-alias-chip');
     chips.forEach(function(chip) {
+      chip.className = chip.className.replace(/\btag-platform-\S+/g, '').trim();
       if (accent && _CTP_VARS[accent]) {
-        chip.style.background = 'var(' + _CTP_VARS[accent] + ')';
-        chip.style.color = 'var(--ctp-crust)';
-      } else {
-        chip.style.background = 'var(--ctp-surface1)';
-        chip.style.color = 'var(--ctp-text)';
+        chip.classList.add('tag-platform-' + accent);
       }
     });
   }
