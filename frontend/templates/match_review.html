@@ -24,6 +24,15 @@
   </label>
 </div>
 
+{# Reload candidate list when a match scan job completes (fired via HX-Trigger
+   from the job poller). Full page reload is simplest — avoids re-rendering
+   the bulk bar, empty state, etc. as separate partials. #}
+<div hx-get="/library/match-review{% if show_skipped %}?show_skipped=true{% endif %}"
+     hx-trigger="cgt:matchScanDone from:body"
+     hx-target="body"
+     hx-swap="outerHTML"
+     style="display:none;"></div>
+
 {% if enriched %}
 {# Bulk action bar — only shown when pending candidates are visible #}
 {% set pending_rows = enriched | selectattr("candidate.status", "equalto", "pending") | list %}
