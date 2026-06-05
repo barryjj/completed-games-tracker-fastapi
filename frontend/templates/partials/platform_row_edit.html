@@ -68,7 +68,7 @@
         </div>
 
         {# Right column — aliases #}
-        <div class="d-flex flex-column gap-2" style="min-width: 16rem; flex: 1;">
+        <div class="d-flex flex-column gap-3" style="min-width: 16rem; flex: 1;">
           <label class="form-label small mb-0">Aliases</label>
 
           {# Add input at top #}
@@ -84,16 +84,16 @@
           </form>
 
           {# Chip cloud below #}
-          <div id="platform-aliases-{{ platform.id }}" style="min-height: 2rem;">
+          <div id="platform-aliases-{{ platform.id }}" style="min-height: 2rem; padding-top: .5rem;">
             <div class="d-flex flex-wrap gap-1" id="alias-chips-{{ platform.id }}">
               {% for a in platform.aliases %}
-              <span class="d-inline-flex align-items-center gap-1 badge rounded-pill cgt-alias-chip"
-                    style="background: var(--ctp-surface1); color: var(--ctp-text); font-weight: normal; font-size: .8rem;"
+              <span class="d-inline-flex align-items-center gap-1 tag-badge {{ platform.css_class }} cgt-alias-chip"
+                    style="font-size: .85rem; padding: .3em .5em .3em .65em;"
                     data-alias-id="{{ a.id }}">
                 {{ a.alias }}
                 <button type="button"
                         class="btn-close"
-                        style="font-size: .5rem; filter: invert(1) opacity(.6);"
+                        style="font-size: .45rem; flex-shrink: 0; filter: invert(1) opacity(.6); margin: 0;"
                         hx-delete="/account/platforms/aliases/{{ a.id }}"
                         hx-target="#platform-aliases-{{ platform.id }}"
                         hx-swap="outerHTML"
@@ -107,6 +107,9 @@
         </div>
 
       </div>{# end two-column #}
+
+      {# Fire initial preview so chips match the saved color on load #}
+      <script>cgtUpdatePlatformPreview('{{ platform.id }}');</script>
 
       {# Actions #}
       <div class="d-flex gap-2 mt-3">

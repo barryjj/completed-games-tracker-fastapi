@@ -17,10 +17,7 @@
     {% if platform.aliases %}
     <div class="d-flex flex-wrap gap-1">
       {% for a in platform.aliases %}
-      <span class="badge rounded-pill"
-            style="background: var(--ctp-surface1); color: var(--ctp-subtext); font-weight:normal; font-size:.72rem;">
-        {{ a.alias }}
-      </span>
+      <span class="tag-badge {{ platform.css_class }}">{{ a.alias }}</span>
       {% endfor %}
     </div>
     {% else %}
