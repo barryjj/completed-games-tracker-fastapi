@@ -204,6 +204,54 @@
     form.querySelector('.platform-color-input').value = el.dataset.color;
   }
 
+  // Live preview — updates the badge chip and alias chips when color or
+  // display name changes. No DB write until Save.
+  var _CTP_VARS = {
+    rosewater:'--ctp-rosewater', flamingo:'--ctp-flamingo', pink:'--ctp-pink',
+    mauve:'--ctp-mauve', red:'--ctp-red', maroon:'--ctp-maroon', peach:'--ctp-peach',
+    yellow:'--ctp-yellow', green:'--ctp-green', teal:'--ctp-teal', sky:'--ctp-sky',
+    sapphire:'--ctp-sapphire', blue:'--ctp-blue', lavender:'--ctp-lavender'
+  };
+  // Re-apply live colors after any alias HTMX swap
+  document.addEventListener('htmx:afterSwap', function(e) {
+    var aliasDiv = e.target;
+    if (aliasDiv && aliasDiv.id && aliasDiv.id.startsWith('platform-aliases-')) {
+      var pid = aliasDiv.id.replace('platform-aliases-', '');
+      cgtUpdatePlatformPreview(pid);
+    }
+  });
+
+  function cgtUpdatePlatformPreview(pid) {
+    var badge = document.getElementById('preview-badge-' + pid);
+    var colorInput = document.getElementById('edit-color-' + pid);
+    var nameInput  = document.getElementById('edit-display-name-' + pid);
+    if (!badge || !colorInput) return;
+
+    // Update label
+    var label = (nameInput && nameInput.value.trim()) || badge.dataset.label;
+    badge.textContent = label;
+
+    // Update badge color
+    var accent = colorInput.value;
+    // Strip all tag-platform-* classes first
+    badge.className = badge.className.replace(/\btag-platform-\S+/g, '').trim();
+    if (accent && _CTP_VARS[accent]) {
+      badge.classList.add('tag-platform-' + accent);
+    }
+
+    // Update alias chip colors to match
+    var chips = document.querySelectorAll('#alias-chips-' + pid + ' .cgt-alias-chip');
+    chips.forEach(function(chip) {
+      if (accent && _CTP_VARS[accent]) {
+        chip.style.background = 'var(' + _CTP_VARS[accent] + ')';
+        chip.style.color = 'var(--ctp-crust)';
+      } else {
+        chip.style.background = 'var(--ctp-surface1)';
+        chip.style.color = 'var(--ctp-text)';
+      }
+    });
+  }
+
   (function () {
     var tabs = document.querySelectorAll('#account-tabs .nav-link');
     var panels = document.querySelectorAll('.tab-pane');

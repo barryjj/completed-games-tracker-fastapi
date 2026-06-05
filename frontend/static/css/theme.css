@@ -1172,6 +1172,11 @@ body:has(.cgt-sticky-actions) {
 }
 .cgt-color-swatch:hover        { transform: scale(1.15); }
 .cgt-color-swatch.selected     { border-color: var(--ctp-text); }
+/* Larger variant used in the platform edit panel */
+.cgt-color-swatch--lg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
 .cgt-color-swatch[data-color="rosewater"] { background: var(--ctp-rosewater); }
 .cgt-color-swatch[data-color="flamingo"]  { background: var(--ctp-flamingo); }
 .cgt-color-swatch[data-color="pink"]      { background: var(--ctp-pink); }
