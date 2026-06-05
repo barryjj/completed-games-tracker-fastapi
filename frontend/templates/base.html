@@ -49,7 +49,7 @@
   {% set _path = request.url.path %}
   <nav class="navbar border-bottom sticky-top">
     <div class="container">
-      <a class="navbar-brand" href="/">Completed Games Tracker</a>
+      <a class="navbar-brand" href="/">CGT</a>
       <div class="d-flex align-items-center gap-1">
         <a class="nav-link px-3 {% if _path.startswith('/library') %}cgt-nav-active{% endif %}" href="/library">Library</a>
         <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
