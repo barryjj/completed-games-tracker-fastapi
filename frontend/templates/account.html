@@ -6,7 +6,7 @@
 
   <ul class="nav nav-tabs mb-4" id="account-tabs">
     <li class="nav-item">
-      <a class="nav-link active" href="#" data-tab="profile">Profile</a>
+      <a class="nav-link" href="#" data-tab="profile">Profile</a>
     </li>
     <li class="nav-item">
       <a class="nav-link" href="#" data-tab="security">Security</a>
@@ -20,7 +20,7 @@
   </ul>
 
   <!-- Profile -->
-  <div id="tab-profile" class="tab-pane">
+  <div id="tab-profile" class="tab-pane" hidden>
     <p class="section-heading">Display Name</p>
     <form hx-post="/account/display-name" hx-target="#flash-display-name" hx-swap="innerHTML">
       <div class="input-group mb-1">
@@ -253,22 +253,35 @@
   }
 
   (function () {
-    var tabs = document.querySelectorAll('#account-tabs .nav-link');
+    var tabs   = document.querySelectorAll('#account-tabs .nav-link');
     var panels = document.querySelectorAll('.tab-pane');
+    var wrap   = document.getElementById('account-page-wrap');
+
+    function activateTab(name) {
+      tabs.forEach(function(t) { t.classList.remove('active'); });
+      panels.forEach(function(p) { p.hidden = true; });
+      var link  = document.querySelector('#account-tabs [data-tab="' + name + '"]');
+      var panel = document.getElementById('tab-' + name);
+      if (link)  link.classList.add('active');
+      if (panel) panel.hidden = false;
+      wrap.style.maxWidth = name === 'platforms' ? '' : '520px';
+    }
+
     tabs.forEach(function (link) {
       link.addEventListener('click', function (e) {
         e.preventDefault();
-        tabs.forEach(function (t) { t.classList.remove('active'); });
-        panels.forEach(function (p) { p.hidden = true; });
-        link.classList.add('active');
-        document.getElementById('tab-' + link.dataset.tab).hidden = false;
-        // Widen the container for the platforms table
-        document.getElementById('account-page-wrap').style.maxWidth =
-          link.dataset.tab === 'platforms' ? '' : '520px';
+        var tab = link.dataset.tab;
+        activateTab(tab);
+        // Push tab into URL so refresh/back/linking works
+        var url = new URL(window.location);
+        url.searchParams.set('tab', tab);
+        history.pushState({tab: tab}, '', url);
       });
     });
-    // Set initial max-width
-    document.getElementById('account-page-wrap').style.maxWidth = '520px';
+
+    // Restore tab from URL param, default to 'profile'
+    var initialTab = new URLSearchParams(window.location.search).get('tab') || 'profile';
+    activateTab(initialTab);
   })();
 
   (function () {

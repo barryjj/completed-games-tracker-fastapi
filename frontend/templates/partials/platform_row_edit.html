@@ -1,79 +1,91 @@
 {# Expanded editing row — swapped in when user clicks Edit on a platform row.
    Save POSTs to update_platform which returns platform_row.html (compact).
    Cancel GETs the compact row directly without saving.
-   Live preview: clicking a swatch updates the badge + alias chips without
-   saving to the DB — JS in account.html handles this via selectPlatformSwatch. #}
+   Live preview: clicking a swatch or typing a display name updates the
+   badge without saving — JS in account.html handles this via
+   selectPlatformSwatch / cgtUpdatePlatformPreview. #}
 <tr id="platform-row-{{ platform.id }}"
     data-platform-name="{{ (platform.display_name or platform.name) | lower }}"
     data-in-library="{{ 'true' if platform.in_library else 'false' }}"
     style="background: var(--ctp-surface0);">
   <td colspan="4" class="p-3">
 
-    {# Live-preview header: badge + name update as you pick a color #}
-    <div class="d-flex align-items-center gap-2 mb-3">
+    {# Live-preview header — badge is the visual anchor #}
+    <div class="d-flex align-items-center gap-3 mb-4">
       <span class="tag-badge {{ platform.css_class }} cgt-platform-preview-badge"
             id="preview-badge-{{ platform.id }}"
-            data-label="{{ platform.display_title }}">
+            data-label="{{ platform.display_title }}"
+            style="font-size: 1rem; padding: .35em .7em;">
         {{ platform.display_title }}
       </span>
       <span class="small text-secondary">{{ platform.name }}</span>
-      {% if platform.family %}
-      <span class="small text-secondary">· {{ platform.family.name }}</span>
-      {% endif %}
     </div>
 
     <form hx-post="/account/platforms/{{ platform.id }}"
           hx-target="#platform-row-{{ platform.id }}"
           hx-swap="outerHTML"
-          class="d-flex flex-column gap-3"
           id="platform-edit-form-{{ platform.id }}">
 
-      {# Display name #}
-      <div>
-        <label class="form-label small mb-1">Display name</label>
-        <input type="text" class="form-control form-control-sm"
-               style="max-width:20rem;"
-               name="display_name"
-               id="edit-display-name-{{ platform.id }}"
-               value="{{ platform.display_name or '' }}"
-               placeholder="{{ platform.name }}"
-               oninput="cgtUpdatePlatformPreview('{{ platform.id }}')">
-        <div class="form-text">Shown in badges and dropdowns. Leave blank to use canonical name.</div>
-      </div>
+      {# Two-column layout: left = name + colors, right = aliases #}
+      <div class="d-flex gap-4 align-items-start flex-wrap">
 
-      {# Color picker — larger swatches in edit mode #}
-      <div>
-        <label class="form-label small mb-1">Badge color</label>
-        <input type="hidden" name="color" class="platform-color-input"
-               id="edit-color-{{ platform.id }}"
-               value="{{ platform.color or '' }}">
-        <div class="d-flex gap-2 flex-wrap" style="max-width:26rem;">
-          {% for accent in ctp_accents %}
-          <span class="cgt-color-swatch cgt-color-swatch--lg {% if platform.color == accent %}selected{% endif %}"
-                data-color="{{ accent }}"
-                title="{{ accent }}"
-                onclick="selectPlatformSwatch(this); cgtUpdatePlatformPreview('{{ platform.id }}')"></span>
-          {% endfor %}
-          <span class="cgt-color-swatch cgt-color-swatch--lg {% if not platform.color %}selected{% endif %}"
-                data-color=""
-                title="None (inherit from family or auto)"
-                style="background: var(--ctp-surface1); border: 1px dashed var(--ctp-overlay0);"
-                onclick="selectPlatformSwatch(this); cgtUpdatePlatformPreview('{{ platform.id }}')"></span>
-        </div>
-        {% if platform.family and platform.family.color and not platform.color %}
-        <div class="form-text" id="color-inherit-note-{{ platform.id }}">
-          Inheriting <strong>{{ platform.family.color }}</strong> from {{ platform.family.name }} family.
-        </div>
-        {% endif %}
-      </div>
+        {# Left column #}
+        <div class="d-flex flex-column gap-3" style="min-width: 18rem; flex: 1;">
 
-      {# Aliases — chips on left, add form on right #}
-      <div>
-        <label class="form-label small mb-1">Aliases</label>
-        <div class="d-flex gap-3 align-items-start flex-wrap">
-          {# Chip cloud — colored to match current selection #}
-          <div id="platform-aliases-{{ platform.id }}" style="flex: 1; min-width: 12rem;"
-            <div class="d-flex flex-wrap gap-1 mb-2" id="alias-chips-{{ platform.id }}">
+          {# Display name #}
+          <div>
+            <label class="form-label small mb-1">Display name</label>
+            <input type="text" class="form-control form-control-sm"
+                   name="display_name"
+                   id="edit-display-name-{{ platform.id }}"
+                   value="{{ platform.display_name or '' }}"
+                   placeholder="{{ platform.name }}"
+                   oninput="cgtUpdatePlatformPreview('{{ platform.id }}')">
+            <div class="form-text">Leave blank to use canonical name.</div>
+          </div>
+
+          {# Color picker #}
+          <div>
+            <label class="form-label small mb-1">Badge color</label>
+            <input type="hidden" name="color" class="platform-color-input"
+                   id="edit-color-{{ platform.id }}"
+                   value="{{ platform.color or '' }}">
+            <div class="d-flex gap-2 flex-wrap" style="max-width: 22rem;">
+              {% for accent in ctp_accents %}
+              <span class="cgt-color-swatch cgt-color-swatch--lg {% if platform.color == accent %}selected{% endif %}"
+                    data-color="{{ accent }}"
+                    title="{{ accent }}"
+                    onclick="selectPlatformSwatch(this); cgtUpdatePlatformPreview('{{ platform.id }}')"></span>
+              {% endfor %}
+              <span class="cgt-color-swatch cgt-color-swatch--lg {% if not platform.color %}selected{% endif %}"
+                    data-color=""
+                    title="None (auto)"
+                    style="background: var(--ctp-surface1); border: 1px dashed var(--ctp-overlay0);"
+                    onclick="selectPlatformSwatch(this); cgtUpdatePlatformPreview('{{ platform.id }}')"></span>
+            </div>
+          </div>
+
+        </div>
+
+        {# Right column — aliases #}
+        <div class="d-flex flex-column gap-2" style="min-width: 16rem; flex: 1;">
+          <label class="form-label small mb-0">Aliases</label>
+
+          {# Add input at top #}
+          <form class="d-flex gap-1 align-items-center"
+                hx-post="/account/platforms/{{ platform.id }}/aliases"
+                hx-target="#platform-aliases-{{ platform.id }}"
+                hx-swap="outerHTML"
+                hx-on::after-request="this.reset()">
+            <input type="text" name="alias" class="form-control form-control-sm"
+                   placeholder="Add alias…"
+                   autocomplete="off">
+            <button type="submit" class="btn btn-sm btn-surface">Add</button>
+          </form>
+
+          {# Chip cloud below #}
+          <div id="platform-aliases-{{ platform.id }}" style="min-height: 2rem;">
+            <div class="d-flex flex-wrap gap-1" id="alias-chips-{{ platform.id }}">
               {% for a in platform.aliases %}
               <span class="d-inline-flex align-items-center gap-1 badge rounded-pill cgt-alias-chip"
                     style="background: var(--ctp-surface1); color: var(--ctp-text); font-weight: normal; font-size: .8rem;"
@@ -89,25 +101,15 @@
               </span>
               {% endfor %}
             </div>
-            {# Add form #}
-            <form class="d-flex gap-1 align-items-center"
-                  hx-post="/account/platforms/{{ platform.id }}/aliases"
-                  hx-target="#platform-aliases-{{ platform.id }}"
-                  hx-swap="outerHTML"
-                  hx-on::after-request="this.reset()">
-              <input type="text" name="alias" class="form-control form-control-sm"
-                     style="max-width: 12rem;"
-                     placeholder="Add alias…"
-                     autocomplete="off">
-              <button type="submit" class="btn btn-sm btn-surface">Add</button>
-            </form>
           </div>
+
+          <div class="form-text" style="font-size: .72rem;">Alternate names resolved when adding games (e.g. "PS4", "SNES").</div>
         </div>
-        <div class="form-text mt-1">Alternate names resolved when adding games (e.g. "PS4", "SNES", "N64").</div>
-      </div>
+
+      </div>{# end two-column #}
 
       {# Actions #}
-      <div class="d-flex gap-2">
+      <div class="d-flex gap-2 mt-3">
         <button type="submit" class="btn btn-sm btn-primary">Save</button>
         <button type="button" class="btn btn-sm btn-surface"
                 hx-get="/account/platforms/{{ platform.id }}/cancel"
