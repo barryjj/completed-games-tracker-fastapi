@@ -1242,6 +1242,19 @@ def igdb_search(
             q,
             limit=15,
         )
+        # IGDB's search engine returns 0 results for some partial-word queries
+        # (e.g. "Shin Megami Te" gives nothing, "Shin Megami T" and "Shin Megami
+        # Tensei" both give 15). If we get nothing and the query is multi-word,
+        # retry with the last word dropped so typing doesn't cause blank gaps.
+        if not results and " " in q:
+            fallback_q = q.rsplit(" ", 1)[0].strip()
+            if fallback_q:
+                results = _igdb.search_games(
+                    current_user.twitch_client_id,
+                    current_user.twitch_client_secret,
+                    fallback_q,
+                    limit=15,
+                )
     except Exception as e:
         _logger.warning("IGDB search error: %s", e)
         results = []
