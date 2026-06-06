@@ -16,7 +16,7 @@ from . import jobs, models, steam, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
-from .pages import get_web_user
+from .pages import _base_ctx, get_web_user
 
 _logger = logging.getLogger(__name__)
 
@@ -59,7 +59,7 @@ def integrations_hub(
         context={
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
-            "pending_matches": _match_review.pending_count(db, current_user),
+            **_base_ctx(db, current_user),
         },
     )
 
@@ -68,6 +68,7 @@ def integrations_hub(
 def steam_page(
     request: Request,
     openid: str = "",
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     # ?openid=ok|bad_claim|verify_failed|invalid_sig — set by the OpenID return
@@ -75,7 +76,7 @@ def steam_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_steam.html",
-        context={"current_user": current_user, "openid_status": openid},
+        context={"current_user": current_user, "openid_status": openid, **_base_ctx(db, current_user)},
     )
 
 
@@ -947,12 +948,13 @@ async def backfill_placeholder_names(
 @router.get("/steamgriddb")
 def steamgriddb_page(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     return templates.TemplateResponse(
         request=request,
         name="integrations_steamgriddb.html",
-        context={"current_user": current_user},
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
     )
 
 
@@ -1159,12 +1161,13 @@ async def steamgriddb_fill_missing(
 @router.get("/igdb")
 def igdb_page(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     return templates.TemplateResponse(
         request=request,
         name="integrations_igdb.html",
-        context={"current_user": current_user},
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
     )
 
 
