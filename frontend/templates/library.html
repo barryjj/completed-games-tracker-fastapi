@@ -136,12 +136,6 @@
           class="btn btn-surface btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"
           hidden>↑</button>
-  {% if pending_matches %}
-  <a href="/library/match-review" class="d-flex align-items-center gap-1 text-decoration-none small" style="color: var(--ctp-subtext);">
-    <span class="badge" style="background: var(--ctp-yellow); color: var(--ctp-crust); font-size:.7rem;">{{ pending_matches }}</span>
-    match{{ 'es' if pending_matches != 1 else '' }} to review
-  </a>
-  {% endif %}
   <button type="button" class="btn btn-primary" onclick="openAddGameModal()">+ Add Game</button>
 </div>
 

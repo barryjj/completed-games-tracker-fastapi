@@ -100,6 +100,13 @@ def _html_unescape(s: str) -> str:
 templates.env.filters["html_unescape"] = _html_unescape
 
 
+def _base_ctx(db: Session, user: models.User) -> dict:
+    """Common context vars injected into every full-page response."""
+    return {
+        "pending_matches": match_review.pending_count(db, user),
+    }
+
+
 # How long Steam appdetails can sit before we consider it stale enough to
 # auto-refresh on next detail-pane open. 7 days balances "user sees current
 # data when they actually look" against burning API calls on every click.
@@ -567,6 +574,7 @@ def account_page(
             "platforms": platforms,
             "ctp_accents": models.CTP_ACCENTS,
             "has_library_platforms": has_library_platforms,
+            **_base_ctx(db, current_user),
         },
     )
 
@@ -1068,13 +1076,12 @@ def library_page(
 
     next_page_url = _library_next_url(page, total_pages, q, platform, view, sort, show_hidden, missing_art, view_mode)
 
-    pending_matches = match_review.pending_count(db, current_user)
-
     return templates.TemplateResponse(
         request=request,
         name="library.html",
         context={
             "current_user": current_user,
+            **_base_ctx(db, current_user),
             "entries": entries,
             "collections": collections,
             "base_game_options": base_game_options,
@@ -1089,7 +1096,6 @@ def library_page(
             "missing_art": missing_art,
             "next_page_url": next_page_url,
             "lib_platforms": lib_platform_list,
-            "pending_matches": pending_matches,
         },
     )
 
@@ -1948,6 +1954,7 @@ def match_review_page(
             "enriched": enriched,
             "pending": pending,
             "show_skipped": show_skipped,
+            **_base_ctx(db, current_user),
         },
     )
 
@@ -2121,6 +2128,7 @@ def completions_page(
             "completed_to": completed_to,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
+            **_base_ctx(db, current_user),
         },
     )
 

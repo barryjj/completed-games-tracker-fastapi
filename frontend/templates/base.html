@@ -49,16 +49,30 @@
   {% set _path = request.url.path %}
   <nav class="navbar border-bottom sticky-top">
     <div class="container">
-      <a class="navbar-brand" href="/">CGT</a>
       <div class="d-flex align-items-center gap-1">
         <a class="nav-link px-3 {% if _path.startswith('/library') %}cgt-nav-active{% endif %}" href="/library">Library</a>
         <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
         <a class="nav-link px-3 {% if _path.startswith('/integrations') %}cgt-nav-active{% endif %}" href="/integrations">Integrations</a>
         <div class="dropdown">
-          <button class="nav-link px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <button class="nav-link px-3 dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
             {{ current_user.name }}
+            {% if pending_matches %}
+            <span class="badge rounded-pill"
+                  style="background: var(--ctp-yellow); color: var(--ctp-crust); font-size: .65rem; padding: .2em .45em;">
+              {{ pending_matches }}
+            </span>
+            {% endif %}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
+            {% if pending_matches %}
+            <li>
+              <a class="dropdown-item d-flex align-items-center gap-2" href="/library/match-review">
+                <span class="badge rounded-pill" style="background: var(--ctp-yellow); color: var(--ctp-crust); font-size:.65rem;">{{ pending_matches }}</span>
+                Review matches
+              </a>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            {% endif %}
             <li><a class="dropdown-item" href="/account">Settings</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="/logout">Sign out</a></li>
