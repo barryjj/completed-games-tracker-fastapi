@@ -58,17 +58,13 @@
           <button class="nav-link px-3 dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
             {{ current_user.name }}
             {% if pending_matches %}
-            <span class="badge rounded-pill"
-                  style="background: var(--ctp-yellow); color: var(--ctp-crust); font-size: .65rem; padding: .2em .45em;">
-              {{ pending_matches }}
-            </span>
+            <span class="badge rounded-pill cgt-pending-badge" title="{{ pending_matches }} match{{ 'es' if pending_matches != 1 else '' }} pending review">{{ pending_matches }}</span>
             {% endif %}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
             {% if pending_matches %}
             <li>
-              <a class="dropdown-item d-flex align-items-center gap-2" href="/library/match-review">
-                <span class="badge rounded-pill" style="background: var(--ctp-yellow); color: var(--ctp-crust); font-size:.65rem;">{{ pending_matches }}</span>
+              <a class="dropdown-item cgt-pending-item" href="/library/match-review">
                 Review matches
               </a>
             </li>

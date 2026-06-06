@@ -440,31 +440,16 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
         entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=release.id).first()
 
         if entry is None:
-            existing_entry = (
-                db.query(models.UserLibraryEntry)
-                .join(models.GameRelease)
-                .filter(
-                    models.UserLibraryEntry.user_id == user.id,
-                    models.GameRelease.game_id == release.game_id,
+            db.add(
+                models.UserLibraryEntry(
+                    user_id=user.id,
+                    release_id=release.id,
+                    playtime_minutes=playtime,
+                    last_played_at=last_played,
+                    import_source="steam_import",
                 )
-                .first()
             )
-            if existing_entry is not None:
-                existing_entry.playtime_minutes = playtime
-                existing_entry.last_played_at = last_played
-                existing_entry.updated_at = datetime.datetime.now(datetime.UTC)
-                updated += 1
-            else:
-                db.add(
-                    models.UserLibraryEntry(
-                        user_id=user.id,
-                        release_id=release.id,
-                        playtime_minutes=playtime,
-                        last_played_at=last_played,
-                        import_source="steam_import",
-                    )
-                )
-                added += 1
+            added += 1
         else:
             entry.playtime_minutes = playtime
             entry.last_played_at = last_played

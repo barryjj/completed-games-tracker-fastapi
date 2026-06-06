@@ -407,6 +407,12 @@ def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: mod
 
     synced_entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=synced_release.id).first()
     if synced_entry:
+        if synced_entry.playtime_minutes and (
+            not manual_entry.playtime_minutes or synced_entry.playtime_minutes > manual_entry.playtime_minutes
+        ):
+            manual_entry.playtime_minutes = synced_entry.playtime_minutes
+        if synced_entry.last_played_at and (not manual_entry.last_played_at or synced_entry.last_played_at > manual_entry.last_played_at):
+            manual_entry.last_played_at = synced_entry.last_played_at
         db.delete(synced_entry)
 
     db.flush()
