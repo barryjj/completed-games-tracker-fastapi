@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import match_review, models, users
@@ -885,7 +886,15 @@ def _build_lib_query(
             )
         )
     if platform:
-        base_q = base_q.filter(models.GameRelease.platform == platform)
+        # platform param is either "pid:<id>" (linked) or a raw string (unlinked)
+        if platform.startswith("pid:"):
+            try:
+                pid = int(platform[4:])
+                base_q = base_q.filter(models.GameRelease.platform_id == pid)
+            except ValueError:
+                pass
+        else:
+            base_q = base_q.filter(models.GameRelease.platform == platform)
     if view not in VIEW_OPTIONS:
         view = "default"
     if view == "default":
@@ -1069,10 +1078,22 @@ def library_page(
         # Bulk-load Platform rows for linked entries.
         _pids = {pid for _, pid in lib_platforms_raw if pid}
         _pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(_pids)).all()} if _pids else {}
-        # Each item: {"value": raw_string, "label": display_title}
-        lib_platform_list = [
-            {"value": raw, "label": (_pmap[pid].display_title if pid and pid in _pmap else raw)} for raw, pid in lib_platforms_raw
-        ]
+        # Deduplicate by platform_id — multiple raw strings mapping to the same
+        # platform (e.g. "PC", "Win", "PC (Microsoft Windows)" all → platform_id=1)
+        # should appear as a single dropdown entry. Use "pid:<id>" as the value so
+        # the filter can match by platform_id rather than a specific raw string.
+        # Unlinked entries (no platform_id) fall back to raw string as before.
+        seen_pids: set[int] = set()
+        lib_platform_list = []
+        for raw, pid in lib_platforms_raw:
+            if pid and pid in _pmap:
+                if pid in seen_pids:
+                    continue
+                seen_pids.add(pid)
+                lib_platform_list.append({"value": f"pid:{pid}", "label": _pmap[pid].display_title})
+            else:
+                lib_platform_list.append({"value": raw, "label": raw})
+        lib_platform_list.sort(key=lambda p: p["label"])
 
     next_page_url = _library_next_url(page, total_pages, q, platform, view, sort, show_hidden, missing_art, view_mode)
 
@@ -1168,6 +1189,19 @@ def add_game(
     # different one. Either way, the user typed this — mark display_name_user_set
     # so no heuristic ever touches it.
     display_clean = display_name.strip() or title_clean
+
+    if igdb_game_id:
+        conflict = db.query(models.Game).filter(models.Game.igdb_id == igdb_game_id).first()
+        if conflict:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/_toast.html",
+                context={
+                    "kind": "danger",
+                    "body": f'This game is already in your library as "{conflict.display_name or conflict.title}". Remove the IGDB link or add a different platform from that game\'s detail pane.',
+                },
+                headers={"HX-Reswap": "none"},
+            )
 
     game = models.Game(
         title=title_clean,

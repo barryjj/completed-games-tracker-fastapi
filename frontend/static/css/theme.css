@@ -670,6 +670,23 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   background-color: var(--ctp-mauve);
 }
 
+/* ─── Pending matches indicator ─────────────────────────────────────────── */
+.cgt-pending-badge {
+  background: var(--ctp-yellow) !important;
+  color: var(--ctp-crust) !important;
+  font-size: .65rem;
+  padding: .2em .45em;
+}
+
+.cgt-pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 3px solid var(--ctp-yellow);
+  padding-left: calc(var(--bs-dropdown-item-padding-x) - 3px);
+}
+
+
 /* ─── Library grid view ─────────────────────────────────────────────────── */
 /* Cover-art mosaic. Three CSS variables drive the layout:
      --cgt-grid-gap      — space between cards (px), driven by the Gap slider
