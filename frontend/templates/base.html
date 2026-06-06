@@ -49,10 +49,11 @@
   {% set _path = request.url.path %}
   <nav class="navbar border-bottom sticky-top">
     <div class="container">
-      <div class="d-flex align-items-center gap-1">
+      <div class="d-flex align-items-center gap-1 me-auto">
         <a class="nav-link px-3 {% if _path.startswith('/library') %}cgt-nav-active{% endif %}" href="/library">Library</a>
         <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
         <a class="nav-link px-3 {% if _path.startswith('/integrations') %}cgt-nav-active{% endif %}" href="/integrations">Integrations</a>
+      </div>
         <div class="dropdown">
           <button class="nav-link px-3 dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
             {{ current_user.name }}
@@ -78,7 +79,6 @@
             <li><a class="dropdown-item" href="/logout">Sign out</a></li>
           </ul>
         </div>
-      </div>
     </div>
   </nav>
   <main class="container py-4">
