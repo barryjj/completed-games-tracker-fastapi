@@ -1525,7 +1525,19 @@ def delete_library_entry(
 ):
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if entry:
+        release = entry.release
+        game = release.game
         db.delete(entry)
+        db.flush()
+        # Clean up the release if no other entries reference it.
+        remaining_entries = db.query(models.UserLibraryEntry).filter_by(release_id=release.id).count()
+        if remaining_entries == 0:
+            db.delete(release)
+            db.flush()
+            # Clean up the game if no other releases reference it.
+            remaining_releases = db.query(models.GameRelease).filter_by(game_id=game.id).count()
+            if remaining_releases == 0:
+                db.delete(game)
         db.commit()
     return Response(status_code=200)
 

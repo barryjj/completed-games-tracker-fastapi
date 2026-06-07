@@ -428,9 +428,13 @@ window.applySgdbCover = function(entryId, imageType, url) {
   }).then(function(r) {
     if (!r.ok) return;
     if (_sgdbModal) _sgdbModal.hide();
-    // Always reload the detail pane so the More menu reflects the new UserArtwork row
-    // (Reset options appear/disappear based on what's in user_artwork at render time).
-    htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+    // Reload whichever detail pane opened the picker.
+    // completion pane uses #completion-detail-content and its own endpoint.
+    var isCompletionPane = _sgdbCurrentDetailTarget === '#completion-detail-content';
+    var detailUrl = isCompletionPane
+      ? '/completions/' + entryId + '/detail'
+      : '/library/entries/' + entryId + '/detail';
+    htmx.ajax('GET', detailUrl, {
       target: _sgdbCurrentDetailTarget,
       swap: 'innerHTML',
     });

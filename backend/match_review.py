@@ -376,52 +376,79 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
 
 
 def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: models.User) -> bool:
-    """Merge the synced game into the manual entry.
+    """Promote the synced entry to canonical; migrate user data from manual entry.
 
-    - Finds the synced GameRelease via (platform_source, external_id)
-    - Copies external_id, raw_data, source, artwork to the manual release
-    - Deletes the synced UserLibraryEntry (manual one survives with its completions)
-    - Marks candidate merged
+    The synced release (Steam/PSN) is the authoritative record — it has the
+    external ID, playtime, and will keep receiving updates on future syncs.
+    The manual entry was a placeholder. Merge direction:
+
+    1. Move completions from manual UserLibraryEntry → synced UserLibraryEntry.
+    3. User artwork is NOT migrated — synced entry has official platform art
+       (Steam CDN etc.); user can re-pick SGDB art if desired.
+    4. Delete manual UserLibraryEntry, then its GameRelease if orphaned, then
+       its Game if orphaned.
+    5. Invalidate any other pending candidates pointing at the same synced
+       release so they don't surface as stale merge options.
+    6. Mark candidate merged.
+
     Returns True on success, False if the synced release can't be found.
     """
     synced_release = db.query(models.GameRelease).filter_by(source=candidate.platform_source, external_id=candidate.external_id).first()
     if synced_release is None:
         return False
 
+    synced_entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=synced_release.id).first()
+    if synced_entry is None:
+        return False
+
     manual_entry = candidate.manual_entry
     manual_release = manual_entry.release
+    manual_game = manual_release.game
+    synced_game = synced_release.game
 
-    manual_release.external_id = synced_release.external_id
-    manual_release.source = synced_release.source
-    manual_release.raw_data = synced_release.raw_data
-    manual_release.metadata_fetched_at = synced_release.metadata_fetched_at
-    if synced_release.platform_id and not manual_release.platform_id:
-        manual_release.platform_id = synced_release.platform_id
+    # igdb_id is intentionally NOT promoted to the synced game — Steam entries
+    # can't have IGDB IDs set through the UI, and copying it here would require
+    # clearing it from the manual game first to avoid the unique constraint,
+    # which is more complexity than it's worth for no user-visible benefit.
 
-    for artwork in list(synced_release.artwork):
-        already = any(a.artwork_type == artwork.artwork_type and a.source == artwork.source for a in manual_release.artwork)
-        if not already:
-            artwork.release_id = manual_release.id
+    # 1. Move completions to synced entry via direct SQL to avoid ORM
+    # relationship tracking nulling the FK when manual_entry is later deleted.
+    db.query(models.Completion).filter_by(library_entry_id=manual_entry.id).update({"library_entry_id": synced_entry.id})
 
-    manual_entry.import_source = f"{candidate.platform_source}_import"
+    # User artwork is intentionally NOT migrated — the synced entry has
+    # official platform artwork (Steam CDN etc.) which is better than whatever
+    # SGDB auto-fetched for the manual placeholder. User can re-pick if wanted.
 
-    synced_entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=synced_release.id).first()
-    if synced_entry:
-        if synced_entry.playtime_minutes and (
-            not manual_entry.playtime_minutes or synced_entry.playtime_minutes > manual_entry.playtime_minutes
-        ):
-            manual_entry.playtime_minutes = synced_entry.playtime_minutes
-        if synced_entry.last_played_at and (not manual_entry.last_played_at or synced_entry.last_played_at > manual_entry.last_played_at):
-            manual_entry.last_played_at = synced_entry.last_played_at
-        db.delete(synced_entry)
-
-    db.flush()
-    remaining = db.query(models.UserLibraryEntry).filter_by(release_id=synced_release.id).count()
-    if remaining == 0 and synced_release.id != manual_release.id:
-        db.delete(synced_release)
-
+    # 4. Mark merged and invalidate siblings BEFORE deleting the manual entry.
+    # The candidate has ondelete=CASCADE on manual_entry_id — if we delete the
+    # entry first the candidate row vanishes at DB level and the status update
+    # below becomes a no-op.
     candidate.status = "merged"
     candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+
+    # 5. Invalidate sibling candidates pointing at the same synced release.
+    db.query(models.SyncMatchCandidate).filter(
+        models.SyncMatchCandidate.platform_source == candidate.platform_source,
+        models.SyncMatchCandidate.external_id == candidate.external_id,
+        models.SyncMatchCandidate.id != candidate.id,
+        models.SyncMatchCandidate.status == "pending",
+    ).update({"status": "kept_separate", "note": "Invalidated — sibling candidate was merged."})
+
+    db.flush()
+
+    # 6. Delete manual entry, then cascade if orphaned.
+    db.delete(manual_entry)
+    db.flush()
+
+    remaining_entries = db.query(models.UserLibraryEntry).filter_by(release_id=manual_release.id).count()
+    if remaining_entries == 0:
+        db.delete(manual_release)
+        db.flush()
+        remaining_releases = db.query(models.GameRelease).filter_by(game_id=manual_game.id).count()
+        if remaining_releases == 0:
+            db.delete(manual_game)
+        db.flush()
+
     db.commit()
     return True
 

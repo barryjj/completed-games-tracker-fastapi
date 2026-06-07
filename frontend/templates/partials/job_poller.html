@@ -16,9 +16,9 @@
 <div id="sync-indicator" hx-swap-oob="true">
 {% if active_jobs %}
   {% set job = active_jobs[0] %}
-  <div class="d-flex align-items-center gap-2 text-secondary small">
+  <div class="d-flex align-items-center gap-2 text-secondary small mb-3">
     <div class="spinner-border spinner-border-sm text-secondary" role="status" style="width:.85rem;height:.85rem;border-width:2px;"></div>
-    {{ job.kind | replace("_", " ") | title }} running…
+    {{ job.label or "Sync" }} in progress…
   </div>
 {% endif %}
 </div>
