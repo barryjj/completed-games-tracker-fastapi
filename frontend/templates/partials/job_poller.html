@@ -1,5 +1,6 @@
 {# Re-renders itself on every poll so HTMX keeps the loop alive.
-   Any completed jobs since the last poll come back as OOB toasts. #}
+   Any completed jobs since the last poll come back as OOB toasts.
+   Active jobs come back as an OOB sync indicator swap. #}
 <div id="job-poller"
      hx-get="/integrations/jobs/poll"
      hx-trigger="every 5s"
@@ -10,3 +11,14 @@
   {% set body = job.message or job.error %}
   {% include "partials/_toast.html" %}
 {% endfor %}
+
+{# OOB sync indicator — swaps #sync-indicator on the integrations page if present. #}
+<div id="sync-indicator" hx-swap-oob="true">
+{% if active_jobs %}
+  {% set job = active_jobs[0] %}
+  <div class="d-flex align-items-center gap-2 text-secondary small">
+    <div class="spinner-border spinner-border-sm text-secondary" role="status" style="width:.85rem;height:.85rem;border-width:2px;"></div>
+    {{ job.kind | replace("_", " ") | title }} running…
+  </div>
+{% endif %}
+</div>

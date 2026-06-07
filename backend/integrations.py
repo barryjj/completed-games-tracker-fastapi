@@ -514,10 +514,11 @@ def jobs_poll(
     reported again.
     """
     pending = jobs.pending_notifications_for(current_user.id)
+    active = jobs.active_jobs_for(current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/job_poller.html",
-        context={"completed_jobs": pending},
+        context={"completed_jobs": pending, "active_jobs": active},
     )
     # If a match scan job just finished, fire a custom event so the match
     # review page can reload the candidate list without a full page refresh.

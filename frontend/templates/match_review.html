@@ -5,13 +5,12 @@
 <div class="mb-3">
   <h4 class="mb-0">Match Review</h4>
   <p class="text-secondary small mb-0">
-    Potential duplicates between your manual entries and synced library games.
-    Merging keeps your manual entry (with all its completions) and pulls in platform data, artwork, and metadata from the synced game.
+    Confirm which synced games match your manual entries. Your completions and any artwork you've set are always kept.
   </p>
 </div>
 
-{# Toolbar — mirrors library/completions toolbar style #}
-<div class="d-flex align-items-center gap-3 flex-wrap mb-3">
+{# Toolbar #}
+<div class="d-flex align-items-center gap-3 flex-wrap mb-4">
   <button class="btn btn-primary btn-sm"
           hx-post="/integrations/match-review/scan"
           hx-swap="none">
@@ -25,9 +24,7 @@
   </label>
 </div>
 
-{# Reload candidate list when a match scan job completes (fired via HX-Trigger
-   from the job poller). Full page reload is simplest — avoids re-rendering
-   the bulk bar, empty state, etc. as separate partials. #}
+{# Reload when scan job completes #}
 <div hx-get="/library/match-review{% if show_skipped %}?show_skipped=true{% endif %}"
      hx-trigger="cgt:matchScanDone from:body"
      hx-target="body"
@@ -35,22 +32,32 @@
      style="display:none;"></div>
 
 {% if enriched %}
-{# Bulk action bar — only shown when pending candidates are visible #}
 {% set pending_rows = enriched | selectattr("candidate.status", "equalto", "pending") | list %}
-{% if pending_rows %}
-<div class="d-flex align-items-center gap-2 mb-3" id="bulk-bar">
-  <input type="checkbox" id="select-all-cb" class="form-check-input"
-         onchange="cgtToggleSelectAll(this)">
-  <label for="select-all-cb" class="small text-secondary mb-0">Select all</label>
-  <button class="btn btn-sm btn-primary ms-2" id="merge-selected-btn"
-          onclick="cgtMergeSelected()" disabled>
-    Merge selected
-  </button>
-  <span class="text-secondary small ms-2" id="selected-count"></span>
-</div>
-{% endif %}
 
-<div class="d-flex flex-column gap-3" id="candidate-list">
+{# Queue header #}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <span class="text-secondary small" id="queue-status">
+    {% if pending_rows %}
+      <span id="queue-count">{{ pending_rows | length }}</span> match{{ 'es' if pending_rows | length != 1 else '' }} to review
+    {% else %}
+      No pending matches
+    {% endif %}
+  </span>
+  <div class="d-flex align-items-center gap-2">
+    {% if pending_rows | length > 1 %}
+    <button class="btn btn-sm btn-surface" id="merge-all-btn"
+            onclick="cgtMergeAllHigh()">
+      Merge all high-confidence
+    </button>
+    {% endif %}
+    <span class="text-secondary small" id="nav-indicator" style="min-width:4rem; text-align:right;"></span>
+    <button class="btn btn-sm btn-surface" id="nav-prev" onclick="cgtNav(-1)" disabled>&#8592;</button>
+    <button class="btn btn-sm btn-surface" id="nav-next" onclick="cgtNav(1)">&#8594;</button>
+  </div>
+</div>
+
+{# Cover flow stage #}
+<div class="cgt-match-stage" id="candidate-stack">
 {% for row in enriched %}
 {% set c = row.candidate %}
 {% set manual = row.manual_entry %}
@@ -59,121 +66,124 @@
 {% set manual_cover = manual | grid_cover_url('grid_h') %}
 {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
 
-<div class="rounded p-3 candidate-row {% if c.status == 'kept_separate' %}opacity-50{% endif %}"
-     style="background: var(--ctp-surface0); border-left: 3px solid {{ row.color }};"
+<div class="cgt-match-card cgt-match-card--hidden {% if c.status == 'kept_separate' %}cgt-match-card--skipped{% endif %}"
      id="candidate-{{ c.id }}"
      data-candidate-id="{{ c.id }}"
-     data-status="{{ c.status }}">
+     data-status="{{ c.status }}"
+     data-score="{{ c.match_score }}"
+     style="border-left: 3px solid {{ row.color }};">
 
-  <div class="d-flex align-items-start gap-3 flex-wrap">
-    {# Select checkbox — only for pending #}
-    {% if c.status == "pending" %}
-    <div class="pt-1">
-      <input type="checkbox" class="form-check-input candidate-cb"
-             value="{{ c.id }}"
-             onchange="cgtUpdateBulkBar()">
-    </div>
+  {# Card header: confidence + titles #}
+  <div class="cgt-match-card__header">
+    <span class="badge rounded-pill fw-semibold"
+          style="background: {{ row.color }}; color: var(--ctp-crust); font-size:.75rem;">
+      {{ row.label }}
+    </span>
+    <span class="text-secondary" style="font-size:.75rem;">{{ (c.match_score * 100) | int }}% confidence</span>
+    {% if c.status == "kept_separate" %}
+    <span class="badge bg-secondary" style="font-size:.65rem;">Previously skipped</span>
     {% endif %}
+  </div>
 
-    {# Confidence badge #}
-    <div class="d-flex flex-column align-items-center" style="min-width:56px;">
-      <span class="badge rounded-pill fw-semibold"
-            style="background: {{ row.color }}; color: var(--ctp-crust); font-size:.75rem;">
-        {{ row.label }}
-      </span>
-      <span class="text-secondary" style="font-size:.7rem;">{{ (c.match_score * 100) | int }}%</span>
-      {% if c.status == "kept_separate" %}
-      <span class="badge bg-secondary mt-1" style="font-size:.65rem;">Skipped</span>
-      {% endif %}
-    </div>
-
-    {# Manual entry card #}
-    <div class="d-flex gap-2 flex-grow-1" style="min-width:200px; max-width:400px;">
+  {# Entry A: manual #}
+  <div class="cgt-match-entry">
+    <div class="cgt-match-entry__label">Your entry</div>
+    <div class="d-flex gap-3 align-items-start">
       {% if manual_cover %}
-      <img src="{{ manual_cover }}" alt="" loading="lazy"
-           style="width:80px; height:38px; object-fit:cover; border-radius:4px; flex-shrink:0;">
+      <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-cover">
       {% else %}
-      <div style="width:80px; height:38px; background:var(--ctp-surface1); border-radius:4px; flex-shrink:0;"></div>
+      <div class="cgt-match-cover cgt-match-cover--empty"></div>
       {% endif %}
       <div>
-        <div class="fw-medium small">{{ manual_game.display_title }}</div>
-        <div class="text-secondary" style="font-size:.75rem;">
+        <div class="fw-semibold">{{ manual_game.display_title }}</div>
+        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
           <span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>
-          Manual entry
+          <span class="text-secondary small">Added manually</span>
         </div>
         {% if manual.completions %}
-        <div class="text-secondary" style="font-size:.72rem;">
-          {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}
+        <div class="text-secondary small mt-1">
+          {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }} — will be kept
         </div>
         {% endif %}
       </div>
     </div>
+  </div>
 
-    {# Arrow — manual entry absorbs platform data from synced entry #}
-    <div class="d-flex flex-column align-items-center text-secondary px-1 gap-1">
-      <span style="font-size:1rem;">&#8594;</span>
-      <span style="font-size:.65rem; white-space:nowrap;">absorbs</span>
-    </div>
+  {# Divider with merge indicator #}
+  <div class="cgt-match-divider">
+    <span class="cgt-match-divider__line"></span>
+    <span class="cgt-match-divider__label">matched with</span>
+    <span class="cgt-match-divider__line"></span>
+  </div>
 
-    {# Synced entry card #}
-    <div class="d-flex gap-2 flex-grow-1" style="min-width:200px; max-width:400px;">
+  {# Entry B: synced #}
+  <div class="cgt-match-entry">
+    <div class="cgt-match-entry__label">{{ c.platform_source | title }} entry</div>
+    <div class="d-flex gap-3 align-items-start">
       {% if synced_cover %}
-      <img src="{{ synced_cover }}" alt="" loading="lazy"
-           style="width:80px; height:38px; object-fit:cover; border-radius:4px; flex-shrink:0;">
+      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-cover">
       {% else %}
-      <div style="width:80px; height:38px; background:var(--ctp-surface1); border-radius:4px; flex-shrink:0;"></div>
+      <div class="cgt-match-cover cgt-match-cover--empty"></div>
       {% endif %}
       <div>
-        <div class="fw-medium small">{{ c.synced_title }}</div>
-        <div class="text-secondary" style="font-size:.75rem;">
+        <div class="fw-semibold">{{ c.synced_title }}</div>
+        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
           {% if row.synced_release %}
           <span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>
           {% endif %}
-          {{ c.platform_source | title }} — #{{ c.external_id }}
+          <span class="text-secondary small">#{{ c.external_id }}</span>
         </div>
+        {% if synced and synced.playtime_minutes %}
+        <div class="text-secondary small mt-1">
+          {{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs playtime — will be imported
+        </div>
+        {% endif %}
       </div>
     </div>
-
-    {# Actions #}
-    {% if c.status == "pending" %}
-    <div class="d-flex flex-column gap-1 ms-auto" style="min-width:110px;">
-      <button class="btn btn-sm btn-primary"
-              hx-post="/library/match-review/{{ c.id }}/merge"
-              hx-swap="none"
-              hx-on::after-request="cgtCandidateDone('{{ c.id }}')">
-        Merge
-      </button>
-      <button class="btn btn-sm btn-surface"
-              onclick="cgtShowSkipForm('{{ c.id }}')">
-        Keep separate
-      </button>
-    </div>
-    {% else %}
-    <div class="ms-auto">
-      <button class="btn btn-sm btn-surface"
-              hx-post="/library/match-review/{{ c.id }}/merge"
-              hx-swap="none"
-              hx-on::after-request="window.location.reload()">
-        Merge anyway
-      </button>
-    </div>
-    {% endif %}
   </div>
 
-  {# Skip note form — hidden by default #}
+  {# Result summary #}
+  <div class="cgt-match-result">
+    <span class="text-secondary small">Confirming this match will link your entry to {{ c.platform_source | title }},
+    import playtime and artwork, and keep any completions or artwork you've customized.</span>
+  </div>
+
+  {# Actions #}
   {% if c.status == "pending" %}
-  <div id="skip-form-{{ c.id }}" hidden class="mt-2 d-flex gap-2 align-items-center">
+  <div class="cgt-match-actions">
+    <button class="btn btn-primary"
+            hx-post="/library/match-review/{{ c.id }}/merge"
+            hx-swap="none"
+            hx-on::after-request="cgtCandidateDone('{{ c.id }}')">
+      Confirm match
+    </button>
+    <button class="btn btn-surface"
+            onclick="cgtShowSkipForm('{{ c.id }}')">
+      Not the same game
+    </button>
+  </div>
+  <div id="skip-form-{{ c.id }}" hidden class="cgt-match-actions mt-1">
     <input type="text" class="form-control form-control-sm"
            id="skip-note-{{ c.id }}"
            placeholder="Optional note (e.g. different region release)"
-           style="max-width:360px;">
+           style="max-width:320px;">
     <button class="btn btn-sm btn-primary"
             onclick="cgtSubmitSkip('{{ c.id }}')">Confirm</button>
     <button class="btn btn-sm btn-link text-secondary p-0"
             onclick="cgtHideSkipForm('{{ c.id }}')">Cancel</button>
   </div>
-  {% elif c.note %}
-  <div class="mt-1 small text-secondary">Note: {{ c.note }}</div>
+  {% else %}
+  <div class="cgt-match-actions">
+    <button class="btn btn-surface btn-sm"
+            hx-post="/library/match-review/{{ c.id }}/merge"
+            hx-swap="none"
+            hx-on::after-request="window.location.reload()">
+      Merge anyway
+    </button>
+  </div>
+  {% if c.note %}
+  <div class="cgt-match-result small text-secondary">Note: {{ c.note }}</div>
+  {% endif %}
   {% endif %}
 
 </div>
@@ -187,54 +197,88 @@
 {% endif %}
 
 <script>
-function cgtToggleSelectAll(cb) {
-  document.querySelectorAll('.candidate-cb').forEach(c => c.checked = cb.checked);
-  cgtUpdateBulkBar();
-}
+(function () {
+  const stack = document.getElementById('candidate-stack');
+  if (!stack) return;
 
-function cgtUpdateBulkBar() {
-  const checked = document.querySelectorAll('.candidate-cb:checked');
-  const btn = document.getElementById('merge-selected-btn');
-  const countEl = document.getElementById('selected-count');
-  if (btn) btn.disabled = checked.length === 0;
-  if (countEl) countEl.textContent = checked.length > 0 ? checked.length + ' selected' : '';
-}
+  const cards = Array.from(stack.querySelectorAll('.cgt-match-card'));
+  let current = 0;
 
-function cgtMergeSelected() {
-  const ids = Array.from(document.querySelectorAll('.candidate-cb:checked')).map(c => c.value).join(',');
-  if (!ids) return;
-  htmx.ajax('POST', '/library/match-review/merge-bulk', {
-    values: { candidate_ids: ids },
-    swap: 'none',
-  });
-}
+  const CLASSES = ['far-prev', 'prev', 'active', 'next', 'far-next'];
 
-function cgtCandidateDone(id) {
-  const row = document.getElementById('candidate-' + id);
-  if (row) row.remove();
-  cgtUpdateBulkBar();
-  const link = document.querySelector('a[href="/library/match-review"]');
-  if (link) {
-    const remaining = document.querySelectorAll('.candidate-row[data-status="pending"]').length;
-    if (remaining === 0) link.remove();
-    else link.textContent = 'Review ' + remaining + ' match' + (remaining === 1 ? '' : 'es');
+  function show(idx) {
+    current = idx;
+    cards.forEach((card, i) => {
+      const offset = i - idx;
+      card.className = card.className
+        .replace(/\bcgt-match-card--(active|prev|next|far-prev|far-next|hidden)\b/g, '')
+        .trim();
+      if (offset === 0)       card.classList.add('cgt-match-card--active');
+      else if (offset === -1) card.classList.add('cgt-match-card--prev');
+      else if (offset === 1)  card.classList.add('cgt-match-card--next');
+      else if (offset === -2) card.classList.add('cgt-match-card--far-prev');
+      else if (offset === 2)  card.classList.add('cgt-match-card--far-next');
+      else                    card.classList.add('cgt-match-card--hidden');
+    });
+    const indicator = document.getElementById('nav-indicator');
+    if (indicator) indicator.textContent = cards.length > 1 ? (idx + 1) + ' of ' + cards.length : '';
+    document.getElementById('nav-prev').disabled = idx === 0;
+    document.getElementById('nav-next').disabled = idx === cards.length - 1;
   }
-}
 
-function cgtShowSkipForm(id) {
-  document.getElementById('skip-form-' + id).hidden = false;
-}
+  window.cgtNav = function(dir) {
+    const next = Math.max(0, Math.min(cards.length - 1, current + dir));
+    show(next);
+  };
 
-function cgtHideSkipForm(id) {
-  document.getElementById('skip-form-' + id).hidden = true;
-}
+  window.cgtCandidateDone = function(id) {
+    const card = document.getElementById('candidate-' + id);
+    if (!card) return;
+    const idx = cards.indexOf(card);
+    cards.splice(idx, 1);
+    card.remove();
+    const countEl = document.getElementById('queue-count');
+    const pending = cards.filter(c => c.dataset.status === 'pending').length;
+    if (countEl) countEl.textContent = pending;
+    if (cards.length === 0) {
+      document.getElementById('candidate-stack').style.display = 'none';
+      document.getElementById('queue-status').textContent = 'All done.';
+      document.getElementById('nav-indicator').textContent = '';
+      document.getElementById('nav-prev').style.display = 'none';
+      document.getElementById('nav-next').style.display = 'none';
+      return;
+    }
+    show(Math.min(current, cards.length - 1));
+  };
 
-function cgtSubmitSkip(id) {
-  const note = document.getElementById('skip-note-' + id).value;
-  htmx.ajax('POST', '/library/match-review/' + id + '/skip', {
-    values: { note: note },
-    swap: 'none',
-  }).then(() => cgtCandidateDone(id));
-}
+  window.cgtMergeAllHigh = function() {
+    const highCards = cards.filter(c => parseFloat(c.dataset.score) >= 0.90 && c.dataset.status === 'pending');
+    highCards.forEach(card => {
+      const id = card.dataset.candidateId;
+      htmx.ajax('POST', '/library/match-review/' + id + '/merge', { swap: 'none' })
+        .then(() => cgtCandidateDone(id));
+    });
+  };
+
+  window.cgtShowSkipForm = function(id) {
+    document.getElementById('skip-form-' + id).hidden = false;
+  };
+  window.cgtHideSkipForm = function(id) {
+    document.getElementById('skip-form-' + id).hidden = true;
+  };
+  window.cgtSubmitSkip = function(id) {
+    const note = document.getElementById('skip-note-' + id).value;
+    htmx.ajax('POST', '/library/match-review/' + id + '/skip', {
+      values: { note },
+      swap: 'none',
+    }).then(() => {
+      const card = document.getElementById('candidate-' + id);
+      if (card) card.dataset.status = 'kept_separate';
+      cgtCandidateDone(id);
+    });
+  };
+
+  if (cards.length > 0) show(0);
+})();
 </script>
 {% endblock %}

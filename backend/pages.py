@@ -1190,39 +1190,89 @@ def add_game(
     # so no heuristic ever touches it.
     display_clean = display_name.strip() or title_clean
 
+    platform_id = models.resolve_platform_id(db, platform)
+
+    # --- Find existing game in this user's library ---
+    # Prefer igdb_id match (strongest signal), fall back to exact title match.
+    existing_game: models.Game | None = None
     if igdb_game_id:
-        conflict = db.query(models.Game).filter(models.Game.igdb_id == igdb_game_id).first()
-        if conflict:
+        existing_game = (
+            db.query(models.Game)
+            .join(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.igdb_id == igdb_game_id,
+            )
+            .first()
+        )
+    if existing_game is None:
+        existing_game = (
+            db.query(models.Game)
+            .join(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.title == title_clean,
+            )
+            .first()
+        )
+
+    if existing_game is not None:
+        # Check whether a release on this platform already exists for this user.
+        conflict_release = (
+            db.query(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.GameRelease.game_id == existing_game.id,
+                models.GameRelease.platform_id == platform_id,
+            )
+            .first()
+        )
+        if conflict_release is not None:
+            existing_display = existing_game.display_name or existing_game.title
+            existing_platform = conflict_release.display_platform
             return templates.TemplateResponse(
                 request=request,
                 name="partials/_toast.html",
                 context={
                     "kind": "danger",
-                    "body": f'This game is already in your library as "{conflict.display_name or conflict.title}". Remove the IGDB link or add a different platform from that game\'s detail pane.',
+                    "body": (
+                        f"This game is already in your library.\n"
+                        f"Title: {existing_display}\n"
+                        f"Platform: {existing_platform}\n\n"
+                        f"Title and platform must be unique."
+                    ),
                 },
                 headers={"HX-Reswap": "none"},
             )
-
-    game = models.Game(
-        title=title_clean,
-        display_name=display_clean,
-        is_dlc=is_dlc,
-        is_collection=is_collection,
-        parent_id=parent_id,
-        igdb_id=igdb_game_id,
-        # Manual entries are inherently user-set on every field we collect.
-        display_name_user_set=True,
-        is_dlc_user_set=True,
-        is_collection_user_set=True,
-        parent_id_user_set=True,
-    )
-    db.add(game)
-    db.flush()
+        # Same game, different platform — attach a new release to the existing game.
+        game = existing_game
+        # Update igdb_id if the existing row doesn't have one yet.
+        if igdb_game_id and not game.igdb_id:
+            game.igdb_id = igdb_game_id
+    else:
+        # New game — create the Game row.
+        game = models.Game(
+            title=title_clean,
+            display_name=display_clean,
+            is_dlc=is_dlc,
+            is_collection=is_collection,
+            parent_id=parent_id,
+            igdb_id=igdb_game_id,
+            display_name_user_set=True,
+            is_dlc_user_set=True,
+            is_collection_user_set=True,
+            parent_id_user_set=True,
+        )
+        db.add(game)
+        db.flush()
 
     release = models.GameRelease(
         game_id=game.id,
         platform=platform,
-        platform_id=models.resolve_platform_id(db, platform),
+        platform_id=platform_id,
         source="manual",
     )
     db.add(release)
@@ -1305,8 +1355,32 @@ def edit_library_entry(
     # Platform is editable for fully-manual entries (no sync to break).
     platform_clean = platform.strip()
     if platform_clean and is_fully_manual:
+        new_platform_id = models.resolve_platform_id(db, platform_clean)
+        # Block if another release on this game already uses this platform_id
+        # (excluding the current release being edited).
+        conflict = (
+            db.query(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.GameRelease.game_id == game.id,
+                models.GameRelease.platform_id == new_platform_id,
+                models.GameRelease.id != entry.release.id,
+            )
+            .first()
+        )
+        if conflict:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/_toast.html",
+                context={
+                    "kind": "danger",
+                    "body": f"This game already has a release on {conflict.display_platform}. Title and platform must be unique.",
+                },
+                headers={"HX-Reswap": "none"},
+            )
         entry.release.platform = platform_clean
-        entry.release.platform_id = models.resolve_platform_id(db, platform_clean)
+        entry.release.platform_id = new_platform_id
 
     # display_name: empty string means "use raw title" (display_name stored as NULL)
     game.display_name = display_name.strip() or None

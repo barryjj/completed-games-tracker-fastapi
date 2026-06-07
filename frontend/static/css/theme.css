@@ -1208,3 +1208,159 @@ body:has(.cgt-sticky-actions) {
 .cgt-color-swatch[data-color="sapphire"]  { background: var(--ctp-sapphire); }
 .cgt-color-swatch[data-color="blue"]      { background: var(--ctp-blue); }
 .cgt-color-swatch[data-color="lavender"]  { background: var(--ctp-lavender); }
+
+/* ─── Match review — cover flow stage ───────────────────────────────────── */
+.cgt-match-stage {
+  perspective: 1200px;
+  position: relative;
+  height: 420px;       /* enough for card + breathing room */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+/* Each card is absolutely positioned inside the stage and transformed by JS */
+.cgt-match-card {
+  position: absolute;
+  width: 560px;
+  background: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface2);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.55);
+  transition: transform .35s cubic-bezier(.4,0,.2,1), opacity .35s ease, box-shadow .35s ease;
+  transform-origin: center center;
+  transform-style: preserve-3d;
+  will-change: transform, opacity;
+  top: 50%;
+  left: 50%;
+  margin-left: -280px; /* half of width */
+  margin-top: -180px;  /* rough half of typical card height */
+}
+
+/* Active card — front and center */
+.cgt-match-card--active {
+  transform: translateY(0) scale(1) rotateY(0deg);
+  opacity: 1;
+  z-index: 10;
+  box-shadow: 0 12px 48px rgba(0,0,0,.6);
+}
+
+/* Immediate neighbours — partially visible left/right */
+.cgt-match-card--prev {
+  transform: translateX(-360px) scale(.82) rotateY(28deg);
+  opacity: .45;
+  z-index: 5;
+  pointer-events: none;
+}
+.cgt-match-card--next {
+  transform: translateX(360px) scale(.82) rotateY(-28deg);
+  opacity: .45;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* Further away — barely visible */
+.cgt-match-card--far-prev {
+  transform: translateX(-540px) scale(.68) rotateY(40deg);
+  opacity: .18;
+  z-index: 1;
+  pointer-events: none;
+}
+.cgt-match-card--far-next {
+  transform: translateX(540px) scale(.68) rotateY(-40deg);
+  opacity: .18;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Everything else hidden */
+.cgt-match-card--hidden {
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.cgt-match-card--skipped {
+  opacity: 0.5;
+}
+
+/* ─── Card interior ──────────────────────────────────────────────────────── */
+.cgt-match-card__header {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .7rem 1rem .6rem;
+  border-bottom: 1px solid var(--ctp-surface2);
+  background: var(--ctp-surface0);
+}
+
+.cgt-match-entry {
+  padding: .85rem 1rem;
+  background: var(--ctp-surface0);
+}
+
+.cgt-match-entry + .cgt-match-entry {
+  border-top: 1px solid var(--ctp-surface1);
+}
+
+.cgt-match-entry__label {
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ctp-subtext0);
+  margin-bottom: .35rem;
+}
+
+.cgt-match-cover {
+  width: 96px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.cgt-match-cover--empty {
+  background: var(--ctp-surface2);
+}
+
+.cgt-match-divider {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .3rem 1rem;
+  background: var(--ctp-mantle);
+  color: var(--ctp-subtext0);
+  font-size: .7rem;
+  border-top: 1px solid var(--ctp-surface1);
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+
+.cgt-match-divider__line {
+  flex: 1;
+  height: 1px;
+  background: var(--ctp-surface1);
+}
+
+.cgt-match-divider__label {
+  white-space: nowrap;
+}
+
+.cgt-match-result {
+  padding: .55rem 1rem;
+  background: var(--ctp-mantle);
+  border-top: 1px solid var(--ctp-surface1);
+  font-size: .78rem;
+  color: var(--ctp-subtext1);
+}
+
+.cgt-match-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .75rem 1rem;
+  background: var(--ctp-mantle);
+  border-top: 1px solid var(--ctp-surface1);
+}
