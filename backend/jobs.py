@@ -31,6 +31,7 @@ class Job:
     id: str
     user_id: int
     kind: str  # e.g. "steam_sync_full", "steam_sync_games"
+    label: str = ""  # human-readable label for UI display, e.g. "Steam sync"
     status: JobStatus = JobStatus.QUEUED
     message: str | None = None
     error: str | None = None
@@ -48,8 +49,8 @@ _jobs: dict[str, Job] = {}
 _lock = Lock()
 
 
-def create(user_id: int, kind: str) -> Job:
-    job = Job(id=str(uuid.uuid4()), user_id=user_id, kind=kind)
+def create(user_id: int, kind: str, label: str = "") -> Job:
+    job = Job(id=str(uuid.uuid4()), user_id=user_id, kind=kind, label=label)
     with _lock:
         _jobs[job.id] = job
     return job

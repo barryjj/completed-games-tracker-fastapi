@@ -43,20 +43,14 @@
       No pending matches
     {% endif %}
   </span>
-  <div class="d-flex align-items-center gap-2">
-    {% if pending_rows | length > 1 %}
-    <button class="btn btn-sm btn-surface" id="merge-all-btn"
-            onclick="cgtMergeAllHigh()">
-      Merge all high-confidence
-    </button>
-    {% endif %}
-    <span class="text-secondary small" id="nav-indicator" style="min-width:4rem; text-align:right;"></span>
-    <button class="btn btn-sm btn-surface" id="nav-prev" onclick="cgtNav(-1)" disabled>&#8592;</button>
-    <button class="btn btn-sm btn-surface" id="nav-next" onclick="cgtNav(1)">&#8594;</button>
-  </div>
+  {% if pending_rows | length > 1 %}
+  <button class="btn btn-sm btn-surface" id="merge-all-btn" onclick="cgtMergeAllHigh()">
+    Merge all high-confidence
+  </button>
+  {% endif %}
 </div>
 
-{# Cover flow stage #}
+{# Card stack #}
 <div class="cgt-match-stage" id="candidate-stack">
 {% for row in enriched %}
 {% set c = row.candidate %}
@@ -85,67 +79,64 @@
     {% endif %}
   </div>
 
-  {# Entry A: manual #}
-  <div class="cgt-match-entry">
-    <div class="cgt-match-entry__label">Your entry</div>
-    <div class="d-flex gap-3 align-items-start">
-      {% if manual_cover %}
-      <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-cover">
-      {% else %}
-      <div class="cgt-match-cover cgt-match-cover--empty"></div>
-      {% endif %}
-      <div>
-        <div class="fw-semibold">{{ manual_game.display_title }}</div>
-        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-          <span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>
-          <span class="text-secondary small">Added manually</span>
-        </div>
-        {% if manual.completions %}
-        <div class="text-secondary small mt-1">
-          {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }} — will be kept
-        </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
+  {# Side-by-side: synced (winner) → REPLACES → manual (removed) #}
+  <div class="cgt-match-sides">
 
-  {# Divider with merge indicator #}
-  <div class="cgt-match-divider">
-    <span class="cgt-match-divider__line"></span>
-    <span class="cgt-match-divider__label">matched with</span>
-    <span class="cgt-match-divider__line"></span>
-  </div>
-
-  {# Entry B: synced #}
-  <div class="cgt-match-entry">
-    <div class="cgt-match-entry__label">{{ c.platform_source | title }} entry</div>
-    <div class="d-flex gap-3 align-items-start">
+    {# Left: synced entry — the one that survives #}
+    <div class="cgt-match-side">
+      <div class="cgt-match-side__label">{{ c.platform_source | title }}</div>
       {% if synced_cover %}
-      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-cover">
+      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-cover cgt-match-cover--side">
       {% else %}
-      <div class="cgt-match-cover cgt-match-cover--empty"></div>
+      <div class="cgt-match-cover cgt-match-cover--side cgt-match-cover--empty"></div>
       {% endif %}
-      <div>
-        <div class="fw-semibold">{{ c.synced_title }}</div>
-        <div class="d-flex align-items-center gap-2 mt-1 flex-wrap">
-          {% if row.synced_release %}
-          <span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>
-          {% endif %}
-          <span class="text-secondary small">#{{ c.external_id }}</span>
-        </div>
-        {% if synced and synced.playtime_minutes %}
-        <div class="text-secondary small mt-1">
-          {{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs playtime — will be imported
-        </div>
+      <div class="fw-semibold small mt-2">{{ c.synced_title }}</div>
+      <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+        {% if row.synced_release %}
+        <span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>
         {% endif %}
       </div>
+      {% if synced and synced.playtime_minutes %}
+      <div class="text-secondary mt-1" style="font-size:.72rem;">{{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs</div>
+      {% endif %}
     </div>
+
+    {# Centre: directional arrow #}
+    <div class="cgt-match-arrow">
+      <span class="cgt-match-arrow__label">replaces</span>
+      <span class="cgt-match-arrow__icon"></span>
+    </div>
+
+    {# Right: manual entry — will be removed #}
+    <div class="cgt-match-side cgt-match-side--removed">
+      <div class="cgt-match-side__label">Your entry</div>
+      {% if manual_cover %}
+      <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-cover cgt-match-cover--side">
+      {% else %}
+      <div class="cgt-match-cover cgt-match-cover--side cgt-match-cover--empty"></div>
+      {% endif %}
+      <div class="fw-semibold small mt-2">{{ manual_game.display_title }}</div>
+      <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+        <span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>
+      </div>
+      {% if manual.completions %}
+      <div class="text-secondary mt-1" style="font-size:.72rem;">
+        {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}
+      </div>
+      {% endif %}
+    </div>
+
   </div>
 
-  {# Result summary #}
+  {# Info strip #}
   <div class="cgt-match-result">
-    <span class="text-secondary small">Confirming this match will link your entry to {{ c.platform_source | title }},
-    import playtime and artwork, and keep any completions or artwork you've customized.</span>
+    Your manual entry for <strong>{{ manual_game.display_title }}</strong> will be superseded by the {{ c.platform_source | title }} version found via sync.
+    {% if manual.completions %}
+    Your {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }} will be migrated to the {{ c.platform_source | title }} entry.
+    {% endif %}
+    {% if manual.user_artwork %}
+    Any custom artwork will need to be reapplied after confirming.
+    {% endif %}
   </div>
 
   {# Actions #}
@@ -190,6 +181,19 @@
 {% endfor %}
 </div>
 
+{# Chevron + dot navigation — rendered below the stack #}
+{% if enriched | length > 1 %}
+<div class="cgt-match-nav" id="match-nav">
+  <button class="cgt-match-nav__btn" id="nav-prev" onclick="cgtNav(-1)">&#8249;</button>
+  <div class="cgt-match-nav__dots" id="nav-dots">
+    {% for row in enriched %}
+    <span class="cgt-match-nav__dot{% if loop.first %} cgt-match-nav__dot--active{% endif %}"></span>
+    {% endfor %}
+  </div>
+  <button class="cgt-match-nav__btn" id="nav-next" onclick="cgtNav(1)">&#8250;</button>
+</div>
+{% endif %}
+
 {% else %}
 <p class="text-secondary small">
   No matches pending review. Use <strong>Scan for matches</strong> to compare your manual entries against your synced library.
@@ -220,15 +224,32 @@
       else if (offset === 2)  card.classList.add('cgt-match-card--far-next');
       else                    card.classList.add('cgt-match-card--hidden');
     });
-    const indicator = document.getElementById('nav-indicator');
-    if (indicator) indicator.textContent = cards.length > 1 ? (idx + 1) + ' of ' + cards.length : '';
-    document.getElementById('nav-prev').disabled = idx === 0;
-    document.getElementById('nav-next').disabled = idx === cards.length - 1;
+    // Update dots
+    const dots = document.querySelectorAll('.cgt-match-nav__dot');
+    dots.forEach((d, i) => d.classList.toggle('cgt-match-nav__dot--active', i === idx));
+    // Buttons always enabled — navigation wraps around
   }
 
   window.cgtNav = function(dir) {
-    const next = Math.max(0, Math.min(cards.length - 1, current + dir));
-    show(next);
+    const next = (current + dir + cards.length) % cards.length;
+    const wrapping = (dir > 0 && next < current) || (dir < 0 && next > current);
+    if (wrapping) {
+      // Snap the incoming card to the correct entry side without animating,
+      // then let the transition carry it to center naturally.
+      const incoming = cards[next];
+      incoming.style.transition = 'none';
+      incoming.className = incoming.className
+        .replace(/\bcgt-match-card--(active|prev|next|far-prev|far-next|hidden)\b/g, '')
+        .trim();
+      incoming.classList.add(dir > 0 ? 'cgt-match-card--far-next' : 'cgt-match-card--far-prev');
+      incoming.offsetHeight; // force reflow
+      requestAnimationFrame(() => {
+        incoming.style.transition = '';
+        show(next);
+      });
+    } else {
+      show(next);
+    }
   };
 
   window.cgtCandidateDone = function(id) {
@@ -237,15 +258,17 @@
     const idx = cards.indexOf(card);
     cards.splice(idx, 1);
     card.remove();
+    // Remove corresponding dot
+    const dots = document.querySelectorAll('.cgt-match-nav__dot');
+    if (dots[idx]) dots[idx].remove();
     const countEl = document.getElementById('queue-count');
     const pending = cards.filter(c => c.dataset.status === 'pending').length;
     if (countEl) countEl.textContent = pending;
     if (cards.length === 0) {
       document.getElementById('candidate-stack').style.display = 'none';
       document.getElementById('queue-status').textContent = 'All done.';
-      document.getElementById('nav-indicator').textContent = '';
-      document.getElementById('nav-prev').style.display = 'none';
-      document.getElementById('nav-next').style.display = 'none';
+      const nav = document.getElementById('match-nav');
+      if (nav) nav.style.display = 'none';
       return;
     }
     show(Math.min(current, cards.length - 1));
@@ -278,7 +301,14 @@
     });
   };
 
-  if (cards.length > 0) show(0);
+  if (cards.length > 0) {
+    // Suppress transition on first render so cards snap into position.
+    cards.forEach(c => c.style.transition = 'none');
+    show(0);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      cards.forEach(c => c.style.transition = '');
+    }));
+  }
 })();
 </script>
 {% endblock %}

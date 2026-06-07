@@ -410,7 +410,7 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
             context={"error": "A Steam job is already running — please wait for it to finish."},
             status_code=409,
         )
-    job = jobs.create(user_id=current_user.id, kind=kind)
+    job = jobs.create(user_id=current_user.id, kind=kind, label=f"Steam {spec['label'].lower()}")
     asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
     return templates.TemplateResponse(
         request=request,
@@ -469,7 +469,7 @@ async def match_review_scan(
             name="partials/_toast.html",
             context={"kind": "danger", "body": "A sync job is already running — please wait for it to finish."},
         )
-    job = jobs.create(user_id=current_user.id, kind="match_scan")
+    job = jobs.create(user_id=current_user.id, kind="match_scan", label="Match scan")
     asyncio.create_task(_run_match_scan_job(job.id, current_user.id))
     return templates.TemplateResponse(
         request=request,

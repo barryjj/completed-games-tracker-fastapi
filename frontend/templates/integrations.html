@@ -50,12 +50,10 @@
         {# Enrichment status — lazily loads the same partial the configure
            page uses, so the at-a-glance card surfaces "still running" or
            "all caught up" without needing a separate query. #}
-        <div class="mb-3"
-             hx-get="/integrations/steam/enrichment-status"
+        <div hx-get="/integrations/steam/enrichment-status"
              hx-trigger="load"
-             hx-swap="innerHTML">
-          <p class="text-secondary mb-0"><small>Loading enrichment status&hellip;</small></p>
-        </div>
+             hx-swap="outerHTML"></div>
+        <div id="sync-indicator" class="mb-3 mt-1"></div>
         {% else %}
         <p class="card-text text-secondary mb-3">Import your Steam library and playtime.</p>
         {% endif %}
@@ -86,7 +84,6 @@
           {% endif %}
         </div>
         <div id="steam-hub-status" class="mt-3"></div>
-        <div id="sync-indicator" class="mt-2"></div>
       </div>
     </div>
   </div>
