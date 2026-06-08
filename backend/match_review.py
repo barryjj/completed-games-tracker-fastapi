@@ -404,7 +404,6 @@ def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: mod
     manual_entry = candidate.manual_entry
     manual_release = manual_entry.release
     manual_game = manual_release.game
-    synced_game = synced_release.game
 
     # igdb_id is intentionally NOT promoted to the synced game — Steam entries
     # can't have IGDB IDs set through the UI, and copying it here would require
