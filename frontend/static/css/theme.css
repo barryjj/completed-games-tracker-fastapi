@@ -805,6 +805,9 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   border-radius: 3px;
   object-fit: cover;
 }
+.cgt-list-row-thumb--empty {
+  background-color: var(--ctp-surface0);
+}
 
 /* Catppuccin-themed range slider. Rectangular thumb matches the rest of the
    design (we haven't leaned into rounded controls anywhere else). Apply by

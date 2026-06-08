@@ -2036,6 +2036,98 @@ def auto_fetch_logo(
     return Response(status_code=204)
 
 
+@router.get("/library/entries/{entry_id}/hero-block")
+def library_entry_hero_block(
+    entry_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return just the hero+logo block for a library entry.
+    Used to update only the hero area of a detail pane after a logo or hero
+    is auto-fetched, without reloading the full pane."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    game = entry.release.game
+    release = entry.release
+    visuals = _build_detail_pane_visuals(db, entry, game, release)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/detail_hero_block.html",
+        context={"entry": entry, **visuals},
+    )
+
+
+@router.post("/library/entries/{entry_id}/auto-fetch-grid")
+def auto_fetch_grid(
+    entry_id: int,
+    orientation: str = Query("h"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Auto-fetch a grid cover (h or v) from SGDB on detail pane open.
+    Returns 200 + {"url": ...} on success, 204 if nothing found or already exists."""
+    from . import steamgriddb as sgdb
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    url = sgdb.auto_fetch_grid(db, current_user, entry, orientation=orientation)
+    if url:
+        return JSONResponse({"url": url})
+    return Response(status_code=204)
+
+
+@router.get("/completions/{completion_id}/card")
+def completion_card_fragment(
+    completion_id: int,
+    view_mode: str = Query("list"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the rendered card or list row for a single completion.
+
+    Used to update the background grid/list in-place after a cover is
+    auto-fetched when the completion detail pane is opened."""
+    completion = (
+        db.query(models.Completion)
+        .options(
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=completion_id, user_id=current_user.id)
+        .first()
+    )
+    if not completion:
+        return Response(status_code=404)
+    tmpl = "partials/completion_card.html" if view_mode in ("grid_h", "grid_v") else "partials/completion_row.html"
+    return templates.TemplateResponse(
+        tmpl,
+        {"request": request, "completion": completion, "view_mode": view_mode},
+    )
+
+
 # --- Match Review ---
 
 
@@ -2307,6 +2399,7 @@ def log_completion(
     playthroughs: str = Form("1"),
     notes: str = Form(""),
     completion_id: int | None = Form(None),
+    view_mode: str = Form("list"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2332,10 +2425,12 @@ def log_completion(
         completion.notes = notes.strip() or None
         db.commit()
         db.refresh(completion)
+        _vm = view_mode if view_mode in ("list", "grid_h", "grid_v") else "list"
+        _tmpl = "partials/completion_card.html" if _vm in ("grid_h", "grid_v") else "partials/completion_row.html"
         response = templates.TemplateResponse(
             request=request,
-            name="partials/completion_row.html",
-            context={"completion": completion},
+            name=_tmpl,
+            context={"completion": completion, "view_mode": _vm},
         )
         response.headers["HX-Retarget"] = f"#completion-{completion.id}"
         response.headers["HX-Reswap"] = "outerHTML"
@@ -2352,10 +2447,23 @@ def log_completion(
     db.commit()
     db.refresh(completion)
 
+    from . import steamgriddb as sgdb
+
+    entry = completion.library_entry
+    sgdb.auto_fetch_grid(db, current_user, entry, orientation="h")
+    sgdb.auto_fetch_grid(db, current_user, entry, orientation="v")
+    db.refresh(entry)
+
+    view_mode = view_mode if view_mode in ("list", "grid_h", "grid_v") else "list"
+    if view_mode in ("grid_h", "grid_v"):
+        tmpl = "partials/completion_card.html"
+    else:
+        tmpl = "partials/completion_row.html"
+
     return templates.TemplateResponse(
         request=request,
-        name="partials/completion_row.html",
-        context={"completion": completion},
+        name=tmpl,
+        context={"completion": completion, "view_mode": view_mode},
     )
 
 
@@ -2383,6 +2491,7 @@ def delete_completion(
 def completion_detail(
     request: Request,
     completion_id: int,
+    fresh_open: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2431,6 +2540,7 @@ def completion_detail(
             "igdb_meta": _extract_igdb_meta(release),
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
+            "fresh_open": fresh_open,
             "current_user": current_user,
             **visuals,
         },

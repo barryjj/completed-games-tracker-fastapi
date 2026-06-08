@@ -187,12 +187,19 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - SteamGridDB: artwork browser link for cover-art lookup once cover override is wired up
 - Possibly: HowLongToBeat link once we have title-based search
 
-### Sync match review (same platform, NOT cross-platform)
-- Case: user manually adds "RE8" on Steam → later syncs Steam library → sync sees `Resident Evil Village` (appid 1196590) on the same platform with a similar title
-- Dedicated **review page** (not toast-based — could be overwhelming with bulk matches if user did heavy manual setup before syncing)
-- Side-by-side per match: manual entry vs. detected Steam/PSN game; user picks Merge / Keep Separate / Always Separate (suppresses the pair from future review)
-- Merge: same `UserLibraryEntry` survives (preserves any logged completions), release row gets the platform's `external_id`, `raw_data`, artwork; `source` flips from `"manual"` to `"steam_import"` / `"psn_import"`; `display_name_user_set` already True from manual add means the cleanup heuristic still won't touch the user's display name
-- Triggered: sync queues matches for review (doesn't block sync completion); also accessible from a "Review possible duplicates" link
+### Sync match review ✅ (this PR)
+- Steam sync no longer silently merges into existing manual entries — creates its own GameRelease + UserLibraryEntry
+- Match review scan surfaces candidates; dedicated review page with card-stack UI (chevron + dots navigation)
+- Side-by-side: Steam entry (canonical/winner, left) → CSS arrow → Manual entry (dimmed, right)
+- Merge: synced entry is canonical; completions migrated via direct SQL UPDATE (avoids ORM NULL FK bug); candidate status set to "merged" BEFORE deleting manual entry (avoids CASCADE nuke)
+- Skip ("Not the same game") flow included
+- Navbar badge with count; decrements in JS on each merge; removes itself at zero
+- Info strip: completions transfer noted only when present; artwork warning only when UserArtwork exists
+
+### Multiple completions on merge (pending design)
+- When both the synced entry and manual entry have completions, both survive the merge
+- Need to decide: prompt user during review to collapse same-timeframe completions, auto-collapse, or leave manual
+- Relates to broader question of how multiple completions per game are displayed (one row per completion vs collapsed per game)
 
 ### Library display grouping by game (cosmetic only — NOT a merge)
 - User owns RE8 on PS4, PS5, AND Steam → library shows ONE row with three platform badges
