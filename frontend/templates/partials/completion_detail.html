@@ -9,18 +9,43 @@
      hx-swap="none"
      style="display: none;"></div>
 {% endif %}
+{% if fresh_open and current_user and current_user.steamgriddb_api_key %}
+{% if not hero_url and not fallback_hero_url %}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
+     hx-trigger="load delay:1000ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail?fresh_open=true', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
+{% if not (entry | grid_cover_url('grid_h')) %}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-grid?orientation=h"
+     hx-trigger="load delay:600ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful){ var vm=(new URLSearchParams(location.search).get('view_mode')||'list'); htmx.ajax('GET','/completions/{{ completion.id }}/card?view_mode='+vm,{target:'#completion-{{ completion.id }}',swap:'outerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
+{% if not (entry | grid_cover_url('grid_v')) %}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-grid?orientation=v"
+     hx-trigger="load delay:700ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful){ var vm=(new URLSearchParams(location.search).get('view_mode')||'list'); htmx.ajax('GET','/completions/{{ completion.id }}/card?view_mode='+vm,{target:'#completion-{{ completion.id }}',swap:'outerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
+{% endif %}
 
 <div class="offcanvas-body p-0">
   {# Back-arrow injected here by app.js when pane stack > 1. #}
   <div class="cgt-pane-nav"></div>
 
   {% if hero_url or fallback_hero_url %}
-  <div class="cgt-detail-hero">
+  <div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}">
     <img class="cgt-detail-hero__img"
          src="{{ hero_url or fallback_hero_url }}"
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_hero_url if hero_url else '' }}"
+         data-cgt-entry-id="{{ entry.id }}"
+         data-cgt-fresh-open="{{ '1' if fresh_open else '' }}"
          onerror="cgtHeroFailed(this)">
     {% if logo_url or fallback_logo_url %}
     <img class="cgt-detail-hero__logo"
@@ -28,7 +53,15 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
-         onerror="this.style.display='none'; cgtHeroBlockCheck(this);">
+         {% if fresh_open %}data-cgt-logo-reload-url="/library/entries/{{ entry.id }}/hero-block"
+         data-cgt-logo-reload-target="#detail-hero-{{ entry.id }}"{% endif %}
+         onerror="this.style.display='none'; cgtHeroBlockCheck(this); {% if fresh_open %}cgtAutoFetchLogo(this, {{ entry.id }});{% endif %}">
+    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not logo_url %}
+    <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
+         hx-trigger="load delay:800ms"
+         hx-swap="none"
+         hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/hero-block', {target: '#detail-hero-{{ entry.id }}', swap: 'outerHTML'}); }"
+         style="display:none;"></div>
     {% endif %}
   </div>
   {% endif %}

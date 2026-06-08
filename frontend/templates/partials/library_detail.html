@@ -18,16 +18,30 @@
      hx-swap="none"
      style="display: none;"></div>
 {% endif %}
-{% if fresh_open and not hero_url and not fallback_hero_url and current_user and current_user.steamgriddb_api_key %}
-{# No hero URL — fire a background SGDB hero fetch. Only rendered when the
-   pane is opened fresh by a user row-click (fresh_open=1). Never rendered on
-   internal refreshes (clear overrides, logo auto-fetch reloads, etc.) so the
-   auto-fetch cannot re-trigger after a Reset or any other pane swap. #}
+{% if fresh_open and current_user and current_user.steamgriddb_api_key %}
+{# Auto-fetch blocks — only rendered on fresh user-initiated opens. Never on
+   internal pane reloads, so fetches cannot re-trigger after any pane swap. #}
+{% if not hero_url and not fallback_hero_url %}
 <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-hero"
      hx-trigger="load delay:1000ms"
      hx-swap="none"
      hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail?fresh_open=true', {target: '#library-detail-content', swap: 'innerHTML'}); }"
      style="display:none;"></div>
+{% endif %}
+{% if not (entry | grid_cover_url('grid_h')) %}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-grid?orientation=h"
+     hx-trigger="load delay:600ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful){ var vm=(new URLSearchParams(location.search).get('view_mode')||'list'); htmx.ajax('GET','/library/entries/{{ entry.id }}/card?view_mode='+vm,{target:'#library-entry-{{ entry.id }}',swap:'outerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
+{% if not (entry | grid_cover_url('grid_v')) %}
+<div hx-post="/library/entries/{{ entry.id }}/auto-fetch-grid?orientation=v"
+     hx-trigger="load delay:700ms"
+     hx-swap="none"
+     hx-on::after-request="if(event.detail.successful){ var vm=(new URLSearchParams(location.search).get('view_mode')||'list'); htmx.ajax('GET','/library/entries/{{ entry.id }}/card?view_mode='+vm,{target:'#library-entry-{{ entry.id }}',swap:'outerHTML'}); }"
+     style="display:none;"></div>
+{% endif %}
 {% endif %}
 
 <div class="offcanvas-body p-0">
@@ -39,7 +53,7 @@
      game logo overlaid bottom-left. If neither hero nor logo loads, the
      onerror handlers remove themselves and the block collapses cleanly. #}
   {% if hero_url or fallback_hero_url %}
-  <div class="cgt-detail-hero">
+  <div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}">
     <img class="cgt-detail-hero__img"
          src="{{ hero_url or fallback_hero_url }}"
          alt=""
@@ -54,6 +68,8 @@
          alt=""
          loading="lazy"
          data-fallback="{{ fallback_logo_url if logo_url else '' }}"
+         {% if fresh_open %}data-cgt-logo-reload-url="/library/entries/{{ entry.id }}/hero-block"
+         data-cgt-logo-reload-target="#detail-hero-{{ entry.id }}"{% endif %}
          onerror="this.style.display='none'; cgtHeroBlockCheck(this); {% if fresh_open %}cgtAutoFetchLogo(this, {{ entry.id }});{% endif %}">
     {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not logo_url %}
     {# No logo URL at all — fire a background SGDB fetch on pane open.
@@ -61,7 +77,7 @@
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
          hx-trigger="load delay:800ms"
          hx-swap="none"
-         hx-on::after-request="if(event.detail.successful && event.detail.xhr.status===200){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }"
+         hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/hero-block', {target: '#detail-hero-{{ entry.id }}', swap: 'outerHTML'}); }"
          style="display:none;"></div>
     {% endif %}
   </div>

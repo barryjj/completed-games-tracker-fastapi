@@ -12,10 +12,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, match_review as _match_review, models, steam, worker_state
+from . import jobs, models, steam, worker_state
+from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
-from .pages import get_web_user
+from .pages import _base_ctx, get_web_user
 
 _logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ def integrations_hub(
         context={
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
-            "pending_matches": _match_review.pending_count(db, current_user),
+            **_base_ctx(db, current_user),
         },
     )
 
@@ -67,6 +68,7 @@ def integrations_hub(
 def steam_page(
     request: Request,
     openid: str = "",
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     # ?openid=ok|bad_claim|verify_failed|invalid_sig — set by the OpenID return
@@ -74,7 +76,7 @@ def steam_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_steam.html",
-        context={"current_user": current_user, "openid_status": openid},
+        context={"current_user": current_user, "openid_status": openid, **_base_ctx(db, current_user)},
     )
 
 
@@ -408,7 +410,7 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
             context={"error": "A Steam job is already running — please wait for it to finish."},
             status_code=409,
         )
-    job = jobs.create(user_id=current_user.id, kind=kind)
+    job = jobs.create(user_id=current_user.id, kind=kind, label=f"Steam {spec['label'].lower()}")
     asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
     return templates.TemplateResponse(
         request=request,
@@ -467,7 +469,7 @@ async def match_review_scan(
             name="partials/_toast.html",
             context={"kind": "danger", "body": "A sync job is already running — please wait for it to finish."},
         )
-    job = jobs.create(user_id=current_user.id, kind="match_scan")
+    job = jobs.create(user_id=current_user.id, kind="match_scan", label="Match scan")
     asyncio.create_task(_run_match_scan_job(job.id, current_user.id))
     return templates.TemplateResponse(
         request=request,
@@ -512,11 +514,17 @@ def jobs_poll(
     reported again.
     """
     pending = jobs.pending_notifications_for(current_user.id)
-    return templates.TemplateResponse(
+    active = jobs.active_jobs_for(current_user.id)
+    response = templates.TemplateResponse(
         request=request,
         name="partials/job_poller.html",
-        context={"completed_jobs": pending},
+        context={"completed_jobs": pending, "active_jobs": active},
     )
+    # If a match scan job just finished, fire a custom event so the match
+    # review page can reload the candidate list without a full page refresh.
+    if any(j.kind == "match_scan" for j in pending):
+        response.headers["HX-Trigger"] = "cgt:matchScanDone"
+    return response
 
 
 @router.post("/steam/backfill-collection-flags")
@@ -941,12 +949,13 @@ async def backfill_placeholder_names(
 @router.get("/steamgriddb")
 def steamgriddb_page(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     return templates.TemplateResponse(
         request=request,
         name="integrations_steamgriddb.html",
-        context={"current_user": current_user},
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
     )
 
 
@@ -1153,12 +1162,13 @@ async def steamgriddb_fill_missing(
 @router.get("/igdb")
 def igdb_page(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     return templates.TemplateResponse(
         request=request,
         name="integrations_igdb.html",
-        context={"current_user": current_user},
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
     )
 
 
@@ -1233,6 +1243,19 @@ def igdb_search(
             q,
             limit=15,
         )
+        # IGDB's search engine returns 0 results for some partial-word queries
+        # (e.g. "Shin Megami Te" gives nothing, "Shin Megami T" and "Shin Megami
+        # Tensei" both give 15). If we get nothing and the query is multi-word,
+        # retry with the last word dropped so typing doesn't cause blank gaps.
+        if not results and " " in q:
+            fallback_q = q.rsplit(" ", 1)[0].strip()
+            if fallback_q:
+                results = _igdb.search_games(
+                    current_user.twitch_client_id,
+                    current_user.twitch_client_secret,
+                    fallback_q,
+                    limit=15,
+                )
     except Exception as e:
         _logger.warning("IGDB search error: %s", e)
         results = []

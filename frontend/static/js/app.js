@@ -46,6 +46,54 @@ window.cgtHeroFailed = function(img) {
   }
 };
 
+// Auto-fetch hero: called from cgtHeroFailed when the hero img 404s on a
+// fresh pane open. POSTs to SGDB, stores the result, updates img.src in-place.
+window.cgtAutoFetchHero = function(img, entryId) {
+  img.onerror = null;
+  fetch('/library/entries/' + entryId + '/auto-fetch-hero', {method: 'POST'})
+    .then(function(r) {
+      if (r.ok && r.status === 200) {
+        return r.json().then(function(data) {
+          if (data.url) {
+            img.style.display = '';
+            var block = img.closest('.cgt-detail-hero');
+            if (block) block.style.display = '';
+            img.src = data.url;
+          }
+        });
+      }
+    })
+    .catch(function() { /* silent */ });
+};
+
+// Auto-fetch logo: called from onerror on the hero logo img when it 404s.
+// If the img has data-cgt-logo-reload-url/target set, reloads the pane after
+// storing the logo so it renders cleanly. Otherwise updates img.src in-place.
+window.cgtAutoFetchLogo = function(img, entryId) {
+  img.onerror = null;
+  var reloadUrl = img.dataset.cgtLogoReloadUrl;
+  var reloadTarget = img.dataset.cgtLogoReloadTarget;
+  fetch('/library/entries/' + entryId + '/auto-fetch-logo', {method: 'POST'})
+    .then(function(r) {
+      if (r.ok && r.status === 200) {
+        return r.json().then(function(data) {
+          if (data.url) {
+            if (reloadUrl && reloadTarget) {
+              htmx.ajax('GET', reloadUrl, {target: reloadTarget, swap: 'innerHTML'});
+            } else {
+              img.style.display = '';
+              var block = img.closest('.cgt-detail-hero');
+              if (block) block.style.display = '';
+              img.src = data.url;
+            }
+          }
+        });
+      }
+      // 204 = nothing found; leave img hidden
+    })
+    .catch(function() { /* silent — best-effort */ });
+};
+
 window.cgtCoverFallback = function(img) {
   var fb = img.dataset.fallback;
   if (fb && img.src !== fb) {
@@ -428,9 +476,13 @@ window.applySgdbCover = function(entryId, imageType, url) {
   }).then(function(r) {
     if (!r.ok) return;
     if (_sgdbModal) _sgdbModal.hide();
-    // Always reload the detail pane so the More menu reflects the new UserArtwork row
-    // (Reset options appear/disappear based on what's in user_artwork at render time).
-    htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+    // Reload whichever detail pane opened the picker.
+    // completion pane uses #completion-detail-content and its own endpoint.
+    var isCompletionPane = _sgdbCurrentDetailTarget === '#completion-detail-content';
+    var detailUrl = isCompletionPane
+      ? '/completions/' + entryId + '/detail'
+      : '/library/entries/' + entryId + '/detail';
+    htmx.ajax('GET', detailUrl, {
       target: _sgdbCurrentDetailTarget,
       swap: 'innerHTML',
     });

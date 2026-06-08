@@ -1,0 +1,23 @@
+{# Hero block fragment — used by /library/entries/{id}/hero-block to update
+   just the hero+logo area without reloading the full detail pane. #}
+{% if hero_url or fallback_hero_url %}
+<div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}">
+  <img class="cgt-detail-hero__img"
+       src="{{ hero_url or fallback_hero_url }}"
+       alt=""
+       loading="lazy"
+       data-fallback="{{ fallback_hero_url if hero_url else '' }}"
+       data-cgt-entry-id="{{ entry.id }}"
+       onerror="cgtHeroFailed(this)">
+  {% if logo_url or fallback_logo_url %}
+  <img class="cgt-detail-hero__logo"
+       src="{{ logo_url or fallback_logo_url }}"
+       alt=""
+       loading="lazy"
+       data-fallback="{{ fallback_logo_url if logo_url else '' }}"
+       onerror="this.style.display='none'; cgtHeroBlockCheck(this);">
+  {% endif %}
+</div>
+{% else %}
+<div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}" style="display:none;"></div>
+{% endif %}

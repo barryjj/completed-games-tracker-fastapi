@@ -270,6 +270,34 @@ def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEnt
         return None
 
 
+def auto_fetch_grid(db: Session, user: models.User, entry: models.UserLibraryEntry, orientation: str = "h") -> str | None:
+    """Try to fetch a grid cover (h or v) for a single entry from SGDB and
+    store it as a UserArtwork row. Returns the URL on success, None if nothing
+    found. Called automatically when logging a completion for an entry with no cover."""
+    art_type = "cover_h" if orientation == "h" else "cover_v"
+    if not user.steamgriddb_api_key:
+        return None
+    existing = next((ua for ua in entry.user_artwork if ua.artwork_type == art_type and ua.url), None)
+    if existing:
+        return existing.url
+    try:
+        sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
+        if not sgdb_game:
+            return None
+        grids = get_grids_for_game(user.steamgriddb_api_key, sgdb_game["id"], orientation=orientation)
+        if not grids:
+            return None
+        url = grids[0].get("url")
+        if not url:
+            return None
+        _upsert_user_artwork(db, entry, art_type, url)
+        db.commit()
+        return url
+    except Exception as e:
+        logger.warning("SGDB auto-fetch grid (%s) failed for entry %s: %s", orientation, entry.id, e)
+        return None
+
+
 def bulk_fill_missing(
     db: Session,
     user: models.User,

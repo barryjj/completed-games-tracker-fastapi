@@ -100,6 +100,13 @@ def _html_unescape(s: str) -> str:
 templates.env.filters["html_unescape"] = _html_unescape
 
 
+def _base_ctx(db: Session, user: models.User) -> dict:
+    """Common context vars injected into every full-page response."""
+    return {
+        "pending_matches": match_review.pending_count(db, user),
+    }
+
+
 # How long Steam appdetails can sit before we consider it stale enough to
 # auto-refresh on next detail-pane open. 7 days balances "user sees current
 # data when they actually look" against burning API calls on every click.
@@ -414,7 +421,12 @@ def _attach_parent_fallbacks(db: Session, entries, current_user=None) -> None:
 
 def _get_all_platforms(db: Session) -> list[models.Platform]:
     """Return all Platform rows ordered by name for dropdown/datalist use."""
-    return db.query(models.Platform).order_by(models.Platform.name).all()
+    return (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .order_by(models.Platform.name)
+        .all()
+    )
 
 
 COLLECTION_KEYWORDS = [
@@ -562,7 +574,66 @@ def account_page(
             "platforms": platforms,
             "ctp_accents": models.CTP_ACCENTS,
             "has_library_platforms": has_library_platforms,
+            **_base_ctx(db, current_user),
         },
+    )
+
+
+@router.get("/account/platforms/{platform_id}/cancel")
+def cancel_platform_edit(
+    request: Request,
+    platform_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the compact row, discarding any unsaved edits."""
+    platform = (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .filter(models.Platform.id == platform_id)
+        .first()
+    )
+    if not platform:
+        return Response(status_code=404)
+    in_library = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.platform_id == platform.id,
+        )
+        .limit(1)
+        .first()
+        is not None
+    )
+    platform.in_library = in_library
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_row.html",
+        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS},
+    )
+
+
+@router.get("/account/platforms/{platform_id}/edit")
+def edit_platform_row(
+    request: Request,
+    platform_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the expanded editing row for a platform."""
+    platform = (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .filter(models.Platform.id == platform_id)
+        .first()
+    )
+    if not platform:
+        return Response(status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_row_edit.html",
+        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS},
     )
 
 
@@ -576,7 +647,12 @@ def update_platform(
     current_user: models.User = Depends(get_web_user),
 ):
     """Update a platform's display_name and/or color. Returns the updated row partial."""
-    platform = db.query(models.Platform).filter(models.Platform.id == platform_id).first()
+    platform = (
+        db.query(models.Platform)
+        .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
+        .filter(models.Platform.id == platform_id)
+        .first()
+    )
     if not platform:
         return Response(status_code=404)
     display_name = display_name.strip()
@@ -606,8 +682,54 @@ def update_platform(
         context={
             "platform": platform,
             "ctp_accents": models.CTP_ACCENTS,
-            "saved": True,
         },
+    )
+
+
+@router.post("/account/platforms/{platform_id}/aliases")
+def add_platform_alias(
+    request: Request,
+    platform_id: int,
+    alias: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Add an alias to a platform. Returns the updated aliases partial."""
+    platform = db.query(models.Platform).options(joinedload(models.Platform.aliases)).filter(models.Platform.id == platform_id).first()
+    if not platform:
+        return Response(status_code=404)
+    alias = alias.strip()
+    if alias:
+        db.add(models.PlatformAlias(platform_id=platform_id, alias=alias))
+        db.commit()
+        db.expire(platform)
+        db.refresh(platform)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_aliases.html",
+        context={"platform": platform},
+    )
+
+
+@router.delete("/account/platforms/aliases/{alias_id}")
+def delete_platform_alias(
+    request: Request,
+    alias_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete a platform alias. Returns the updated aliases partial."""
+    alias = db.query(models.PlatformAlias).filter(models.PlatformAlias.id == alias_id).first()
+    if not alias:
+        return Response(status_code=404)
+    platform_id = alias.platform_id
+    db.delete(alias)
+    db.commit()
+    platform = db.query(models.Platform).options(joinedload(models.Platform.aliases)).filter(models.Platform.id == platform_id).first()
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/platform_aliases.html",
+        context={"platform": platform},
     )
 
 
@@ -763,7 +885,15 @@ def _build_lib_query(
             )
         )
     if platform:
-        base_q = base_q.filter(models.GameRelease.platform == platform)
+        # platform param is either "pid:<id>" (linked) or a raw string (unlinked)
+        if platform.startswith("pid:"):
+            try:
+                pid = int(platform[4:])
+                base_q = base_q.filter(models.GameRelease.platform_id == pid)
+            except ValueError:
+                pass
+        else:
+            base_q = base_q.filter(models.GameRelease.platform == platform)
     if view not in VIEW_OPTIONS:
         view = "default"
     if view == "default":
@@ -947,20 +1077,31 @@ def library_page(
         # Bulk-load Platform rows for linked entries.
         _pids = {pid for _, pid in lib_platforms_raw if pid}
         _pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(_pids)).all()} if _pids else {}
-        # Each item: {"value": raw_string, "label": display_title}
-        lib_platform_list = [
-            {"value": raw, "label": (_pmap[pid].display_title if pid and pid in _pmap else raw)} for raw, pid in lib_platforms_raw
-        ]
+        # Deduplicate by platform_id — multiple raw strings mapping to the same
+        # platform (e.g. "PC", "Win", "PC (Microsoft Windows)" all → platform_id=1)
+        # should appear as a single dropdown entry. Use "pid:<id>" as the value so
+        # the filter can match by platform_id rather than a specific raw string.
+        # Unlinked entries (no platform_id) fall back to raw string as before.
+        seen_pids: set[int] = set()
+        lib_platform_list = []
+        for raw, pid in lib_platforms_raw:
+            if pid and pid in _pmap:
+                if pid in seen_pids:
+                    continue
+                seen_pids.add(pid)
+                lib_platform_list.append({"value": f"pid:{pid}", "label": _pmap[pid].display_title})
+            else:
+                lib_platform_list.append({"value": raw, "label": raw})
+        lib_platform_list.sort(key=lambda p: p["label"])
 
     next_page_url = _library_next_url(page, total_pages, q, platform, view, sort, show_hidden, missing_art, view_mode)
-
-    pending_matches = match_review.pending_count(db, current_user)
 
     return templates.TemplateResponse(
         request=request,
         name="library.html",
         context={
             "current_user": current_user,
+            **_base_ctx(db, current_user),
             "entries": entries,
             "collections": collections,
             "base_game_options": base_game_options,
@@ -975,7 +1116,6 @@ def library_page(
             "missing_art": missing_art,
             "next_page_url": next_page_url,
             "lib_platforms": lib_platform_list,
-            "pending_matches": pending_matches,
         },
     )
 
@@ -1049,28 +1189,89 @@ def add_game(
     # so no heuristic ever touches it.
     display_clean = display_name.strip() or title_clean
 
-    game = models.Game(
-        title=title_clean,
-        display_name=display_clean,
-        is_dlc=is_dlc,
-        is_collection=is_collection,
-        parent_id=parent_id,
-        igdb_id=igdb_game_id,
-        # Manual entries are inherently user-set on every field we collect.
-        display_name_user_set=True,
-        is_dlc_user_set=True,
-        is_collection_user_set=True,
-        parent_id_user_set=True,
-    )
-    db.add(game)
-    db.flush()
+    platform_id = models.resolve_platform_id(db, platform)
 
-    # Link to the platforms table if we can find an exact match by name.
-    platform_row = db.query(models.Platform).filter_by(name=platform).first()
+    # --- Find existing game in this user's library ---
+    # Prefer igdb_id match (strongest signal), fall back to exact title match.
+    existing_game: models.Game | None = None
+    if igdb_game_id:
+        existing_game = (
+            db.query(models.Game)
+            .join(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.igdb_id == igdb_game_id,
+            )
+            .first()
+        )
+    if existing_game is None:
+        existing_game = (
+            db.query(models.Game)
+            .join(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.title == title_clean,
+            )
+            .first()
+        )
+
+    if existing_game is not None:
+        # Check whether a release on this platform already exists for this user.
+        conflict_release = (
+            db.query(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.GameRelease.game_id == existing_game.id,
+                models.GameRelease.platform_id == platform_id,
+            )
+            .first()
+        )
+        if conflict_release is not None:
+            existing_display = existing_game.display_name or existing_game.title
+            existing_platform = conflict_release.display_platform
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/_toast.html",
+                context={
+                    "kind": "danger",
+                    "body": (
+                        f"This game is already in your library.\n"
+                        f"Title: {existing_display}\n"
+                        f"Platform: {existing_platform}\n\n"
+                        f"Title and platform must be unique."
+                    ),
+                },
+                headers={"HX-Reswap": "none"},
+            )
+        # Same game, different platform — attach a new release to the existing game.
+        game = existing_game
+        # Update igdb_id if the existing row doesn't have one yet.
+        if igdb_game_id and not game.igdb_id:
+            game.igdb_id = igdb_game_id
+    else:
+        # New game — create the Game row.
+        game = models.Game(
+            title=title_clean,
+            display_name=display_clean,
+            is_dlc=is_dlc,
+            is_collection=is_collection,
+            parent_id=parent_id,
+            igdb_id=igdb_game_id,
+            display_name_user_set=True,
+            is_dlc_user_set=True,
+            is_collection_user_set=True,
+            parent_id_user_set=True,
+        )
+        db.add(game)
+        db.flush()
+
     release = models.GameRelease(
         game_id=game.id,
         platform=platform,
-        platform_id=platform_row.id if platform_row else None,
+        platform_id=platform_id,
         source="manual",
     )
     db.add(release)
@@ -1153,9 +1354,32 @@ def edit_library_entry(
     # Platform is editable for fully-manual entries (no sync to break).
     platform_clean = platform.strip()
     if platform_clean and is_fully_manual:
+        new_platform_id = models.resolve_platform_id(db, platform_clean)
+        # Block if another release on this game already uses this platform_id
+        # (excluding the current release being edited).
+        conflict = (
+            db.query(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.GameRelease.game_id == game.id,
+                models.GameRelease.platform_id == new_platform_id,
+                models.GameRelease.id != entry.release.id,
+            )
+            .first()
+        )
+        if conflict:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/_toast.html",
+                context={
+                    "kind": "danger",
+                    "body": f"This game already has a release on {conflict.display_platform}. Title and platform must be unique.",
+                },
+                headers={"HX-Reswap": "none"},
+            )
         entry.release.platform = platform_clean
-        platform_row = db.query(models.Platform).filter_by(name=platform_clean).first()
-        entry.release.platform_id = platform_row.id if platform_row else None
+        entry.release.platform_id = new_platform_id
 
     # display_name: empty string means "use raw title" (display_name stored as NULL)
     game.display_name = display_name.strip() or None
@@ -1300,7 +1524,19 @@ def delete_library_entry(
 ):
     entry = db.query(models.UserLibraryEntry).filter_by(id=entry_id, user_id=current_user.id).first()
     if entry:
+        release = entry.release
+        game = release.game
         db.delete(entry)
+        db.flush()
+        # Clean up the release if no other entries reference it.
+        remaining_entries = db.query(models.UserLibraryEntry).filter_by(release_id=release.id).count()
+        if remaining_entries == 0:
+            db.delete(release)
+            db.flush()
+            # Clean up the game if no other releases reference it.
+            remaining_releases = db.query(models.GameRelease).filter_by(game_id=game.id).count()
+            if remaining_releases == 0:
+                db.delete(game)
         db.commit()
     return Response(status_code=200)
 
@@ -1799,6 +2035,98 @@ def auto_fetch_logo(
     return Response(status_code=204)
 
 
+@router.get("/library/entries/{entry_id}/hero-block")
+def library_entry_hero_block(
+    entry_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return just the hero+logo block for a library entry.
+    Used to update only the hero area of a detail pane after a logo or hero
+    is auto-fetched, without reloading the full pane."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    game = entry.release.game
+    release = entry.release
+    visuals = _build_detail_pane_visuals(db, entry, game, release)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/detail_hero_block.html",
+        context={"entry": entry, **visuals},
+    )
+
+
+@router.post("/library/entries/{entry_id}/auto-fetch-grid")
+def auto_fetch_grid(
+    entry_id: int,
+    orientation: str = Query("h"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Auto-fetch a grid cover (h or v) from SGDB on detail pane open.
+    Returns 200 + {"url": ...} on success, 204 if nothing found or already exists."""
+    from . import steamgriddb as sgdb
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    url = sgdb.auto_fetch_grid(db, current_user, entry, orientation=orientation)
+    if url:
+        return JSONResponse({"url": url})
+    return Response(status_code=204)
+
+
+@router.get("/completions/{completion_id}/card")
+def completion_card_fragment(
+    completion_id: int,
+    view_mode: str = Query("list"),
+    request: Request = None,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Return the rendered card or list row for a single completion.
+
+    Used to update the background grid/list in-place after a cover is
+    auto-fetched when the completion detail pane is opened."""
+    completion = (
+        db.query(models.Completion)
+        .options(
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=completion_id, user_id=current_user.id)
+        .first()
+    )
+    if not completion:
+        return Response(status_code=404)
+    tmpl = "partials/completion_card.html" if view_mode in ("grid_h", "grid_v") else "partials/completion_row.html"
+    return templates.TemplateResponse(
+        tmpl,
+        {"request": request, "completion": completion, "view_mode": view_mode},
+    )
+
+
 # --- Match Review ---
 
 
@@ -1837,6 +2165,7 @@ def match_review_page(
             "enriched": enriched,
             "pending": pending,
             "show_skipped": show_skipped,
+            **_base_ctx(db, current_user),
         },
     )
 
@@ -1917,6 +2246,7 @@ def match_review_merge_bulk(
     if failed:
         parts.append(f"{failed} failed")
     msg = "Bulk merge complete — " + ", ".join(parts) + "."
+    kind = "danger" if failed and not merged else "success"
     return templates.TemplateResponse(
         request=request,
         name="partials/_toast.html",
@@ -2009,6 +2339,7 @@ def completions_page(
             "completed_to": completed_to,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
+            **_base_ctx(db, current_user),
         },
     )
 
@@ -2067,6 +2398,7 @@ def log_completion(
     playthroughs: str = Form("1"),
     notes: str = Form(""),
     completion_id: int | None = Form(None),
+    view_mode: str = Form("list"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2092,10 +2424,12 @@ def log_completion(
         completion.notes = notes.strip() or None
         db.commit()
         db.refresh(completion)
+        _vm = view_mode if view_mode in ("list", "grid_h", "grid_v") else "list"
+        _tmpl = "partials/completion_card.html" if _vm in ("grid_h", "grid_v") else "partials/completion_row.html"
         response = templates.TemplateResponse(
             request=request,
-            name="partials/completion_row.html",
-            context={"completion": completion},
+            name=_tmpl,
+            context={"completion": completion, "view_mode": _vm},
         )
         response.headers["HX-Retarget"] = f"#completion-{completion.id}"
         response.headers["HX-Reswap"] = "outerHTML"
@@ -2112,10 +2446,23 @@ def log_completion(
     db.commit()
     db.refresh(completion)
 
+    from . import steamgriddb as sgdb
+
+    entry = completion.library_entry
+    sgdb.auto_fetch_grid(db, current_user, entry, orientation="h")
+    sgdb.auto_fetch_grid(db, current_user, entry, orientation="v")
+    db.refresh(entry)
+
+    view_mode = view_mode if view_mode in ("list", "grid_h", "grid_v") else "list"
+    if view_mode in ("grid_h", "grid_v"):
+        tmpl = "partials/completion_card.html"
+    else:
+        tmpl = "partials/completion_row.html"
+
     return templates.TemplateResponse(
         request=request,
-        name="partials/completion_row.html",
-        context={"completion": completion},
+        name=tmpl,
+        context={"completion": completion, "view_mode": view_mode},
     )
 
 
@@ -2143,6 +2490,7 @@ def delete_completion(
 def completion_detail(
     request: Request,
     completion_id: int,
+    fresh_open: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2191,6 +2539,7 @@ def completion_detail(
             "igdb_meta": _extract_igdb_meta(release),
             "sibling_completions": sibling_completions,
             "needs_refresh": _needs_metadata_refresh(release),
+            "fresh_open": fresh_open,
             "current_user": current_user,
             **visuals,
         },

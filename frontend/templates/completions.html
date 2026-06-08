@@ -18,6 +18,7 @@
             hx-swap="afterbegin"
             hx-on::after-request="if(event.detail.successful && event.detail.elt === this) { resetCompletionForm(); _logCompletionModal.hide(); }">
         <input type="hidden" name="completion_id" id="edit-completion-id" value="">
+        <input type="hidden" name="view_mode" value="{{ view_mode }}" id="log-comp-view-mode">
         <div class="modal-body">
           <div class="mb-3">
             <label class="form-label">Game</label>
@@ -72,7 +73,7 @@ function openCompletionDetail(completionId) {
   // Reset the back-nav stack — see openLibraryDetail for the same pattern.
   if (window.cgtPaneInitCompletion) window.cgtPaneInitCompletion(completionId);
   _completionDetailOffcanvas.show();
-  htmx.ajax('GET', '/completions/' + completionId + '/detail', {
+  htmx.ajax('GET', '/completions/' + completionId + '/detail?fresh_open=true', {
     target: '#completion-detail-content',
     swap: 'innerHTML',
   });

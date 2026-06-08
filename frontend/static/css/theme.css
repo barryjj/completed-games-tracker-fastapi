@@ -670,6 +670,23 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   background-color: var(--ctp-mauve);
 }
 
+/* ─── Pending matches indicator ─────────────────────────────────────────── */
+.cgt-pending-badge {
+  background: var(--ctp-yellow) !important;
+  color: var(--ctp-crust) !important;
+  font-size: .65rem;
+  padding: .2em .45em;
+}
+
+.cgt-pending-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 3px solid var(--ctp-yellow);
+  padding-left: calc(var(--bs-dropdown-item-padding-x) - 3px);
+}
+
+
 /* ─── Library grid view ─────────────────────────────────────────────────── */
 /* Cover-art mosaic. Three CSS variables drive the layout:
      --cgt-grid-gap      — space between cards (px), driven by the Gap slider
@@ -787,6 +804,9 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   background-color: var(--ctp-crust);
   border-radius: 3px;
   object-fit: cover;
+}
+.cgt-list-row-thumb--empty {
+  background-color: var(--ctp-surface0);
 }
 
 /* Catppuccin-themed range slider. Rectangular thumb matches the rest of the
@@ -1172,6 +1192,11 @@ body:has(.cgt-sticky-actions) {
 }
 .cgt-color-swatch:hover        { transform: scale(1.15); }
 .cgt-color-swatch.selected     { border-color: var(--ctp-text); }
+/* Larger variant used in the platform edit panel */
+.cgt-color-swatch--lg {
+  width: 1.6rem;
+  height: 1.6rem;
+}
 .cgt-color-swatch[data-color="rosewater"] { background: var(--ctp-rosewater); }
 .cgt-color-swatch[data-color="flamingo"]  { background: var(--ctp-flamingo); }
 .cgt-color-swatch[data-color="pink"]      { background: var(--ctp-pink); }
@@ -1186,3 +1211,239 @@ body:has(.cgt-sticky-actions) {
 .cgt-color-swatch[data-color="sapphire"]  { background: var(--ctp-sapphire); }
 .cgt-color-swatch[data-color="blue"]      { background: var(--ctp-blue); }
 .cgt-color-swatch[data-color="lavender"]  { background: var(--ctp-lavender); }
+
+/* ─── Match review — card stack ─────────────────────────────────────────── */
+.cgt-match-stage {
+  position: relative;
+  height: 480px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow: visible;
+}
+
+.cgt-match-card {
+  position: absolute;
+  width: 560px;
+  background: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface2);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.45);
+  transition: transform .3s cubic-bezier(.4,0,.2,1), opacity .3s ease, box-shadow .3s ease;
+  will-change: transform, opacity;
+  top: 0;
+  left: 50%;
+  margin-left: -280px;
+}
+
+.cgt-match-card--active {
+  transform: translateY(0) scale(1) rotate(0deg);
+  opacity: 1;
+  z-index: 10;
+  box-shadow: 0 12px 48px rgba(0,0,0,.55);
+}
+
+.cgt-match-card--prev {
+  transform: translateX(-16px) translateY(10px) scale(.97) rotate(-1.5deg);
+  opacity: .4;
+  z-index: 5;
+  pointer-events: none;
+}
+.cgt-match-card--next {
+  transform: translateX(16px) translateY(10px) scale(.97) rotate(1.5deg);
+  opacity: .4;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.cgt-match-card--far-prev {
+  transform: translateX(-26px) translateY(18px) scale(.93) rotate(-3deg);
+  opacity: .18;
+  z-index: 1;
+  pointer-events: none;
+}
+.cgt-match-card--far-next {
+  transform: translateX(26px) translateY(18px) scale(.93) rotate(3deg);
+  opacity: .18;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.cgt-match-card--hidden {
+  opacity: 0;
+  pointer-events: none;
+  z-index: 0;
+  transform: translateX(26px) translateY(18px) scale(.93) rotate(3deg);
+}
+
+.cgt-match-card--skipped {
+  opacity: 0.5;
+}
+
+/* ─── Stack nav (chevrons + dots) ───────────────────────────────────────── */
+.cgt-match-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  margin-top: .75rem;
+}
+
+.cgt-match-nav__btn {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  border: 1px solid var(--ctp-surface2);
+  background: var(--ctp-surface1);
+  color: var(--ctp-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: .85rem;
+  line-height: 1;
+  transition: background .15s, opacity .15s;
+  flex-shrink: 0;
+}
+.cgt-match-nav__btn:disabled {
+  opacity: .25;
+  cursor: default;
+}
+.cgt-match-nav__btn:not(:disabled):hover {
+  background: var(--ctp-surface2);
+}
+
+.cgt-match-nav__dots {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  padding: 0 .25rem;
+}
+
+.cgt-match-nav__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--ctp-surface2);
+  transition: background .2s, transform .2s;
+}
+
+.cgt-match-nav__dot--active {
+  background: var(--ctp-mauve);
+  transform: scale(1.3);
+}
+
+/* ─── Card interior ──────────────────────────────────────────────────────── */
+.cgt-match-card__header {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .7rem 1rem .6rem;
+  border-bottom: 1px solid var(--ctp-surface2);
+  background: var(--ctp-surface0);
+}
+
+.cgt-match-cover {
+  border-radius: 4px;
+  flex-shrink: 0;
+  object-fit: cover;
+}
+
+.cgt-match-cover--side {
+  width: 130px;
+  height: 60px;
+  display: block;
+  flex-shrink: 0;
+}
+
+.cgt-match-cover--empty {
+  background: var(--ctp-surface2);
+}
+
+/* ── Side-by-side layout ── */
+.cgt-match-sides {
+  display: grid;
+  grid-template-columns: 1fr 90px 1fr;
+  align-items: start;
+  padding: 1.1rem 1.25rem;
+  background: var(--ctp-surface0);
+  border-top: 1px solid var(--ctp-surface2);
+}
+
+.cgt-match-side {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.cgt-match-side--removed {
+  opacity: .65;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.cgt-match-side__label {
+  font-size: .68rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ctp-subtext0);
+  margin-bottom: .4rem;
+}
+
+.cgt-match-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 1.5rem;
+  gap: .4rem;
+}
+
+.cgt-match-arrow__label {
+  font-size: .65rem;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--ctp-subtext0);
+}
+
+/* CSS arrow: thick horizontal line + bold arrowhead */
+.cgt-match-arrow__icon {
+  display: flex;
+  align-items: center;
+}
+.cgt-match-arrow__icon::before {
+  content: '';
+  display: block;
+  width: 48px;
+  height: 3px;
+  background: var(--ctp-mauve);
+}
+.cgt-match-arrow__icon::after {
+  content: '';
+  display: block;
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  border-left: 12px solid var(--ctp-mauve);
+}
+
+.cgt-match-result {
+  padding: .55rem 1rem;
+  background: var(--ctp-mantle);
+  border-top: 1px solid var(--ctp-surface1);
+  font-size: .78rem;
+  color: var(--ctp-subtext1);
+}
+
+.cgt-match-actions {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .75rem 1rem;
+  background: var(--ctp-mantle);
+  border-top: 1px solid var(--ctp-surface1);
+}
