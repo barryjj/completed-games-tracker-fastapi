@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import match_review, models, users
