@@ -4,7 +4,8 @@
     {% set _thumb = completion.library_entry | grid_cover_url('grid_h') %}
     {% if _thumb %}<img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy"
                        data-fallback="{{ completion.library_entry._fallback_h or '' }}"
-                       onerror="cgtCoverFallback(this)">{% endif %}
+                       onerror="cgtCoverFallback(this)">
+    {% else %}<div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>{% endif %}
   </td>
   <td>{{ completion.library_entry.release.game.display_title }}</td>
   <td><span class="tag-badge {{ completion.library_entry.release.platform_tag_class }}">{{ completion.library_entry.release.display_platform }}</span></td>

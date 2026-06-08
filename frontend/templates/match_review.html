@@ -264,6 +264,26 @@
     const countEl = document.getElementById('queue-count');
     const pending = cards.filter(c => c.dataset.status === 'pending').length;
     if (countEl) countEl.textContent = pending;
+
+    // Update navbar badge
+    const navBadge = document.querySelector('.cgt-pending-badge');
+    if (navBadge) {
+      const newCount = parseInt(navBadge.textContent) - 1;
+      if (newCount <= 0) {
+        // Remove badge from button and pending item from dropdown
+        navBadge.remove();
+        const pendingItem = document.querySelector('.cgt-pending-item');
+        if (pendingItem) {
+          const li = pendingItem.closest('li');
+          const divider = li && li.nextElementSibling;
+          if (li) li.remove();
+          if (divider && divider.querySelector('.dropdown-divider')) divider.remove();
+        }
+      } else {
+        navBadge.textContent = newCount;
+      }
+    }
+
     if (cards.length === 0) {
       document.getElementById('candidate-stack').style.display = 'none';
       document.getElementById('queue-status').textContent = 'All done.';
