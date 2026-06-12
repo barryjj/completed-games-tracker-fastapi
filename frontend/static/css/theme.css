@@ -776,6 +776,28 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
   color: var(--ctp-subtext);
 }
 
+/* +1 playthrough overlay button on completion cards. */
+.cgt-card-plus1 {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: 4px;
+  border: 1px solid var(--ctp-green);
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--ctp-green);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cgt-library-card:hover .cgt-card-plus1 {
+  opacity: 1;
+}
+
 /* Hidden indicator: small em-dash badge top-right. Only relevant when
    "Show hidden" is on (otherwise the row is filtered out of the query). */
 .cgt-library-card--hidden::after {
