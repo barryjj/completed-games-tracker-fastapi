@@ -38,6 +38,13 @@
             <input type="hidden" name="library_entry_id" id="library-entry-id">
             <div id="game-search-results" class="mt-1"></div>
           </div>
+          <div id="completion-nudge" class="alert alert-warning py-2 px-3 mb-2 d-none" role="alert">
+            <div id="completion-nudge-text"></div>
+            <div class="d-flex gap-2 mt-1">
+              <button type="button" class="btn btn-sm btn-warning" id="nudge-increment-btn">+1 to that completion</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="nudge-log-new-btn">Log new</button>
+            </div>
+          </div>
           <div class="mb-3">
             <label class="form-label">Date Completed</label>
             <input type="date" class="form-control" name="completed_at" id="completed-at-input" value="{{ today }}" required>
@@ -102,12 +109,60 @@ function openLogCompletionModal() {
   _logCompletionModal.show();
 }
 
+var _nudgeCompletionId = null;
+
 function selectCompletionGame(id, label) {
   document.getElementById('library-entry-id').value = id;
   document.getElementById('game-search-input').value = label;
   document.getElementById('game-search-results').innerHTML = '';
   document.getElementById('log-completion-btn').disabled = false;
+  _checkExistingCompletion(id);
 }
+
+function _checkExistingCompletion(entryId) {
+  var nudge = document.getElementById('completion-nudge');
+  nudge.classList.add('d-none');
+  _nudgeCompletionId = null;
+  // Skip nudge when editing an existing completion.
+  if (document.getElementById('edit-completion-id').value) return;
+  fetch('/completions/check-existing?library_entry_id=' + entryId)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (!data.exists) return;
+      _nudgeCompletionId = data.id;
+      var d = new Date(data.completed_at + 'T00:00:00');
+      var dateStr = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+      document.getElementById('completion-nudge-text').textContent =
+        'Already completed this year on ' + dateStr + ' (' + data.playthroughs + ' playthrough' + (data.playthroughs !== '1' ? 's' : '') + ').';
+      nudge.classList.remove('d-none');
+    });
+}
+
+document.getElementById('nudge-increment-btn').addEventListener('click', function() {
+  if (!_nudgeCompletionId) return;
+  var form = new FormData();
+  form.append('view_mode', document.getElementById('log-comp-view-mode').value);
+  fetch('/completions/' + _nudgeCompletionId + '/increment', { method: 'POST', body: form })
+    .then(function(r) { return r.text(); })
+    .then(function(html) {
+      var target = document.getElementById('completion-' + _nudgeCompletionId);
+      if (target) {
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var newEl = tmp.firstElementChild;
+        if (newEl) target.replaceWith(newEl);
+        // Re-init HTMX on the new element.
+        htmx.process(document.getElementById('completion-' + _nudgeCompletionId) || newEl);
+      }
+      _logCompletionModal.hide();
+      resetCompletionForm();
+    });
+});
+
+document.getElementById('nudge-log-new-btn').addEventListener('click', function() {
+  document.getElementById('completion-nudge').classList.add('d-none');
+  _nudgeCompletionId = null;
+});
 
 function editCompletion(ds) {
   document.getElementById('edit-completion-id').value = ds.completionId;
@@ -137,6 +192,8 @@ function resetCompletionForm() {
   document.getElementById('log-completion-btn').disabled = true;
   document.getElementById('log-completion-btn').textContent = 'Log Completion';
   document.getElementById('logCompletionModalLabel').textContent = 'Log a Completion';
+  document.getElementById('completion-nudge').classList.add('d-none');
+  _nudgeCompletionId = null;
 }
 
 // Restore Filters / View drawer collapsed state.

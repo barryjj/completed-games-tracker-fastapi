@@ -15,6 +15,14 @@
   <td class="text-end text-nowrap">
     <div class="row-actions">
       <button
+        class="btn btn-sm btn-outline-success"
+        hx-post="/completions/{{ completion.id }}/increment"
+        hx-vals='{"view_mode": "list"}'
+        hx-target="#completion-{{ completion.id }}"
+        hx-swap="outerHTML"
+        title="+1 playthrough"
+      >+1</button>
+      <button
         class="btn btn-sm btn-outline-secondary"
         onclick="editCompletion(this.dataset)"
         data-completion-id="{{ completion.id }}"

@@ -25,6 +25,15 @@
          onerror="cgtCoverFallback(this)">
   </div>
   {% endif %}
+  <button
+    class="cgt-card-plus1"
+    hx-post="/completions/{{ completion.id }}/increment"
+    hx-vals='{"view_mode": "{{ view_mode }}"}'
+    hx-target="#completion-{{ completion.id }}"
+    hx-swap="outerHTML"
+    title="+1 playthrough"
+    onclick="event.stopPropagation()"
+  >+1</button>
   <div class="cgt-library-card__placeholder">
     <div class="cgt-library-card__placeholder-title">{{ _entry.release.game.display_title }}</div>
     <div class="cgt-library-card__placeholder-platform">{{ _entry.release.display_platform }}</div>

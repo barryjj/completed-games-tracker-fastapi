@@ -2271,6 +2271,9 @@ def completions_page(
 ):
     # Resolved from query → cookie → default (see _resolve_view_mode docstring).
     view_mode = _resolve_view_mode(request, view_mode, "cgt-completions-view-mode")
+    # Default to current calendar year if neither date filter is set.
+    if not completed_from and not completed_to:
+        completed_from = f"{datetime.date.today().year}-01-01"
     completions_q = (
         db.query(models.Completion)
         .join(models.Completion.library_entry)
@@ -2463,6 +2466,80 @@ def log_completion(
         request=request,
         name=tmpl,
         context={"completion": completion, "view_mode": view_mode},
+    )
+
+
+@router.post("/completions/{completion_id}/increment")
+def increment_completion(
+    request: Request,
+    completion_id: int,
+    view_mode: str = Form("list"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Bump playthroughs by 1 on an existing completion. Returns the updated row/card."""
+    completion = (
+        db.query(models.Completion)
+        .options(
+            joinedload(models.Completion.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.Completion.library_entry)
+            .joinedload(models.UserLibraryEntry.release)
+            .selectinload(models.GameRelease.artwork),
+            joinedload(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=completion_id, user_id=current_user.id)
+        .first()
+    )
+    if not completion:
+        return Response(status_code=404)
+    try:
+        current = int(str(completion.playthroughs or "1").rstrip("+").strip())
+    except ValueError:
+        current = 1
+    completion.playthroughs = str(current + 1)
+    db.commit()
+    db.refresh(completion)
+    _vm = view_mode if view_mode in ("list", "grid_h", "grid_v") else "list"
+    tmpl = "partials/completion_card.html" if _vm in ("grid_h", "grid_v") else "partials/completion_row.html"
+    response = templates.TemplateResponse(
+        request=request,
+        name=tmpl,
+        context={"completion": completion, "view_mode": _vm},
+    )
+    response.headers["HX-Retarget"] = f"#completion-{completion.id}"
+    response.headers["HX-Reswap"] = "outerHTML"
+    return response
+
+
+@router.get("/completions/check-existing")
+def check_existing_completion(
+    library_entry_id: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Check if a library entry has a completion in the current calendar year.
+    Returns the most recent one if found, so the modal can show a nudge."""
+    year_start = datetime.date(datetime.date.today().year, 1, 1)
+    existing = (
+        db.query(models.Completion)
+        .filter(
+            models.Completion.user_id == current_user.id,
+            models.Completion.library_entry_id == library_entry_id,
+            models.Completion.completed_at >= year_start,
+        )
+        .order_by(models.Completion.completed_at.desc())
+        .first()
+    )
+    if not existing:
+        return JSONResponse({"exists": False})
+    return JSONResponse(
+        {
+            "exists": True,
+            "id": existing.id,
+            "completed_at": existing.completed_at.isoformat(),
+            "playthroughs": existing.playthroughs or "1",
+            "notes": existing.notes or "",
+        }
     )
 
 
