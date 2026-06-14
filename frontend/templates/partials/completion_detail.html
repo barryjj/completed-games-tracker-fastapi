@@ -239,12 +239,14 @@
 </div>
 
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
-  {# No view= or q= — the pane opens by entry ID regardless of the grid's
-     current filter state, so we leave the library in whatever state the user
-     had it. Forcing a view would disrupt their context for no real gain now
-     that image controls are available directly from this pane. #}
   <a class="btn btn-outline-secondary btn-sm"
      href="/library?detail={{ entry.id }}">View in library ↗</a>
+  <button class="btn btn-outline-secondary btn-sm"
+          hx-post="/completions/{{ completion.id }}/increment"
+          hx-vals='{"view_mode": "list"}'
+          hx-swap="none"
+          hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
+          title="+1 playthrough">+1 playthrough</button>
 
   <div class="dropdown ms-auto">
     <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
