@@ -21,6 +21,7 @@
         hx-target="#completion-{{ completion.id }}"
         hx-swap="outerHTML"
         title="+1 playthrough"
+        onclick="event.stopPropagation()"
       >+1</button>
       <button
         class="btn btn-sm btn-outline-secondary"
