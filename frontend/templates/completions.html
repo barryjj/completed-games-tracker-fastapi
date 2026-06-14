@@ -38,12 +38,8 @@
             <input type="hidden" name="library_entry_id" id="library-entry-id">
             <div id="game-search-results" class="mt-1"></div>
           </div>
-          <div id="completion-nudge" class="alert alert-warning py-2 px-3 mb-2 d-none" role="alert">
-            <div id="completion-nudge-text"></div>
-            <div class="d-flex gap-2 mt-1">
-              <button type="button" class="btn btn-sm btn-warning" id="nudge-increment-btn">+1 to that completion</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="nudge-log-new-btn">Log new</button>
-            </div>
+          <div id="completion-nudge" class="d-none mb-3">
+            <small class="text-secondary"><span id="completion-nudge-text"></span> — <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="nudge-increment-btn">+1 to that</button></small>
           </div>
           <div class="mb-3">
             <label class="form-label">Date Completed</label>
@@ -159,10 +155,6 @@ document.getElementById('nudge-increment-btn').addEventListener('click', functio
     });
 });
 
-document.getElementById('nudge-log-new-btn').addEventListener('click', function() {
-  document.getElementById('completion-nudge').classList.add('d-none');
-  _nudgeCompletionId = null;
-});
 
 function editCompletion(ds) {
   document.getElementById('edit-completion-id').value = ds.completionId;
