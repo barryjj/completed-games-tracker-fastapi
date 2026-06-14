@@ -1159,6 +1159,7 @@ body:has(.cgt-sticky-actions) {
   gap: 0.22rem 0.65rem;
   margin-bottom: 0.6rem;
   font-size: 0.75rem;
+  align-items: baseline;
 }
 .cgt-detail-meta dt {
   font-size: 0.63rem;
