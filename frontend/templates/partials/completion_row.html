@@ -20,6 +20,7 @@
         hx-vals='{"view_mode": "list"}'
         hx-target="#completion-{{ completion.id }}"
         hx-swap="outerHTML"
+        hx-on::after-request="if(event.detail.successful){ cgtToast('Playthrough added.'); }"
         title="+1 playthrough"
         onclick="event.stopPropagation()"
       >+1</button>

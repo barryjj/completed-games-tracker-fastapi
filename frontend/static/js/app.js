@@ -172,6 +172,22 @@ document.addEventListener('htmx:afterSettle', function(e) {
 // - A 6s autohide via Bootstrap.Toast options
 // - A 'hidden.bs.toast' listener that removes the element from the DOM so
 //   the container doesn't accumulate stale toasts over a long session.
+function cgtToast(message, type) {
+  var container = document.getElementById('toast-container');
+  if (!container) return;
+  var color = type === 'error' ? 'var(--ctp-red)' : 'var(--ctp-green)';
+  var el = document.createElement('div');
+  el.className = 'toast align-items-center border-0';
+  el.setAttribute('role', 'status');
+  el.innerHTML =
+    '<div class="d-flex">' +
+    '<div class="toast-body small" style="color:' + color + ';">' + message + '</div>' +
+    '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+    '</div>';
+  container.appendChild(el);
+  _initToast(el);
+}
+
 function _initToast(el) {
   if (!el || el.dataset.cgtInited) return;
   if (typeof bootstrap === 'undefined') {
