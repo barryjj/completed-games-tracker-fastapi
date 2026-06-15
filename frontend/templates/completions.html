@@ -38,8 +38,18 @@
             <input type="hidden" name="library_entry_id" id="library-entry-id">
             <div id="game-search-results" class="mt-1"></div>
           </div>
-          <div id="completion-nudge" class="d-none mb-3">
-            <small style="color: var(--ctp-yellow);"><span id="completion-nudge-text"></span> — <button type="button" class="btn btn-link btn-sm p-0 align-baseline" style="color: var(--ctp-yellow);" id="nudge-increment-btn">+1 to that</button></small>
+          <div id="completion-nudge" class="d-none rounded p-2 mb-3"
+               style="border-left: 3px solid var(--ctp-yellow); background: var(--ctp-surface0);">
+            <div class="small mb-2" style="color: var(--ctp-yellow);">
+              You recently completed this game on <span id="completion-nudge-date"></span>.
+            </div>
+            <div class="small text-secondary mb-2">
+              Submitting will log a separate completion record. Or:
+            </div>
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="nudge-edit-btn">Edit existing</button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="nudge-increment-btn">+1 playthrough</button>
+            </div>
           </div>
           <div class="mb-3">
             <label class="form-label">Date Completed</label>
@@ -106,6 +116,7 @@ function openLogCompletionModal() {
 }
 
 var _nudgeCompletionId = null;
+var _nudgeCompletionData = null;
 
 function selectCompletionGame(id, label) {
   document.getElementById('library-entry-id').value = id;
@@ -126,13 +137,25 @@ function _checkExistingCompletion(entryId) {
     .then(function(data) {
       if (!data.exists) return;
       _nudgeCompletionId = data.id;
+      _nudgeCompletionData = data;
       var d = new Date(data.completed_at + 'T00:00:00');
-      var dateStr = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
-      document.getElementById('completion-nudge-text').textContent =
-        'Already completed this year on ' + dateStr + ' (' + data.playthroughs + ' playthrough' + (data.playthroughs !== '1' ? 's' : '') + ').';
+      var dateStr = d.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+      document.getElementById('completion-nudge-date').textContent = dateStr;
       nudge.classList.remove('d-none');
     });
 }
+
+document.getElementById('nudge-edit-btn').addEventListener('click', function() {
+  if (!_nudgeCompletionData) return;
+  editCompletion({
+    completionId: String(_nudgeCompletionData.id),
+    entryId: document.getElementById('library-entry-id').value,
+    label: document.getElementById('game-search-input').value,
+    date: _nudgeCompletionData.completed_at,
+    playthroughs: _nudgeCompletionData.playthroughs,
+    notes: _nudgeCompletionData.notes,
+  });
+});
 
 document.getElementById('nudge-increment-btn').addEventListener('click', function() {
   if (!_nudgeCompletionId) return;
@@ -186,6 +209,7 @@ function resetCompletionForm() {
   document.getElementById('logCompletionModalLabel').textContent = 'Log a Completion';
   document.getElementById('completion-nudge').classList.add('d-none');
   _nudgeCompletionId = null;
+  _nudgeCompletionData = null;
 }
 
 // Restore Filters / View drawer collapsed state.
