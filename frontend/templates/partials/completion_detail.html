@@ -242,7 +242,7 @@
           hx-post="/completions/{{ completion.id }}/increment"
           hx-vals='{"view_mode": "list"}'
           hx-swap="none"
-          hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
+          hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); cgtToast('Playthrough added.'); }"
           title="+1 playthrough">+1 playthrough</button>
 
   <div class="dropdown ms-auto">

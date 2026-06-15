@@ -175,6 +175,7 @@ document.getElementById('nudge-increment-btn').addEventListener('click', functio
       }
       _logCompletionModal.hide();
       resetCompletionForm();
+      cgtToast('Playthrough added.');
     });
 });
 
@@ -427,7 +428,7 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
 
 {# Sticky bottom action bar — see library.html for design notes. #}
 <div class="cgt-sticky-actions">
-  <button type="button" class="btn btn-primary" onclick="openLogCompletionModal()">+ Log Completion</button>
+  <button type="button" class="btn btn-primary" onclick="openLogCompletionModal()">Log Completion</button>
 </div>
 
 <!-- Completion detail pane (slide-out from right). Wrapper + resize handle
