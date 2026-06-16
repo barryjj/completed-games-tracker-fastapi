@@ -668,8 +668,13 @@ def test_completion_detail_shows_sibling_completions(client, db_session):
     assert b"Other completions of this game" in r.content
     assert f"/completions/{c1.id}/detail".encode() in r.content
     assert f"/completions/{c3.id}/detail".encode() in r.content
-    # c2 itself shouldn't be in the others list
-    assert f"/completions/{c2.id}/detail".encode() not in r.content
+    # c2 itself shouldn't be in the sibling list (hx-get links in the <ul>)
+    sibling_section = b"Other completions of this game"
+    sibling_start = r.content.find(sibling_section)
+    assert sibling_start != -1
+    sibling_html = r.content[sibling_start:]
+    # The sibling list links use hx-get; c2's URL should not appear there
+    assert f'hx-get="/completions/{c2.id}/detail"'.encode() not in sibling_html
 
 
 def test_completion_detail_single_completion_no_others_section(client, db_session):
