@@ -2501,14 +2501,11 @@ def increment_completion(
     db.refresh(completion)
     _vm = view_mode if view_mode in ("list", "grid_h", "grid_v") else "list"
     tmpl = "partials/completion_card.html" if _vm in ("grid_h", "grid_v") else "partials/completion_row.html"
-    response = templates.TemplateResponse(
+    return templates.TemplateResponse(
         request=request,
         name=tmpl,
         context={"completion": completion, "view_mode": _vm},
     )
-    response.headers["HX-Retarget"] = f"#completion-{completion.id}"
-    response.headers["HX-Reswap"] = "outerHTML"
-    return response
 
 
 @router.get("/completions/check-existing")
