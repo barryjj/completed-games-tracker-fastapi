@@ -32,9 +32,15 @@
               hx-trigger="input changed delay:300ms"
               hx-target="#game-search-results"
               hx-sync="this:abort"
+              hx-include="#include-hidden-games"
               oninput="document.getElementById('game-search-results').innerHTML=''"
               name="q"
             >
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" id="include-hidden-games" name="include_hidden" value="1"
+                onchange="htmx.trigger('#game-search-input', 'input')">
+              <label class="form-check-label small text-secondary" for="include-hidden-games">Include hidden entries</label>
+            </div>
             <input type="hidden" name="library_entry_id" id="library-entry-id">
             <div id="game-search-results" class="mt-1"></div>
           </div>
