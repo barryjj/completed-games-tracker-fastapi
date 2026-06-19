@@ -267,20 +267,6 @@
           >Re-clean Names</button>
         </div>
         <div class="d-flex justify-content-between align-items-center gap-3">
-          <div>
-            <small class="text-secondary">Look up remaining "App NNNNNN" placeholder titles via SteamSpy — covers delisted and region-locked apps that Steam's own API won't return. Takes a few minutes. Also runs automatically going forward whenever Steam returns no data for a new entry.</small>
-            <div id="steamspy-backfill-status" class="mt-1"></div>
-          </div>
-          <button
-            class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn"
-            hx-post="/integrations/steam/backfill-placeholder-names"
-            hx-target="#steamspy-backfill-status"
-            hx-swap="outerHTML"
-            hx-confirm="Look up placeholder titles via SteamSpy? This may take ~30 minutes for large libraries."
-            hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Fix Placeholder Titles</button>
-        </div>
-        <div class="d-flex justify-content-between align-items-center gap-3">
           <small class="text-secondary">Re-queue entries whose horizontal cover URL needs updating to Steam's new hashed CDN format. Catches both confirmed-broken entries and any still using the old constructed URL pattern.</small>
           <button
             class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn"

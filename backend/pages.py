@@ -2351,6 +2351,7 @@ def completions_page(
 def search_completion_games(
     request: Request,
     q: str = Query("", min_length=0),
+    include_hidden: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2368,6 +2369,7 @@ def search_completion_games(
         .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
         .filter(
             models.UserLibraryEntry.user_id == current_user.id,
+            *([models.UserLibraryEntry.is_hidden == False] if not include_hidden else []),  # noqa: E712
             or_(
                 models.Game.title.ilike(f"{q}%"),
                 models.Game.title.ilike(f"% {q}%"),
