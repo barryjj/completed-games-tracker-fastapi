@@ -11,9 +11,14 @@
 
 {# Toolbar #}
 <div class="d-flex align-items-center gap-3 flex-wrap mb-4">
-  <button class="btn btn-primary btn-sm"
+  <div class="btn-group btn-group-sm" role="group" id="view-toggle">
+    <button type="button" class="btn btn-outline-secondary" id="btn-list-view" onclick="cgtSetView('list')" title="List view">≡</button>
+    <button type="button" class="btn btn-outline-secondary" id="btn-card-view" onclick="cgtSetView('card')" title="Card view">▦</button>
+  </div>
+  <button class="btn btn-primary btn-sm" id="scan-btn"
           hx-post="/integrations/match-review/scan"
-          hx-swap="none">
+          hx-swap="none"
+          hx-on::after-request="cgtScanStarted()">
     Scan for matches
   </button>
   <label class="form-check d-flex align-items-center gap-2 mb-0 small">
@@ -24,12 +29,16 @@
   </label>
 </div>
 
-{# Reload when scan job completes #}
-<div hx-get="/library/match-review{% if show_skipped %}?show_skipped=true{% endif %}"
-     hx-trigger="cgt:matchScanDone from:body"
-     hx-target="body"
-     hx-swap="outerHTML"
+{# Reload when scan job completes — full navigation so scripts re-execute #}
+<div hx-trigger="cgt:matchScanDone from:body"
+     hx-on:cgt:match-scan-done="window.location.href = '/library/match-review{% if show_skipped %}?show_skipped=true{% endif %}'"
      style="display:none;"></div>
+
+{# Scanning in-progress indicator — shown after clicking Scan, hidden on load #}
+<div id="scanning-indicator" hidden class="text-secondary small d-flex align-items-center gap-2 mb-3">
+  <span class="spinner-border spinner-border-sm" role="status"></span>
+  Scanning your library for matches…
+</div>
 
 {% if enriched %}
 {% set pending_rows = enriched | selectattr("candidate.status", "equalto", "pending") | list %}
@@ -43,43 +52,248 @@
       No pending matches
     {% endif %}
   </span>
-  {% if pending_rows | length > 1 %}
+  {% set single_pending = groups | selectattr("multi", "equalto", false) | list %}
+  {% if single_pending | length > 1 %}
   <button class="btn btn-sm btn-surface" id="merge-all-btn" onclick="cgtMergeAllHigh()">
     Merge all high-confidence
   </button>
   {% endif %}
+
 </div>
 
-{# Card stack #}
-<div class="cgt-match-stage" id="candidate-stack">
-{% for row in enriched %}
+{# List view — two tables: singles (bulk-selectable) + multi-candidate #}
+<div id="candidate-list" style="display:none;">
+
+{# ── Single-candidate matches ── #}
+{% set single_groups = groups | selectattr("multi", "equalto", false) | list %}
+{% if single_groups %}
+<div class="cgt-match-bulk mb-2">
+  <input type="checkbox" id="select-all-cb" class="form-check-input mt-0" onchange="cgtSelectAll(this.checked)">
+  <span id="bulk-count" class="text-secondary small">0 selected</span>
+  <button class="btn btn-sm btn-primary ms-auto" id="bulk-approve-btn" disabled onclick="cgtApproveSelected()">Approve selected</button>
+</div>
+<div class="cgt-match-list mb-4">
+{% for group in single_groups %}
+{% set row = group.candidates[0] %}
 {% set c = row.candidate %}
-{% set manual = row.manual_entry %}
+{% set manual = group.manual_entry %}
+{% set manual_game = manual.release.game %}
 {% set synced = row.synced_entry %}
+{% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
+{% set manual_cover = manual | grid_cover_url('grid_h') %}
+<div class="cgt-match-row {% if c.status == 'kept_separate' %}cgt-match-row--skipped{% endif %}"
+     id="list-row-{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}">
+  <input type="checkbox" class="form-check-input mt-0 cgt-row-cb" data-id="{{ c.id }}"
+         {% if c.status != 'pending' %}disabled{% endif %} onchange="cgtRowCheck()">
+  {% if synced_cover %}
+  <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+  {% else %}
+  <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+  {% endif %}
+  <span style="color:var(--ctp-subtext0); font-size:.75rem; flex-shrink:0;">→</span>
+  {% if manual_cover %}
+  <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+  {% else %}
+  <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+  {% endif %}
+  <div class="cgt-match-row__title" style="flex:1;">
+    <div class="d-flex align-items-center gap-1 flex-wrap">
+      <span class="badge rounded-pill fw-semibold" style="background:{{ row.color }};color:var(--ctp-crust);font-size:.65rem;">{{ row.label }}</span>
+      <span class="fw-semibold text-truncate">{{ c.synced_title }}</span>
+      {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
+      <span class="text-secondary" style="font-size:.75rem;">→</span>
+      <span class="text-secondary text-truncate">{{ manual_game.display_title }}</span>
+      <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
+    </div>
+    {% if manual.completions %}<div class="text-secondary" style="font-size:.7rem;">{{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</div>{% endif %}
+  </div>
+  <div class="cgt-match-row__actions">
+    {% if c.status == 'pending' %}
+    <button class="btn btn-sm btn-primary"
+            hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+            hx-on::after-request="cgtListRowDone('{{ c.id }}')">Confirm</button>
+    <button class="btn btn-sm btn-surface" onclick="cgtShowListSkip('{{ c.id }}')">Skip</button>
+    {% else %}
+    <button class="btn btn-sm btn-surface"
+            hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+            hx-on::after-request="window.location.reload()">Merge anyway</button>
+    {% endif %}
+  </div>
+</div>
+<div id="list-skip-{{ c.id }}" hidden class="px-3 pb-2" style="background:var(--ctp-base);border-bottom:1px solid var(--ctp-surface0);">
+  <div class="d-flex align-items-center gap-2">
+    <input type="text" class="form-control form-control-sm" id="list-skip-note-{{ c.id }}" placeholder="Optional note" style="max-width:280px;">
+    <button class="btn btn-sm btn-primary" onclick="cgtSubmitListSkip('{{ c.id }}')">Confirm skip</button>
+    <button class="btn btn-sm btn-link text-secondary p-0" onclick="cgtHideListSkip('{{ c.id }}')">Cancel</button>
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endif %}
+
+{# ── Multi-candidate groups ── #}
+{% set multi_groups = groups | selectattr("multi", "equalto", true) | list %}
+{% if multi_groups %}
+<p class="text-secondary small mb-2">These entries matched multiple games — confirm the correct one or dismiss wrong matches.</p>
+<div class="cgt-match-list mb-4">
+{% for group in multi_groups %}
+{% set manual = group.manual_entry %}
 {% set manual_game = manual.release.game %}
 {% set manual_cover = manual | grid_cover_url('grid_h') %}
-{% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
+<div class="cgt-match-group" id="list-group-{{ group.candidates[0].candidate.manual_entry_id }}">
+  <div class="cgt-match-group__header">
+    {% if manual_cover %}
+    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+    {% else %}
+    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+    {% endif %}
+    <span class="fw-semibold">{{ manual_game.display_title }}</span>
+    <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
+    {% if manual.completions %}<span class="text-secondary" style="font-size:.7rem;">· {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</span>{% endif %}
+  </div>
+  <div class="cgt-match-group__candidates">
+  {% for row in group.candidates %}
+  {% set c = row.candidate %}
+  {% set synced = row.synced_entry %}
+  {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
+  <div class="cgt-match-group__row {% if c.status == 'kept_separate' %}cgt-match-row--skipped{% endif %}"
+       id="list-row-{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"
+       data-group="{{ group.candidates[0].candidate.manual_entry_id }}">
+    {% if synced_cover %}
+    <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+    {% else %}
+    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+    {% endif %}
+    <div class="cgt-match-row__title" style="flex:1;">
+      <div class="d-flex align-items-center gap-1 flex-wrap">
+        <span class="fw-semibold text-truncate">{{ c.synced_title }}</span>
+        {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
+        <span class="badge rounded-pill fw-semibold" style="background:{{ row.color }};color:var(--ctp-crust);font-size:.65rem;">{{ (c.match_score * 100) | int }}%</span>
+        {% if synced and synced.playtime_minutes %}<span class="text-secondary" style="font-size:.7rem;">{{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs</span>{% endif %}
+      </div>
+    </div>
+    <div class="cgt-match-row__actions">
+      {% if c.status == 'pending' %}
+      <button class="btn btn-sm btn-primary"
+              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-on::after-request="cgtMultiConfirm('{{ c.id }}')">Confirm</button>
+      <button class="btn btn-sm btn-surface"
+              hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+              hx-vals='{"note": "Dismissed by user"}'
+              hx-on::after-request="cgtMultiDismiss('{{ c.id }}')">Dismiss</button>
+      {% else %}
+      <span class="text-secondary small">Dismissed</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  </div>
+</div>
+{% endfor %}
+</div>
+{% endif %}
 
-<div class="cgt-match-card cgt-match-card--hidden {% if c.status == 'kept_separate' %}cgt-match-card--skipped{% endif %}"
-     id="candidate-{{ c.id }}"
-     data-candidate-id="{{ c.id }}"
-     data-status="{{ c.status }}"
-     data-score="{{ c.match_score }}"
-     style="border-left: 3px solid {{ row.color }};">
+</div>
 
-  {# Card header: confidence + titles #}
+{# Card stack — one card per manual entry (groups handle multi-candidate) #}
+<div class="cgt-match-stage" id="candidate-stack">
+{% for group in groups %}
+{% set manual = group.manual_entry %}
+{% set manual_game = manual.release.game %}
+{% set manual_cover = manual | grid_cover_url('grid_h') %}
+{# Use the first candidate's id as the card anchor; status/score from first #}
+{% set first = group.candidates[0] %}
+{% set fc = first.candidate %}
+
+<div class="cgt-match-card cgt-match-card--hidden {% if fc.status == 'kept_separate' and not group.multi %}cgt-match-card--skipped{% endif %}"
+     id="candidate-{{ fc.id }}"
+     data-candidate-id="{{ fc.id }}"
+     data-status="{{ fc.status }}"
+     data-score="{{ fc.match_score }}"
+     style="border-left: 3px solid {% if group.multi %}var(--ctp-peach){% else %}{{ first.color }}{% endif %};">
+
+  {# Card header #}
   <div class="cgt-match-card__header">
-    <span class="badge rounded-pill fw-semibold"
-          style="background: {{ row.color }}; color: var(--ctp-crust); font-size:.75rem;">
-      {{ row.label }}
+    {% if group.multi %}
+    <span class="badge rounded-pill fw-semibold" style="background: var(--ctp-peach); color: var(--ctp-crust); font-size:.75rem;">
+      Multiple matches
     </span>
-    <span class="text-secondary" style="font-size:.75rem;">{{ (c.match_score * 100) | int }}% confidence</span>
-    {% if c.status == "kept_separate" %}
+    <span class="text-secondary" style="font-size:.75rem;">{{ group.candidates | length }} candidates — pick one</span>
+    {% else %}
+    <span class="badge rounded-pill fw-semibold"
+          style="background: {{ first.color }}; color: var(--ctp-crust); font-size:.75rem;">
+      {{ first.label }}
+    </span>
+    <span class="text-secondary" style="font-size:.75rem;">{{ (fc.match_score * 100) | int }}% confidence</span>
+    {% if fc.status == "kept_separate" %}
     <span class="badge bg-secondary" style="font-size:.65rem;">Previously skipped</span>
+    {% endif %}
     {% endif %}
   </div>
 
-  {# Side-by-side: synced (winner) → REPLACES → manual (removed) #}
+  {% if group.multi %}
+  {# ── Multi-candidate: pick-one layout ── #}
+
+  {# Manual entry header strip #}
+  <div class="cgt-match-multi-header">
+    {% if manual_cover %}
+    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+    {% else %}
+    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+    {% endif %}
+    <div>
+      <div class="fw-semibold small">{{ manual_game.display_title }}</div>
+      <div class="d-flex align-items-center gap-1 mt-1">
+        <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
+        {% if manual.completions %}<span class="text-secondary" style="font-size:.7rem;">· {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</span>{% endif %}
+      </div>
+    </div>
+    <span class="text-secondary ms-auto" style="font-size:.75rem;">Your entry</span>
+  </div>
+
+  {# Candidate option rows #}
+  {% for row in group.candidates %}
+  {% set c = row.candidate %}
+  {% set synced = row.synced_entry %}
+  {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
+  <div class="cgt-match-option {% if c.status == 'kept_separate' %}cgt-match-option--skipped{% endif %}" id="option-{{ c.id }}">
+    <div class="d-flex align-items-center gap-3">
+      {% if synced_cover %}
+      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+      {% else %}
+      <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+      {% endif %}
+      <div class="flex-grow-1 min-w-0">
+        <div class="fw-semibold small text-truncate">{{ c.synced_title }}</div>
+        <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+          {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
+          <span class="badge rounded-pill fw-semibold" style="background:{{ row.color }};color:var(--ctp-crust);font-size:.65rem;">{{ (c.match_score * 100) | int }}%</span>
+          {% if synced and synced.playtime_minutes %}<span class="text-secondary" style="font-size:.7rem;">{{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs</span>{% endif %}
+        </div>
+      </div>
+      {% if c.status == 'pending' %}
+      <button class="btn btn-sm btn-primary flex-shrink-0"
+              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-on::after-request="cgtCandidateDone('{{ fc.id }}')">Confirm</button>
+      <button class="btn btn-sm btn-surface flex-shrink-0"
+              hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+              hx-vals='{"note": "Dismissed from card view"}'
+              hx-on::after-request="cgtCardOptionDismiss('{{ c.id }}', '{{ fc.id }}')">Dismiss</button>
+      {% else %}
+      <span class="text-secondary small flex-shrink-0">Dismissed</span>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  {% else %}
+  {# ── Single candidate: standard layout ── #}
+  {% set row = group.candidates[0] %}
+  {% set c = row.candidate %}
+  {% set synced = row.synced_entry %}
+  {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
+
+  {# Side-by-side: synced → REPLACES → manual #}
   <div class="cgt-match-sides">
 
     {# Left: synced entry — the one that survives #}
@@ -176,17 +390,18 @@
   <div class="cgt-match-result small text-secondary">Note: {{ c.note }}</div>
   {% endif %}
   {% endif %}
+  {% endif %}{# end single/multi branch #}
 
 </div>
 {% endfor %}
 </div>
 
 {# Chevron + dot navigation — rendered below the stack #}
-{% if enriched | length > 1 %}
+{% if groups | length > 1 %}
 <div class="cgt-match-nav" id="match-nav">
   <button class="cgt-match-nav__btn" id="nav-prev" onclick="cgtNav(-1)">&#8249;</button>
   <div class="cgt-match-nav__dots" id="nav-dots">
-    {% for row in enriched %}
+    {% for group in groups %}
     <span class="cgt-match-nav__dot{% if loop.first %} cgt-match-nav__dot--active{% endif %}"></span>
     {% endfor %}
   </div>
@@ -195,13 +410,116 @@
 {% endif %}
 
 {% else %}
-<p class="text-secondary small">
+<p class="text-secondary small" id="no-matches-msg">
   No matches pending review. Use <strong>Scan for matches</strong> to compare your manual entries against your synced library.
 </p>
 {% endif %}
 
 <script>
 (function () {
+
+  // ── Scan state ───────────────────────────────────────────────────
+  window.cgtScanStarted = function() {
+    document.getElementById('scanning-indicator').hidden = false;
+    document.getElementById('scan-btn').disabled = true;
+    // Hide existing queue content while scan runs
+    ['candidate-stack','candidate-list','match-nav','queue-status','no-matches-msg']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+  };
+
+  // ── View toggle ──────────────────────────────────────────────────
+  const PREF_KEY = 'cgt-match-view';
+
+  window.cgtSetView = function(mode) {
+    localStorage.setItem(PREF_KEY, mode);
+    const stack = document.getElementById('candidate-stack');
+    const nav = document.getElementById('match-nav');
+    const list = document.getElementById('candidate-list');
+    if (stack) stack.style.display = mode === 'card' ? '' : 'none';
+    if (nav) nav.style.display = mode === 'card' ? '' : 'none';
+    if (list) list.style.display = mode === 'list' ? '' : 'none';
+    const mergeAll = document.getElementById('merge-all-btn');
+    if (mergeAll) mergeAll.style.display = mode === 'card' ? '' : 'none';
+    document.getElementById('btn-list-view').classList.toggle('active', mode === 'list');
+    document.getElementById('btn-card-view').classList.toggle('active', mode === 'card');
+  };
+
+  const savedView = localStorage.getItem(PREF_KEY) || 'card';
+  cgtSetView(savedView);
+
+  // ── Bulk select ──────────────────────────────────────────────────
+  window.cgtRowCheck = function() {
+    const checked = document.querySelectorAll('.cgt-row-cb:checked').length;
+    const total = document.querySelectorAll('.cgt-row-cb:not(:disabled)').length;
+    document.getElementById('bulk-count').textContent = checked + ' selected';
+    document.getElementById('bulk-approve-btn').disabled = checked === 0;
+    document.getElementById('select-all-cb').indeterminate = checked > 0 && checked < total;
+    document.getElementById('select-all-cb').checked = checked === total && total > 0;
+  };
+
+  window.cgtSelectAll = function(checked) {
+    document.querySelectorAll('.cgt-row-cb:not(:disabled)').forEach(cb => cb.checked = checked);
+    cgtRowCheck();
+  };
+
+  window.cgtApproveSelected = function() {
+    const ids = Array.from(document.querySelectorAll('.cgt-row-cb:checked')).map(cb => cb.dataset.id);
+    ids.forEach(id => {
+      htmx.ajax('POST', '/library/match-review/' + id + '/merge', { swap: 'none' })
+        .then(() => cgtListRowDone(id));
+    });
+  };
+
+  window.cgtListRowDone = function(id) {
+    const row = document.getElementById('list-row-' + id);
+    const skip = document.getElementById('list-skip-' + id);
+    if (row) row.remove();
+    if (skip) skip.remove();
+    cgtCandidateDone(id);
+    cgtRowCheck();
+  };
+
+  // Multi-candidate: confirm merges, backend auto-dismisses siblings
+  window.cgtMultiConfirm = function(id) {
+    const row = document.getElementById('list-row-' + id);
+    if (!row) return;
+    const groupId = row.dataset.group;
+    const group = document.getElementById('list-group-' + groupId);
+    if (group) group.remove();
+    cgtCandidateDone(id);
+  };
+
+  // Multi-candidate: dismiss one candidate row; if only one remains in group,
+  // convert the group to a plain single row via page reload
+  window.cgtMultiDismiss = function(id) {
+    const row = document.getElementById('list-row-' + id);
+    if (!row) return;
+    const groupId = row.dataset.group;
+    row.remove();
+    const group = document.getElementById('list-group-' + groupId);
+    if (!group) return;
+    const remaining = group.querySelectorAll('.cgt-match-group__row[data-status="pending"]');
+    if (remaining.length === 0) {
+      group.remove();
+    } else if (remaining.length === 1) {
+      window.location.reload();
+    }
+  };
+
+  window.cgtShowListSkip = function(id) {
+    document.getElementById('list-skip-' + id).hidden = false;
+  };
+  window.cgtHideListSkip = function(id) {
+    document.getElementById('list-skip-' + id).hidden = true;
+  };
+  window.cgtSubmitListSkip = function(id) {
+    const note = document.getElementById('list-skip-note-' + id).value;
+    htmx.ajax('POST', '/library/match-review/' + id + '/skip', {
+      values: { note }, swap: 'none',
+    }).then(() => cgtListRowDone(id));
+  };
+
+  // ── Card stack ───────────────────────────────────────────────────
   const stack = document.getElementById('candidate-stack');
   if (!stack) return;
 
@@ -250,6 +568,16 @@
     } else {
       show(next);
     }
+  };
+
+  window.cgtCardOptionDismiss = function(dismissedId, cardId) {
+    const option = document.getElementById('option-' + dismissedId);
+    if (option) option.remove();
+    const card = document.getElementById('candidate-' + cardId);
+    if (!card) return;
+    const remaining = card.querySelectorAll('.cgt-match-option:not(.cgt-match-option--skipped)');
+    if (remaining.length === 1) window.location.reload();
+    if (remaining.length === 0) cgtCandidateDone(cardId);
   };
 
   window.cgtCandidateDone = function(id) {
