@@ -315,9 +315,8 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         manual_title = manual.release.game.display_name or manual.release.game.title
         manual_platform_id = manual.release.platform_id
 
-        # Collect all scores for this manual entry, then take only the best
-        best_score = 0.0
-        best_synced = None
+        # Collect all scoring candidates for this manual entry
+        scored: list[tuple[float, models.UserLibraryEntry]] = []
 
         for synced in synced_entries:
             if not _platform_compatible(
@@ -334,37 +333,64 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
             synced_title = synced.release.game.display_name or synced.release.game.title
             score = _score(manual_title, synced_title)
 
-            if score >= MIN_SCORE and score > best_score:
-                best_score = score
-                best_synced = synced
+            if score >= MIN_SCORE:
+                scored.append((score, synced))
 
-        if best_synced is None:
+        if not scored:
             continue
 
-        synced_title = best_synced.release.game.display_name or best_synced.release.game.title
-        external_id = best_synced.release.external_id or str(best_synced.release.id)
-        platform_source = best_synced.release.source
+        # Sort descending by score
+        scored.sort(key=lambda x: x[0], reverse=True)
 
-        key = (manual.id, platform_source, external_id)
-        existing = existing_candidates.get(key)
+        # Surface multiple candidates only when there are 2+ at HIGH confidence
+        # (>= 0.95) — this catches same-title different-release situations like
+        # RE2 (1998) vs RE2 (2019). Otherwise only keep the single best.
+        HIGH = 0.95
+        high_scored = [(s, e) for s, e in scored if s >= HIGH]
 
-        if existing is None:
-            db.add(
-                models.SyncMatchCandidate(
-                    manual_entry_id=manual.id,
-                    platform_source=platform_source,
-                    external_id=external_id,
-                    synced_title=synced_title,
-                    match_score=best_score,
-                    status="pending",
+        # When only one candidate reaches HIGH confidence, check whether other
+        # candidates above MIN_SCORE are year-disambiguated versions of the same
+        # title (e.g. "Resident Evil 2 (1998)" vs "Resident Evil 2").  Strip the
+        # trailing (YYYY) and re-score; if that brings them to HIGH, include them
+        # so the user can pick the correct release.
+        if len(high_scored) == 1:
+            best_title = high_scored[0][1].release.game.display_name or high_scored[0][1].release.game.title
+            _year_re = re.compile(r"\s*\(\d{4}\)\s*$")
+            for s, e in scored:
+                if s >= HIGH:
+                    continue
+                t = e.release.game.display_name or e.release.game.title
+                stripped = _year_re.sub("", t).strip()
+                if _score(manual_title, stripped) >= HIGH or _score(best_title, stripped) >= HIGH:
+                    high_scored.append((s, e))
+
+        candidates_to_write = high_scored if len(high_scored) >= 2 else scored[:1]
+
+        for best_score, best_synced in candidates_to_write:
+            synced_title = best_synced.release.game.display_name or best_synced.release.game.title
+            external_id = best_synced.release.external_id or str(best_synced.release.id)
+            platform_source = best_synced.release.source
+
+            key = (manual.id, platform_source, external_id)
+            existing = existing_candidates.get(key)
+
+            if existing is None:
+                db.add(
+                    models.SyncMatchCandidate(
+                        manual_entry_id=manual.id,
+                        platform_source=platform_source,
+                        external_id=external_id,
+                        synced_title=synced_title,
+                        match_score=best_score,
+                        status="pending",
+                    )
                 )
-            )
-            added += 1
-        elif existing.status == "pending":
-            existing.match_score = best_score
-            existing.synced_title = synced_title
-            updated += 1
-        # merged / kept_separate — leave alone
+                added += 1
+            elif existing.status == "pending":
+                existing.match_score = best_score
+                existing.synced_title = synced_title
+                updated += 1
+            # merged / kept_separate — leave alone
 
     db.commit()
     return {"candidates_added": added, "candidates_updated": updated, "pairs_checked": pairs_checked}
@@ -467,12 +493,13 @@ def dismiss_candidate(db: Session, candidate: models.SyncMatchCandidate, note: s
 
 def pending_count(db: Session, user: models.User) -> int:
     return (
-        db.query(models.SyncMatchCandidate)
+        db.query(models.SyncMatchCandidate.manual_entry_id)
         .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
         .filter(
             models.UserLibraryEntry.user_id == user.id,
             models.SyncMatchCandidate.status == "pending",
         )
+        .distinct()
         .count()
     )
 

@@ -2156,6 +2156,31 @@ def match_review_page(
                 "color": match_review.confidence_css(c.match_score),
             }
         )
+
+    # Group by manual_entry_id so multi-candidate entries can be rendered
+    # as a single "pick one" card rather than separate cards.
+    groups: list[dict] = []
+    _seen: dict[int, dict] = {}
+    for row in enriched:
+        mid = row["candidate"].manual_entry_id
+        if mid not in _seen:
+            g = {
+                "manual_entry": row["manual_entry"],
+                "candidates": [],
+                "multi": False,
+            }
+            _seen[mid] = g
+            groups.append(g)
+        _seen[mid]["candidates"].append(row)
+    for g in groups:
+        g["multi"] = len(g["candidates"]) > 1
+    groups.sort(
+        key=lambda g: (
+            not g["multi"],
+            (g["manual_entry"].release.game.display_name or g["manual_entry"].release.game.title).lower(),
+        )
+    )
+
     pending = match_review.pending_count(db, current_user)
     return templates.TemplateResponse(
         request=request,
@@ -2163,6 +2188,7 @@ def match_review_page(
         context={
             "current_user": current_user,
             "enriched": enriched,
+            "groups": groups,
             "pending": pending,
             "show_skipped": show_skipped,
             **_base_ctx(db, current_user),
