@@ -1449,3 +1449,125 @@ body:has(.cgt-sticky-actions) {
   background: var(--ctp-mantle);
   border-top: 1px solid var(--ctp-surface1);
 }
+
+/* ── Match review list view ─────────────────────────────────────── */
+.cgt-match-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border: 1px solid var(--ctp-surface1);
+  border-radius: .5rem;
+  overflow: hidden;
+}
+
+.cgt-match-row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .55rem .75rem;
+  background: var(--ctp-base);
+  border-bottom: 1px solid var(--ctp-surface0);
+  font-size: .82rem;
+}
+
+.cgt-match-row:last-child {
+  border-bottom: none;
+}
+
+.cgt-match-row--skipped {
+  opacity: .55;
+}
+
+.cgt-match-row__thumb {
+  width: 64px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.cgt-match-row__thumb--empty {
+  background: var(--ctp-surface1);
+}
+
+.cgt-match-row__title {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  min-width: 0;
+}
+
+.cgt-match-row__actions {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+/* Multi-candidate group */
+.cgt-match-group {
+  border-bottom: 1px solid var(--ctp-surface0);
+}
+
+.cgt-match-group:last-child {
+  border-bottom: none;
+}
+
+.cgt-match-group__header {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .55rem .75rem;
+  background: var(--ctp-surface0);
+  font-size: .82rem;
+}
+
+.cgt-match-group__candidates {
+  border-left: 3px solid var(--ctp-mauve);
+  margin-left: .75rem;
+}
+
+.cgt-match-group__row {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .75rem;
+  background: var(--ctp-base);
+  border-top: 1px solid var(--ctp-surface0);
+  font-size: .82rem;
+}
+
+/* Multi-candidate card: manual entry header strip */
+.cgt-match-multi-header {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .6rem .75rem;
+  background: var(--ctp-surface0);
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+
+/* Multi-candidate option rows (pick-one card) */
+.cgt-match-option {
+  padding: .75rem .75rem;
+  border-bottom: 1px solid var(--ctp-surface0);
+}
+.cgt-match-option:last-child {
+  border-bottom: none;
+  padding-bottom: .75rem;
+}
+.cgt-match-option--skipped {
+  opacity: .55;
+}
+
+/* Mass-select toolbar */
+.cgt-match-bulk {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .5rem .75rem;
+  background: var(--ctp-surface0);
+  border-radius: .4rem;
+  font-size: .82rem;
+}
