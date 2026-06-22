@@ -295,9 +295,6 @@
               hx-on::after-request="cgtCardOptionDismiss('{{ c.id }}', '{{ fc.id }}')">Dismiss</button>
       {% else %}
       <span class="text-secondary small flex-shrink-0">Dismissed</span>
-      <button class="btn btn-sm btn-outline-secondary flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/clear-dismissed" hx-swap="none"
-              hx-on::after-request="cgtCardOptionDismiss('{{ c.id }}', '{{ fc.id }}')">Clear</button>
       {% endif %}
     </div>
   </div>
