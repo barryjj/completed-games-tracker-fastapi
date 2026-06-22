@@ -2345,27 +2345,6 @@ def match_review_merge_bulk(
     )
 
 
-@router.post("/library/match-review/{candidate_id}/clear-dismissed")
-def match_review_clear_one_dismissed(
-    candidate_id: int,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    """Delete a single dismissed candidate so it can be re-detected on next scan."""
-    candidate = (
-        db.query(models.SyncMatchCandidate)
-        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
-        .filter(models.SyncMatchCandidate.id == candidate_id, models.UserLibraryEntry.user_id == current_user.id)
-        .first()
-    )
-    if not candidate:
-        return Response(status_code=404)
-    db.delete(candidate)
-    db.commit()
-    return Response(status_code=200)
-
-
 @router.post("/library/match-review/clear-dismissed")
 def match_review_clear_dismissed(
     request: Request,

@@ -123,9 +123,6 @@
     <button class="btn btn-sm btn-surface"
             hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="window.location.reload()">Merge anyway</button>
-    <button class="btn btn-sm btn-outline-secondary"
-            hx-post="/library/match-review/{{ c.id }}/clear-dismissed" hx-swap="none"
-            hx-on::after-request="cgtListRowDone('{{ c.id }}')">Clear</button>
     {% endif %}
   </div>
 </div>
@@ -193,9 +190,6 @@
               hx-on::after-request="cgtMultiDismiss('{{ c.id }}')">Dismiss</button>
       {% else %}
       <span class="text-secondary small">Dismissed</span>
-      <button class="btn btn-sm btn-outline-secondary"
-              hx-post="/library/match-review/{{ c.id }}/clear-dismissed" hx-swap="none"
-              hx-on::after-request="cgtMultiDismiss('{{ c.id }}')">Clear</button>
       {% endif %}
     </div>
   </div>
@@ -349,11 +343,6 @@
               onclick="cgtShowSkipForm('{{ c.id }}')">Dismiss</button>
       {% else %}
       <span class="text-secondary small flex-shrink-0">Dismissed</span>
-      {% if c.status == 'dismissed' %}
-      <button class="btn btn-sm btn-outline-secondary flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/clear-dismissed" hx-swap="none"
-              hx-on::after-request="cgtCandidateDone('{{ c.id }}')">Clear</button>
-      {% endif %}
       {% endif %}
     </div>
     {% if c.note %}<div class="text-secondary small mt-1" style="padding-left:calc(64px + .75rem);">Note: {{ c.note }}</div>{% endif %}
