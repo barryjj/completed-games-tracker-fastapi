@@ -414,30 +414,9 @@ def save_igdb_metadata(
         release.raw_data = raw
         changed = True
 
-    # First landscape artwork → hero GameArtwork.
-    if details["artwork_urls"]:
-        url = details["artwork_urls"][0]
-        existing = next(
-            (a for a in release.artwork if a.artwork_type == "hero" and a.source == "igdb"),
-            None,
-        )
-        if existing:
-            existing.url = url
-            existing.is_valid = True
-            existing.verified_at = datetime.datetime.now(datetime.UTC)
-        else:
-            db.add(
-                models.GameArtwork(
-                    release_id=release.id,
-                    game_id=release.game_id,
-                    artwork_type="hero",
-                    source="igdb",
-                    url=url,
-                    is_valid=True,
-                    verified_at=datetime.datetime.now(datetime.UTC),
-                )
-            )
-        changed = True
+    # IGDB landscape artwork is not used for hero images — aspect ratio and
+    # quality are poor compared to SteamGridDB hero art. Any existing IGDB
+    # hero records are invalidated so they don't surface as fallbacks.
 
     if changed:
         db.commit()
