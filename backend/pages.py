@@ -1193,6 +1193,9 @@ def add_game(
 
     # --- Find existing game in this user's library ---
     # Prefer igdb_id match (strongest signal), fall back to exact title match.
+    # Only match against manual releases — never merge a new manual entry onto
+    # a synced game record (e.g. a Steam entry that happens to share the same
+    # igdb_id or title would pull in its DLC/children, which is wrong).
     existing_game: models.Game | None = None
     if igdb_game_id:
         existing_game = (
@@ -1202,6 +1205,7 @@ def add_game(
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
                 models.Game.igdb_id == igdb_game_id,
+                models.GameRelease.source == "manual",
             )
             .first()
         )
@@ -1213,6 +1217,7 @@ def add_game(
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
                 models.Game.title == title_clean,
+                models.GameRelease.source == "manual",
             )
             .first()
         )
