@@ -1,10 +1,8 @@
 {# Match review candidate preview pane.
-   Shows the synced entry (what survives after merge) with manual entry
-   completions/artwork noted. Confirm/Dismiss/Close pinned in footer.
+   Shows the synced entry exactly as it will appear in the library after
+   confirming the match. Completions come from the manual entry (they migrate
+   on confirm). Footer has Confirm / Dismiss / Close instead of Edit/More.
 #}
-
-{% set synced = synced_entry %}
-{% set manual = manual_entry %}
 
 <div class="offcanvas-body p-0">
   <div class="cgt-pane-nav"></div>
@@ -32,64 +30,104 @@
 
     {# Preview banner #}
     <div class="mb-3 p-2 rounded small" style="background:color-mix(in srgb,var(--ctp-peach) 12%,transparent); border-left:3px solid var(--ctp-peach);">
-      <strong style="color:var(--ctp-peach);">Merge preview</strong>
-      — this is what the {{ candidate.platform_source | title }} entry looks like.
-      Confirming will replace your manual entry and migrate any completions.
+      <strong style="color:var(--ctp-peach);">Preview</strong>
+      — this is how this game will appear in your library after confirming they are the same game.
     </div>
 
-    {% if synced %}
-    {# Platform badge #}
+    {% if entry %}
+    {# Badges row #}
     <div class="mb-2 d-flex flex-wrap gap-1">
-      <span class="tag-badge {{ synced.release.platform_tag_class }}">{{ synced.release.display_platform }}</span>
+      <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
+      {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
     </div>
 
     <div class="cgt-detail-block mb-2">
       <dl class="cgt-detail-meta small mb-0">
         <dt>Title</dt>
-        <dd class="cgt-detail-title-value">{{ synced.release.game.display_title }}</dd>
+        <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
 
-        {% if synced.last_played_at %}
+        {% if entry.last_played_at %}
         <dt>Last played</dt>
-        <dd><span class="local-time" data-utc="{{ synced.last_played_at.isoformat() }}">{{ synced.last_played_at.strftime("%B %-d, %Y") }}</span></dd>
+        <dd><span class="local-time" data-utc="{{ entry.last_played_at.isoformat() }}">{{ entry.last_played_at.strftime("%B %-d, %Y") }}</span></dd>
         {% endif %}
 
-        {% if synced.playtime_minutes %}
+        {% if entry.playtime_minutes %}
         <dt>Playtime</dt>
-        <dd>{{ synced.playtime_minutes | playtime_human }}</dd>
+        <dd>{{ entry.playtime_minutes | playtime_human }}</dd>
         {% endif %}
 
-        {% if synced.release.external_id %}
-        <dt>{{ synced.release.source | capitalize }} ID</dt>
-        <dd><code>{{ synced.release.external_id }}</code></dd>
+        {% if release.external_id %}
+        <dt>{{ release.source | capitalize }} ID</dt>
+        <dd>
+          <span class="text-nowrap">
+            <code>{{ release.external_id }}</code>
+            {% if release.source == "steam" %}
+            <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
+               target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+            {% endif %}
+          </span>
+        </dd>
+        {% endif %}
+
+        {% if steam_meta.released %}
+        <dt>Released</dt>
+        <dd>{{ steam_meta.released }}</dd>
+        {% elif igdb_meta.year %}
+        <dt>Released</dt>
+        <dd>{{ igdb_meta.year }}</dd>
+        {% endif %}
+
+        {% if steam_meta.developers %}
+        <dt>Developer</dt>
+        <dd>{{ steam_meta.developers | join(", ") }}</dd>
+        {% endif %}
+
+        {% if steam_meta.genres %}
+        <dt>Genre</dt>
+        <dd>{{ steam_meta.genres | join(", ") }}</dd>
+        {% elif igdb_meta.genres %}
+        <dt>Genre</dt>
+        <dd>{{ igdb_meta.genres | join(", ") }}</dd>
         {% endif %}
       </dl>
     </div>
 
-    {# Description if available #}
-    {% set appdetails = (synced.release.raw_data or {}).get("appdetails") or {} %}
-    {% set desc = appdetails.get("short_description") or synced.release.description %}
-    {% if desc %}
-    <div class="cgt-detail-block mb-2">
-      <h6 class="cgt-detail-block__heading">About</h6>
-      <p class="small mb-0" style="line-height:1.5;">{{ desc }}</p>
+    {% if appdetails.short_description %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Description</h6>
+      <p class="cgt-detail-description mb-0">{{ appdetails.short_description | html_unescape }}</p>
+    </div>
+    {% elif igdb_meta.summary %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Description</h6>
+      <p class="cgt-detail-description mb-0">{{ igdb_meta.summary }}</p>
+    </div>
+    {% endif %}
+
+    {% if completions %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ completions | length }})</span></h6>
+      <ul class="list-unstyled mb-0">
+        {% for c in completions %}
+        <li class="mb-2">
+          <div>{{ c.completed_at.strftime("%B %-d, %Y") }}
+            {% if c.playthroughs %}<small class="text-secondary ms-1">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+          </div>
+          {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
     </div>
     {% endif %}
 
     {% else %}
-    <p class="text-secondary small">Synced entry not found in your library — it may have been removed.</p>
-    {% endif %}
-
-    {# Manual entry — what carries over #}
-    {% if manual %}
-    <div class="p-2 rounded small" style="background:var(--ctp-surface0); border-left:3px solid var(--ctp-surface1);">
-      Confirming removes your manual entry <strong>{{ manual.title }}</strong>{% if manual.completions %} and migrates {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }} to this entry{% endif %}.{% if manual.user_artwork %} Custom artwork will need to be reapplied.{% endif %}
-    </div>
+    <p class="text-secondary small">Synced entry not found — it may have been removed.</p>
     {% endif %}
 
   </div>
 </div>
 
-{# Pinned footer — same pattern as .cgt-detail-actions in library_detail.html #}
+{# Pinned footer #}
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
   {% if candidate.status == 'pending' %}
   <button class="btn btn-primary btn-sm"
