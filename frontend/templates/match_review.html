@@ -149,11 +149,11 @@
 <div class="cgt-match-group" id="list-group-{{ group.candidates[0].candidate.manual_entry_id }}">
   <div class="cgt-match-group__header">
     {% if manual_cover %}
-    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" title="View your entry">
     {% else %}
     <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
     {% endif %}
-    <span class="fw-semibold">{{ manual_game.display_title }}</span>
+    <span class="fw-semibold cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</span>
     <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
     {% if manual.completions %}<span class="text-secondary" style="font-size:.7rem;">· {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</span>{% endif %}
   </div>
@@ -485,6 +485,37 @@
     }).then(() => cgtListRowDone(id));
   };
 
+  // ── Detail / preview pane ────────────────────────────────────────
+  let _matchDetailOffcanvas = null;
+
+  function _getMatchDetailOffcanvas() {
+    if (!_matchDetailOffcanvas) {
+      _matchDetailOffcanvas = new bootstrap.Offcanvas(document.getElementById('match-review-detail'));
+    }
+    return _matchDetailOffcanvas;
+  }
+
+  window.openMatchReviewDetail = function(entryId) {
+    if (!entryId) return;
+    _getMatchDetailOffcanvas().show();
+    htmx.ajax('GET', '/library/entries/' + entryId + '/detail?fresh_open=1', {
+      target: '#match-review-detail-content',
+      swap: 'innerHTML',
+    });
+  };
+
+  window.openCandidatePreview = function(candidateId) {
+    _getMatchDetailOffcanvas().show();
+    htmx.ajax('GET', '/library/match-review/' + candidateId + '/preview', {
+      target: '#match-review-detail-content',
+      swap: 'innerHTML',
+    });
+  };
+
+  window.closeMatchReviewDetail = function() {
+    _getMatchDetailOffcanvas().hide();
+  };
+
   // ── Card stack ───────────────────────────────────────────────────
   const stack = document.getElementById('candidate-stack');
   if (!stack) return;
@@ -623,37 +654,6 @@
       cards.forEach(c => c.style.transition = '');
     }));
   }
-
-  // ── Detail / preview pane ────────────────────────────────────────
-  let _matchDetailOffcanvas = null;
-
-  function _getMatchDetailOffcanvas() {
-    if (!_matchDetailOffcanvas) {
-      _matchDetailOffcanvas = new bootstrap.Offcanvas(document.getElementById('match-review-detail'));
-    }
-    return _matchDetailOffcanvas;
-  }
-
-  window.openMatchReviewDetail = function(entryId) {
-    if (!entryId) return;
-    _getMatchDetailOffcanvas().show();
-    htmx.ajax('GET', '/library/entries/' + entryId + '/detail?fresh_open=1', {
-      target: '#match-review-detail-content',
-      swap: 'innerHTML',
-    });
-  };
-
-  window.openCandidatePreview = function(candidateId) {
-    _getMatchDetailOffcanvas().show();
-    htmx.ajax('GET', '/library/match-review/' + candidateId + '/preview', {
-      target: '#match-review-detail-content',
-      swap: 'innerHTML',
-    });
-  };
-
-  window.closeMatchReviewDetail = function() {
-    _getMatchDetailOffcanvas().hide();
-  };
 
 })();
 </script>
