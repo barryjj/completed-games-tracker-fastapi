@@ -51,8 +51,8 @@
 {# Queue header #}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <span class="text-secondary small" id="queue-status">
-    {% if pending_rows %}
-      <span id="queue-count">{{ pending_rows | length }}</span> match{{ 'es' if pending_rows | length != 1 else '' }} to review
+    {% if pending > 0 %}
+      <span id="queue-count">{{ pending }}</span> match{{ 'es' if pending != 1 else '' }} to review
     {% else %}
       No pending matches
     {% endif %}
