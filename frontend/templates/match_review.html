@@ -244,12 +244,12 @@
   {# Manual entry header strip #}
   <div class="cgt-match-multi-header">
     {% if manual_cover %}
-    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" title="View your entry">
     {% else %}
     <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
     {% endif %}
     <div>
-      <div class="fw-semibold small">{{ manual_game.display_title }}</div>
+      <div class="fw-semibold small cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
       <div class="d-flex align-items-center gap-1 mt-1">
         <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
         {% if manual.completions %}<span class="text-secondary" style="font-size:.7rem;">· {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</span>{% endif %}
@@ -266,12 +266,12 @@
   <div class="cgt-match-option {% if c.status == 'dismissed' %}cgt-match-option--skipped{% endif %}" id="option-{{ c.id }}">
     <div class="d-flex align-items-center gap-3">
       {% if synced_cover %}
-      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
       {% else %}
       <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
       {% endif %}
       <div class="flex-grow-1 min-w-0">
-        <div class="fw-semibold small text-truncate">{{ c.synced_title }}</div>
+        <div class="fw-semibold small text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
         <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
           {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
           <span class="badge rounded-pill fw-semibold" style="background:{{ row.color }};color:var(--ctp-crust);font-size:.65rem;">{{ (c.match_score * 100) | int }}%</span>
