@@ -2297,15 +2297,26 @@ def match_review_preview(
     )
 
     visuals = _build_detail_pane_visuals(db, synced_entry, synced_entry.release.game, synced_entry.release) if synced_entry else {}
+    appdetails = (synced_entry.release.raw_data or {}).get("appdetails") or {} if synced_entry else {}
+    # Completions come from the manual entry — they migrate to the synced entry on confirm
+    completions = sorted(manual_entry.completions, key=lambda c: c.completed_at, reverse=True) if manual_entry else []
 
     return templates.TemplateResponse(
         request=request,
         name="partials/match_review_preview.html",
         context={
             "candidate": candidate,
-            "synced_entry": synced_entry,
+            "entry": synced_entry,
+            "game": synced_entry.release.game if synced_entry else None,
+            "release": synced_entry.release if synced_entry else None,
+            "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
+            "igdb_meta": _extract_igdb_meta(synced_entry.release) if synced_entry else {},
+            "completions": completions,
             "manual_entry": manual_entry,
             "current_user": current_user,
+            "needs_refresh": False,
+            "fresh_open": False,
             **visuals,
         },
     )
