@@ -1,0 +1,110 @@
+{# Match review candidate preview pane.
+   Shows the synced entry (what survives after merge) with manual entry
+   completions/artwork noted. Confirm/Dismiss/Close pinned in footer.
+#}
+
+{% set synced = synced_entry %}
+{% set manual = manual_entry %}
+
+<div class="offcanvas-body p-0">
+  <div class="cgt-pane-nav"></div>
+
+  {% if hero_url or fallback_hero_url %}
+  <div class="cgt-detail-hero">
+    <img class="cgt-detail-hero__img"
+         src="{{ hero_url or fallback_hero_url }}"
+         alt=""
+         loading="lazy"
+         data-fallback="{{ fallback_hero_url if hero_url else '' }}"
+         onerror="cgtHeroFailed(this)">
+    {% if logo_url or fallback_logo_url %}
+    <img class="cgt-detail-hero__logo"
+         src="{{ logo_url or fallback_logo_url }}"
+         alt=""
+         loading="lazy"
+         data-fallback="{{ fallback_logo_url if logo_url else '' }}"
+         onerror="this.style.display='none'; cgtHeroBlockCheck(this);">
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="cgt-detail-body">
+
+    {# Preview banner #}
+    <div class="mb-3 p-2 rounded small" style="background:color-mix(in srgb,var(--ctp-peach) 12%,transparent); border-left:3px solid var(--ctp-peach);">
+      <strong style="color:var(--ctp-peach);">Merge preview</strong>
+      — this is what the {{ candidate.platform_source | title }} entry looks like.
+      Confirming will replace your manual entry and migrate any completions.
+    </div>
+
+    {% if synced %}
+    {# Platform badge #}
+    <div class="mb-2 d-flex flex-wrap gap-1">
+      <span class="tag-badge {{ synced.release.platform_tag_class }}">{{ synced.release.display_platform }}</span>
+    </div>
+
+    <div class="cgt-detail-block mb-2">
+      <dl class="cgt-detail-meta small mb-0">
+        <dt>Title</dt>
+        <dd class="cgt-detail-title-value">{{ synced.release.game.display_title }}</dd>
+
+        {% if synced.last_played_at %}
+        <dt>Last played</dt>
+        <dd><span class="local-time" data-utc="{{ synced.last_played_at.isoformat() }}">{{ synced.last_played_at.strftime("%B %-d, %Y") }}</span></dd>
+        {% endif %}
+
+        {% if synced.playtime_minutes %}
+        <dt>Playtime</dt>
+        <dd>{{ synced.playtime_minutes | playtime_human }}</dd>
+        {% endif %}
+
+        {% if synced.release.external_id %}
+        <dt>{{ synced.release.source | capitalize }} ID</dt>
+        <dd><code>{{ synced.release.external_id }}</code></dd>
+        {% endif %}
+      </dl>
+    </div>
+
+    {# Description if available #}
+    {% set appdetails = (synced.release.raw_data or {}).get("appdetails") or {} %}
+    {% set desc = appdetails.get("short_description") or synced.release.description %}
+    {% if desc %}
+    <div class="cgt-detail-block mb-2">
+      <h6 class="cgt-detail-block__heading">About</h6>
+      <p class="small mb-0" style="line-height:1.5;">{{ desc }}</p>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="text-secondary small">Synced entry not found in your library — it may have been removed.</p>
+    {% endif %}
+
+    {# Manual entry — what carries over #}
+    {% if manual %}
+    <div class="p-2 rounded small" style="background:var(--ctp-surface0); border-left:3px solid var(--ctp-surface1);">
+      Confirming removes your manual entry <strong>{{ manual.title }}</strong>{% if manual.completions %} and migrates {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }} to this entry{% endif %}.{% if manual.user_artwork %} Custom artwork will need to be reapplied.{% endif %}
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{# Pinned footer — same pattern as .cgt-detail-actions in library_detail.html #}
+<div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
+  {% if candidate.status == 'pending' %}
+  <button class="btn btn-primary btn-sm"
+          hx-post="/library/match-review/{{ candidate.id }}/merge"
+          hx-swap="none"
+          hx-on::after-request="closeMatchReviewDetail(); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
+    Confirm match
+  </button>
+  <button class="btn btn-surface btn-sm"
+          hx-post="/library/match-review/{{ candidate.id }}/skip"
+          hx-swap="none"
+          hx-vals='{"note": "Dismissed from preview"}'
+          hx-on::after-request="closeMatchReviewDetail(); cgtMultiDismiss && cgtMultiDismiss('{{ candidate.id }}'); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
+    Dismiss
+  </button>
+  {% endif %}
+  <button class="btn btn-sm btn-surface ms-auto" onclick="closeMatchReviewDetail()">Close</button>
+</div>

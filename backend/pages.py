@@ -2177,7 +2177,7 @@ def match_review_page(
     groups.sort(
         key=lambda g: (
             not g["multi"],
-            (g["manual_entry"].release.game.display_name or g["manual_entry"].release.game.title).lower(),
+            g["manual_entry"].title.lower(),
         )
     )
 
@@ -2247,6 +2247,70 @@ def match_review_skip(
     )
 
 
+@router.get("/library/match-review/{candidate_id}/preview")
+def match_review_preview(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Render a preview pane showing what the synced entry looks like, with
+    Confirm / Dismiss / Close actions pinned in the footer."""
+    candidate = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(models.SyncMatchCandidate.id == candidate_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    # Load the synced (surviving) entry
+    synced_entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .join(models.GameRelease)
+        .filter(
+            models.GameRelease.external_id == candidate.external_id,
+            models.GameRelease.source == candidate.platform_source,
+            models.UserLibraryEntry.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    # Load the manual entry (the one that will be removed)
+    manual_entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=candidate.manual_entry_id)
+        .first()
+    )
+
+    visuals = _build_detail_pane_visuals(db, synced_entry, synced_entry.release.game, synced_entry.release) if synced_entry else {}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/match_review_preview.html",
+        context={
+            "candidate": candidate,
+            "synced_entry": synced_entry,
+            "manual_entry": manual_entry,
+            "current_user": current_user,
+            **visuals,
+        },
+    )
+
+
 @router.post("/library/match-review/merge-bulk")
 def match_review_merge_bulk(
     request: Request,
@@ -2278,6 +2342,53 @@ def match_review_merge_bulk(
         name="partials/_toast.html",
         context={"kind": kind, "body": msg},
         headers={"HX-Refresh": "true"},
+    )
+
+
+@router.post("/library/match-review/{candidate_id}/clear-dismissed")
+def match_review_clear_one_dismissed(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete a single dismissed candidate so it can be re-detected on next scan."""
+    candidate = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(models.SyncMatchCandidate.id == candidate_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    db.delete(candidate)
+    db.commit()
+    return Response(status_code=200)
+
+
+@router.post("/library/match-review/clear-dismissed")
+def match_review_clear_dismissed(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete all dismissed candidates for this user so they can be re-detected on next scan."""
+    deleted = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.SyncMatchCandidate.status == "dismissed",
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    body = f"{deleted} dismissed match{'es' if deleted != 1 else ''} cleared — they'll resurface on next scan."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": body},
+        headers={"HX-Reswap": "none"},
     )
 
 
