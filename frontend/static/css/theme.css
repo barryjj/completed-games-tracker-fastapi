@@ -1489,6 +1489,11 @@ body:has(.cgt-sticky-actions) {
 .cgt-match-row__thumb--empty {
   background: var(--ctp-surface1);
 }
+.cgt-match-row__thumb--clickable {
+  cursor: pointer;
+  transition: opacity .15s;
+}
+.cgt-match-row__thumb--clickable:hover { opacity: .75; }
 
 .cgt-match-row__title {
   display: flex;
