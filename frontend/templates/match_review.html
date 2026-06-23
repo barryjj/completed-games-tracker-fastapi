@@ -115,10 +115,10 @@
   <div class="cgt-match-row__actions">
     {% if c.status == 'pending' %}
     <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
+    <button class="btn btn-sm btn-surface" onclick="cgtShowListSkip('{{ c.id }}')">Dismiss</button>
     <button class="btn btn-sm btn-primary"
             hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="cgtListRowDone('{{ c.id }}')">Confirm</button>
-    <button class="btn btn-sm btn-surface" onclick="cgtShowListSkip('{{ c.id }}')">Skip</button>
     {% else %}
     <button class="btn btn-sm btn-surface"
             hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
@@ -181,13 +181,13 @@
     <div class="cgt-match-row__actions">
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-      <button class="btn btn-sm btn-primary"
-              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="cgtMultiConfirm('{{ c.id }}')">Confirm</button>
       <button class="btn btn-sm btn-surface"
               hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
               hx-vals='{"note": "Dismissed by user"}'
               hx-on::after-request="cgtMultiDismiss('{{ c.id }}')">Dismiss</button>
+      <button class="btn btn-sm btn-primary"
+              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-on::after-request="cgtMultiConfirm('{{ c.id }}')">Confirm</button>
       {% else %}
       <span class="text-secondary small">Dismissed</span>
       {% endif %}
@@ -280,13 +280,13 @@
       </div>
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface flex-shrink-0" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-      <button class="btn btn-sm btn-primary flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="cgtCandidateDone('{{ fc.id }}')">Confirm</button>
       <button class="btn btn-sm btn-surface flex-shrink-0"
               hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
               hx-vals='{"note": "Dismissed from card view"}'
               hx-on::after-request="cgtCardOptionDismiss('{{ c.id }}', '{{ fc.id }}')">Dismiss</button>
+      <button class="btn btn-sm btn-primary flex-shrink-0"
+              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-on::after-request="cgtCandidateDone('{{ fc.id }}')">Confirm</button>
       {% else %}
       <span class="text-secondary small flex-shrink-0">Dismissed</span>
       {% endif %}
@@ -336,11 +336,11 @@
       </div>
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface flex-shrink-0" onclick="openCandidatePreview({{ c.id }})">Preview</button>
+      <button class="btn btn-sm btn-surface flex-shrink-0"
+              onclick="cgtShowSkipForm('{{ c.id }}')">Dismiss</button>
       <button class="btn btn-sm btn-primary flex-shrink-0"
               hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
               hx-on::after-request="cgtCandidateDone('{{ c.id }}')">Confirm</button>
-      <button class="btn btn-sm btn-surface flex-shrink-0"
-              onclick="cgtShowSkipForm('{{ c.id }}')">Dismiss</button>
       {% else %}
       <span class="text-secondary small flex-shrink-0">Dismissed</span>
       {% endif %}

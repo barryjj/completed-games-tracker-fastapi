@@ -129,20 +129,22 @@
 
 {# Pinned footer #}
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
+  <button class="btn btn-sm btn-surface" onclick="closeMatchReviewDetail()">Cancel</button>
   {% if candidate.status == 'pending' %}
-  <button class="btn btn-primary btn-sm"
-          hx-post="/library/match-review/{{ candidate.id }}/merge"
-          hx-swap="none"
-          hx-on::after-request="closeMatchReviewDetail(); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
-    Confirm match
-  </button>
-  <button class="btn btn-surface btn-sm"
-          hx-post="/library/match-review/{{ candidate.id }}/skip"
-          hx-swap="none"
-          hx-vals='{"note": "Dismissed from preview"}'
-          hx-on::after-request="closeMatchReviewDetail(); cgtMultiDismiss && cgtMultiDismiss('{{ candidate.id }}'); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
-    Dismiss
-  </button>
+  <div class="ms-auto d-flex gap-2">
+    <button class="btn btn-surface btn-sm"
+            hx-post="/library/match-review/{{ candidate.id }}/skip"
+            hx-swap="none"
+            hx-vals='{"note": "Dismissed from preview"}'
+            hx-on::after-request="closeMatchReviewDetail(); cgtMultiDismiss && cgtMultiDismiss('{{ candidate.id }}'); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
+      Dismiss
+    </button>
+    <button class="btn btn-primary btn-sm"
+            hx-post="/library/match-review/{{ candidate.id }}/merge"
+            hx-swap="none"
+            hx-on::after-request="closeMatchReviewDetail(); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
+      Confirm
+    </button>
+  </div>
   {% endif %}
-  <button class="btn btn-sm btn-surface ms-auto" onclick="closeMatchReviewDetail()">Close</button>
 </div>
