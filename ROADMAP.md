@@ -295,10 +295,22 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
 
 ### Historical import (next up)
-- Import completions from CSV / Google Sheets: map columns to game title, platform, date completed
-- Target use case: 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration
-- PSN ideal but not required first — imported entries that match Steam library will surface in match review; PSN matches can be handled later when PSN lands
-- Runs through the same sync match review queue so imported entries that overlap with synced data surface for approval
+- **Source:** CSV / spreadsheet (Google Sheets export) with columns: title, platform, date completed, playthroughs, notes, collection
+- **Target use case:** 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration; user has existing spreadsheet data to bring in
+- **All rows go through the match review queue** — nothing is silently written to the DB; user reviews and confirms/rejects each import candidate before it lands
+- This decision drove the list view addition to match review — you need to efficiently review hundreds of rows, not flip through cards one at a time
+- PSN is not required first — imported PS3/Vita/PSP entries get proper platform rows; when PSN lands, any overlaps surface in the same match review queue for confirmation
+- **Data format handling:**
+  - Date month-only (e.g. "June 2009") → stored as 1st of that month
+  - Date year-only or blank → stored as Jan 1 of the sheet/row year
+  - Playthroughs `2+` → strip `+`, store as integer
+  - Platform names matched against existing platform rows via aliases (e.g. "NES" → "Nintendo Entertainment System"); unmatched platforms flagged for manual review
+  - Collection: match against existing collections table, create if not found (same as manual add)
+- **Import flow:** upload CSV/xlsx → parse → staging table → create `ImportCandidate` rows (new source type alongside `SyncMatchCandidate`) → match review queue surfaces them for approval
+- **Match review card for import:** shows "spreadsheet row → proposed library entry + completion" with IGDB-looked-up game info; user confirms the mapping, edits fields if needed, then confirms
+- **Mass-select + bulk approve:** checkbox each row in list view, approve in bulk; handle edge cases (title mismatches, unmatched platforms) individually
+- **After confirm:** creates `Game` + `GameRelease` (or reuses existing), creates `UserLibraryEntry`, logs the completion — identical result to manual add + log completion
+- **Duplicate detection:** same scan that catches Steam vs manual duplicates catches import vs Steam/existing duplicates; no phantom duplication
 
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
@@ -318,10 +330,6 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
 - User can pick which widgets are shown and arrange them
 - Deferred until library has more non-Steam data (PSN, historical import) so the stats are actually interesting
-
-### Historical import
-- Import completions from Google Sheets / CSV
-- Map columns to game title, platform, date completed
 
 ### Achievements / trophies
 - Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
