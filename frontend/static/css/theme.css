@@ -232,22 +232,22 @@ html[data-bs-theme="light"] .btn-danger:hover { filter: none; }
 /* Surface button — filled with surface0. More "present" than an outline button
    without the visual weight of primary. For secondary config page actions. */
 .btn-surface {
-  --bs-btn-bg:                  var(--ctp-surface0);
-  --bs-btn-border-color:        var(--ctp-surface1);
+  --bs-btn-bg:                  var(--ctp-surface1);
+  --bs-btn-border-color:        var(--ctp-surface2);
   --bs-btn-color:               var(--ctp-text);
-  --bs-btn-hover-bg:            var(--ctp-surface1);
+  --bs-btn-hover-bg:            var(--ctp-surface2);
   --bs-btn-hover-border-color:  var(--ctp-mauve);
   --bs-btn-hover-color:         var(--ctp-text);
-  --bs-btn-active-bg:           var(--ctp-surface1);
+  --bs-btn-active-bg:           var(--ctp-surface2);
   --bs-btn-active-border-color: var(--ctp-mauve);
-  --bs-btn-disabled-bg:         var(--ctp-surface0);
-  --bs-btn-disabled-border-color: var(--ctp-surface1);
+  --bs-btn-disabled-bg:         var(--ctp-surface1);
+  --bs-btn-disabled-border-color: var(--ctp-surface2);
   --bs-btn-disabled-color:      var(--ctp-subtext);
 }
 html[data-bs-theme="light"] .btn-surface {
-  --bs-btn-bg:           var(--ctp-surface0);
-  --bs-btn-border-color: var(--ctp-surface1);
-  --bs-btn-hover-bg:     var(--ctp-surface1);
+  --bs-btn-bg:           var(--ctp-surface1);
+  --bs-btn-border-color: var(--ctp-surface2);
+  --bs-btn-hover-bg:     var(--ctp-surface2);
 }
 /* Danger button with surface backing — red text on surface0, inverts to red
    fill on hover. Modeled on the GitHub "Danger Zone" pattern: grounded enough
