@@ -187,14 +187,16 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - SteamGridDB: artwork browser link for cover-art lookup once cover override is wired up
 - Possibly: HowLongToBeat link once we have title-based search
 
-### Sync match review ✅ (this PR)
+### Sync match review ✅ (PR #114)
 - Steam sync no longer silently merges into existing manual entries — creates its own GameRelease + UserLibraryEntry
-- Match review scan surfaces candidates; dedicated review page with card-stack UI (chevron + dots navigation)
-- Side-by-side: Steam entry (canonical/winner, left) → CSS arrow → Manual entry (dimmed, right)
-- Merge: synced entry is canonical; completions migrated via direct SQL UPDATE (avoids ORM NULL FK bug); candidate status set to "merged" BEFORE deleting manual entry (avoids CASCADE nuke)
-- Skip ("Not the same game") flow included
-- Navbar badge with count; decrements in JS on each merge; removes itself at zero
-- Info strip: completions transfer noted only when present; artwork warning only when UserArtwork exists
+- Match review scan surfaces candidates; dedicated review page with card-stack and list views
+- Multi-candidate groups (manual entry matches multiple synced games) rendered as pick-one card with per-option Confirm/Dismiss
+- Clicking thumb/title opens library detail pane for the entry; Preview button opens a merge preview pane showing the merged result with completions
+- Dismiss flow: permanent suppression per candidate; bulk "Clear dismissed" resets all so next scan re-detects
+- `dismissed` status (renamed from `kept_separate`); pending count uses distinct manual_entry_id so multi-candidate groups count as 1
+- Manual entry game record creation now restricted to manual releases only — never merges a new manual entry onto a Steam game record sharing the same igdb_id or title (was causing RE4 Remake DLC to appear on a manual RE4 entry)
+- IGDB artwork no longer used as hero images — poor aspect ratio; 10 existing IGDB hero records purged
+- Button consistency sweep: all secondary buttons use btn-surface (solid surface1 bg) across the entire app
 
 ### Multiple completions on merge (pending design)
 - When both the synced entry and manual entry have completions, both survive the merge
@@ -292,12 +294,11 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
 
-### Historical import (after PSN)
+### Historical import (next up)
 - Import completions from CSV / Google Sheets: map columns to game title, platform, date completed
-- Requires platforms table + IGDB title-matching to resolve old games to proper `igdb_id` and `platform_id`
-- PSN must exist first: imported PS3/Vita/PSP entries should check against the PSN library to link properly rather than creating phantom manual entries
 - Target use case: 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration
-- Runs through the same sync match review queue so imported entries that overlap with PSN/Steam synced data surface for approval
+- PSN ideal but not required first — imported entries that match Steam library will surface in match review; PSN matches can be handled later when PSN lands
+- Runs through the same sync match review queue so imported entries that overlap with synced data surface for approval
 
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
