@@ -25,7 +25,7 @@
     <form hx-post="/account/display-name" hx-target="#flash-display-name" hx-swap="innerHTML">
       <div class="input-group mb-1">
         <input type="text" class="form-control" name="name" value="{{ current_user.name }}" required>
-        <button type="submit" class="btn btn-outline-secondary">Save</button>
+        <button type="submit" class="btn btn-surface">Save</button>
       </div>
       <div id="flash-display-name" class="flash-slot"></div>
     </form>
@@ -44,7 +44,7 @@
         <input type="password" class="form-control" name="current_password" autocomplete="current-password" required>
       </div>
       <div id="flash-username" class="flash-slot mb-2"></div>
-      <button type="submit" class="btn btn-outline-secondary" style="width: auto;">Save</button>
+      <button type="submit" class="btn btn-surface" style="width: auto;">Save</button>
     </form>
 
     <hr>
@@ -69,7 +69,7 @@
         <input type="password" class="form-control" name="new_password_confirm" autocomplete="new-password" required>
       </div>
       <div id="flash-password" class="flash-slot mb-2"></div>
-      <button type="submit" class="btn btn-outline-secondary" style="width: auto;">Change Password</button>
+      <button type="submit" class="btn btn-surface" style="width: auto;">Change Password</button>
     </form>
 
     <hr>

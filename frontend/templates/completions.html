@@ -53,8 +53,8 @@
               Submitting will log a separate completion record.
             </div>
             <div class="d-flex gap-2">
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="nudge-edit-btn">Edit existing</button>
-              <button type="button" class="btn btn-sm btn-outline-secondary" id="nudge-increment-btn">+1 playthrough</button>
+              <button type="button" class="btn btn-sm btn-surface" id="nudge-edit-btn">Edit existing</button>
+              <button type="button" class="btn btn-sm btn-surface" id="nudge-increment-btn">+1 playthrough</button>
             </div>
           </div>
           <div class="mb-3">
@@ -71,7 +71,7 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal" onclick="resetCompletionForm()">Cancel</button>
+          <button type="button" class="btn btn-surface" data-bs-dismiss="modal" onclick="resetCompletionForm()">Cancel</button>
           <button type="submit" class="btn btn-primary" id="log-completion-btn" disabled>Log Completion</button>
         </div>
       </form>
@@ -312,11 +312,11 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
 <div class="d-flex align-items-center gap-2 mb-2">
   <div class="ms-auto d-flex gap-1">
     <button type="button" id="comp-toggle-filters"
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm"
             onclick="cgtToggleDrawer('comp-filters-drawer', 'cgt-comp-filters-open', this)"
             aria-expanded="true">Filters <span class="cgt-chevron">▾</span></button>
     <button type="button" id="comp-toggle-view"
-            class="btn btn-outline-secondary btn-sm"
+            class="btn btn-surface btn-sm"
             onclick="cgtToggleDrawer('comp-view-drawer', 'cgt-comp-view-open', this)"
             aria-expanded="true">View <span class="cgt-chevron">▾</span></button>
   </div>
@@ -375,9 +375,9 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
 
 <div id="comp-view-drawer" class="d-flex align-items-center gap-2 flex-wrap mb-3">
   <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
-    <button type="button" class="btn btn-outline-secondary {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
-    <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
-    <button type="button" class="btn btn-outline-secondary {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
+    <button type="button" class="btn btn-surface {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
+    <button type="button" class="btn btn-surface {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
+    <button type="button" class="btn btn-surface {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
   </div>
   <div class="cgt-grid-controls d-flex align-items-center gap-2 flex-wrap"
        {% if view_mode == 'list' %}hidden{% endif %}>

@@ -24,7 +24,7 @@
   <td class="text-end text-nowrap">
     <div class="row-actions">
       <button
-        class="btn btn-sm btn-outline-secondary"
+        class="btn btn-sm btn-surface"
         onclick="editLibraryEntry(this.dataset)"
         data-entry-id="{{ entry.id }}"
         data-title="{{ entry.release.game.title | e }}"
@@ -40,7 +40,7 @@
       >Edit</button>
       {% if entry.is_hidden %}
       <button
-        class="btn btn-sm btn-outline-secondary"
+        class="btn btn-sm btn-surface"
         hx-post="/library/entries/{{ entry.id }}/unhide"
         hx-target="#library-entry-{{ entry.id }}"
         hx-swap="outerHTML"
@@ -48,7 +48,7 @@
       >Unhide</button>
       {% else %}
       <button
-        class="btn btn-sm btn-outline-secondary"
+        class="btn btn-sm btn-surface"
         hx-post="/library/entries/{{ entry.id }}/hide"
         hx-target="#library-entry-{{ entry.id }}"
         hx-swap="outerHTML"
