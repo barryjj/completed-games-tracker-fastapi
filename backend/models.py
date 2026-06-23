@@ -435,6 +435,10 @@ class UserLibraryEntry(Base):
 
     __table_args__ = (UniqueConstraint("user_id", "release_id", name="uq_library_user_release"),)
 
+    @property
+    def title(self) -> str:
+        return self.release.game.display_name or self.release.game.title
+
 
 class UserAchievement(Base):
     """Trophy/achievement progress per user per game release. Platform-agnostic row — the
@@ -467,7 +471,7 @@ class SyncMatchCandidate(Base):
     status values:
       pending       – awaiting review
       merged        – user approved the merge; manual entry absorbed the synced data
-      kept_separate – user chose to keep entries distinct (filtered from default view,
+      dismissed – user chose to keep entries distinct (filtered from default view,
                       re-surfaceable via "Show previously skipped" toggle)
     """
 
@@ -481,7 +485,7 @@ class SyncMatchCandidate(Base):
     synced_title: Mapped[str] = mapped_column(String, nullable=False)  # title from the sync source
     # 0.0–1.0 confidence score
     match_score: Mapped[float] = mapped_column(Float, nullable=False)
-    # pending | merged | kept_separate
+    # pending | merged | dismissed
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
     # optional user note when keeping separate
     note: Mapped[str | None] = mapped_column(Text, nullable=True)

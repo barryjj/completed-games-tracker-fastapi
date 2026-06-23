@@ -236,9 +236,9 @@
 </div>
 
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
-  <a class="btn btn-outline-secondary btn-sm"
+  <a class="btn btn-surface btn-sm"
      href="/library?detail={{ entry.id }}">View in library ↗</a>
-  <button class="btn btn-outline-secondary btn-sm"
+  <button class="btn btn-surface btn-sm"
           hx-post="/completions/{{ completion.id }}/increment"
           hx-vals='{"view_mode": "list"}'
           hx-swap="none"
@@ -246,7 +246,7 @@
           title="+1 playthrough">+1 playthrough</button>
 
   <div class="dropdown ms-auto">
-    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+    <button class="btn btn-surface btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
     <ul class="dropdown-menu dropdown-menu-end">
       <li><a class="dropdown-item" href="#"

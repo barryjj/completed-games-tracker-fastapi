@@ -1193,6 +1193,9 @@ def add_game(
 
     # --- Find existing game in this user's library ---
     # Prefer igdb_id match (strongest signal), fall back to exact title match.
+    # Only match against manual releases — never merge a new manual entry onto
+    # a synced game record (e.g. a Steam entry that happens to share the same
+    # igdb_id or title would pull in its DLC/children, which is wrong).
     existing_game: models.Game | None = None
     if igdb_game_id:
         existing_game = (
@@ -1202,6 +1205,7 @@ def add_game(
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
                 models.Game.igdb_id == igdb_game_id,
+                models.GameRelease.source == "manual",
             )
             .first()
         )
@@ -1213,6 +1217,7 @@ def add_game(
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
                 models.Game.title == title_clean,
+                models.GameRelease.source == "manual",
             )
             .first()
         )
@@ -2177,7 +2182,7 @@ def match_review_page(
     groups.sort(
         key=lambda g: (
             not g["multi"],
-            (g["manual_entry"].release.game.display_name or g["manual_entry"].release.game.title).lower(),
+            g["manual_entry"].title.lower(),
         )
     )
 
@@ -2247,6 +2252,81 @@ def match_review_skip(
     )
 
 
+@router.get("/library/match-review/{candidate_id}/preview")
+def match_review_preview(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Render a preview pane showing what the synced entry looks like, with
+    Confirm / Dismiss / Close actions pinned in the footer."""
+    candidate = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(models.SyncMatchCandidate.id == candidate_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    # Load the synced (surviving) entry
+    synced_entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .join(models.GameRelease)
+        .filter(
+            models.GameRelease.external_id == candidate.external_id,
+            models.GameRelease.source == candidate.platform_source,
+            models.UserLibraryEntry.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    # Load the manual entry (the one that will be removed)
+    manual_entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter_by(id=candidate.manual_entry_id)
+        .first()
+    )
+
+    visuals = _build_detail_pane_visuals(db, synced_entry, synced_entry.release.game, synced_entry.release) if synced_entry else {}
+    appdetails = (synced_entry.release.raw_data or {}).get("appdetails") or {} if synced_entry else {}
+    # Completions come from the manual entry — they migrate to the synced entry on confirm
+    completions = sorted(manual_entry.completions, key=lambda c: c.completed_at, reverse=True) if manual_entry else []
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/match_review_preview.html",
+        context={
+            "candidate": candidate,
+            "entry": synced_entry,
+            "game": synced_entry.release.game if synced_entry else None,
+            "release": synced_entry.release if synced_entry else None,
+            "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
+            "igdb_meta": _extract_igdb_meta(synced_entry.release) if synced_entry else {},
+            "completions": completions,
+            "manual_entry": manual_entry,
+            "current_user": current_user,
+            "needs_refresh": False,
+            "fresh_open": False,
+            **visuals,
+        },
+    )
+
+
 @router.post("/library/match-review/merge-bulk")
 def match_review_merge_bulk(
     request: Request,
@@ -2278,6 +2358,32 @@ def match_review_merge_bulk(
         name="partials/_toast.html",
         context={"kind": kind, "body": msg},
         headers={"HX-Refresh": "true"},
+    )
+
+
+@router.post("/library/match-review/clear-dismissed")
+def match_review_clear_dismissed(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete all dismissed candidates for this user so they can be re-detected on next scan."""
+    deleted = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.SyncMatchCandidate.status == "dismissed",
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    body = f"{deleted} dismissed match{'es' if deleted != 1 else ''} cleared — they'll resurface on next scan."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": body},
+        headers={"HX-Reswap": "none"},
     )
 
 

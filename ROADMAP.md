@@ -187,14 +187,16 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - SteamGridDB: artwork browser link for cover-art lookup once cover override is wired up
 - Possibly: HowLongToBeat link once we have title-based search
 
-### Sync match review ✅ (this PR)
+### Sync match review ✅ (PR #114)
 - Steam sync no longer silently merges into existing manual entries — creates its own GameRelease + UserLibraryEntry
-- Match review scan surfaces candidates; dedicated review page with card-stack UI (chevron + dots navigation)
-- Side-by-side: Steam entry (canonical/winner, left) → CSS arrow → Manual entry (dimmed, right)
-- Merge: synced entry is canonical; completions migrated via direct SQL UPDATE (avoids ORM NULL FK bug); candidate status set to "merged" BEFORE deleting manual entry (avoids CASCADE nuke)
-- Skip ("Not the same game") flow included
-- Navbar badge with count; decrements in JS on each merge; removes itself at zero
-- Info strip: completions transfer noted only when present; artwork warning only when UserArtwork exists
+- Match review scan surfaces candidates; dedicated review page with card-stack and list views
+- Multi-candidate groups (manual entry matches multiple synced games) rendered as pick-one card with per-option Confirm/Dismiss
+- Clicking thumb/title opens library detail pane for the entry; Preview button opens a merge preview pane showing the merged result with completions
+- Dismiss flow: permanent suppression per candidate; bulk "Clear dismissed" resets all so next scan re-detects
+- `dismissed` status (renamed from `kept_separate`); pending count uses distinct manual_entry_id so multi-candidate groups count as 1
+- Manual entry game record creation now restricted to manual releases only — never merges a new manual entry onto a Steam game record sharing the same igdb_id or title (was causing RE4 Remake DLC to appear on a manual RE4 entry)
+- IGDB artwork no longer used as hero images — poor aspect ratio; 10 existing IGDB hero records purged
+- Button consistency sweep: all secondary buttons use btn-surface (solid surface1 bg) across the entire app
 
 ### Multiple completions on merge (pending design)
 - When both the synced entry and manual entry have completions, both survive the merge
@@ -292,12 +294,23 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
 
-### Historical import (after PSN)
-- Import completions from CSV / Google Sheets: map columns to game title, platform, date completed
-- Requires platforms table + IGDB title-matching to resolve old games to proper `igdb_id` and `platform_id`
-- PSN must exist first: imported PS3/Vita/PSP entries should check against the PSN library to link properly rather than creating phantom manual entries
-- Target use case: 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration
-- Runs through the same sync match review queue so imported entries that overlap with PSN/Steam synced data surface for approval
+### Historical import (next up)
+- **Source:** CSV / spreadsheet (Google Sheets export) with columns: title, platform, date completed, playthroughs, notes, collection
+- **Target use case:** 2006–2012 era games across PS2, PS3, Xbox 360, etc. that predate any sync integration; user has existing spreadsheet data to bring in
+- **All rows go through the match review queue** — nothing is silently written to the DB; user reviews and confirms/rejects each import candidate before it lands
+- This decision drove the list view addition to match review — you need to efficiently review hundreds of rows, not flip through cards one at a time
+- PSN is not required first — imported PS3/Vita/PSP entries get proper platform rows; when PSN lands, any overlaps surface in the same match review queue for confirmation
+- **Data format handling:**
+  - Date month-only (e.g. "June 2009") → stored as 1st of that month
+  - Date year-only or blank → stored as Jan 1 of the sheet/row year
+  - Playthroughs `2+` → strip `+`, store as integer
+  - Platform names matched against existing platform rows via aliases (e.g. "NES" → "Nintendo Entertainment System"); unmatched platforms flagged for manual review
+  - Collection: match against existing collections table, create if not found (same as manual add)
+- **Import flow:** upload CSV/xlsx → parse → staging table → create `ImportCandidate` rows (new source type alongside `SyncMatchCandidate`) → match review queue surfaces them for approval
+- **Match review card for import:** shows "spreadsheet row → proposed library entry + completion" with IGDB-looked-up game info; user confirms the mapping, edits fields if needed, then confirms
+- **Mass-select + bulk approve:** checkbox each row in list view, approve in bulk; handle edge cases (title mismatches, unmatched platforms) individually
+- **After confirm:** creates `Game` + `GameRelease` (or reuses existing), creates `UserLibraryEntry`, logs the completion — identical result to manual add + log completion
+- **Duplicate detection:** same scan that catches Steam vs manual duplicates catches import vs Steam/existing duplicates; no phantom duplication
 
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
@@ -317,10 +330,6 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
 - User can pick which widgets are shown and arrange them
 - Deferred until library has more non-Steam data (PSN, historical import) so the stats are actually interesting
-
-### Historical import
-- Import completions from Google Sheets / CSV
-- Map columns to game title, platform, date completed
 
 ### Achievements / trophies
 - Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands

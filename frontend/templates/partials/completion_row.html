@@ -15,7 +15,7 @@
   <td class="text-end text-nowrap">
     <div class="row-actions">
       <button
-        class="btn btn-sm btn-outline-secondary"
+        class="btn btn-sm btn-surface"
         hx-post="/completions/{{ completion.id }}/increment"
         hx-vals='{"view_mode": "list"}'
         hx-target="#completion-{{ completion.id }}"
@@ -24,7 +24,7 @@
         onclick="event.stopPropagation()"
       >+1</button>
       <button
-        class="btn btn-sm btn-outline-secondary"
+        class="btn btn-sm btn-surface"
         onclick="editCompletion(this.dataset)"
         data-completion-id="{{ completion.id }}"
         data-entry-id="{{ completion.library_entry_id }}"

@@ -8,7 +8,7 @@ every synced game on the same platform.  A confidence score (0.0–1.0) is
 computed via token-based matching (see _score).  Only the single best-scoring
 synced game is kept per manual entry — no spam of franchise-name matches.
 
-Already-reviewed pairs (merged/kept_separate) are never re-queued.
+Already-reviewed pairs (merged/dismissed) are never re-queued.
 Re-running the scan is safe; pending candidates get updated scores.
 
 Scoring tiers:
@@ -390,7 +390,7 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
                 existing.match_score = best_score
                 existing.synced_title = synced_title
                 updated += 1
-            # merged / kept_separate — leave alone
+            # merged / dismissed — leave alone
 
     db.commit()
     return {"candidates_added": added, "candidates_updated": updated, "pairs_checked": pairs_checked}
@@ -457,7 +457,7 @@ def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: mod
         models.SyncMatchCandidate.external_id == candidate.external_id,
         models.SyncMatchCandidate.id != candidate.id,
         models.SyncMatchCandidate.status == "pending",
-    ).update({"status": "kept_separate", "note": "Invalidated — sibling candidate was merged."})
+    ).update({"status": "dismissed", "note": "Invalidated — sibling candidate was merged."})
 
     db.flush()
 
@@ -479,8 +479,8 @@ def merge_candidate(db: Session, candidate: models.SyncMatchCandidate, user: mod
 
 
 def dismiss_candidate(db: Session, candidate: models.SyncMatchCandidate, note: str | None = None) -> None:
-    """Mark a candidate as kept_separate."""
-    candidate.status = "kept_separate"
+    """Mark a candidate as dismissed."""
+    candidate.status = "dismissed"
     candidate.note = note
     candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
     db.commit()
@@ -514,5 +514,5 @@ def get_candidates(db: Session, user: models.User, include_skipped: bool = False
     if not include_skipped:
         q = q.filter(models.SyncMatchCandidate.status == "pending")
     else:
-        q = q.filter(models.SyncMatchCandidate.status.in_(["pending", "kept_separate"]))
+        q = q.filter(models.SyncMatchCandidate.status.in_(["pending", "dismissed"]))
     return q.order_by(models.SyncMatchCandidate.match_score.desc()).all()
