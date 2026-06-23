@@ -43,7 +43,7 @@
         {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
         <button
           type="button"
-          class="btn btn-outline-secondary btn-sm"
+          class="btn btn-surface btn-sm"
           hx-post="/integrations/igdb/test"
           hx-target="#igdb-flash"
           hx-swap="innerHTML"
@@ -83,7 +83,7 @@
   {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
   <button
     type="button"
-    class="btn btn-outline-secondary btn-sm"
+    class="btn btn-surface btn-sm"
     hx-get="/integrations/igdb/platforms"
     hx-target="#igdb-platform-list"
     hx-swap="innerHTML"

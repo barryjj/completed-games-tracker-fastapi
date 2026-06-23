@@ -18,7 +18,7 @@
          value="{{ search_term | e }}"
          placeholder="Search term…"
          aria-label="Search term">
-  <button type="button" class="btn btn-outline-secondary btn-sm text-nowrap"
+  <button type="button" class="btn btn-surface btn-sm text-nowrap"
           onclick="rerunSgdbSearch({{ entry_id }}, '{{ image_type }}')">Search</button>
 </div>
 {% endif %}
@@ -50,7 +50,7 @@
   {% endfor %}
   {% if has_more %}
   <button type="button"
-          class="btn btn-outline-secondary btn-sm w-100 mt-2"
+          class="btn btn-surface btn-sm w-100 mt-2"
           hx-get="/integrations/steamgriddb/search?entry_id={{ entry_id }}&image_type={{ image_type }}&page={{ page + 1 }}&search_term={{ search_term | urlencode }}"
           hx-target="this"
           hx-swap="outerHTML"
