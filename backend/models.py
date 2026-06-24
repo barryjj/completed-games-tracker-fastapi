@@ -497,6 +497,64 @@ class SyncMatchCandidate(Base):
     __table_args__ = (UniqueConstraint("manual_entry_id", "platform_source", "external_id", name="uq_match_candidate"),)
 
 
+class ImportCandidate(Base):
+    """One proposed library entry from a spreadsheet import.
+
+    Groups all spreadsheet rows that resolve to the same game+platform identity.
+    status values:
+      pending    – awaiting user review
+      confirmed  – user approved; library entry + completions created
+      dismissed  – user rejected
+    proposed_action values:
+      add_to_existing  – matched an existing UserLibraryEntry; just log completions
+      create_new       – no existing entry found; will create Game+Release+Entry on confirm
+      needs_review     – platform unresolved or ambiguous; requires manual decision before confirm
+    """
+
+    __tablename__ = "import_candidates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    raw_title: Mapped[str] = mapped_column(String, nullable=False)
+    raw_platform: Mapped[str] = mapped_column(String, nullable=False)
+    platform_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=True)
+    # Set when proposed_action == "add_to_existing"
+    library_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
+    proposed_action: Mapped[str] = mapped_column(String, nullable=False, default="needs_review")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    platform: Mapped["Platform | None"] = relationship("Platform")
+    library_entry: Mapped["UserLibraryEntry | None"] = relationship("UserLibraryEntry")
+    rows: Mapped[list["ImportRow"]] = relationship("ImportRow", back_populates="candidate", cascade="all, delete-orphan")
+
+
+class ImportRow(Base):
+    """One raw spreadsheet row attached to an ImportCandidate.
+
+    Multiple rows can belong to the same candidate when they resolve to the
+    same game+platform (e.g. three completions of Super Mario World on SNES).
+    Each row becomes one Completion on confirm.
+    """
+
+    __tablename__ = "import_rows"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    candidate_id: Mapped[int] = mapped_column(Integer, ForeignKey("import_candidates.id", ondelete="CASCADE"), nullable=False)
+    raw_title: Mapped[str] = mapped_column(String, nullable=False)
+    raw_platform: Mapped[str] = mapped_column(String, nullable=False)
+    raw_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_collection: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_tab: Mapped[str | None] = mapped_column(String, nullable=True)
+    row_number: Mapped[int | None] = mapped_column(Integer, nullable=True)  # spreadsheet # column
+    # Normalized at parse time
+    completed_at: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
+
+
 class Completion(Base):
     __tablename__ = "completions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -506,6 +564,9 @@ class Completion(Base):
     # stored as string to handle "1", "1+", "2", "3+" etc.
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Tiebreaker for same-date completions from historical import (spreadsheet row number).
+    # NULL for completions added manually or via sync — sort those last within a date.
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     user: Mapped["User"] = relationship("User")

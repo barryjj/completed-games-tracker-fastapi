@@ -4,13 +4,14 @@ import logging
 import os
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import joinedload
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from . import match_review, models, users
+from . import importer, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
@@ -2384,6 +2385,87 @@ def match_review_clear_dismissed(
         name="partials/_toast.html",
         context={"kind": "success", "body": body},
         headers={"HX-Reswap": "none"},
+    )
+
+
+# --- Historical import ---
+
+
+@router.get("/library/import")
+def import_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    pending = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .count()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="import.html",
+        context={"pending": pending},
+    )
+
+
+@router.post("/library/import/upload")
+async def import_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_toast.html",
+            context={"kind": "error", "body": "Please upload an xlsx file."},
+            headers={"HX-Reswap": "none"},
+        )
+    contents = await file.read()
+    result = importer.parse_xlsx(contents, db, current_user.id)
+    count = importer.write_candidates(result, db, current_user.id)
+    body = (
+        f"Imported {result.total_rows - result.skipped_rows} rows → "
+        f"{count} candidate{'s' if count != 1 else ''} to review."
+        f"{' (' + str(result.skipped_rows) + ' blank/header rows skipped)' if result.skipped_rows else ''}"
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": body},
+        headers={"HX-Retarget": "body", "HX-Redirect": "/library/import/review"},
+    )
+
+
+@router.get("/library/import/review")
+def import_review_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidates = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .options(
+            joinedload(models.ImportCandidate.rows),
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+        )
+        .order_by(models.ImportCandidate.id)
+        .all()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="import_review.html",
+        context={"candidates": candidates, "pending": len(candidates)},
     )
 
 

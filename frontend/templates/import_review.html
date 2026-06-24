@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Import Review{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <h1 class="mb-0">Import Review</h1>
+  <span class="badge bg-secondary">{{ pending }} pending</span>
+  <a href="/library/import" class="btn btn-sm btn-surface ms-auto">Upload another</a>
+</div>
+
+{% if not candidates %}
+<p class="text-secondary">Nothing pending review. <a href="/library/import">Upload a spreadsheet</a> to get started.</p>
+{% else %}
+
+<div class="table-responsive">
+  <table class="table table-sm align-middle">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Platform</th>
+        <th>Completions</th>
+        <th>Action</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in candidates %}
+      <tr id="import-row-{{ c.id }}">
+        <td>
+          <div class="fw-medium">{{ c.raw_title }}</div>
+          {% if c.library_entry %}
+          <div class="small text-secondary">
+            Matched: {{ c.library_entry.display_name or c.raw_title }}
+          </div>
+          {% endif %}
+        </td>
+        <td>
+          {% if c.platform %}
+          <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+          {% else %}
+          <span class="tag-badge tag-platform-unknown text-warning">{{ c.raw_platform or "Unknown" }}</span>
+          {% endif %}
+        </td>
+        <td>
+          <span class="text-secondary small">{{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}</span>
+          <div class="small text-secondary">
+            {% for r in c.rows | sort(attribute='completed_at') %}
+              {% if r.completed_at %}
+              <div>{{ r.completed_at.strftime("%-d %b %Y") }}{% if r.playthroughs %} · {{ r.playthroughs }}×{% endif %}{% if r.raw_notes %} · <em>{{ r.raw_notes }}</em>{% endif %}</div>
+              {% else %}
+              <div class="text-warning">Date unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</div>
+              {% endif %}
+            {% endfor %}
+          </div>
+        </td>
+        <td>
+          {% if c.proposed_action == "add_to_existing" %}
+          <span class="badge bg-success">Add to existing</span>
+          {% elif c.proposed_action == "create_new" %}
+          <span class="badge bg-primary">Create new</span>
+          {% else %}
+          <span class="badge bg-warning text-dark">Needs review</span>
+          {% endif %}
+        </td>
+        <td class="text-end">
+          {# Buttons wired in next phase #}
+          <button class="btn btn-sm btn-surface" disabled>Confirm</button>
+          <button class="btn btn-sm btn-surface" disabled>Dismiss</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
