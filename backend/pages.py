@@ -7,7 +7,6 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import joinedload
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
@@ -2551,7 +2550,7 @@ def import_clear_all(
     current_user: models.User = Depends(get_web_user),
 ):
     """Delete all pending import candidates for this user so a fresh upload can replace them."""
-    deleted = db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == current_user.id).delete(synchronize_session=False)
     db.commit()
     return Response(
         headers={"HX-Redirect": "/library/import"},
