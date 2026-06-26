@@ -90,7 +90,10 @@ def _platform_heuristic_css(name: str) -> str:
 
 
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///backend/app.db")
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
+engine = create_engine(
+    DB_URL,
+    connect_args={"check_same_thread": False, "timeout": 15} if DB_URL.startswith("sqlite") else {},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -202,28 +205,99 @@ class PlatformAlias(Base):
     platform: Mapped["Platform"] = relationship("Platform", back_populates="aliases")
 
 
+def _norm_platform(s: str) -> str:
+    """Normalize a platform string for fuzzy comparison: lowercase, strip punctuation and spaces."""
+    import re
+
+    s = s.lower()
+    s = re.sub(r"[^\w]", "", s)  # strip all non-alphanumeric
+    return s
+
+
 def resolve_platform_id(db: Session, platform_name: str) -> int | None:
     """Look up a Platform row by name, display_name, or alias and return its id.
 
     Checks in order:
-      1. Exact match on Platform.name (canonical IGDB / custom name)
-      2. Case-insensitive match on Platform.display_name (user-renamed label)
-      3. Case-insensitive match on PlatformAlias.alias (abbreviations / nicknames)
+      1. Exact match on Platform.name
+      2. Case-insensitive match on Platform.display_name
+      3. Case-insensitive match on PlatformAlias.alias
+      4. Normalized match (strip punctuation/spaces) against all names and aliases
+      5. Substring match — input normalized is contained in a platform's normalized name or vice versa
+      6. Fuzzy similarity match via SequenceMatcher (threshold: 0.82)
 
-    Returns None if no match — callers leave platform_id NULL rather than
-    inventing a row. Never creates new Platform rows.
+    Returns None only if nothing scores above the threshold.
+    Never creates new Platform rows.
     """
+    from difflib import SequenceMatcher
+
     if not platform_name:
         return None
     name = platform_name.strip()
+
+    # 1. Exact name
     row = db.query(Platform).filter(Platform.name == name).first()
     if row:
         return row.id
+
+    # 2. Case-insensitive display_name
     row = db.query(Platform).filter(Platform.display_name.ilike(name)).first()
     if row:
         return row.id
+
+    # 3. Case-insensitive alias
     alias = db.query(PlatformAlias).filter(PlatformAlias.alias.ilike(name)).first()
-    return alias.platform_id if alias else None
+    if alias:
+        return alias.platform_id
+
+    # Ambiguous brand-only strings — too vague to fuzzy-match confidently.
+    # Return None unless an explicit alias already matched above.
+    _AMBIGUOUS = {"nintendo", "sega", "atari", "sony", "microsoft", "nec", "snk", "bandai", "namco"}
+    if _norm_platform(name) in _AMBIGUOUS:
+        return None
+
+    # Build normalized candidate list: {normalized_string: platform_id}
+    needle = _norm_platform(name)
+    if not needle:
+        return None
+
+    candidates: dict[str, int] = {}
+    for p in db.query(Platform).all():
+        if p.name:
+            candidates[_norm_platform(p.name)] = p.id
+        if p.display_name:
+            candidates[_norm_platform(p.display_name)] = p.id
+    for a in db.query(PlatformAlias).all():
+        if a.alias:
+            candidates[_norm_platform(a.alias)] = a.platform_id
+
+    # 4. Normalized exact match
+    if needle in candidates:
+        return candidates[needle]
+
+    # 5. Substring match — the shorter string must be at least 50% of the longer one
+    # to avoid short tokens like "nes" matching "genesis" or "nintendo" matching everything.
+    for cand, pid in candidates.items():
+        if not cand:
+            continue
+        shorter, longer = (needle, cand) if len(needle) <= len(cand) else (cand, needle)
+        if shorter in longer and len(shorter) >= len(longer) * 0.5:
+            return pid
+
+    # 6. Fuzzy similarity
+    best_score = 0.0
+    best_pid = None
+    for cand, pid in candidates.items():
+        if not cand:
+            continue
+        score = SequenceMatcher(None, needle, cand).ratio()
+        if score > best_score:
+            best_score = score
+            best_pid = pid
+
+    if best_score >= 0.79:
+        return best_pid
+
+    return None
 
 
 class Game(Base):

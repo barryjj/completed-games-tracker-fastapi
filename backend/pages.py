@@ -2408,7 +2408,7 @@ def import_page(
     return templates.TemplateResponse(
         request=request,
         name="import.html",
-        context={"pending": pending},
+        context={"current_user": current_user, "pending": pending, **_base_ctx(db, current_user)},
     )
 
 
@@ -2465,7 +2465,97 @@ def import_review_page(
     return templates.TemplateResponse(
         request=request,
         name="import_review.html",
-        context={"candidates": candidates, "pending": len(candidates)},
+        context={"current_user": current_user, "candidates": candidates, "pending": len(candidates), **_base_ctx(db, current_user)},
+    )
+
+
+@router.post("/library/import/{candidate_id}/dismiss")
+def import_dismiss(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    candidate.status = "dismissed"
+    candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    return Response(status_code=200, headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"})
+
+
+@router.post("/library/import/{candidate_id}/confirm")
+def import_confirm(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .options(
+            joinedload(models.ImportCandidate.rows),
+        )
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
+        # Log all completions against the existing library entry, skipping exact duplicates
+        for row in candidate.rows:
+            if not row.completed_at:
+                continue
+            already_exists = (
+                db.query(models.Completion)
+                .filter(
+                    models.Completion.library_entry_id == candidate.library_entry_id,
+                    models.Completion.completed_at == row.completed_at,
+                    models.Completion.sort_order == row.row_number,
+                )
+                .first()
+            )
+            if already_exists:
+                continue
+            db.add(
+                models.Completion(
+                    user_id=current_user.id,
+                    library_entry_id=candidate.library_entry_id,
+                    completed_at=row.completed_at,
+                    playthroughs=row.playthroughs,
+                    notes=row.raw_notes,
+                    sort_order=row.row_number,
+                )
+            )
+        candidate.status = "confirmed"
+        candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
+        return Response(status_code=200)
+
+    # create_new / needs_review — redirect to library with modal pre-filled
+    platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
+    redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
+    return Response(status_code=200, headers={"HX-Redirect": redirect_url})
+
+
+@router.post("/library/import/clear")
+def import_clear_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete all pending import candidates for this user so a fresh upload can replace them."""
+    deleted = db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == current_user.id).delete(synchronize_session=False)
+    db.commit()
+    return Response(
+        headers={"HX-Redirect": "/library/import"},
+        status_code=200,
     )
 
 

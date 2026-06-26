@@ -158,9 +158,17 @@ def _cell(row: tuple, col_map: dict, *keys: str) -> str | None:
     return None
 
 
+def _normalize_title(title: str) -> str:
+    """Strip punctuation and collapse whitespace for fuzzy matching and grouping."""
+    t = title.lower()
+    t = re.sub(r"[^\w\s]", " ", t)  # punctuation → space
+    t = re.sub(r"\s+", " ", t).strip()
+    return t
+
+
 def _group_key(title: str, platform_id: int | None, raw_platform: str) -> str:
     """Stable grouping key: normalised title + resolved platform (or raw if unresolved)."""
-    t = title.strip().lower()
+    t = _normalize_title(title)
     p = str(platform_id) if platform_id is not None else f"raw:{raw_platform.strip().lower()}"
     return f"{t}|{p}"
 
@@ -197,7 +205,12 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
             result.skipped_rows += len(rows)
             continue
 
-        cols = _col_map(list(rows[header_idx]))
+        header_list = list(rows[header_idx])
+        # Some tabs have sequential row numbers in col A with no header — treat as #
+        if header_list and header_list[0] is None and "#" not in _col_map(header_list):
+            header_list = list(header_list)
+            header_list[0] = "#"
+        cols = _col_map(header_list)
 
         for row in rows[header_idx + 1 :]:
             result.total_rows += 1
@@ -214,7 +227,7 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
 
             raw_platform = _cell(row, cols, "platform") or ""
             raw_date = _cell(row, cols, "date")
-            raw_playthroughs = _cell(row, cols, "playthroughs")
+            raw_playthroughs = _cell(row, cols, "playthroughs", "times completed")
             raw_notes = _cell(row, cols, "notes")
             raw_collection = _cell(row, cols, "collection")
 
@@ -225,7 +238,18 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
             except (ValueError, TypeError):
                 row_number = None
 
-            platform_id = models.resolve_platform_id(db, raw_platform) if raw_platform else None
+            # Old tabs used the Notes column for playthrough counts.
+            if raw_notes:
+                try:
+                    float(str(raw_notes).strip().rstrip("+"))
+                    if not raw_playthroughs:
+                        raw_playthroughs = raw_notes
+                    raw_notes = None  # numeric note is never real text
+                except ValueError:
+                    pass
+
+            platform_str = re.split(r"[·|/]", raw_platform)[0].strip() if raw_platform else ""
+            platform_id = models.resolve_platform_id(db, platform_str) if platform_str else None
             completed_at = _parse_date(raw_date, tab_year)
             playthroughs = _parse_playthroughs(raw_playthroughs)
 
@@ -258,26 +282,49 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
     return result
 
 
-def write_candidates(result: ParseResult, db: Session, user_id: int) -> int:
-    """Write parsed groups to ImportCandidate + ImportRow rows. Returns candidate count."""
+_BATCH_SIZE = 25
 
-    # Check for existing library entries to set proposed_action
+
+def write_candidates(result: ParseResult, db: Session, user_id: int) -> int:
+    """Write parsed groups to ImportCandidate + ImportRow rows in small batches. Returns candidate count."""
+
     count = 0
+    skipped = 0
     for group in result.candidates:
+        # Skip groups already confirmed in a previous import run
+        already_confirmed = (
+            db.query(models.ImportCandidate)
+            .filter(
+                models.ImportCandidate.user_id == user_id,
+                models.ImportCandidate.raw_title == group["raw_title"],
+                models.ImportCandidate.platform_id == group["platform_id"],
+                models.ImportCandidate.status == "confirmed",
+            )
+            .first()
+        )
+        if already_confirmed:
+            skipped += 1
+            continue
+
         # Look for an existing library entry matching title + platform
         existing_entry = None
         if group["platform_id"]:
-            existing_entry = (
+            needle = _normalize_title(group["raw_title"])
+            candidates_for_platform = (
                 db.query(models.UserLibraryEntry)
                 .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
                 .join(models.Game, models.GameRelease.game_id == models.Game.id)
                 .filter(
                     models.UserLibraryEntry.user_id == user_id,
                     models.GameRelease.platform_id == group["platform_id"],
-                    models.Game.title.ilike(group["raw_title"]),
                 )
-                .first()
+                .all()
             )
+            for entry in candidates_for_platform:
+                game_title = entry.release.game.title if entry.release and entry.release.game else ""
+                if _normalize_title(game_title) == needle:
+                    existing_entry = entry
+                    break
 
         if existing_entry:
             action = "add_to_existing"
@@ -315,6 +362,8 @@ def write_candidates(result: ParseResult, db: Session, user_id: int) -> int:
                 )
             )
         count += 1
+        if count % _BATCH_SIZE == 0:
+            db.commit()
 
     db.commit()
     return count
