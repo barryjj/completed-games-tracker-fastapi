@@ -228,7 +228,10 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
             raw_platform = _cell(row, cols, "platform") or ""
             raw_date = _cell(row, cols, "date")
             raw_playthroughs = _cell(row, cols, "playthroughs", "times completed")
-            raw_notes = _cell(row, cols, "notes")
+            # Skip notes cells that are numeric (e.g. 100% stored as 1.0 in Excel).
+            notes_idx = cols.get("notes")
+            notes_raw_val = row[notes_idx] if notes_idx is not None and notes_idx < len(row) else None
+            raw_notes = _cell(row, cols, "notes") if isinstance(notes_raw_val, str) else None
             raw_collection = _cell(row, cols, "collection")
 
             # Row number from # column
@@ -237,19 +240,6 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
                 row_number = int(float(str(row_num_raw))) if row_num_raw else None
             except (ValueError, TypeError):
                 row_number = None
-
-            # Old tabs with no Playthroughs column used Notes for playthrough counts.
-            # Only promote when the tab genuinely has no playthroughs column; if the
-            # column exists, numeric notes may be percentage values (100% → 1.0).
-            has_playthroughs_col = "playthroughs" in cols or "times completed" in cols
-            if raw_notes and not has_playthroughs_col:
-                try:
-                    float(str(raw_notes).strip().rstrip("+"))
-                    if not raw_playthroughs:
-                        raw_playthroughs = raw_notes
-                    raw_notes = None
-                except ValueError:
-                    pass
 
             platform_str = re.split(r"[·|/]", raw_platform)[0].strip() if raw_platform else ""
             platform_id = models.resolve_platform_id(db, platform_str) if platform_str else None
