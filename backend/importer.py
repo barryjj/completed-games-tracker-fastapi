@@ -238,13 +238,16 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
             except (ValueError, TypeError):
                 row_number = None
 
-            # Old tabs used the Notes column for playthrough counts.
-            if raw_notes:
+            # Old tabs with no Playthroughs column used Notes for playthrough counts.
+            # Only promote when the tab genuinely has no playthroughs column; if the
+            # column exists, numeric notes may be percentage values (100% → 1.0).
+            has_playthroughs_col = "playthroughs" in cols or "times completed" in cols
+            if raw_notes and not has_playthroughs_col:
                 try:
                     float(str(raw_notes).strip().rstrip("+"))
                     if not raw_playthroughs:
                         raw_playthroughs = raw_notes
-                    raw_notes = None  # numeric note is never real text
+                    raw_notes = None
                 except ValueError:
                     pass
 
