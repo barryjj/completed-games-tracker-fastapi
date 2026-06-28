@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import html as _html
 import logging
@@ -10,7 +11,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from . import importer, match_review, models, users
+from . import importer, jobs, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
@@ -2426,19 +2427,31 @@ async def import_upload(
             headers={"HX-Reswap": "none"},
         )
     contents = await file.read()
-    result = importer.parse_xlsx(contents, db, current_user.id)
-    count = importer.write_candidates(result, db, current_user.id)
-    body = (
-        f"Imported {result.total_rows - result.skipped_rows} rows → "
-        f"{count} candidate{'s' if count != 1 else ''} to review."
-        f"{' (' + str(result.skipped_rows) + ' blank/header rows skipped)' if result.skipped_rows else ''}"
-    )
+    job = jobs.create(user_id=current_user.id, kind="import_xlsx", label="Spreadsheet import")
+    asyncio.create_task(_run_import_job(job.id, current_user.id, contents))
     return templates.TemplateResponse(
         request=request,
         name="partials/_toast.html",
-        context={"kind": "success", "body": body},
-        headers={"HX-Retarget": "body", "HX-Redirect": "/library/import/review"},
+        context={"kind": "success", "body": "Import started — you'll get a notification when it's done."},
     )
+
+
+async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    db = models.SessionLocal()
+    try:
+        result = await asyncio.to_thread(importer.parse_xlsx, file_bytes, db, user_id)
+        count = await asyncio.to_thread(importer.write_candidates, result, db, user_id)
+        skipped_msg = f" ({result.skipped_rows} blank rows skipped)" if result.skipped_rows else ""
+        jobs.mark_done(
+            job_id,
+            f"Import complete — {count} candidate{'s' if count != 1 else ''} ready to review.{skipped_msg}",
+        )
+    except Exception as e:
+        logger.exception("Import job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Import failed: {e}")
+    finally:
+        db.close()
 
 
 _IMPORT_PAGE_SIZE = 50
