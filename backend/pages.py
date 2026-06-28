@@ -1,5 +1,16 @@
 import asyncio
 import datetime
+
+_import_upload_lock: asyncio.Lock | None = None
+
+
+def _get_import_lock() -> asyncio.Lock:
+    global _import_upload_lock
+    if _import_upload_lock is None:
+        _import_upload_lock = asyncio.Lock()
+    return _import_upload_lock
+
+
 import html as _html
 import logging
 import os
@@ -2426,8 +2437,32 @@ async def import_upload(
             context={"kind": "error", "body": "Please upload an xlsx file."},
             headers={"HX-Reswap": "none"},
         )
-    contents = await file.read()
-    job = jobs.create(user_id=current_user.id, kind="import_xlsx", label="Spreadsheet import")
+    async with _get_import_lock():
+        active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+        if active:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/_toast.html",
+                context={"kind": "error", "body": "Import already in progress."},
+                headers={"HX-Reswap": "none"},
+            )
+        existing_pending = (
+            db.query(models.ImportCandidate.id)
+            .filter(
+                models.ImportCandidate.user_id == current_user.id,
+                models.ImportCandidate.status == "pending",
+            )
+            .first()
+        )
+        if existing_pending:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/_toast.html",
+                context={"kind": "error", "body": "Clear pending candidates before uploading again."},
+                headers={"HX-Reswap": "none"},
+            )
+        contents = await file.read()
+        job = jobs.create(user_id=current_user.id, kind="import_xlsx", label="Spreadsheet import")
     asyncio.create_task(_run_import_job(job.id, current_user.id, contents))
     return templates.TemplateResponse(
         request=request,
@@ -2437,16 +2472,31 @@ async def import_upload(
 
 
 async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
-    jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING, progress={"phase": "Parsing", "done": 0, "total": 0})
     db = models.SessionLocal()
     try:
         result = await asyncio.to_thread(importer.parse_xlsx, file_bytes, db, user_id)
-        count = await asyncio.to_thread(importer.write_candidates, result, db, user_id)
+        total = len(result.candidates)
+        jobs.update(job_id, progress={"phase": "Writing", "done": 0, "total": total})
+
+        def on_progress(done: int) -> None:
+            jobs.update(job_id, progress={"phase": "Writing", "done": done, "total": total})
+            j = jobs.get(job_id)
+            if j and j.cancel_requested:
+                raise RuntimeError("cancelled")
+
+        count = await asyncio.to_thread(importer.write_candidates, result, db, user_id, on_progress)
         skipped_msg = f" ({result.skipped_rows} blank rows skipped)" if result.skipped_rows else ""
         jobs.mark_done(
             job_id,
             f"Import complete — {count} candidate{'s' if count != 1 else ''} ready to review.{skipped_msg}",
         )
+    except RuntimeError as e:
+        if str(e) == "cancelled":
+            jobs.mark_failed(job_id, "Import cancelled.")
+        else:
+            logger.exception("Import job %s failed", job_id)
+            jobs.mark_failed(job_id, f"Import failed: {e}")
     except Exception as e:
         logger.exception("Import job %s failed", job_id)
         jobs.mark_failed(job_id, f"Import failed: {e}")
@@ -2455,6 +2505,66 @@ async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
 
 
 _IMPORT_PAGE_SIZE = 50
+
+
+@router.post("/library/import/cancel")
+def import_cancel_job(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+    for j in active:
+        jobs.request_cancel(j.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success" if active else "error", "body": "Import cancelled." if active else "No active import."},
+    )
+
+
+@router.get("/library/import/progress")
+def import_progress(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+    job = active[0] if active else None
+    pending = (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_progress.html",
+        context={"job": job, "pending": pending},
+    )
+
+
+@router.get("/library/import/status")
+def import_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Replaces #import-status after an import job completes."""
+    pending = (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_status.html",
+        context={"pending": pending},
+    )
 
 
 @router.get("/library/import/review")
@@ -2629,8 +2739,14 @@ def import_clear_all(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Delete all pending import candidates for this user so a fresh upload can replace them."""
-    db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == current_user.id).delete(synchronize_session=False)
+    """Cancel any running import job, then delete all pending import candidates."""
+    for j in jobs.active_jobs_for(current_user.id):
+        if j.kind == "import_xlsx":
+            jobs.request_cancel(j.id)
+    candidate_ids = [r[0] for r in db.query(models.ImportCandidate.id).filter(models.ImportCandidate.user_id == current_user.id).all()]
+    if candidate_ids:
+        db.query(models.ImportRow).filter(models.ImportRow.candidate_id.in_(candidate_ids)).delete(synchronize_session=False)
+        db.query(models.ImportCandidate).filter(models.ImportCandidate.id.in_(candidate_ids)).delete(synchronize_session=False)
     db.commit()
     return Response(
         headers={"HX-Redirect": "/library/import"},

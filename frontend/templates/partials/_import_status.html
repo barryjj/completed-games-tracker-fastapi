@@ -1,0 +1,11 @@
+<div id="import-status"
+     hx-get="/library/import/status"
+     hx-trigger="cgt:importDone from:body"
+     hx-swap="outerHTML">
+{% if pending %}
+<div class="d-flex align-items-center gap-2 mb-3">
+  <span class="text-secondary small">Import complete —</span>
+  <a href="/library/import/review" class="btn btn-sm btn-primary">Review {{ pending }} pending</a>
+</div>
+{% endif %}
+</div>

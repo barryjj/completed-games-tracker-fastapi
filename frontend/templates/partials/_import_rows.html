@@ -23,7 +23,7 @@
     {% for r in c.rows %}
     <div class="small mt-1 {% if not loop.first %}border-top pt-1{% endif %}">
       <div><span class="text-secondary">Date:</span> {% if r.completed_at %}{{ r.completed_at.strftime("%-d %b %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</div>
-      {% if r.playthroughs %}<div><span class="text-secondary">Playthroughs:</span> {{ r.playthroughs }}</div>{% endif %}
+      {% if r.playthroughs %}<div><span class="text-secondary">Playthroughs:</span> {{ r.playthroughs | float | int }}</div>{% endif %}
       {% if r.raw_notes %}<div><span class="text-secondary">Notes:</span> {{ r.raw_notes }}</div>{% endif %}
       {% if r.raw_collection %}<div><span class="text-secondary">Collection:</span> {{ r.raw_collection }}</div>{% endif %}
     </div>

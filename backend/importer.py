@@ -112,10 +112,9 @@ def _parse_playthroughs(raw: str | None) -> str | None:
     s = str(raw).strip().rstrip("+").strip()
     if not s or s == "0":
         return None
-    # Validate it's numeric
     try:
-        int(float(s))
-        return s
+        f = float(s)
+        return str(int(f)) if f == int(f) else s
     except ValueError:
         return None
 
@@ -281,26 +280,39 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
                 }
             )
 
+    # Dedup rows within each group — same game can appear across multiple tabs
+    for group in groups.values():
+        seen: set = set()
+        unique_rows = []
+        for r in group["rows"]:
+            key = (r["completed_at"], r["playthroughs"], r["raw_notes"])
+            if key not in seen:
+                seen.add(key)
+                unique_rows.append(r)
+        group["rows"] = unique_rows
+
     result.candidates = list(groups.values())
     return result
 
 
-_BATCH_SIZE = 25
-
-
-def write_candidates(result: ParseResult, db: Session, user_id: int) -> int:
+def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress=None) -> int:
     """Write parsed groups to ImportCandidate + ImportRow rows in small batches. Returns candidate count."""
 
     count = 0
     skipped = 0
     for group in result.candidates:
         # Skip groups that already exist (pending or confirmed) from a previous upload
+        plat_filter = (
+            models.ImportCandidate.platform_id == group["platform_id"]
+            if group["platform_id"] is not None
+            else models.ImportCandidate.platform_id.is_(None)
+        )
         already_exists = (
             db.query(models.ImportCandidate)
             .filter(
                 models.ImportCandidate.user_id == user_id,
                 models.ImportCandidate.raw_title == group["raw_title"],
-                models.ImportCandidate.platform_id == group["platform_id"],
+                plat_filter,
                 models.ImportCandidate.status.in_(["pending", "confirmed"]),
             )
             .first()
@@ -364,9 +376,9 @@ def write_candidates(result: ParseResult, db: Session, user_id: int) -> int:
                     playthroughs=row["playthroughs"],
                 )
             )
+        db.commit()
         count += 1
-        if count % _BATCH_SIZE == 0:
-            db.commit()
+        if on_progress:
+            on_progress(count)
 
-    db.commit()
     return count

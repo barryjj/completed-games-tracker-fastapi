@@ -37,6 +37,7 @@ class Job:
     error: str | None = None
     notified: bool = False  # client has seen the completion toast for this job
     progress: dict | None = None  # live progress, updated mid-run: {done, total, title}
+    cancel_requested: bool = False
     created_at: datetime.datetime = dataclasses.field(default_factory=lambda: datetime.datetime.now(datetime.UTC))
     finished_at: datetime.datetime | None = None
 
@@ -102,6 +103,16 @@ def pending_notifications_for(user_id: int) -> list[Job]:
         for j in pending:
             j.notified = True
         return pending
+
+
+def request_cancel(job_id: str) -> bool:
+    """Signal a running job to stop. Returns True if the job was found and flagged."""
+    with _lock:
+        job = _jobs.get(job_id)
+        if not job or job.is_terminal:
+            return False
+        job.cancel_requested = True
+        return True
 
 
 def clear_all() -> None:

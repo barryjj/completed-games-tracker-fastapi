@@ -123,7 +123,7 @@
       <div class="d-flex align-items-center gap-3">
         <div class="flex-grow-1 min-w-0 small">
           <span class="fw-medium">{% if r.completed_at %}{{ r.completed_at.strftime("%-d %b %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown date{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</span>
-          {% if r.playthroughs %} &middot; {{ r.playthroughs }}×{% endif %}
+          {% if r.playthroughs %} &middot; {{ r.playthroughs | float | int }}×{% endif %}
           {% if r.raw_notes %}<div class="text-secondary">{{ r.raw_notes }}</div>{% endif %}
           {% if r.raw_collection %}<div class="text-secondary">Collection: {{ r.raw_collection }}</div>{% endif %}
         </div>
@@ -241,6 +241,11 @@ window.importFilter = function() {
     row.style.display = (matchSearch && matchAction && matchPlatform) ? '' : 'none';
   });
 };
+
+// Re-apply filter when HTMX loads more rows
+document.addEventListener('htmx:afterSwap', function(e) {
+  if (e.target && e.target.closest('#import-table')) importFilter();
+});
 
 // Preview pane
 window.openImportPreview = function(candidateId) {

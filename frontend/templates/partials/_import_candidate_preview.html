@@ -1,49 +1,53 @@
-{# Import candidate preview pane — shows matched library entry detail with
-   an import-specific Confirm/Cancel footer instead of the normal Edit/More footer. #}
+{# Import candidate preview pane — mirrors library_detail style.
+   Shows the matched entry with existing completions + pending rows merged. #}
 
 {% set hero_url = entry | grid_cover_url('hero') %}
-{% set fallback_hero_url = None %}
 
 <div class="offcanvas-body p-0">
   <div class="cgt-pane-nav"></div>
 
-  {# Hero #}
   {% if hero_url %}
-  <div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}" style="background-image:url('{{ hero_url }}')"></div>
-  {% else %}
-  <div class="cgt-detail-hero cgt-detail-hero--empty" id="detail-hero-{{ entry.id }}"></div>
+  <div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}">
+    <img class="cgt-detail-hero__img" src="{{ hero_url }}" alt="" loading="lazy">
+  </div>
   {% endif %}
 
-  <div class="p-3">
-    <h6 class="mb-1 fw-semibold">{{ entry.display_name or entry.release.game.title if entry.release else candidate.raw_title }}</h6>
-    {% if entry.release and entry.release.platform_obj %}
-    <span class="tag-badge {{ entry.release.platform_obj.tag_class }} mb-2 d-inline-block">{{ entry.release.platform_obj.display_name or entry.release.platform_obj.name }}</span>
-    {% endif %}
-
-    {# Completions being added #}
-    <div class="mt-3">
-      <div class="small fw-semibold text-secondary mb-1">Completions to add ({{ candidate.rows | length }})</div>
-      {% for r in candidate.rows %}
-      <div class="small py-1 {% if not loop.first %}border-top{% endif %}">
-        <span class="fw-medium">{% if r.completed_at %}{{ r.completed_at.strftime("%-d %b %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown date</span>{% endif %}</span>
-        {% if r.playthroughs %} &middot; {{ r.playthroughs }} playthrough{{ 's' if r.playthroughs != '1' }}{% endif %}
-        {% if r.raw_notes %} &middot; <span class="text-secondary">{{ r.raw_notes }}</span>{% endif %}
-      </div>
-      {% endfor %}
+  <div class="cgt-detail-body">
+    <div class="mb-2 d-flex flex-wrap gap-1">
+      {% if entry.release and entry.release.platform_obj %}
+      <span class="tag-badge {{ entry.release.platform_obj.tag_class }}">{{ entry.release.platform_obj.display_name or entry.release.platform_obj.name }}</span>
+      {% endif %}
     </div>
 
-    {# Existing completions on this entry #}
-    {% if entry.completions %}
-    <div class="mt-3">
-      <div class="small fw-semibold text-secondary mb-1">Already logged ({{ entry.completions | length }})</div>
-      {% for c in entry.completions | sort(attribute='completed_at', reverse=True) %}
-      <div class="small py-1 {% if not loop.first %}border-top{% endif %} text-secondary">
-        {% if c.completed_at %}{{ c.completed_at.strftime("%-d %b %Y") }}{% else %}Unknown date{% endif %}
-        {% if c.playthroughs %} &middot; {{ c.playthroughs }}×{% endif %}
-      </div>
-      {% endfor %}
+    <div class="cgt-detail-block mb-3">
+      {% set existing = entry.completions | sort(attribute='completed_at', reverse=True) %}
+      {% set pending_count = candidate.rows | length %}
+      {% set total = (existing | length) + pending_count %}
+      <h6 class="cgt-detail-block__heading">
+        Completions
+        <span class="text-secondary fw-normal ms-1">({{ existing | length }} now · +{{ pending_count }} importing)</span>
+      </h6>
+      <ul class="list-unstyled mb-0">
+        {% for r in candidate.rows | sort(attribute='completed_at', reverse=True) %}
+        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-green);">
+          <div>
+            {% if r.completed_at %}{{ r.completed_at.strftime("%B %-d, %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown date</span>{% endif %}
+            {% if r.playthroughs %}{% set pt = r.playthroughs | float | int %}<small class="text-secondary ms-1">&middot; {{ pt }} playthrough{{ 's' if pt != 1 }}</small>{% endif %}
+          </div>
+          {% if r.raw_notes %}<small class="text-secondary d-block">{{ r.raw_notes }}</small>{% endif %}
+        </li>
+        {% endfor %}
+        {% for c in existing %}
+        <li class="mb-2">
+          <div>
+            {% if c.completed_at %}{{ c.completed_at.strftime("%B %-d, %Y") }}{% else %}Unknown date{% endif %}
+            {% if c.playthroughs %}<small class="text-secondary ms-1">&middot; {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+          </div>
+          {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
+        </li>
+        {% endfor %}
+      </ul>
     </div>
-    {% endif %}
   </div>
 </div>
 
