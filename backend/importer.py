@@ -295,6 +295,9 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
     return result
 
 
+_BATCH_SIZE = 10
+
+
 def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress=None) -> int:
     """Write parsed groups to ImportCandidate + ImportRow rows in small batches. Returns candidate count."""
 
@@ -376,9 +379,12 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
                     playthroughs=row["playthroughs"],
                 )
             )
-        db.commit()
         count += 1
+        if count % _BATCH_SIZE == 0:
+            db.commit()
         if on_progress:
             on_progress(count)
 
+    if count % _BATCH_SIZE != 0:
+        db.commit()
     return count
