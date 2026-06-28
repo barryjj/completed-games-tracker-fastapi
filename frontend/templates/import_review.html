@@ -2,38 +2,24 @@
 {% block title %}Import Review{% endblock %}
 
 {% block content %}
-<div class="d-flex align-items-center gap-3 mb-4">
-  <h1 class="mb-0">Import Review</h1>
-  {% if pending %}<span class="badge bg-secondary">{{ pending }} pending</span>{% endif %}
-  {% if pending %}
-  <div class="ms-auto d-flex gap-2">
-    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-            hx-post="/library/import/clear"
-            hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
-            hx-swap="none"
-            hx-disabled-elt="this">
-      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
-      Clear all
-    </button>
-  </div>
-  {% endif %}
+<div class="mb-3">
+  <h4 class="mb-0">Import Review</h4>
+  <p class="text-secondary small mb-0">Review and confirm each game from your spreadsheet.</p>
 </div>
 
-{% if not candidates %}
-<p class="text-secondary">Nothing pending review. <a href="/library/import">Upload a spreadsheet</a> to get started.</p>
-{% else %}
-
-{# Filters toolbar #}
-<div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
-  <input id="import-search" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px"
-         oninput="importFilter()">
-  <select id="import-action-filter" class="form-select form-select-sm" style="max-width:180px" onchange="importFilter()">
+<div class="d-flex align-items-center gap-3 flex-wrap mb-4">
+  <div class="btn-group btn-group-sm" role="group" id="view-toggle">
+    <button type="button" class="btn btn-surface" id="btn-list-view" onclick="importSetView('list')" title="List view">≡</button>
+    <button type="button" class="btn btn-surface" id="btn-card-view" onclick="importSetView('card')" title="Card view">▦</button>
+  </div>
+  <input id="import-search" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:200px" oninput="importFilter()">
+  <select id="import-action-filter" class="form-select form-select-sm" style="max-width:160px" onchange="importFilter()">
     <option value="">All actions</option>
     <option value="add_to_existing">Add to existing</option>
     <option value="create_new">Create new</option>
     <option value="needs_review">Needs review</option>
   </select>
-  <select id="import-platform-filter" class="form-select form-select-sm" style="max-width:180px" onchange="importFilter()">
+  <select id="import-platform-filter" class="form-select form-select-sm" style="max-width:160px" onchange="importFilter()">
     <option value="">All platforms</option>
     {% set platform_opts = [] %}
     {% for c in candidates %}
@@ -53,38 +39,135 @@
       <option value="{{ val }}">{{ label }}</option>
     {% endfor %}
   </select>
+  {% if pending %}
+  <span class="badge bg-secondary ms-auto">{{ pending }} pending</span>
+  <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+          hx-post="/library/import/clear"
+          hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
+          hx-swap="none"
+          hx-disabled-elt="this">
+    <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+    Clear all
+  </button>
+  {% endif %}
 </div>
 
-<div class="table-responsive">
-  <table class="table table-sm align-middle" id="import-table">
-    <thead>
-      <tr>
-        <th>Title</th>
-        <th>Platform</th>
-        <th>Completions</th>
-        <th>Action</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% include "partials/_import_rows.html" %}
-    </tbody>
-  </table>
+{% if not candidates %}
+<p class="text-secondary">Nothing pending review. <a href="/library/import">Upload a spreadsheet</a> to get started.</p>
+{% else %}
+
+{# ── List view ── #}
+<div id="import-list">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle" id="import-table">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Platform</th>
+          <th>Completions</th>
+          <th>Action</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% include "partials/_import_rows.html" %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
-<script>
-function importFilter() {
-  const search = document.getElementById('import-search').value.toLowerCase();
-  const action = document.getElementById('import-action-filter').value;
-  const platform = document.getElementById('import-platform-filter').value;
-  document.querySelectorAll('#import-table tbody tr').forEach(row => {
-    const matchSearch = !search || row.dataset.title.includes(search);
-    const matchAction = !action || row.dataset.action === action;
-    const matchPlatform = !platform || row.dataset.platform === platform;
-    row.style.display = (matchSearch && matchAction && matchPlatform) ? '' : 'none';
-  });
-}
-</script>
+{# ── Card view ── #}
+<div id="import-stack" class="cgt-match-stage">
+  {% for c in candidates %}
+  <div class="cgt-match-card cgt-match-card--hidden"
+       id="import-card-{{ c.id }}"
+       data-title="{{ c.raw_title | lower }}"
+       data-action="{{ c.proposed_action }}"
+       data-platform="{{ c.platform.id if c.platform else 'raw:' ~ c.raw_platform }}">
+
+    <div class="cgt-match-card__header">
+      {% if c.proposed_action == "add_to_existing" %}
+      <span class="tag-badge tag-platform-green" style="font-size:.75rem;">Add to existing</span>
+      {% elif c.proposed_action == "create_new" %}
+      <span class="tag-badge tag-platform-blue" style="font-size:.75rem;">Create new</span>
+      {% else %}
+      <span class="tag-badge tag-platform-yellow" style="font-size:.75rem;">Needs review</span>
+      {% endif %}
+      <span class="text-secondary" style="font-size:.75rem;">{{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}</span>
+    </div>
+
+    <div class="cgt-match-multi-header">
+      {% set cover = c.library_entry | grid_cover_url('grid_h') if c.library_entry else None %}
+      {% if cover %}
+      <img src="{{ cover }}" alt="" loading="lazy" class="cgt-match-row__thumb">
+      {% else %}
+      <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
+      {% endif %}
+      <div>
+        <div class="fw-semibold small">{{ c.raw_title }}</div>
+        <div class="d-flex align-items-center gap-1 mt-1 flex-wrap">
+          {% if c.platform %}
+          <span class="tag-badge {{ c.platform.tag_class }}" style="font-size:.65rem;">{{ c.platform.display_name or c.platform.name }}</span>
+          {% else %}
+          <span class="tag-badge tag-platform-unknown" style="font-size:.65rem;color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+          {% endif %}
+          {% if c.library_entry %}
+          <span class="text-secondary" style="font-size:.7rem;">→ {{ c.library_entry.display_name or c.raw_title }}</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    {% for r in c.rows %}
+    <div class="cgt-match-option {% if not loop.first %}border-top{% endif %}">
+      <div class="d-flex align-items-center gap-3">
+        <div class="flex-grow-1 min-w-0 small">
+          <span class="fw-medium">{% if r.completed_at %}{{ r.completed_at.strftime("%-d %b %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown date{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</span>
+          {% if r.playthroughs %} &middot; {{ r.playthroughs }}×{% endif %}
+          {% if r.raw_notes %}<div class="text-secondary">{{ r.raw_notes }}</div>{% endif %}
+          {% if r.raw_collection %}<div class="text-secondary">Collection: {{ r.raw_collection }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="cgt-match-option border-top">
+      <div class="d-flex gap-2 justify-content-end">
+        {% if c.proposed_action == "add_to_existing" %}
+        <button class="btn btn-sm btn-surface" onclick="openImportPreview({{ c.id }})">Preview</button>
+        {% endif %}
+        <button class="btn btn-sm btn-surface"
+                hx-post="/library/import/{{ c.id }}/dismiss"
+                hx-target="#import-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                hx-on::after-request="importCardDone('{{ c.id }}')">
+          Dismiss
+        </button>
+        <button class="btn btn-sm btn-primary"
+                hx-post="/library/import/{{ c.id }}/confirm"
+                hx-target="#import-card-{{ c.id }}"
+                hx-swap="outerHTML"
+                hx-on::after-request="importCardDone('{{ c.id }}')">
+          Confirm
+        </button>
+      </div>
+    </div>
+
+  </div>
+  {% endfor %}
+</div>
+
+{% if candidates | length > 1 %}
+<div class="cgt-match-nav" id="import-nav">
+  <button class="cgt-match-nav__btn" id="nav-prev" onclick="importNav(-1)">&#8249;</button>
+  <div class="cgt-match-nav__dots" id="nav-dots">
+    {% for c in candidates %}
+    <span class="cgt-match-nav__dot{% if loop.first %} cgt-match-nav__dot--active{% endif %}"></span>
+    {% endfor %}
+  </div>
+  <button class="cgt-match-nav__btn" id="nav-next" onclick="importNav(1)">&#8250;</button>
+</div>
+{% endif %}
 
 {% endif %}
 
@@ -98,12 +181,76 @@ function importFilter() {
 </div>
 
 <script>
-function openImportPreview(candidateId) {
+(function() {
+
+const PREF_KEY = 'cgt-import-view';
+
+window.importSetView = function(mode) {
+  localStorage.setItem(PREF_KEY, mode);
+  const list = document.getElementById('import-list');
+  const stack = document.getElementById('import-stack');
+  const nav = document.getElementById('import-nav');
+  if (list) list.style.display = mode === 'list' ? '' : 'none';
+  if (stack) stack.style.display = mode === 'card' ? '' : 'none';
+  if (nav) nav.style.display = mode === 'card' ? '' : 'none';
+  document.getElementById('btn-list-view').classList.toggle('active', mode === 'list');
+  document.getElementById('btn-card-view').classList.toggle('active', mode === 'card');
+};
+
+const savedView = localStorage.getItem(PREF_KEY) || 'list';
+importSetView(savedView);
+
+// Card navigation — same pattern as match review
+let importIdx = 0;
+const importCards = () => Array.from(document.querySelectorAll('.cgt-match-card'));
+const importDots = () => Array.from(document.querySelectorAll('#nav-dots .cgt-match-nav__dot'));
+
+function importShow(idx) {
+  const cards = importCards();
+  const dots = importDots();
+  if (!cards.length) return;
+  importIdx = Math.max(0, Math.min(idx, cards.length - 1));
+  cards.forEach((c, i) => c.classList.toggle('cgt-match-card--hidden', i !== importIdx));
+  dots.forEach((d, i) => d.classList.toggle('cgt-match-nav__dot--active', i === importIdx));
+}
+
+window.importNav = function(dir) { importShow(importIdx + dir); };
+
+window.importCardDone = function(id) {
+  const card = document.getElementById('import-card-' + id);
+  if (card) card.remove();
+  const remaining = importCards();
+  if (!remaining.length) { window.location.reload(); return; }
+  importShow(Math.min(importIdx, remaining.length - 1));
+  // rebuild dots
+  const dots = document.getElementById('nav-dots');
+  if (dots) dots.innerHTML = remaining.map((_, i) => '<span class="cgt-match-nav__dot' + (i === importIdx ? ' cgt-match-nav__dot--active' : '') + '"></span>').join('');
+};
+
+importShow(0);
+
+// List filters
+window.importFilter = function() {
+  const search = document.getElementById('import-search').value.toLowerCase();
+  const action = document.getElementById('import-action-filter').value;
+  const platform = document.getElementById('import-platform-filter').value;
+  document.querySelectorAll('#import-table tbody tr[data-title]').forEach(row => {
+    const matchSearch = !search || row.dataset.title.includes(search);
+    const matchAction = !action || row.dataset.action === action;
+    const matchPlatform = !platform || row.dataset.platform === platform;
+    row.style.display = (matchSearch && matchAction && matchPlatform) ? '' : 'none';
+  });
+};
+
+// Preview pane
+window.openImportPreview = function(candidateId) {
   htmx.ajax('GET', '/library/import/' + candidateId + '/preview', {
     target: '#import-preview-content',
     swap: 'innerHTML'
   });
   bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('import-preview-pane')).show();
-}
+};
+
+})();
 </script>
 {% endblock %}

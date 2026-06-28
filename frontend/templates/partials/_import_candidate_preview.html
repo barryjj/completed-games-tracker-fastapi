@@ -53,7 +53,14 @@
           hx-target="#import-row-{{ candidate.id }}"
           hx-swap="outerHTML"
           hx-on::after-request="bootstrap.Offcanvas.getInstance(document.getElementById('import-preview-pane')).hide()">
-    Yes, add completions
+    Confirm
+  </button>
+  <button class="btn btn-surface btn-sm"
+          hx-post="/library/import/{{ candidate.id }}/dismiss"
+          hx-target="#import-row-{{ candidate.id }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="bootstrap.Offcanvas.getInstance(document.getElementById('import-preview-pane')).hide()">
+    Dismiss
   </button>
   <button class="btn btn-surface btn-sm"
           onclick="bootstrap.Offcanvas.getInstance(document.getElementById('import-preview-pane')).hide()">
