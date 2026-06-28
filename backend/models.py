@@ -610,7 +610,7 @@ class ImportCandidate(Base):
 
     platform: Mapped["Platform | None"] = relationship("Platform")
     library_entry: Mapped["UserLibraryEntry | None"] = relationship("UserLibraryEntry")
-    rows: Mapped[list["ImportRow"]] = relationship("ImportRow", back_populates="candidate", cascade="all, delete-orphan")
+    rows: Mapped[list["ImportRow"]] = relationship("ImportRow", back_populates="candidate", cascade="save-update, merge")
 
 
 class ImportRow(Base):

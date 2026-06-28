@@ -310,19 +310,42 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
             if group["platform_id"] is not None
             else models.ImportCandidate.platform_id.is_(None)
         )
-        already_exists = (
+        # Skip if already staged (pending) — don't create a duplicate in the same session
+        already_pending = (
             db.query(models.ImportCandidate)
             .filter(
                 models.ImportCandidate.user_id == user_id,
                 models.ImportCandidate.raw_title == group["raw_title"],
                 plat_filter,
-                models.ImportCandidate.status.in_(["pending", "confirmed"]),
+                models.ImportCandidate.status == "pending",
             )
             .first()
         )
-        if already_exists:
+        if already_pending:
             skipped += 1
             continue
+
+        # Filter out individual rows already confirmed in a previous import
+        confirmed_row_keys: set[tuple] = set()
+        confirmed_candidate = (
+            db.query(models.ImportCandidate)
+            .filter(
+                models.ImportCandidate.user_id == user_id,
+                models.ImportCandidate.raw_title == group["raw_title"],
+                plat_filter,
+                models.ImportCandidate.status == "confirmed",
+            )
+            .first()
+        )
+        if confirmed_candidate:
+            for r in confirmed_candidate.rows:
+                confirmed_row_keys.add((r.completed_at, r.playthroughs, r.raw_notes))
+
+        new_rows = [r for r in group["rows"] if (r["completed_at"], r["playthroughs"], r["raw_notes"]) not in confirmed_row_keys]
+        if not new_rows:
+            skipped += 1
+            continue
+        group["rows"] = new_rows
 
         # Look for an existing library entry matching title + platform
         existing_entry = None
