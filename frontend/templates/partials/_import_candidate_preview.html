@@ -1,5 +1,4 @@
-{# Import candidate preview pane — mirrors library_detail style.
-   Shows the matched entry with existing completions + pending rows merged. #}
+{# Import candidate preview pane — mirrors library_detail style. #}
 
 {% set hero_url = entry | grid_cover_url('hero') %}
 
@@ -22,31 +21,38 @@
     <div class="cgt-detail-block mb-3">
       {% set existing = entry.completions | sort(attribute='completed_at', reverse=True) %}
       {% set pending_count = candidate.rows | length %}
-      {% set total = (existing | length) + pending_count %}
       <h6 class="cgt-detail-block__heading">
         Completions
         <span class="text-secondary fw-normal ms-1">({{ existing | length }} now · +{{ pending_count }} importing)</span>
       </h6>
-      <ul class="list-unstyled mb-0">
-        {% for r in candidate.rows | sort(attribute='completed_at', reverse=True) %}
-        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-green);">
-          <div>
-            {% if r.completed_at %}{{ r.completed_at.strftime("%B %-d, %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown date</span>{% endif %}
-            {% if r.playthroughs %}{% set pt = r.playthroughs | float | int %}<small class="text-secondary ms-1">&middot; {{ pt }} playthrough{{ 's' if pt != 1 }}</small>{% endif %}
-          </div>
-          {% if r.raw_notes %}<small class="text-secondary d-block">{{ r.raw_notes }}</small>{% endif %}
-        </li>
-        {% endfor %}
-        {% for c in existing %}
-        <li class="mb-2">
-          <div>
-            {% if c.completed_at %}{{ c.completed_at.strftime("%B %-d, %Y") }}{% else %}Unknown date{% endif %}
-            {% if c.playthroughs %}<small class="text-secondary ms-1">&middot; {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
-          </div>
-          {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
+      <div class="cgt-detail-scroll-list">
+        <table class="table table-sm mb-0 align-middle">
+          <tbody>
+            {% for r in candidate.rows | sort(attribute='completed_at', reverse=True) %}
+            <tr style="border-left: 2px solid var(--ctp-green);">
+              <td>
+                <div>
+                  {% if r.completed_at %}{{ r.completed_at.strftime("%B %-d, %Y") }}{% else %}<span class="text-warning">Unknown date</span>{% endif %}
+                  {% if r.playthroughs %}{% set pt = r.playthroughs | float | int %}<small class="text-secondary ms-1">&middot; {{ pt }} playthrough{{ 's' if pt != 1 }}</small>{% endif %}
+                </div>
+                {% if r.raw_notes %}<small class="text-secondary">{{ r.raw_notes }}</small>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% for c in existing %}
+            <tr>
+              <td>
+                <div>
+                  {% if c.completed_at %}{{ c.completed_at.strftime("%B %-d, %Y") }}{% else %}Unknown date{% endif %}
+                  {% if c.playthroughs %}<small class="text-secondary ms-1">&middot; {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
+                </div>
+                {% if c.notes %}<small class="text-secondary">{{ c.notes }}</small>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
