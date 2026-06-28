@@ -39,18 +39,17 @@
     {% endif %}
   </td>
   <td class="text-end text-nowrap">
-    {% if c.proposed_action == "add_to_existing" %}
-    <button class="btn btn-primary btn-sm"
-            onclick="openImportPreview({{ c.id }})">
-      Confirm
-    </button>
-    {% else %}
     <button class="btn btn-primary btn-sm"
             hx-post="/library/import/{{ c.id }}/confirm"
             hx-target="#import-row-{{ c.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this">
       Confirm
+    </button>
+    {% if c.proposed_action == "add_to_existing" %}
+    <button class="btn btn-surface btn-sm"
+            onclick="openImportPreview({{ c.id }})">
+      Preview
     </button>
     {% endif %}
     <button class="btn btn-surface btn-sm"
