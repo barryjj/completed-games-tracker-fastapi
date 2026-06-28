@@ -2491,6 +2491,50 @@ def import_review_page(
     )
 
 
+@router.get("/library/import/{candidate_id}/preview")
+def import_candidate_preview(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Detail pane content for an add_to_existing candidate — shows the matched
+    library entry with an import-specific Confirm footer."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .options(
+            joinedload(models.ImportCandidate.rows),
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+        )
+        .first()
+    )
+    if not candidate or not candidate.library_entry_id:
+        return Response(status_code=404)
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter(models.UserLibraryEntry.id == candidate.library_entry_id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_candidate_preview.html",
+        context={"entry": entry, "candidate": candidate, "current_user": current_user},
+    )
+
+
 @router.post("/library/import/{candidate_id}/dismiss")
 def import_dismiss(
     candidate_id: int,

@@ -87,4 +87,23 @@ function importFilter() {
 </script>
 
 {% endif %}
+
+{# Preview pane for add_to_existing candidates #}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="import-preview-pane" style="width:420px">
+  <div class="offcanvas-header border-bottom">
+    <h6 class="offcanvas-title mb-0">Review match</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div id="import-preview-content"></div>
+</div>
+
+<script>
+function openImportPreview(candidateId) {
+  htmx.ajax('GET', '/library/import/' + candidateId + '/preview', {
+    target: '#import-preview-content',
+    swap: 'innerHTML'
+  });
+  bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('import-preview-pane')).show();
+}
+</script>
 {% endblock %}
