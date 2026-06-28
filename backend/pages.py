@@ -1,16 +1,5 @@
 import asyncio
 import datetime
-
-_import_upload_lock: asyncio.Lock | None = None
-
-
-def _get_import_lock() -> asyncio.Lock:
-    global _import_upload_lock
-    if _import_upload_lock is None:
-        _import_upload_lock = asyncio.Lock()
-    return _import_upload_lock
-
-
 import html as _html
 import logging
 import os
@@ -26,6 +15,15 @@ from . import importer, jobs, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
+
+_import_upload_lock: asyncio.Lock | None = None
+
+
+def _get_import_lock() -> asyncio.Lock:
+    global _import_upload_lock
+    if _import_upload_lock is None:
+        _import_upload_lock = asyncio.Lock()
+    return _import_upload_lock
 
 router = APIRouter()
 
