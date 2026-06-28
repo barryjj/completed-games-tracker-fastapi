@@ -94,6 +94,15 @@ engine = create_engine(
     DB_URL,
     connect_args={"check_same_thread": False, "timeout": 15} if DB_URL.startswith("sqlite") else {},
 )
+
+if DB_URL.startswith("sqlite"):
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(conn, _record):
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
