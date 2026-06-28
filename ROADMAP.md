@@ -312,6 +312,11 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - **After confirm:** creates `Game` + `GameRelease` (or reuses existing), creates `UserLibraryEntry`, logs the completion — identical result to manual add + log completion
 - **Duplicate detection:** same scan that catches Steam vs manual duplicates catches import vs Steam/existing duplicates; no phantom duplication
 
+### pages.py refactor — split by domain
+- At 3100+ lines `pages.py` is getting unwieldy; split into domain modules: `pages_library.py`, `pages_import.py`, `pages_match_review.py`, `pages_completions.py`, `pages_account.py`
+- `pages.py` becomes a thin aggregator; shared helpers (`_base_ctx`, auth wrappers, template setup) move to `pages_common.py`
+- Do after PR #115 merges so the import module boundary is stable
+
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
 - Lets users fix franchise sort order (e.g. "DmC: Devil May Cry" → sort as "Devil May Cry 0") without touching the display name
