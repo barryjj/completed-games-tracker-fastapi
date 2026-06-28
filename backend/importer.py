@@ -180,6 +180,19 @@ class ParseResult:
         self.total_rows: int = 0
 
 
+def _row_values(sheet_row) -> tuple:
+    """Convert a row of Cell objects to values, preserving percentage display strings."""
+    out = []
+    for cell in sheet_row:
+        v = cell.value
+        if isinstance(v, (int, float)) and cell.number_format and "%" in cell.number_format:
+            pct = int(round(v * 100))
+            out.append(f"{pct}%")
+        else:
+            out.append(v)
+    return tuple(out)
+
+
 def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
     """Parse an xlsx file and return grouped ImportCandidate data (not yet written to DB)."""
     wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
@@ -190,7 +203,7 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
 
     for sheet in wb.worksheets:
         tab_year = _tab_year(sheet.title)
-        rows = list(sheet.iter_rows(values_only=True))
+        rows = [_row_values(r) for r in sheet.iter_rows()]
         if not rows:
             continue
 
@@ -228,10 +241,7 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
             raw_platform = _cell(row, cols, "platform") or ""
             raw_date = _cell(row, cols, "date")
             raw_playthroughs = _cell(row, cols, "playthroughs", "times completed")
-            # Skip notes cells that are numeric (e.g. 100% stored as 1.0 in Excel).
-            notes_idx = cols.get("notes")
-            notes_raw_val = row[notes_idx] if notes_idx is not None and notes_idx < len(row) else None
-            raw_notes = _cell(row, cols, "notes") if isinstance(notes_raw_val, str) else None
+            raw_notes = _cell(row, cols, "notes")
             raw_collection = _cell(row, cols, "collection")
 
             # Row number from # column
