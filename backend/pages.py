@@ -2441,30 +2441,53 @@ async def import_upload(
     )
 
 
+_IMPORT_PAGE_SIZE = 50
+
+
 @router.get("/library/import/review")
 def import_review_page(
     request: Request,
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    base_q = db.query(models.ImportCandidate).filter(
+        models.ImportCandidate.user_id == current_user.id,
+        models.ImportCandidate.status == "pending",
+    )
+    pending = base_q.count()
     candidates = (
-        db.query(models.ImportCandidate)
-        .filter(
-            models.ImportCandidate.user_id == current_user.id,
-            models.ImportCandidate.status == "pending",
-        )
-        .options(
+        base_q.options(
             joinedload(models.ImportCandidate.rows),
             joinedload(models.ImportCandidate.platform),
             joinedload(models.ImportCandidate.library_entry),
         )
         .order_by(models.ImportCandidate.id)
+        .offset(offset)
+        .limit(_IMPORT_PAGE_SIZE)
         .all()
     )
+    next_offset = offset + _IMPORT_PAGE_SIZE
+    has_more = next_offset < pending
+
+    if request.headers.get("HX-Request") and offset > 0:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_rows.html",
+            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more},
+        )
+
     return templates.TemplateResponse(
         request=request,
         name="import_review.html",
-        context={"current_user": current_user, "candidates": candidates, "pending": len(candidates), **_base_ctx(db, current_user)},
+        context={
+            "current_user": current_user,
+            "candidates": candidates,
+            "pending": pending,
+            "next_offset": next_offset,
+            "has_more": has_more,
+            **_base_ctx(db, current_user),
+        },
     )
 
 

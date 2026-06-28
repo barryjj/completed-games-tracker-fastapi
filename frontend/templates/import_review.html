@@ -67,64 +67,7 @@
       </tr>
     </thead>
     <tbody>
-      {% for c in candidates %}
-      <tr id="import-row-{{ c.id }}"
-          data-title="{{ c.raw_title | lower }}"
-          data-action="{{ c.proposed_action }}"
-          data-platform="{{ c.platform.id if c.platform else 'raw:' ~ c.raw_platform }}">
-        <td>
-          <div class="fw-medium">{{ c.raw_title }}</div>
-          {% if c.library_entry %}
-          <div class="small text-secondary">
-            Matched: {{ c.library_entry.display_name or c.raw_title }}
-          </div>
-          {% endif %}
-        </td>
-        <td>
-          {% if c.platform %}
-          <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-          {% else %}
-          <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-          {% endif %}
-        </td>
-        <td>
-          <span class="text-secondary small">{{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}</span>
-          {% for r in c.rows %}
-          <div class="small mt-1 {% if not loop.first %}border-top pt-1{% endif %}">
-            <div><span class="text-secondary">Date:</span> {% if r.completed_at %}{{ r.completed_at.strftime("%-d %b %Y") }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</div>
-            {% if r.playthroughs %}<div><span class="text-secondary">Playthroughs:</span> {{ r.playthroughs }}</div>{% endif %}
-            {% if r.raw_notes %}<div><span class="text-secondary">Notes:</span> {{ r.raw_notes }}</div>{% endif %}
-            {% if r.raw_collection %}<div><span class="text-secondary">Collection:</span> {{ r.raw_collection }}</div>{% endif %}
-          </div>
-          {% endfor %}
-        </td>
-        <td>
-          {% if c.proposed_action == "add_to_existing" %}
-          <span class="tag-badge tag-platform-green">Add to existing</span>
-          {% elif c.proposed_action == "create_new" %}
-          <span class="tag-badge tag-platform-blue">Create new</span>
-          {% else %}
-          <span class="tag-badge tag-platform-yellow">Needs review</span>
-          {% endif %}
-        </td>
-        <td class="text-end text-nowrap">
-          <button class="btn btn-primary btn-sm"
-                  hx-post="/library/import/{{ c.id }}/confirm"
-                  hx-target="#import-row-{{ c.id }}"
-                  hx-swap="outerHTML"
-                  hx-disabled-elt="this">
-            Confirm
-          </button>
-          <button class="btn btn-surface btn-sm"
-                  hx-post="/library/import/{{ c.id }}/dismiss"
-                  hx-target="#import-row-{{ c.id }}"
-                  hx-swap="outerHTML"
-                  hx-disabled-elt="this">
-            Dismiss
-          </button>
-        </td>
-      </tr>
-      {% endfor %}
+      {% include "partials/_import_rows.html" %}
     </tbody>
   </table>
 </div>
