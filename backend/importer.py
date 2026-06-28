@@ -294,18 +294,18 @@ def write_candidates(result: ParseResult, db: Session, user_id: int) -> int:
     count = 0
     skipped = 0
     for group in result.candidates:
-        # Skip groups already confirmed in a previous import run
-        already_confirmed = (
+        # Skip groups that already exist (pending or confirmed) from a previous upload
+        already_exists = (
             db.query(models.ImportCandidate)
             .filter(
                 models.ImportCandidate.user_id == user_id,
                 models.ImportCandidate.raw_title == group["raw_title"],
                 models.ImportCandidate.platform_id == group["platform_id"],
-                models.ImportCandidate.status == "confirmed",
+                models.ImportCandidate.status.in_(["pending", "confirmed"]),
             )
             .first()
         )
-        if already_confirmed:
+        if already_exists:
             skipped += 1
             continue
 
