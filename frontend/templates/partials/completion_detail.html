@@ -83,13 +83,12 @@
         <dt>Playthroughs</dt>
         <dd>{{ completion.playthroughs }}</dd>
         {% endif %}
+
+        {% if completion.notes %}
+        <dt>Notes</dt>
+        <dd>{{ completion.notes }}</dd>
+        {% endif %}
       </dl>
-      {% if completion.notes %}
-      <div class="mt-2">
-        <div class="text-secondary mb-1"><small>Notes</small></div>
-        <p class="mb-0">{{ completion.notes }}</p>
-      </div>
-      {% endif %}
     </div>
 
     <div class="cgt-detail-block mb-2">

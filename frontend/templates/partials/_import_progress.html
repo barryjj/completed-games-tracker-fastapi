@@ -38,7 +38,8 @@
     <button class="btn btn-sm btn-surface"
             hx-post="/library/import/cancel/{{ qjob_id }}"
             hx-swap="none"
-            hx-disabled-elt="this">
+            hx-disabled-elt="this"
+            hx-on::after-request="htmx.ajax('GET', '/library/import/progress', {target:'#import-progress', swap:'outerHTML'})">
       Remove
     </button>
   </div>

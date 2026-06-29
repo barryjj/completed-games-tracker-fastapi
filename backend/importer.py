@@ -295,7 +295,7 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
     return result
 
 
-_BATCH_SIZE = 10
+_BATCH_SIZE = 25
 
 
 def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress=None) -> int:
