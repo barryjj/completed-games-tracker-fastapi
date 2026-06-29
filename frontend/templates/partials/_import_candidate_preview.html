@@ -1,0 +1,85 @@
+{# Import candidate preview pane — mirrors library_detail style. #}
+
+{% set hero_url = entry | grid_cover_url('hero') %}
+
+<div class="offcanvas-body p-0">
+  <div class="cgt-pane-nav"></div>
+
+  {% if hero_url %}
+  <div class="cgt-detail-hero" id="detail-hero-{{ entry.id }}">
+    <img class="cgt-detail-hero__img" src="{{ hero_url }}" alt="" loading="lazy">
+  </div>
+  {% endif %}
+
+  <div class="cgt-detail-body">
+    <div class="mb-2 d-flex flex-wrap gap-1">
+      {% if entry.release and entry.release.platform_obj %}
+      <span class="tag-badge {{ entry.release.platform_obj.tag_class }}">{{ entry.release.platform_obj.display_name or entry.release.platform_obj.name }}</span>
+      {% endif %}
+    </div>
+
+    {% set existing = entry.completions | sort(attribute='completed_at', reverse=True) %}
+    {% set pending_count = candidate.rows | length %}
+
+    <h6 class="cgt-detail-block__heading mb-2">
+      Completions
+      <span class="text-secondary fw-normal ms-1">({{ existing | length }} now · +{{ pending_count }} importing)</span>
+    </h6>
+
+    {% for r in candidate.rows | sort(attribute='completed_at', reverse=True) %}
+    <div class="cgt-detail-block mb-2" style="border-left: 2px solid var(--ctp-green);">
+      <dl class="cgt-detail-meta small mb-0">
+        <dt>Date</dt>
+        <dd>{% if r.completed_at %}{{ r.completed_at.strftime("%B %-d, %Y") }}{% else %}<span class="text-warning">Unknown</span>{% endif %}</dd>
+        {% if r.playthroughs %}
+        <dt>Playthroughs</dt>
+        <dd>{{ r.playthroughs | float | int }}</dd>
+        {% endif %}
+        {% if r.raw_notes %}
+        <dt>Notes</dt>
+        <dd>{{ r.raw_notes }}</dd>
+        {% endif %}
+      </dl>
+    </div>
+    {% endfor %}
+
+    {% for c in existing %}
+    <div class="cgt-detail-block mb-2">
+      <dl class="cgt-detail-meta small mb-0">
+        <dt>Date</dt>
+        <dd>{% if c.completed_at %}{{ c.completed_at.strftime("%B %-d, %Y") }}{% else %}Unknown{% endif %}</dd>
+        {% if c.playthroughs %}
+        <dt>Playthroughs</dt>
+        <dd>{{ c.playthroughs }}</dd>
+        {% endif %}
+        {% if c.notes %}
+        <dt>Notes</dt>
+        <dd>{{ c.notes }}</dd>
+        {% endif %}
+      </dl>
+    </div>
+    {% endfor %}
+
+  </div>
+</div>
+
+<div class="cgt-detail-actions border-top d-flex gap-2 p-3">
+  <button class="btn btn-primary btn-sm flex-grow-1"
+          hx-post="/library/import/{{ candidate.id }}/confirm"
+          hx-target="#import-row-{{ candidate.id }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="bootstrap.Offcanvas.getInstance(document.getElementById('import-preview-pane')).hide()">
+    Confirm
+  </button>
+  <button class="btn btn-surface btn-sm"
+          hx-post="/library/import/{{ candidate.id }}/dismiss"
+          hx-target="#import-row-{{ candidate.id }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="bootstrap.Offcanvas.getInstance(document.getElementById('import-preview-pane')).hide()">
+    Dismiss
+  </button>
+  <button class="btn btn-surface btn-sm"
+          onclick="bootstrap.Offcanvas.getInstance(document.getElementById('import-preview-pane')).hide()">
+    Cancel
+  </button>
+</div>

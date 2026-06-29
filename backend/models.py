@@ -90,7 +90,20 @@ def _platform_heuristic_css(name: str) -> str:
 
 
 DB_URL = os.getenv("DATABASE_URL", "sqlite:///backend/app.db")
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
+engine = create_engine(
+    DB_URL,
+    connect_args={"check_same_thread": False, "timeout": 15} if DB_URL.startswith("sqlite") else {},
+)
+
+if DB_URL.startswith("sqlite"):
+    from sqlalchemy import event as _sa_event
+
+    @_sa_event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(conn, _record):
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=10000")
+
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -202,28 +215,99 @@ class PlatformAlias(Base):
     platform: Mapped["Platform"] = relationship("Platform", back_populates="aliases")
 
 
+def _norm_platform(s: str) -> str:
+    """Normalize a platform string for fuzzy comparison: lowercase, strip punctuation and spaces."""
+    import re
+
+    s = s.lower()
+    s = re.sub(r"[^\w]", "", s)  # strip all non-alphanumeric
+    return s
+
+
 def resolve_platform_id(db: Session, platform_name: str) -> int | None:
     """Look up a Platform row by name, display_name, or alias and return its id.
 
     Checks in order:
-      1. Exact match on Platform.name (canonical IGDB / custom name)
-      2. Case-insensitive match on Platform.display_name (user-renamed label)
-      3. Case-insensitive match on PlatformAlias.alias (abbreviations / nicknames)
+      1. Exact match on Platform.name
+      2. Case-insensitive match on Platform.display_name
+      3. Case-insensitive match on PlatformAlias.alias
+      4. Normalized match (strip punctuation/spaces) against all names and aliases
+      5. Substring match — input normalized is contained in a platform's normalized name or vice versa
+      6. Fuzzy similarity match via SequenceMatcher (threshold: 0.82)
 
-    Returns None if no match — callers leave platform_id NULL rather than
-    inventing a row. Never creates new Platform rows.
+    Returns None only if nothing scores above the threshold.
+    Never creates new Platform rows.
     """
+    from difflib import SequenceMatcher
+
     if not platform_name:
         return None
     name = platform_name.strip()
+
+    # 1. Exact name
     row = db.query(Platform).filter(Platform.name == name).first()
     if row:
         return row.id
+
+    # 2. Case-insensitive display_name
     row = db.query(Platform).filter(Platform.display_name.ilike(name)).first()
     if row:
         return row.id
+
+    # 3. Case-insensitive alias
     alias = db.query(PlatformAlias).filter(PlatformAlias.alias.ilike(name)).first()
-    return alias.platform_id if alias else None
+    if alias:
+        return alias.platform_id
+
+    # Ambiguous brand-only strings — too vague to fuzzy-match confidently.
+    # Return None unless an explicit alias already matched above.
+    _AMBIGUOUS = {"nintendo", "sega", "atari", "sony", "microsoft", "nec", "snk", "bandai", "namco"}
+    if _norm_platform(name) in _AMBIGUOUS:
+        return None
+
+    # Build normalized candidate list: {normalized_string: platform_id}
+    needle = _norm_platform(name)
+    if not needle:
+        return None
+
+    candidates: dict[str, int] = {}
+    for p in db.query(Platform).all():
+        if p.name:
+            candidates[_norm_platform(p.name)] = p.id
+        if p.display_name:
+            candidates[_norm_platform(p.display_name)] = p.id
+    for a in db.query(PlatformAlias).all():
+        if a.alias:
+            candidates[_norm_platform(a.alias)] = a.platform_id
+
+    # 4. Normalized exact match
+    if needle in candidates:
+        return candidates[needle]
+
+    # 5. Substring match — the shorter string must be at least 50% of the longer one
+    # to avoid short tokens like "nes" matching "genesis" or "nintendo" matching everything.
+    for cand, pid in candidates.items():
+        if not cand:
+            continue
+        shorter, longer = (needle, cand) if len(needle) <= len(cand) else (cand, needle)
+        if shorter in longer and len(shorter) >= len(longer) * 0.5:
+            return pid
+
+    # 6. Fuzzy similarity
+    best_score = 0.0
+    best_pid = None
+    for cand, pid in candidates.items():
+        if not cand:
+            continue
+        score = SequenceMatcher(None, needle, cand).ratio()
+        if score > best_score:
+            best_score = score
+            best_pid = pid
+
+    if best_score >= 0.79:
+        return best_pid
+
+    return None
 
 
 class Game(Base):
@@ -497,6 +581,64 @@ class SyncMatchCandidate(Base):
     __table_args__ = (UniqueConstraint("manual_entry_id", "platform_source", "external_id", name="uq_match_candidate"),)
 
 
+class ImportCandidate(Base):
+    """One proposed library entry from a spreadsheet import.
+
+    Groups all spreadsheet rows that resolve to the same game+platform identity.
+    status values:
+      pending    – awaiting user review
+      confirmed  – user approved; library entry + completions created
+      dismissed  – user rejected
+    proposed_action values:
+      add_to_existing  – matched an existing UserLibraryEntry; just log completions
+      create_new       – no existing entry found; will create Game+Release+Entry on confirm
+      needs_review     – platform unresolved or ambiguous; requires manual decision before confirm
+    """
+
+    __tablename__ = "import_candidates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    raw_title: Mapped[str] = mapped_column(String, nullable=False)
+    raw_platform: Mapped[str] = mapped_column(String, nullable=False)
+    platform_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=True)
+    # Set when proposed_action == "add_to_existing"
+    library_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
+    proposed_action: Mapped[str] = mapped_column(String, nullable=False, default="needs_review")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    platform: Mapped["Platform | None"] = relationship("Platform")
+    library_entry: Mapped["UserLibraryEntry | None"] = relationship("UserLibraryEntry")
+    rows: Mapped[list["ImportRow"]] = relationship("ImportRow", back_populates="candidate", cascade="save-update, merge")
+
+
+class ImportRow(Base):
+    """One raw spreadsheet row attached to an ImportCandidate.
+
+    Multiple rows can belong to the same candidate when they resolve to the
+    same game+platform (e.g. three completions of Super Mario World on SNES).
+    Each row becomes one Completion on confirm.
+    """
+
+    __tablename__ = "import_rows"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    candidate_id: Mapped[int] = mapped_column(Integer, ForeignKey("import_candidates.id", ondelete="CASCADE"), nullable=False)
+    raw_title: Mapped[str] = mapped_column(String, nullable=False)
+    raw_platform: Mapped[str] = mapped_column(String, nullable=False)
+    raw_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_collection: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_tab: Mapped[str | None] = mapped_column(String, nullable=True)
+    row_number: Mapped[int | None] = mapped_column(Integer, nullable=True)  # spreadsheet # column
+    # Normalized at parse time
+    completed_at: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
+
+
 class Completion(Base):
     __tablename__ = "completions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
@@ -506,6 +648,9 @@ class Completion(Base):
     # stored as string to handle "1", "1+", "2", "3+" etc.
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Tiebreaker for same-date completions from historical import (spreadsheet row number).
+    # NULL for completions added manually or via sync — sort those last within a date.
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     user: Mapped["User"] = relationship("User")

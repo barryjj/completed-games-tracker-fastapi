@@ -571,8 +571,8 @@ tr:focus-within .row-actions {
 }
 
 /* ─── HTMX ───────────────────────────────────────────────────────────────── */
-.htmx-indicator { opacity: 0; transition: opacity 200ms; }
-.htmx-request .htmx-indicator { opacity: 1; }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator { display: inline-block; }
 
 /* ─── Toasts ─────────────────────────────────────────────────────────────── */
 /* Notification-style toasts: tinted surface with a colored accent stripe on

@@ -1,19 +1,30 @@
+import asyncio
 import datetime
 import html as _html
 import logging
 import os
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from . import match_review, models, users
+from . import importer, jobs, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
+
+_import_upload_lock: asyncio.Lock | None = None
+
+
+def _get_import_lock() -> asyncio.Lock:
+    global _import_upload_lock
+    if _import_upload_lock is None:
+        _import_upload_lock = asyncio.Lock()
+    return _import_upload_lock
+
 
 router = APIRouter()
 
@@ -2384,6 +2395,375 @@ def match_review_clear_dismissed(
         name="partials/_toast.html",
         context={"kind": "success", "body": body},
         headers={"HX-Reswap": "none"},
+    )
+
+
+# --- Historical import ---
+
+
+@router.get("/library/import")
+def import_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    pending = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .count()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="import.html",
+        context={"current_user": current_user, "pending": pending, **_base_ctx(db, current_user)},
+    )
+
+
+@router.post("/library/import/upload")
+async def import_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_toast.html",
+            context={"kind": "error", "body": "Please upload an xlsx file."},
+            headers={"HX-Reswap": "none"},
+        )
+    contents = await file.read()
+    jobs.enqueue_import(current_user.id, file.filename, contents)
+    # Start draining the queue only if nothing is currently running
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx" and j.status == jobs.JobStatus.RUNNING]
+    if not active:
+        asyncio.create_task(_drain_import_queue(current_user.id))
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": f"Queued: {file.filename}"},
+    )
+
+
+async def _drain_import_queue(user_id: int) -> None:
+    """Process queued import jobs one at a time until the queue is empty."""
+    while True:
+        item = jobs.next_queued_import(user_id)
+        if not item:
+            break
+        job_id, _filename, file_bytes = item
+        await _run_import_job(job_id, user_id, file_bytes)
+
+
+async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING, progress={"phase": "Parsing", "done": 0, "total": 0})
+    db = models.SessionLocal()
+    try:
+        result = await asyncio.to_thread(importer.parse_xlsx, file_bytes, db, user_id)
+        total = len(result.candidates)
+        jobs.update(job_id, progress={"phase": "Writing", "done": 0, "total": total})
+
+        def on_progress(done: int) -> None:
+            jobs.update(job_id, progress={"phase": "Writing", "done": done, "total": total})
+            j = jobs.get(job_id)
+            if j and j.cancel_requested:
+                raise RuntimeError("cancelled")
+
+        count = await asyncio.to_thread(importer.write_candidates, result, db, user_id, on_progress)
+        skipped_msg = f" ({result.skipped_rows} blank rows skipped)" if result.skipped_rows else ""
+        jobs.mark_done(
+            job_id,
+            f"Import complete — {count} candidate{'s' if count != 1 else ''} ready to review.{skipped_msg}",
+        )
+    except RuntimeError as e:
+        if str(e) == "cancelled":
+            jobs.mark_failed(job_id, "Import cancelled.")
+        else:
+            logger.exception("Import job %s failed", job_id)
+            jobs.mark_failed(job_id, f"Import failed: {e}")
+    except Exception as e:
+        logger.exception("Import job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Import failed: {e}")
+    finally:
+        db.close()
+
+
+_IMPORT_PAGE_SIZE = 50
+
+
+@router.post("/library/import/cancel")
+def import_cancel_job(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+    for j in active:
+        jobs.request_cancel(j.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success" if active else "error", "body": "Import cancelled." if active else "No active import."},
+    )
+
+
+@router.post("/library/import/cancel/{job_id}")
+def import_cancel_queued(
+    request: Request,
+    job_id: str,
+    current_user: models.User = Depends(get_web_user),
+):
+    removed = jobs.cancel_queued_import(job_id, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success" if removed else "error", "body": "Queued upload removed." if removed else "Not found."},
+    )
+
+
+@router.get("/library/import/progress")
+def import_progress(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+    job = active[0] if active else None
+    queue = jobs.queued_imports_for(current_user.id)
+    pending = (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_progress.html",
+        context={"job": job, "queue": queue, "pending": pending},
+    )
+
+
+@router.get("/library/import/status")
+def import_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Replaces #import-status after an import job completes."""
+    pending = (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_status.html",
+        context={"pending": pending},
+    )
+
+
+@router.get("/library/import/review")
+def import_review_page(
+    request: Request,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    base_q = db.query(models.ImportCandidate).filter(
+        models.ImportCandidate.user_id == current_user.id,
+        models.ImportCandidate.status == "pending",
+    )
+    pending = base_q.count()
+    candidates = (
+        base_q.options(
+            joinedload(models.ImportCandidate.rows),
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+        )
+        .order_by(models.ImportCandidate.id)
+        .offset(offset)
+        .limit(_IMPORT_PAGE_SIZE)
+        .all()
+    )
+    next_offset = offset + _IMPORT_PAGE_SIZE
+    has_more = next_offset < pending
+
+    if request.headers.get("HX-Request") and offset > 0:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_rows.html",
+            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more},
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="import_review.html",
+        context={
+            "current_user": current_user,
+            "candidates": candidates,
+            "pending": pending,
+            "next_offset": next_offset,
+            "has_more": has_more,
+            **_base_ctx(db, current_user),
+        },
+    )
+
+
+@router.get("/library/import/{candidate_id}/preview")
+def import_candidate_preview(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Detail pane content for an add_to_existing candidate — shows the matched
+    library entry with an import-specific Confirm footer."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .options(
+            joinedload(models.ImportCandidate.rows),
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+        )
+        .first()
+    )
+    if not candidate or not candidate.library_entry_id:
+        return Response(status_code=404)
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter(models.UserLibraryEntry.id == candidate.library_entry_id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_candidate_preview.html",
+        context={"entry": entry, "candidate": candidate, "current_user": current_user},
+    )
+
+
+@router.post("/library/import/{candidate_id}/dismiss")
+def import_dismiss(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    candidate.status = "dismissed"
+    candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    return Response(status_code=200, headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"})
+
+
+@router.post("/library/import/{candidate_id}/confirm")
+def import_confirm(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .options(
+            joinedload(models.ImportCandidate.rows),
+        )
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
+        # Log all completions against the existing library entry, skipping exact duplicates
+        for row in candidate.rows:
+            if not row.completed_at:
+                continue
+            already_exists = (
+                db.query(models.Completion)
+                .filter(
+                    models.Completion.library_entry_id == candidate.library_entry_id,
+                    models.Completion.completed_at == row.completed_at,
+                    models.Completion.sort_order == row.row_number,
+                )
+                .first()
+            )
+            if already_exists:
+                continue
+            db.add(
+                models.Completion(
+                    user_id=current_user.id,
+                    library_entry_id=candidate.library_entry_id,
+                    completed_at=row.completed_at,
+                    playthroughs=row.playthroughs,
+                    notes=row.raw_notes,
+                    sort_order=row.row_number,
+                )
+            )
+        candidate.status = "confirmed"
+        candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
+        return Response(status_code=200)
+
+    # create_new / needs_review — redirect to library with modal pre-filled
+    platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
+    redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
+    return Response(status_code=200, headers={"HX-Redirect": redirect_url})
+
+
+@router.post("/library/import/clear")
+def import_clear_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Cancel running/queued import jobs, then delete pending candidates (confirmed stay)."""
+    for j in jobs.active_jobs_for(current_user.id):
+        if j.kind == "import_xlsx":
+            jobs.request_cancel(j.id)
+    for job_id, _ in jobs.queued_imports_for(current_user.id):
+        jobs.cancel_queued_import(job_id, current_user.id)
+    pending_ids = [
+        r[0]
+        for r in db.query(models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .all()
+    ]
+    if pending_ids:
+        db.query(models.ImportRow).filter(models.ImportRow.candidate_id.in_(pending_ids)).delete(synchronize_session=False)
+        db.query(models.ImportCandidate).filter(models.ImportCandidate.id.in_(pending_ids)).delete(synchronize_session=False)
+    db.commit()
+    return Response(
+        headers={"HX-Redirect": "/library/import"},
+        status_code=200,
     )
 
 

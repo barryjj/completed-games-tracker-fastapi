@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Import{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <h1 class="mb-0">Import</h1>
+  <div id="import-header-actions" class="d-flex align-items-center gap-2">
+  {% if pending %}
+  <a href="/library/import/review" class="btn btn-sm btn-primary">Review {{ pending }} pending</a>
+  <button class="btn btn-sm btn-surface"
+          hx-post="/library/import/clear"
+          hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
+          hx-swap="none"
+          hx-disabled-elt="this">
+    <span class="htmx-indicator spinner-border spinner-border-sm me-1" role="status"></span>
+    Clear all
+  </button>
+  {% endif %}
+  </div>
+</div>
+
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-1">Upload spreadsheet</h5>
+        <p class="text-secondary small mb-3">
+          Upload a Google Sheets export (.xlsx). Each tab should be a year.
+          Columns recognised: <code>#</code>, <code>Game</code>, <code>Platform</code>,
+          <code>Date</code>, <code>Playthroughs</code>, <code>Notes</code>, <code>Collection</code>.
+        </p>
+        <form hx-post="/library/import/upload"
+              hx-encoding="multipart/form-data"
+              hx-swap="none"
+              hx-sync="this:drop"
+              hx-disabled-elt="find button[type='submit']"
+              hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/library/import/progress', {target:'#import-progress', swap:'outerHTML'})">
+          <div class="mb-3">
+            <input class="form-control form-control-sm" type="file" name="file" accept=".xlsx,.xls" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2">
+            <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+            Upload
+          </button>
+        </form>
+        <div id="import-progress"
+             hx-get="/library/import/progress"
+             hx-trigger="load, every 2s"
+             hx-swap="outerHTML"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+document.body.addEventListener('cgt:importDone', function() { window.location.reload(); });
+</script>
+{% endblock %}
