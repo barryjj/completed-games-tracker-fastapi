@@ -2654,10 +2654,49 @@ def import_candidate_preview(
     if not entry:
         return Response(status_code=404)
 
+    game = entry.release.game
+    child_entries = []
+    if not game.is_dlc:
+        child_entries = (
+            db.query(models.UserLibraryEntry)
+            .options(
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+                joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+                selectinload(models.UserLibraryEntry.user_artwork),
+            )
+            .join(models.GameRelease)
+            .join(models.Game)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.parent_id == game.id,
+            )
+            .order_by(models.Game.title)
+            .all()
+        )
+
+    visuals = _build_detail_pane_visuals(db, entry, game, entry.release)
+    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
+
     return templates.TemplateResponse(
         request=request,
-        name="partials/_import_candidate_preview.html",
-        context={"entry": entry, "candidate": candidate, "current_user": current_user},
+        name="partials/library_detail.html",
+        context={
+            "entry": entry,
+            "game": game,
+            "release": entry.release,
+            "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
+            "igdb_meta": _extract_igdb_meta(entry.release),
+            "child_entries": child_entries,
+            "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
+            "current_user": current_user,
+            "needs_refresh": False,
+            "fresh_open": False,
+            "candidate": candidate,
+            "import_rows": sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True),
+            **visuals,
+        },
     )
 
 

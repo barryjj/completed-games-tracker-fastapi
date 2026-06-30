@@ -260,10 +260,30 @@
     </div>
     {% endif %}
 
-    {% if completions %}
+    {% if import_rows or completions %}
     <div class="cgt-detail-block mb-3">
-      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ completions | length }})</span></h6>
+      {% set import_count = (import_rows | length) if import_rows else 0 %}
+      {% set total_count = (completions | length) + import_count %}
+      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ total_count }}{% if import_count %} + {{ import_count }} importing{% endif %})</span></h6>
       <ul class="list-unstyled mb-0">
+        {% if import_rows %}
+        {% for r in import_rows %}
+        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
+          <dl class="cgt-detail-meta mb-0">
+            <dt>Date</dt>
+            <dd>{{ r.completed_at.strftime("%B %-d, %Y") if r.completed_at else r.raw_date or "Unknown" }}</dd>
+            {% if r.playthroughs %}
+            <dt>Playthroughs</dt>
+            <dd>{{ r.playthroughs }}</dd>
+            {% endif %}
+            {% if r.raw_notes %}
+            <dt>Notes</dt>
+            <dd>{{ r.raw_notes }}</dd>
+            {% endif %}
+          </dl>
+        </li>
+        {% endfor %}
+        {% endif %}
         {% for c in completions %}
         <li class="mb-2">
           <div>{{ c.completed_at.strftime("%B %-d, %Y") }}
@@ -286,6 +306,26 @@
    layout on #library-detail-content. Always visible even when the user
    scrolls deep into a long DLC list. #}
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
+  {% if candidate %}
+  <button class="btn btn-sm btn-primary ms-auto"
+          hx-post="/library/import/{{ candidate.id }}/confirm"
+          hx-swap="outerHTML"
+          hx-target="#import-row-{{ candidate.id }}"
+          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(id){ var el=document.getElementById(id); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); }">
+    Confirm
+  </button>
+  <button class="btn btn-sm btn-surface"
+          hx-post="/library/import/{{ candidate.id }}/dismiss"
+          hx-swap="outerHTML"
+          hx-target="#import-row-{{ candidate.id }}"
+          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(id){ var el=document.getElementById(id); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); }">
+    Dismiss
+  </button>
+  <button class="btn btn-sm btn-surface"
+          onclick="['import-preview-pane','library-detail-offcanvas'].forEach(function(id){ var el=document.getElementById(id); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); return false;">
+    Cancel
+  </button>
+  {% else %}
   <div class="dropdown ms-auto">
     <button class="btn btn-surface btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
@@ -412,4 +452,5 @@
              hx-on::after-request="if(event.detail.successful){ location.reload(); }">Remove</a></li>
     </ul>
   </div>
+  {% endif %}
 </div>
