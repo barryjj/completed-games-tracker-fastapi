@@ -263,8 +263,8 @@
     {% if import_rows or completions %}
     <div class="cgt-detail-block mb-3">
       {% set import_count = (import_rows | length) if import_rows else 0 %}
-      {% set total_count = (completions | length) + import_count %}
-      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ total_count }}{% if import_count %} + {{ import_count }} importing{% endif %})</span></h6>
+      {% set existing_count = completions | length %}
+      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({% if existing_count %}{{ existing_count }}{% if import_count %} + {% endif %}{% endif %}{% if import_count %}{{ import_count }} importing{% endif %}{% if not existing_count and not import_count %}0{% endif %})</span></h6>
       <ul class="list-unstyled mb-0">
         {% if import_rows %}
         {% for r in import_rows %}
@@ -307,22 +307,21 @@
    scrolls deep into a long DLC list. #}
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
   {% if candidate %}
+  {% set _cid = candidate.id %}
   <button class="btn btn-sm btn-primary ms-auto"
-          hx-post="/library/import/{{ candidate.id }}/confirm"
-          hx-swap="outerHTML"
-          hx-target="#import-row-{{ candidate.id }}"
-          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(id){ var el=document.getElementById(id); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); }">
+          hx-post="/library/import/{{ _cid }}/confirm"
+          hx-swap="none"
+          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); if(typeof importCardDone==='function') importCardDone('{{ _cid }}'); }">
     Confirm
   </button>
   <button class="btn btn-sm btn-surface"
-          hx-post="/library/import/{{ candidate.id }}/dismiss"
-          hx-swap="outerHTML"
-          hx-target="#import-row-{{ candidate.id }}"
-          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(id){ var el=document.getElementById(id); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); }">
+          hx-post="/library/import/{{ _cid }}/dismiss"
+          hx-swap="none"
+          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); if(typeof importCardDone==='function') importCardDone('{{ _cid }}'); }">
     Dismiss
   </button>
   <button class="btn btn-sm btn-surface"
-          onclick="['import-preview-pane','library-detail-offcanvas'].forEach(function(id){ var el=document.getElementById(id); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); return false;">
+          onclick="['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); return false;">
     Cancel
   </button>
   {% else %}
