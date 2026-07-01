@@ -311,11 +311,26 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - **Mass-select + bulk approve:** checkbox each row in list view, approve in bulk; handle edge cases (title mismatches, unmatched platforms) individually
 - **After confirm:** creates `Game` + `GameRelease` (or reuses existing), creates `UserLibraryEntry`, logs the completion — identical result to manual add + log completion
 - **Duplicate detection:** same scan that catches Steam vs manual duplicates catches import vs Steam/existing duplicates; no phantom duplication
+- **Import Review UI (in progress, `feat/historical-import`):** tabbed by proposed action (Add to existing / Create new / Needs review) with live counts, replacing the old card-stack + list-toggle. Found via real spreadsheet testing (1994+ pending candidates) that several pieces need fixing before this is done:
+  - **Matcher gap:** `importer.py`'s existing-entry lookup only does exact-normalized-title equality; it never adopted the token-based fuzzy scorer (`match_review._score()`) that sync match review already uses. Concrete misses: "Sekiro" vs library's "Sekiro: Shadows Die Twice", "The Witcher 3" vs library's "The Witcher 3: Wild Hunt". The Witcher case in particular is a subtitle *inserted* mid-title, not a trailing-number subtitle — `_score()`'s existing trailing-digit rule doesn't cover it, and its token-count penalty may actively reject it. Proposed fix: a colon/dash prefix-split pass (split spreadsheet title on `:`, search library by prefix, disambiguate by matching the remainder) tried before falling back to `_score()`.
+  - **Ambiguous matches need a picker, not a coin flip:** for mid-confidence scores, surface ranked candidates and let the user pick, reusing the multi-candidate disambiguation pattern already built for sync match review, instead of forcing a single silent match or dropping straight to `create_new`.
+  - **"Recheck matches" action:** re-run the (fixed) matcher against all pending candidates without re-uploading the spreadsheet — needed after a sync adds a game that was previously unmatched. Build the matcher as a standalone function so this and the initial import share it.
+  - **Search/filter is client-side over a partial page:** with hundreds of candidates in a tab and 50-per-page loading, searching for something not yet loaded either shows nothing or repeatedly fires the "load more" trigger until it happens to load far enough. Needs to become a real server-side query param, and the platform filter dropdown needs to query distinct platforms for the whole tab rather than building options from whatever page happened to load.
+  - **Sort/filter by date or year** — currently nothing lets you order or narrow a tab by original completion date, awkward once entries span many years.
+  - **Row actions per tab:** "Confirm" doesn't make sense on the Create new tab (nothing is being confirmed, it's creating). Also want an Edit action (fix title/platform on a pending candidate, re-run just that one through the matcher) and a manual "find in library" lookup-and-link action, distinct from Edit, for cases the matcher should catch but doesn't.
+  - **Layout:** tabs currently styled as a `btn-group`, inconsistent with the existing settings-page tab component — should match. Long lists also bury the tab/filter bar with no way back to the top; needs either a sticky filter bar or its own scroll frame like the Library/Completions pages.
+  - Not yet confirmed whether sync match review's `_score()` has the same subtitle-insertion blind spot — untested, not confirmed-safe, worth a deliberate test case once the import-side fix lands.
 
 ### pages.py refactor — split by domain
 - At 3100+ lines `pages.py` is getting unwieldy; split into domain modules: `pages_library.py`, `pages_import.py`, `pages_match_review.py`, `pages_completions.py`, `pages_account.py`
 - `pages.py` becomes a thin aggregator; shared helpers (`_base_ctx`, auth wrappers, template setup) move to `pages_common.py`
 - Do after PR #115 merges so the import module boundary is stable
+
+### Settings / navigation restructure
+- Current "Integrations" page conflates two different things: actual third-party integrations (Steam, IGDB, SteamGridDB) and one-off function cards (spreadsheet import, sync match review). Split these apart.
+- Proposed: a dedicated Settings area (gear icon in the navbar, not a top-level "Integrations" tab) with its own sub-navigation — e.g. Integrations / Library / Completions / Platforms — as a horizontal tab row or left nav within Settings
+- Integrations sub-page keeps the actual integration cards; import/match-review-type actions move to their own section (possibly under Library, since that's what they operate on)
+- No firm layout decision yet — needs a mockup pass before implementation
 
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
