@@ -29,15 +29,6 @@
     </div>
     {% endfor %}
   </td>
-  <td>
-    {% if c.proposed_action == "add_to_existing" %}
-    <span class="tag-badge tag-platform-green">Add to existing</span>
-    {% elif c.proposed_action == "create_new" %}
-    <span class="tag-badge tag-platform-blue">Create new</span>
-    {% else %}
-    <span class="tag-badge tag-platform-yellow">Needs review</span>
-    {% endif %}
-  </td>
   <td class="text-end text-nowrap">
     {% if c.proposed_action == "add_to_existing" %}
     <button class="btn btn-surface btn-sm" onclick="openImportPreview({{ c.id }})">Preview</button>
@@ -61,10 +52,10 @@
 {% endfor %}
 {% if has_more %}
 <tr id="import-load-more"
-    hx-get="/library/import/review?offset={{ next_offset }}"
+    hx-get="/library/import/review?tab={{ tab }}&offset={{ next_offset }}"
     hx-trigger="revealed"
     hx-target="#import-load-more"
     hx-swap="outerHTML">
-  <td colspan="5" class="text-center text-secondary small py-2">Loading more…</td>
+  <td colspan="4" class="text-center text-secondary small py-2">Loading more…</td>
 </tr>
 {% endif %}

@@ -17,7 +17,7 @@ from io import BytesIO
 import openpyxl
 from sqlalchemy.orm import Session
 
-from . import models
+from . import match_review, models
 
 # Month name → number (full and abbreviated)
 _MONTH_MAP: dict[str, int] = {}
@@ -170,6 +170,225 @@ def _group_key(title: str, platform_id: int | None, raw_platform: str) -> str:
     t = _normalize_title(title)
     p = str(platform_id) if platform_id is not None else f"raw:{raw_platform.strip().lower()}"
     return f"{t}|{p}"
+
+
+def _colon_remainder(title: str) -> str | None:
+    """Return the text after a colon or " - " subtitle separator, if any."""
+    for sep in (":", " - "):
+        idx = title.find(sep)
+        if idx > 0:
+            return title[idx + len(sep) :].strip()
+    return None
+
+
+def _title_contains_remainder(remainder: str, candidate_title: str) -> bool:
+    """True if every token of `remainder` appears exactly in `candidate_title`.
+    DLC titles are typically the full base title plus a " - Subtitle" suffix
+    ("The Witcher 3: Wild Hunt - Hearts of Stone"), so comparing the bare
+    remainder ("Hearts of Stone") against the whole DLC title with the
+    symmetric scorer dilutes badly on length — containment is the right
+    check here, not overall similarity.
+
+    Deliberately exact (not fuzzy) token matching: this is an all-tokens-
+    must-match containment check, not a statistical score, so match_review's
+    0.75 fuzzy threshold is far too loose here — e.g. "witcher" vs "witches"
+    scores 0.857 and would let "The Witcher 2" wrongly containment-match a
+    completely unrelated "...Witches and Wizards" title. A single false
+    positive breaks the whole check, so require exact equality.
+    """
+    remainder_toks = match_review._normalise_tokens(remainder)
+    candidate_toks = match_review._normalise_tokens(candidate_title)
+    if not remainder_toks or not candidate_toks:
+        return False
+    remaining = list(candidate_toks)
+    for tok in remainder_toks:
+        if tok in remaining:
+            remaining.remove(tok)
+        else:
+            return False
+    return True
+
+
+def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Structural match, tried before the general fuzzy scorer: split the
+    spreadsheet title on a colon/dash subtitle separator, search the library
+    for base games whose title contains the prefix ("The Witcher 3: Hearts
+    of Stone" -> search for "The Witcher 3"), then check whether the
+    remainder identifies a specific DLC child of that base game ("Hearts of
+    Stone") or is otherwise part of the base title itself. Returns None if
+    the raw title has no subtitle separator, or no base game's title
+    contains the prefix.
+    """
+    prefix = match_review._colon_prefix(raw_title)
+    if not prefix:
+        return None
+    remainder = _colon_remainder(raw_title)
+
+    base_entries = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .join(models.Game, models.GameRelease.game_id == models.Game.id)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+            models.Game.parent_id.is_(None),
+            models.Game.is_dlc.is_(False),
+        )
+        .all()
+    )
+
+    for entry in base_entries:
+        base_game = entry.release.game if entry.release else None
+        game_title = base_game.title if base_game else ""
+        if not game_title or not _title_contains_remainder(prefix, game_title):
+            continue
+
+        # Prefix matched this base game. If the remainder is also part of
+        # the base title itself (or there's no remainder), it's the base
+        # game, not a DLC — done.
+        if not remainder or _title_contains_remainder(remainder, game_title):
+            return entry
+
+        # Otherwise check whether the remainder identifies a specific DLC
+        # child of this base game.
+        child_entries = (
+            db.query(models.UserLibraryEntry)
+            .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+            .join(models.Game, models.GameRelease.game_id == models.Game.id)
+            .filter(
+                models.UserLibraryEntry.user_id == user_id,
+                models.GameRelease.platform_id == platform_id,
+                models.Game.parent_id == base_game.id,
+            )
+            .all()
+        )
+        for child in child_entries:
+            child_title = child.release.game.title if child.release and child.release.game else ""
+            if child_title and _title_contains_remainder(remainder, child_title):
+                return child
+
+        # Prefix matched but nothing more specific found — the base game
+        # itself is still the best structural guess.
+        return entry
+
+    return None
+
+
+def _library_prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Reverse of `_prefix_match_entry`: handles spreadsheet titles with no
+    subtitle at all ("Sekiro") against a library base game that has one
+    ("Sekiro: Shadows Die Twice"). Splits each base game's own title on its
+    colon/dash separator and checks for an exact normalized match against
+    the raw title — a direct structural comparison, not the general fuzzy
+    scorer, which can't distinguish a real subtitle from a DLC's " -
+    Subtitle" suffix and would risk matching the wrong thing.
+    """
+    needle = _normalize_title(raw_title)
+    base_entries = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .join(models.Game, models.GameRelease.game_id == models.Game.id)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+            models.Game.parent_id.is_(None),
+            models.Game.is_dlc.is_(False),
+        )
+        .all()
+    )
+    for entry in base_entries:
+        game_title = entry.release.game.title if entry.release and entry.release.game else ""
+        if not game_title:
+            continue
+        prefix = match_review._colon_prefix(game_title)
+        if prefix and _normalize_title(prefix) == needle:
+            return entry
+    return None
+
+
+def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Fallback for titles the structural prefix/substring pass can't place
+    (no colon subtitle, or nothing on the platform matches the prefix):
+    best-scoring entry via match_review's fuzzy scorer.
+
+    Restricted to base games (parent_id is None). DLC titles almost always
+    contain a " - Subtitle" suffix, which best_title_score's own prefix-
+    stripping logic treats the same as a real subtitle — so a bare title
+    like "Sekiro" would otherwise score a perfect 1.0 against an unrelated
+    DLC like "Sekiro - Digital Artwork & Mini Soundtrack" purely because its
+    prefix matches. DLC disambiguation is `_prefix_match_entry`'s job; this
+    fallback should only ever resolve to a base game.
+    """
+    candidates_for_platform = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .join(models.Game, models.GameRelease.game_id == models.Game.id)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+            models.Game.parent_id.is_(None),
+            models.Game.is_dlc.is_(False),
+        )
+        .all()
+    )
+    best_entry = None
+    best_score = 0.0
+    for entry in candidates_for_platform:
+        game_title = entry.release.game.title if entry.release and entry.release.game else ""
+        if not game_title:
+            continue
+        score = match_review.best_title_score(raw_title, game_title)
+        if score > best_score:
+            best_score = score
+            best_entry = entry
+    return best_entry if best_score >= match_review.MIN_SCORE else None
+
+
+def _best_matching_entry(db: Session, user_id: int, raw_title: str, platform_id: int | None) -> models.UserLibraryEntry | None:
+    """Find the best existing library entry on the same platform for a
+    spreadsheet title. Three passes, in order, each falling through to the
+    next only if it finds nothing:
+      1. `_prefix_match_entry` — spreadsheet title has a colon/dash subtitle
+         ("The Witcher 3: Hearts of Stone"); split it and search structurally.
+      2. `_library_prefix_match_entry` — spreadsheet title has no subtitle
+         ("Sekiro") but a library base game does ("Sekiro: Shadows Die
+         Twice"); split the library title instead.
+      3. `_fuzzy_match_entry` — general token-similarity scorer, last resort
+         for titles with no colon on either side (typos, minor variations).
+    """
+    if not platform_id:
+        return None
+    return (
+        _prefix_match_entry(db, user_id, raw_title, platform_id)
+        or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
+        or _fuzzy_match_entry(db, user_id, raw_title, platform_id)
+    )
+
+
+def rematch_pending_candidates(db: Session, user_id: int) -> int:
+    """Re-run title matching against the current library for every pending
+    candidate, without re-parsing the spreadsheet. Useful after a sync adds
+    a game that was previously unmatched. Returns the number of candidates
+    whose match/action changed."""
+    candidates = (
+        db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "pending").all()
+    )
+    updated = 0
+    for candidate in candidates:
+        if not candidate.platform_id:
+            continue
+        best_entry = _best_matching_entry(db, user_id, candidate.raw_title, candidate.platform_id)
+        if best_entry:
+            if candidate.library_entry_id != best_entry.id or candidate.proposed_action != "add_to_existing":
+                candidate.library_entry_id = best_entry.id
+                candidate.proposed_action = "add_to_existing"
+                updated += 1
+        elif candidate.proposed_action != "create_new":
+            candidate.library_entry_id = None
+            candidate.proposed_action = "create_new"
+            updated += 1
+    db.commit()
+    return updated
 
 
 class ParseResult:
@@ -348,24 +567,7 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
         group["rows"] = new_rows
 
         # Look for an existing library entry matching title + platform
-        existing_entry = None
-        if group["platform_id"]:
-            needle = _normalize_title(group["raw_title"])
-            candidates_for_platform = (
-                db.query(models.UserLibraryEntry)
-                .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
-                .join(models.Game, models.GameRelease.game_id == models.Game.id)
-                .filter(
-                    models.UserLibraryEntry.user_id == user_id,
-                    models.GameRelease.platform_id == group["platform_id"],
-                )
-                .all()
-            )
-            for entry in candidates_for_platform:
-                game_title = entry.release.game.title if entry.release and entry.release.game else ""
-                if _normalize_title(game_title) == needle:
-                    existing_entry = entry
-                    break
+        existing_entry = _best_matching_entry(db, user_id, group["raw_title"], group["platform_id"])
 
         if existing_entry:
             action = "add_to_existing"

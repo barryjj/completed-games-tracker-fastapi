@@ -310,14 +310,16 @@
   {% set _cid = candidate.id %}
   <button class="btn btn-sm btn-primary ms-auto"
           hx-post="/library/import/{{ _cid }}/confirm"
-          hx-swap="none"
-          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); if(typeof importCardDone==='function') importCardDone('{{ _cid }}'); }">
+          hx-target="#import-row-{{ _cid }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose({{ import_next_id or 'null' }}); }">
     Confirm
   </button>
   <button class="btn btn-sm btn-surface"
           hx-post="/library/import/{{ _cid }}/dismiss"
-          hx-swap="none"
-          hx-on::after-request="if(event.detail.successful){ ['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); if(typeof importCardDone==='function') importCardDone('{{ _cid }}'); }">
+          hx-target="#import-row-{{ _cid }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose({{ import_next_id or 'null' }}); }">
     Dismiss
   </button>
   <button class="btn btn-sm btn-surface"

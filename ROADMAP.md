@@ -377,6 +377,10 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - User settings: check/uncheck platforms you own or want to track
 - Library and completions filters respect this by default
 
+### DLC completion visibility on library page
+- Right now DLC completions live under their own child library entry with no surfacing on the parent's library row/card — easy to lose track of (e.g. Dead by Daylight chapter completions logged separately from the base game)
+- Idea: some indicator on the base game's library page (grid/list) showing DLC completion count or a quick expand — needs a mockup pass, not scoped yet
+
 ### Collections / sub-games view
 - "What's in this collection" view from detail pane
 - Bulk-complete sub-games

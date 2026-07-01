@@ -2570,18 +2570,43 @@ def import_status(
     )
 
 
+_IMPORT_TABS = ("add_to_existing", "create_new", "needs_review")
+
+
+def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
+    counts = dict.fromkeys(_IMPORT_TABS, 0)
+    rows = (
+        db.query(models.ImportCandidate.proposed_action, func.count())
+        .filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "pending")
+        .group_by(models.ImportCandidate.proposed_action)
+        .all()
+    )
+    for action, count in rows:
+        if action in counts:
+            counts[action] = count
+    return counts
+
+
 @router.get("/library/import/review")
 def import_review_page(
     request: Request,
+    tab: str = "add_to_existing",
     offset: int = 0,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    if tab not in _IMPORT_TABS:
+        tab = "add_to_existing"
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+
     base_q = db.query(models.ImportCandidate).filter(
         models.ImportCandidate.user_id == current_user.id,
         models.ImportCandidate.status == "pending",
+        models.ImportCandidate.proposed_action == tab,
     )
-    pending = base_q.count()
+    tab_total = tab_counts[tab]
     candidates = (
         base_q.options(
             joinedload(models.ImportCandidate.rows),
@@ -2594,13 +2619,26 @@ def import_review_page(
         .all()
     )
     next_offset = offset + _IMPORT_PAGE_SIZE
-    has_more = next_offset < pending
+    has_more = next_offset < tab_total
 
     if request.headers.get("HX-Request") and offset > 0:
         return templates.TemplateResponse(
             request=request,
             name="partials/_import_rows.html",
-            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more},
+            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more, "tab": tab},
+        )
+
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_tab_content.html",
+            context={
+                "candidates": candidates,
+                "next_offset": next_offset,
+                "has_more": has_more,
+                "tab": tab,
+                "tab_counts": tab_counts,
+            },
         )
 
     return templates.TemplateResponse(
@@ -2610,6 +2648,8 @@ def import_review_page(
             "current_user": current_user,
             "candidates": candidates,
             "pending": pending,
+            "tab": tab,
+            "tab_counts": tab_counts,
             "next_offset": next_offset,
             "has_more": has_more,
             **_base_ctx(db, current_user),
@@ -2638,6 +2678,18 @@ def import_candidate_preview(
     )
     if not candidate or not candidate.library_entry_id:
         return Response(status_code=404)
+
+    next_candidate = (
+        db.query(models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == "add_to_existing",
+            models.ImportCandidate.id > candidate.id,
+        )
+        .order_by(models.ImportCandidate.id)
+        .first()
+    )
 
     entry = (
         db.query(models.UserLibraryEntry)
@@ -2695,6 +2747,7 @@ def import_candidate_preview(
             "fresh_open": False,
             "candidate": candidate,
             "import_rows": sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True),
+            "import_next_id": next_candidate.id if next_candidate else None,
             **visuals,
         },
     )
@@ -2717,7 +2770,13 @@ def import_dismiss(
     candidate.status = "dismissed"
     candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
     db.commit()
-    return Response(status_code=200, headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"})
+    tab_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_counts_oob.html",
+        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+    )
 
 
 @router.post("/library/import/{candidate_id}/confirm")
@@ -2767,7 +2826,13 @@ def import_confirm(
         candidate.status = "confirmed"
         candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
         db.commit()
-        return Response(status_code=200)
+        tab_counts = _import_tab_counts(db, current_user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_counts_oob.html",
+            context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+            headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+        )
 
     # create_new / needs_review — redirect to library with modal pre-filled
     platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
@@ -2804,6 +2869,18 @@ def import_clear_all(
         headers={"HX-Redirect": "/library/import"},
         status_code=200,
     )
+
+
+@router.post("/library/import/recheck")
+def import_recheck(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Re-run title matching against the current library for all pending
+    candidates, without re-uploading the spreadsheet."""
+    importer.rematch_pending_candidates(db, current_user.id)
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 # --- Completions ---
