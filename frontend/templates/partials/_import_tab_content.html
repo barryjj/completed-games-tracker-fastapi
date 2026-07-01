@@ -1,29 +1,5 @@
-<div class="d-flex align-items-center gap-3 flex-wrap mb-3">
-  <input id="import-search" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" oninput="importFilter()">
-  <select id="import-platform-filter" class="form-select form-select-sm" style="max-width:180px" onchange="importFilter()">
-    <option value="">All platforms</option>
-    {% set platform_opts = [] %}
-    {% for c in candidates %}
-      {% if c.platform %}
-        {% set key = c.platform.id | string %}
-        {% if key not in platform_opts | map(attribute=0) | list %}
-          {% set _ = platform_opts.append((key, c.platform.display_name or c.platform.name, false)) %}
-        {% endif %}
-      {% elif c.raw_platform %}
-        {% set key = "raw:" ~ c.raw_platform %}
-        {% if key not in platform_opts | map(attribute=0) | list %}
-          {% set _ = platform_opts.append((key, c.raw_platform ~ " (unresolved)", true)) %}
-        {% endif %}
-      {% endif %}
-    {% endfor %}
-    {% for val, label, _ in platform_opts | sort(attribute=1) %}
-    <option value="{{ val }}">{{ label }}</option>
-    {% endfor %}
-  </select>
-</div>
-
 {% if not candidates %}
-<p class="text-secondary">Nothing pending in this queue.</p>
+<p class="text-secondary">Nothing matches these filters in this queue.</p>
 {% else %}
 <div class="table-responsive">
   <table class="table table-sm align-middle" id="import-table">

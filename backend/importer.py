@@ -15,7 +15,7 @@ import re
 from io import BytesIO
 
 import openpyxl
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from . import match_review, models
 
@@ -42,35 +42,47 @@ for _i, _names in enumerate(
         _MONTH_MAP[_n] = _i
 
 
-def _parse_date(raw: str | None, tab_year: int | None) -> datetime.date | None:
-    """Normalise a raw date string to a date object.
+def _parse_date(raw: str | None, tab_year: int | None) -> tuple[datetime.date | None, str | None]:
+    """Normalise a raw date string to a (date, precision) pair.
+
+    precision is 'day' | 'month' | 'year', reflecting what was actually
+    knowable from the input — completed_at always holds a full date (1st of
+    the month, or Jan 1 for year-only) for sorting purposes, but callers
+    that render it to the user should use precision to avoid claiming a
+    fabricated day/month is a real one ("January 1, 2012" when the sheet
+    only said "2012").
 
     Accepted formats:
-      - Full date: 1/1/2026, 01/01/2026, 2026-01-01
-      - Month + year: "January 2019", "Jan 2019", "1/2019"
-      - Month name only: "January" (uses tab_year)
-      - Blank / None: Jan 1 of tab_year, or None if tab_year also unknown
+      - Full date: 1/1/2026, 01/01/2026, 2026-01-01           -> day
+      - Month + year: "January 2019", "Jan 2019", "1/2019"    -> month
+      - Month name only: "January" (uses tab_year)            -> month
+      - Blank / None: Jan 1 of tab_year, or None if tab_year
+        also unknown                                          -> year
+      - Pure year: "2019"                                     -> year
     """
     if not raw:
         if tab_year:
-            return datetime.date(tab_year, 1, 1)
-        return None
+            return datetime.date(tab_year, 1, 1), "year"
+        return None, None
 
     s = str(raw).strip()
     if not s:
         if tab_year:
-            return datetime.date(tab_year, 1, 1)
-        return None
+            return datetime.date(tab_year, 1, 1), "year"
+        return None, None
 
     # openpyxl may hand us a datetime object for formatted cells
     if isinstance(raw, (datetime.date, datetime.datetime)):
         d = raw if isinstance(raw, datetime.date) else raw.date()
-        return d
+        return d, "day"
 
-    # ISO date: 2026-01-01
-    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})", s)
+    # ISO date: 2026-01-01, optionally with a trailing " HH:MM:SS" — the
+    # latter shows up when re-parsing ImportRow.raw_date, which stores
+    # str(datetime_obj) for cells that were real Excel date values (e.g.
+    # "2026-01-01 00:00:00"), not just the date portion.
+    m = re.fullmatch(r"(\d{4})-(\d{2})-(\d{2})(?: \d{2}:\d{2}:\d{2})?", s)
     if m:
-        return datetime.date(int(m[1]), int(m[2]), int(m[3]))
+        return datetime.date(int(m[1]), int(m[2]), int(m[3])), "day"
 
     # Slash full date: 1/1/2026 or 01/01/26
     m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{2,4})", s)
@@ -78,31 +90,32 @@ def _parse_date(raw: str | None, tab_year: int | None) -> datetime.date | None:
         y = int(m[3])
         if y < 100:
             y += 2000
-        return datetime.date(y, int(m[1]), int(m[2]))
+        return datetime.date(y, int(m[1]), int(m[2])), "day"
 
     # Month/year: 1/2019
     m = re.fullmatch(r"(\d{1,2})/(\d{4})", s)
     if m:
-        return datetime.date(int(m[2]), int(m[1]), 1)
+        return datetime.date(int(m[2]), int(m[1]), 1), "month"
 
     # "January 2019" or "Jan 2019"
     m = re.fullmatch(r"([A-Za-z]+)\s+(\d{4})", s)
     if m:
         mon = _MONTH_MAP.get(m[1].lower())
         if mon:
-            return datetime.date(int(m[2]), mon, 1)
+            return datetime.date(int(m[2]), mon, 1), "month"
 
-    # "January" alone — use tab year
+    # "January" alone — use tab year for the year, but the month itself is
+    # genuinely known from the text, so precision is 'month' not 'year'.
     mon = _MONTH_MAP.get(s.lower())
     if mon and tab_year:
-        return datetime.date(tab_year, mon, 1)
+        return datetime.date(tab_year, mon, 1), "month"
 
     # Pure year: "2019"
     m = re.fullmatch(r"(\d{4})", s)
     if m:
-        return datetime.date(int(m[1]), 1, 1)
+        return datetime.date(int(m[1]), 1, 1), "year"
 
-    return None
+    return None, None
 
 
 def _parse_playthroughs(raw: str | None) -> str | None:
@@ -391,6 +404,55 @@ def rematch_pending_candidates(db: Session, user_id: int) -> int:
     return updated
 
 
+def backfill_completed_at_precision(db: Session, user_id: int) -> int:
+    """One-time repair for completions confirmed before completed_at_precision
+    existed. Re-derives precision from ImportRow.raw_date (kept permanently
+    for dedup) and stamps it onto both the ImportRow and the Completion it
+    produced. Returns the number of Completion rows updated.
+
+    Matching a row to its Completion reuses the same key already used for
+    row-level dedup on re-import: (completed_at, playthroughs, raw_notes)
+    scoped to the candidate's library_entry_id.
+    """
+    rows = (
+        db.query(models.ImportRow)
+        .join(models.ImportCandidate, models.ImportRow.candidate_id == models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.status == "confirmed",
+            models.ImportRow.completed_at_precision.is_(None),
+        )
+        .options(joinedload(models.ImportRow.candidate))
+        .all()
+    )
+    updated = 0
+    for row in rows:
+        candidate = row.candidate
+        if not candidate.library_entry_id or not row.completed_at:
+            continue
+        tab_year = _tab_year(row.source_tab) if row.source_tab else None
+        _, precision = _parse_date(row.raw_date, tab_year)
+        if not precision:
+            continue
+        row.completed_at_precision = precision
+
+        completion = (
+            db.query(models.Completion)
+            .filter(
+                models.Completion.library_entry_id == candidate.library_entry_id,
+                models.Completion.completed_at == row.completed_at,
+                models.Completion.playthroughs == row.playthroughs,
+                models.Completion.notes == row.raw_notes,
+            )
+            .first()
+        )
+        if completion and completion.completed_at_precision != precision:
+            completion.completed_at_precision = precision
+            updated += 1
+    db.commit()
+    return updated
+
+
 class ParseResult:
     def __init__(self):
         self.candidates: list[dict] = []  # [{raw_title, raw_platform, platform_id, rows:[...]}]
@@ -471,7 +533,7 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
 
             platform_str = re.split(r"[·|/]", raw_platform)[0].strip() if raw_platform else ""
             platform_id = models.resolve_platform_id(db, platform_str) if platform_str else None
-            completed_at = _parse_date(raw_date, tab_year)
+            completed_at, completed_at_precision = _parse_date(raw_date, tab_year)
             playthroughs = _parse_playthroughs(raw_playthroughs)
 
             key = _group_key(raw_title, platform_id, raw_platform)
@@ -495,6 +557,7 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
                     "source_tab": sheet.title,
                     "row_number": row_number,
                     "completed_at": completed_at,
+                    "completed_at_precision": completed_at_precision,
                     "playthroughs": playthroughs,
                 }
             )
@@ -601,6 +664,7 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
                     source_tab=row["source_tab"],
                     row_number=row["row_number"],
                     completed_at=row["completed_at"],
+                    completed_at_precision=row["completed_at_precision"],
                     playthroughs=row["playthroughs"],
                 )
             )

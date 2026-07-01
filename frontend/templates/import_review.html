@@ -29,19 +29,56 @@
 </div>
 
 <div class="btn-group btn-group-sm mb-3" role="group" id="import-tabs">
-  <button type="button" class="btn btn-surface{% if tab == 'add_to_existing' %} active{% endif %}"
-          data-tab="add_to_existing" onclick="importSwitchTab('add_to_existing')">
+  <button type="button" class="btn btn-surface{% if tab == 'add_to_existing' %} active{% endif %}" data-tab="add_to_existing"
+          onclick="importSwitchTab(this, 'add_to_existing')"
+          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Add to existing <span class="badge bg-secondary ms-1" id="import-tab-count-add_to_existing">{{ tab_counts.add_to_existing }}</span>
   </button>
-  <button type="button" class="btn btn-surface{% if tab == 'create_new' %} active{% endif %}"
-          data-tab="create_new" onclick="importSwitchTab('create_new')">
+  <button type="button" class="btn btn-surface{% if tab == 'create_new' %} active{% endif %}" data-tab="create_new"
+          onclick="importSwitchTab(this, 'create_new')"
+          hx-get="/library/import/review" hx-vals='{"tab":"create_new"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Create new <span class="badge bg-secondary ms-1" id="import-tab-count-create_new">{{ tab_counts.create_new }}</span>
   </button>
-  <button type="button" class="btn btn-surface{% if tab == 'needs_review' %} active{% endif %}"
-          data-tab="needs_review" onclick="importSwitchTab('needs_review')">
+  <button type="button" class="btn btn-surface{% if tab == 'needs_review' %} active{% endif %}" data-tab="needs_review"
+          onclick="importSwitchTab(this, 'needs_review')"
+          hx-get="/library/import/review" hx-vals='{"tab":"needs_review"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Needs review <span class="badge bg-secondary ms-1" id="import-tab-count-needs_review">{{ tab_counts.needs_review }}</span>
   </button>
 </div>
+
+<form
+  id="import-filters-form"
+  hx-get="/library/import/review"
+  hx-target="#import-tab-content"
+  hx-swap="innerHTML"
+  hx-push-url="true"
+  hx-trigger="input changed delay:300ms from:#import-search, change from:#import-platform-filter, change from:#import-year-filter, change from:#import-sort"
+>
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+    <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
+    <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
+      <option value="">All platforms</option>
+      {% for opt in platform_options %}
+      <option value="{{ opt.value }}" {% if opt.value == platform %}selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <select id="import-year-filter" name="year" class="form-select form-select-sm" style="max-width:140px">
+      <option value="">All years</option>
+      {% for y in year_options %}
+      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    <select id="import-sort" name="sort" class="form-select form-select-sm" style="max-width:180px">
+      <option value="id" {% if sort == 'id' %}selected{% endif %}>Upload order</option>
+      <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Completion date (newest)</option>
+      <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Completion date (oldest)</option>
+    </select>
+  </div>
+</form>
 
 <div id="import-tab-content">
   {% include "partials/_import_tab_content.html" %}
@@ -59,35 +96,17 @@
 <script>
 (function() {
 
-let currentTab = {{ tab | tojson }};
-
-window.importSwitchTab = function(tab) {
-  currentTab = tab;
-  htmx.ajax('GET', '/library/import/review?tab=' + tab, {
-    target: '#import-tab-content',
-    swap: 'innerHTML'
-  }).then(function() {
-    document.querySelectorAll('#import-tabs button').forEach(function(b) {
-      b.classList.toggle('active', b.dataset.tab === tab);
-    });
+// Tab buttons carry their own hx-get/hx-vals/hx-include (see markup above) so
+// htmx handles the actual data fetch — this just gives instant visual
+// feedback and keeps the filter form's hidden "tab" field in sync so a
+// subsequent search/platform/year/sort change stays scoped to this tab.
+window.importSwitchTab = function(button, tab) {
+  document.querySelectorAll('#import-tabs button').forEach(function(b) {
+    b.classList.toggle('active', b === button);
   });
+  var hiddenTab = document.querySelector('#import-filters-form input[name="tab"]');
+  if (hiddenTab) hiddenTab.value = tab;
 };
-
-// List filters
-window.importFilter = function() {
-  const search = document.getElementById('import-search').value.toLowerCase();
-  const platform = document.getElementById('import-platform-filter').value;
-  document.querySelectorAll('#import-table tbody tr[data-title]').forEach(row => {
-    const matchSearch = !search || row.dataset.title.includes(search);
-    const matchPlatform = !platform || row.dataset.platform === platform;
-    row.style.display = (matchSearch && matchPlatform) ? '' : 'none';
-  });
-};
-
-// Re-apply filter when HTMX loads more rows
-document.addEventListener('htmx:afterSwap', function(e) {
-  if (e.target && e.target.closest('#import-table')) importFilter();
-});
 
 // Preview pane
 window.openImportPreview = function(candidateId) {

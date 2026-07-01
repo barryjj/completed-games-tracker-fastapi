@@ -1124,9 +1124,13 @@ body:has(.cgt-sticky-actions) {
    #library-detail-content / #completion-detail-content wraps the swapped
    content so the resize-handle persists across HTMX swaps. That wrapper
    needs to be a flex column with min-height:0 so the body's flex-grow
-   actually fills the middle and the action footer pins to the bottom. */
+   actually fills the middle and the action footer pins to the bottom.
+   #import-preview-content gets the same treatment — the import review
+   pane loads library_detail.html into it directly, same three-part
+   structure, just a different wrapper id. */
 .offcanvas-end > #library-detail-content,
-.offcanvas-end > #completion-detail-content {
+.offcanvas-end > #completion-detail-content,
+.offcanvas-end > #import-preview-content {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;

@@ -111,6 +111,27 @@ def _html_unescape(s: str) -> str:
 templates.env.filters["html_unescape"] = _html_unescape
 
 
+def _completion_date(obj) -> str:
+    """Format a Completion/ImportRow's completed_at according to its
+    completed_at_precision ('day' | 'month' | 'year' | None). completed_at
+    itself always holds a full date (fabricated day/month for coarser
+    precision, for sorting) — this controls what's actually shown so a
+    historical import that only knew "2012" doesn't render as a fake
+    "January 1, 2012"."""
+    d = getattr(obj, "completed_at", None)
+    if not d:
+        return "Unknown"
+    precision = getattr(obj, "completed_at_precision", None) or "day"
+    if precision == "year":
+        return str(d.year)
+    if precision == "month":
+        return d.strftime("%B %Y")
+    return d.strftime("%B %-d, %Y")
+
+
+templates.env.filters["completion_date"] = _completion_date
+
+
 def _base_ctx(db: Session, user: models.User) -> dict:
     """Common context vars injected into every full-page response."""
     return {
@@ -2587,33 +2608,121 @@ def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
     return counts
 
 
+def _import_platform_options(db: Session, user_id: int, tab: str) -> list[dict]:
+    """Distinct platforms across ALL pending candidates in this tab (not just
+    the currently loaded page) for the filter dropdown."""
+    rows = (
+        db.query(models.ImportCandidate.platform_id, models.ImportCandidate.raw_platform)
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == tab,
+        )
+        .distinct()
+        .all()
+    )
+    pids = {pid for pid, _ in rows if pid}
+    pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(pids)).all()} if pids else {}
+    seen_pids: set[int] = set()
+    options = []
+    for pid, raw in rows:
+        if pid and pid in pmap:
+            if pid in seen_pids:
+                continue
+            seen_pids.add(pid)
+            options.append({"value": f"pid:{pid}", "label": pmap[pid].display_name or pmap[pid].name})
+        elif not pid and raw:
+            options.append({"value": f"raw:{raw}", "label": f"{raw} (unresolved)"})
+    options.sort(key=lambda p: p["label"])
+    return options
+
+
+def _import_year_options(db: Session, user_id: int, tab: str) -> list[str]:
+    """Distinct completion years across ALL pending candidates in this tab."""
+    rows = (
+        db.query(func.strftime("%Y", models.ImportRow.completed_at))
+        .join(models.ImportCandidate, models.ImportRow.candidate_id == models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == tab,
+            models.ImportRow.completed_at.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    return sorted({y for (y,) in rows if y}, reverse=True)
+
+
 @router.get("/library/import/review")
 def import_review_page(
     request: Request,
     tab: str = "add_to_existing",
     offset: int = 0,
+    q: str = "",
+    platform: str = "",
+    year: str = "",
+    sort: str = "id",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     if tab not in _IMPORT_TABS:
         tab = "add_to_existing"
+    if sort not in ("id", "date_desc", "date_asc"):
+        sort = "id"
 
     tab_counts = _import_tab_counts(db, current_user.id)
     pending = sum(tab_counts.values())
 
-    base_q = db.query(models.ImportCandidate).filter(
+    filtered_q = db.query(models.ImportCandidate).filter(
         models.ImportCandidate.user_id == current_user.id,
         models.ImportCandidate.status == "pending",
         models.ImportCandidate.proposed_action == tab,
     )
-    tab_total = tab_counts[tab]
+
+    if q:
+        filtered_q = filtered_q.filter(models.ImportCandidate.raw_title.ilike(f"%{q}%"))
+
+    if platform.startswith("pid:"):
+        filtered_q = filtered_q.filter(models.ImportCandidate.platform_id == int(platform[4:]))
+    elif platform.startswith("raw:"):
+        filtered_q = filtered_q.filter(
+            models.ImportCandidate.platform_id.is_(None),
+            models.ImportCandidate.raw_platform == platform[4:],
+        )
+
+    if year:
+        filtered_q = filtered_q.filter(
+            models.ImportCandidate.id.in_(
+                db.query(models.ImportRow.candidate_id).filter(func.strftime("%Y", models.ImportRow.completed_at) == year)
+            )
+        )
+
+    tab_total = filtered_q.count()
+
+    ordered_q = filtered_q
+    if sort in ("date_desc", "date_asc"):
+        row_agg = (
+            db.query(
+                models.ImportRow.candidate_id.label("candidate_id"),
+                func.min(models.ImportRow.completed_at).label("min_date"),
+            )
+            .group_by(models.ImportRow.candidate_id)
+            .subquery()
+        )
+        order_col = row_agg.c.min_date
+        ordered_q = ordered_q.outerjoin(row_agg, row_agg.c.candidate_id == models.ImportCandidate.id).order_by(
+            order_col.desc() if sort == "date_desc" else order_col.asc(), models.ImportCandidate.id
+        )
+    else:
+        ordered_q = ordered_q.order_by(models.ImportCandidate.id)
+
     candidates = (
-        base_q.options(
+        ordered_q.options(
             joinedload(models.ImportCandidate.rows),
             joinedload(models.ImportCandidate.platform),
             joinedload(models.ImportCandidate.library_entry),
         )
-        .order_by(models.ImportCandidate.id)
         .offset(offset)
         .limit(_IMPORT_PAGE_SIZE)
         .all()
@@ -2621,11 +2730,13 @@ def import_review_page(
     next_offset = offset + _IMPORT_PAGE_SIZE
     has_more = next_offset < tab_total
 
+    filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort}
+
     if request.headers.get("HX-Request") and offset > 0:
         return templates.TemplateResponse(
             request=request,
             name="partials/_import_rows.html",
-            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more, "tab": tab},
+            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more, "tab": tab, **filter_ctx},
         )
 
     if request.headers.get("HX-Request"):
@@ -2638,6 +2749,9 @@ def import_review_page(
                 "has_more": has_more,
                 "tab": tab,
                 "tab_counts": tab_counts,
+                "platform_options": _import_platform_options(db, current_user.id, tab),
+                "year_options": _import_year_options(db, current_user.id, tab),
+                **filter_ctx,
             },
         )
 
@@ -2652,6 +2766,9 @@ def import_review_page(
             "tab_counts": tab_counts,
             "next_offset": next_offset,
             "has_more": has_more,
+            "platform_options": _import_platform_options(db, current_user.id, tab),
+            "year_options": _import_year_options(db, current_user.id, tab),
+            **filter_ctx,
             **_base_ctx(db, current_user),
         },
     )
@@ -2818,6 +2935,7 @@ def import_confirm(
                     user_id=current_user.id,
                     library_entry_id=candidate.library_entry_id,
                     completed_at=row.completed_at,
+                    completed_at_precision=row.completed_at_precision or "day",
                     playthroughs=row.playthroughs,
                     notes=row.raw_notes,
                     sort_order=row.row_number,

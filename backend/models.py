@@ -634,6 +634,10 @@ class ImportRow(Base):
     row_number: Mapped[int | None] = mapped_column(Integer, nullable=True)  # spreadsheet # column
     # Normalized at parse time
     completed_at: Mapped[datetime.date | None] = mapped_column(Date, nullable=True)
+    # 'day' | 'month' | 'year' — what precision raw_date actually specified.
+    # NULL for rows written before this column existed; backfilled from
+    # raw_date by rematch_pending_candidates-adjacent tooling.
+    completed_at_precision: Mapped[str | None] = mapped_column(String, nullable=True)
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
 
     candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
@@ -645,6 +649,12 @@ class Completion(Base):
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=False)
     completed_at: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    # 'day' | 'month' | 'year' — what precision the source actually knew.
+    # Manual/sync entries are always 'day'; historical import can be coarser
+    # when the spreadsheet only had "June 2009" or "2009". completed_at
+    # itself always holds a full date (1st of month / Jan 1) for sorting —
+    # this column controls display formatting only.
+    completed_at_precision: Mapped[str] = mapped_column(String, nullable=False, default="day")
     # stored as string to handle "1", "1+", "2", "3+" etc.
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

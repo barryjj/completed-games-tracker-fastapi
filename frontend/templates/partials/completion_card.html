@@ -15,7 +15,7 @@
             {% if not cover_url %}cgt-library-card--no-art{% endif %}"
      id="completion-{{ completion.id }}"
      data-completion-id="{{ completion.id }}"
-     title="{{ _entry.release.game.display_title | e }} — {{ completion.completed_at.strftime('%B %-d, %Y') }}">
+     title="{{ _entry.release.game.display_title | e }} — {{ completion | completion_date }}">
   {% if cover_url %}
   {% set _fallback = _entry._fallback_h if view_mode == 'grid_h' else '' %}
   <div class="cgt-library-card__cover">

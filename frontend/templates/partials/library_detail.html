@@ -271,7 +271,7 @@
         <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
           <dl class="cgt-detail-meta mb-0">
             <dt>Date</dt>
-            <dd>{{ r.completed_at.strftime("%B %-d, %Y") if r.completed_at else r.raw_date or "Unknown" }}</dd>
+            <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
             {% if r.playthroughs %}
             <dt>Playthroughs</dt>
             <dd>{{ r.playthroughs }}</dd>
@@ -286,7 +286,7 @@
         {% endif %}
         {% for c in completions %}
         <li class="mb-2">
-          <div>{{ c.completed_at.strftime("%B %-d, %Y") }}
+          <div>{{ c | completion_date }}
             {% if c.playthroughs %}<small class="text-secondary ms-1">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
           </div>
           {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
