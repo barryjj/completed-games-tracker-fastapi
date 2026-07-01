@@ -51,7 +51,7 @@
   {% if has_more %}
   <button type="button"
           class="btn btn-surface btn-sm w-100 mt-2"
-          hx-get="/integrations/steamgriddb/search?entry_id={{ entry_id }}&image_type={{ image_type }}&page={{ page + 1 }}&search_term={{ search_term | urlencode }}"
+          hx-get="/integrations/steamgriddb/search?entry_id={{ entry_id }}&image_type={{ image_type }}&page={{ page + 1 }}&query={{ search_term | urlencode }}"
           hx-target="this"
           hx-swap="outerHTML"
           hx-disabled-elt="this">Load more from SteamGridDB</button>
