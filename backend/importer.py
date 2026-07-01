@@ -404,11 +404,16 @@ def rematch_pending_candidates(db: Session, user_id: int) -> int:
     return updated
 
 
-def backfill_completed_at_precision(db: Session, user_id: int) -> int:
-    """One-time repair for completions confirmed before completed_at_precision
-    existed. Re-derives precision from ImportRow.raw_date (kept permanently
-    for dedup) and stamps it onto both the ImportRow and the Completion it
-    produced. Returns the number of Completion rows updated.
+def backfill_completed_at_precision(db: Session, user_id: int) -> tuple[int, int]:
+    """One-time repair for rows written before completed_at_precision existed.
+    Re-derives precision from ImportRow.raw_date (kept permanently for dedup,
+    even for pending rows) and stamps it onto the ImportRow. For rows whose
+    candidate is already confirmed, also finds and fixes the Completion it
+    produced. Returns (rows_updated, completions_updated).
+
+    Covers both confirmed AND pending candidates — pending rows were parsed
+    before this column existed too, so without this they'd silently default
+    to 'day' precision whenever they're eventually confirmed.
 
     Matching a row to its Completion reuses the same key already used for
     row-level dedup on re-import: (completed_at, playthroughs, raw_notes)
@@ -419,23 +424,27 @@ def backfill_completed_at_precision(db: Session, user_id: int) -> int:
         .join(models.ImportCandidate, models.ImportRow.candidate_id == models.ImportCandidate.id)
         .filter(
             models.ImportCandidate.user_id == user_id,
-            models.ImportCandidate.status == "confirmed",
+            models.ImportCandidate.status.in_(["pending", "confirmed"]),
             models.ImportRow.completed_at_precision.is_(None),
         )
         .options(joinedload(models.ImportRow.candidate))
         .all()
     )
-    updated = 0
+    rows_updated = 0
+    completions_updated = 0
     for row in rows:
-        candidate = row.candidate
-        if not candidate.library_entry_id or not row.completed_at:
+        if not row.completed_at:
             continue
         tab_year = _tab_year(row.source_tab) if row.source_tab else None
         _, precision = _parse_date(row.raw_date, tab_year)
         if not precision:
             continue
         row.completed_at_precision = precision
+        rows_updated += 1
 
+        candidate = row.candidate
+        if candidate.status != "confirmed" or not candidate.library_entry_id:
+            continue
         completion = (
             db.query(models.Completion)
             .filter(
@@ -448,9 +457,9 @@ def backfill_completed_at_precision(db: Session, user_id: int) -> int:
         )
         if completion and completion.completed_at_precision != precision:
             completion.completed_at_precision = precision
-            updated += 1
+            completions_updated += 1
     db.commit()
-    return updated
+    return rows_updated, completions_updated
 
 
 class ParseResult:
