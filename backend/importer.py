@@ -227,14 +227,23 @@ def _title_contains_remainder(remainder: str, candidate_title: str) -> bool:
     return needle in haystack
 
 
-def _search_pool(db: Session, user_id: int, platform_id: int, phrase: str, *, base_only: bool = True) -> list[models.UserLibraryEntry]:
+def _search_pool(
+    db: Session, user_id: int, platform_id: int | None, phrase: str, *, base_only: bool = True
+) -> list[models.UserLibraryEntry]:
     """SQL-level narrowing before any Python-side token comparison: entries
-    on this platform whose game title contains `phrase` as a substring
-    (case-insensitive). A much smaller and more relevant set than scanning
-    the whole library — faster, and critically, safer: a candidate pool
-    narrowed to "titles containing this phrase" is far less likely to
-    contain an unrelated title that merely happens to share one token
-    somewhere in a full-library scan.
+    whose game title contains `phrase` as a substring (case-insensitive).
+    A much smaller and more relevant set than scanning the whole library —
+    faster, and critically, safer: a candidate pool narrowed to "titles
+    containing this phrase" is far less likely to contain an unrelated
+    title that merely happens to share one token somewhere in a
+    full-library scan.
+
+    platform_id=None searches across all of the user's platforms — used by
+    the collection fallback, where the spreadsheet's platform column often
+    doesn't match: a row might say "Steam" (how the collection was played)
+    while the specific sub-game's library entry uses its native platform
+    (e.g. Castlevania II: Simon's Quest logged as NES, not Steam, even
+    though it was played via a Steam collection).
     """
     if not phrase or not phrase.strip():
         return []
@@ -244,10 +253,11 @@ def _search_pool(db: Session, user_id: int, platform_id: int, phrase: str, *, ba
         .join(models.Game, models.GameRelease.game_id == models.Game.id)
         .filter(
             models.UserLibraryEntry.user_id == user_id,
-            models.GameRelease.platform_id == platform_id,
             models.Game.title.ilike(f"%{phrase.strip()}%"),
         )
     )
+    if platform_id is not None:
+        q = q.filter(models.GameRelease.platform_id == platform_id)
     if base_only:
         q = q.filter(models.Game.parent_id.is_(None), models.Game.is_dlc.is_(False))
     return q.all()
@@ -259,9 +269,7 @@ def _search_phrase(title: str) -> str:
     return match_review._colon_prefix(title) or title
 
 
-def _collection_match_entry(
-    db: Session, user_id: int, raw_title: str, platform_id: int, raw_collection: str
-) -> models.UserLibraryEntry | None:
+def _collection_match_entry(db: Session, user_id: int, raw_title: str, raw_collection: str) -> models.UserLibraryEntry | None:
     """Fallback tried only when nothing else finds a match: the spreadsheet
     row named a Collection, so use that as a search hint — look for a
     library entry whose title matches raw_collection, then check whether
@@ -275,8 +283,15 @@ def _collection_match_entry(
     it set) and the point here is just "does this look like a known
     library entry that might explain the row" — a soft hint to try, not a
     strict gate. If nothing matches, the caller falls through to create_new.
+
+    Searches across ALL platforms, not just the row's own platform: a
+    spreadsheet row often says how the collection itself was played
+    ("Steam"), while a specific sub-game's library entry may use its
+    native platform instead (e.g. Castlevania II: Simon's Quest logged as
+    NES even though it was played via a Steam
+    collection). Restricting to the row's platform would silently miss it.
     """
-    pool = _search_pool(db, user_id, platform_id, raw_collection, base_only=True)
+    pool = _search_pool(db, user_id, None, raw_collection, base_only=True)
     collection_entry = None
     for entry in pool:
         game = entry.release.game if entry.release else None
@@ -292,7 +307,6 @@ def _collection_match_entry(
         .join(models.Game, models.GameRelease.game_id == models.Game.id)
         .filter(
             models.UserLibraryEntry.user_id == user_id,
-            models.GameRelease.platform_id == platform_id,
             models.Game.parent_id == collection_entry.release.game.id,
         )
         .all()
@@ -465,7 +479,7 @@ def _best_matching_entry(
     if direct:
         return direct
     if raw_collection and raw_collection.strip():
-        return _collection_match_entry(db, user_id, raw_title, platform_id, raw_collection.strip())
+        return _collection_match_entry(db, user_id, raw_title, raw_collection.strip())
     return None
 
 
