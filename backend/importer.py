@@ -195,31 +195,36 @@ def _colon_remainder(title: str) -> str | None:
 
 
 def _title_contains_remainder(remainder: str, candidate_title: str) -> bool:
-    """True if every token of `remainder` appears exactly in `candidate_title`.
-    DLC titles are typically the full base title plus a " - Subtitle" suffix
-    ("The Witcher 3: Wild Hunt - Hearts of Stone"), so comparing the bare
-    remainder ("Hearts of Stone") against the whole DLC title with the
-    symmetric scorer dilutes badly on length — containment is the right
-    check here, not overall similarity.
+    """True if `remainder`'s tokens appear as a contiguous, in-order run
+    within `candidate_title`'s tokens. DLC titles are typically the full
+    base title plus a " - Subtitle" suffix ("The Witcher 3: Wild Hunt -
+    Hearts of Stone"), so comparing the bare remainder ("Hearts of Stone")
+    against the whole DLC title with the symmetric scorer dilutes badly on
+    length — containment is the right check here, not overall similarity.
 
-    Deliberately exact (not fuzzy) token matching: this is an all-tokens-
-    must-match containment check, not a statistical score, so match_review's
-    0.75 fuzzy threshold is far too loose here — e.g. "witcher" vs "witches"
-    scores 0.857 and would let "The Witcher 2" wrongly containment-match a
-    completely unrelated "...Witches and Wizards" title. A single false
-    positive breaks the whole check, so require exact equality.
+    Deliberately exact (not fuzzy) token matching: this is a containment
+    check, not a statistical score, so match_review's 0.75 fuzzy threshold
+    is far too loose here — e.g. "witcher" vs "witches" scores 0.857 and
+    would let "The Witcher 2" wrongly containment-match a completely
+    unrelated "...Witches and Wizards" title.
+
+    Deliberately ORDERED (substring-of-joined-tokens), not a bag-of-tokens
+    check: "Street Fighter II" (-> tokens street/fighter/2, roman numeral
+    converted) was wrongly matching "Street Fighter Alpha 2" under a
+    bag-of-tokens check, since both titles contain "street", "fighter" and
+    a stray "2" — just not adjacent or in the same order. Requiring the
+    tokens to appear as a contiguous run fixes this without losing the
+    legitimate case (remainder tokens are always meant to appear as a
+    literal phrase within the candidate, e.g. "Hearts of Stone" inside
+    "...Wild Hunt - Hearts of Stone").
     """
     remainder_toks = match_review._normalise_tokens(remainder)
     candidate_toks = match_review._normalise_tokens(candidate_title)
     if not remainder_toks or not candidate_toks:
         return False
-    remaining = list(candidate_toks)
-    for tok in remainder_toks:
-        if tok in remaining:
-            remaining.remove(tok)
-        else:
-            return False
-    return True
+    needle = " ".join(remainder_toks)
+    haystack = " ".join(candidate_toks)
+    return needle in haystack
 
 
 def _search_pool(db: Session, user_id: int, platform_id: int, phrase: str, *, base_only: bool = True) -> list[models.UserLibraryEntry]:
@@ -257,30 +262,25 @@ def _search_phrase(title: str) -> str:
 def _collection_match_entry(
     db: Session, user_id: int, raw_title: str, platform_id: int, raw_collection: str
 ) -> models.UserLibraryEntry | None:
-    """When the spreadsheet row names a Collection, resolution is scoped
-    STRICTLY to that collection: find the collection itself in the library,
-    then look for a DLC child under it matching raw_title. If the
-    collection isn't in the library, or none of its children match, the
-    row is create_new — deliberately does NOT fall through to the generic
-    structural/pool-fallback passes.
+    """Fallback tried only when nothing else finds a match: the spreadsheet
+    row named a Collection, so use that as a search hint — look for a
+    library entry whose title matches raw_collection, then check whether
+    any game with parent_id pointing to it matches raw_title. parent_id
+    covers both real DLC (is_dlc=True) and a standalone game that simply
+    belongs to a collection (is_dlc=False, e.g. ToeJam & Earl under SEGA
+    Mega Drive & Genesis Classics) — same field, same meaning either way.
 
-    This exists because "Contra: Hard Corps" (raw_collection="Contra
-    Anniversary Collection") was silently matching to unrelated titles like
-    "CONTRA: ROGUE CORPS" purely because they share the "Contra" prefix —
-    a Collection tag means the correct target, if any, lives under that
-    specific collection, so guessing outside it is worse than create_new.
-
-    Requires Game.is_collection — a title match against raw_collection alone
-    isn't enough to trust something is actually a collection container.
-    ("Capcom Arcade 2nd Stadium" was found to have this flag incorrectly
-    unset despite having 64 real DLC children — that's a data bug to fix
-    directly, not a reason to loosen this check.)
+    Deliberately does NOT require Game.is_collection on the matched entry:
+    that flag is unreliable in practice (some real collections don't have
+    it set) and the point here is just "does this look like a known
+    library entry that might explain the row" — a soft hint to try, not a
+    strict gate. If nothing matches, the caller falls through to create_new.
     """
     pool = _search_pool(db, user_id, platform_id, raw_collection, base_only=True)
     collection_entry = None
     for entry in pool:
         game = entry.release.game if entry.release else None
-        if game and game.is_collection and _title_contains_remainder(raw_collection, game.title):
+        if game and _title_contains_remainder(raw_collection, game.title):
             collection_entry = entry
             break
     if not collection_entry:
@@ -434,14 +434,13 @@ def _best_matching_entry(
     db: Session, user_id: int, raw_title: str, platform_id: int | None, raw_collection: str | None = None
 ) -> models.UserLibraryEntry | None:
     """Find the best existing library entry on the same platform for a
-    spreadsheet title.
+    spreadsheet title. A direct match (the game has its own real library
+    entry — whether standalone or DLC anywhere) always wins over anything
+    the spreadsheet's Collection column might suggest, since the entry
+    already existing is a stronger signal than the row's own metadata.
 
-    If raw_collection is set, resolution is scoped strictly to that
-    collection (`_collection_match_entry`) and does NOT fall through to the
-    generic passes below — see that function's docstring for why.
-
-    Otherwise, passes in order, each falling through to the next only if
-    it finds nothing:
+    Passes in order, each falling through to the next only if it finds
+    nothing:
       0. `_exact_match_entry` — direct normalized-title equality, the
          strongest signal, always wins if present.
       1. `_prefix_match_entry` — spreadsheet title has a colon/dash subtitle
@@ -451,17 +450,23 @@ def _best_matching_entry(
          Twice"); split the library title instead.
       3. `_pool_fallback_entry` — nothing structural confirmed anything;
          accept a single unambiguous candidate from the narrowed pool.
+      4. `_collection_match_entry` — only tried if 0-3 all found nothing
+         AND the row named a Collection: use it as a search hint to find
+         a specific child under that collection (see its docstring).
     """
     if not platform_id:
         return None
-    if raw_collection and raw_collection.strip():
-        return _collection_match_entry(db, user_id, raw_title, platform_id, raw_collection.strip())
-    return (
+    direct = (
         _exact_match_entry(db, user_id, raw_title, platform_id)
         or _prefix_match_entry(db, user_id, raw_title, platform_id)
         or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
         or _pool_fallback_entry(db, user_id, raw_title, platform_id)
     )
+    if direct:
+        return direct
+    if raw_collection and raw_collection.strip():
+        return _collection_match_entry(db, user_id, raw_title, platform_id, raw_collection.strip())
+    return None
 
 
 def rematch_pending_candidates(db: Session, user_id: int) -> int:
