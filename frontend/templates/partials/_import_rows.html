@@ -1,5 +1,6 @@
 {% for c in candidates %}
-<tr id="import-row-{{ c.id }}">
+<tr id="import-row-{{ c.id }}"
+    {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
   <td>
     <div class="fw-medium">{{ c.raw_title }}</div>
     {% if c.library_entry %}
@@ -26,10 +27,7 @@
     </div>
     {% endfor %}
   </td>
-  <td class="text-end text-nowrap">
-    {% if c.proposed_action == "add_to_existing" %}
-    <button class="btn btn-surface btn-sm" onclick="openImportPreview({{ c.id }})">Preview</button>
-    {% endif %}
+  <td class="text-end text-nowrap row-actions">
     <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
     <button class="btn btn-primary btn-sm"
             hx-post="/library/import/{{ c.id }}/confirm"

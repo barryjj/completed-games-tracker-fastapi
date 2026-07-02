@@ -133,6 +133,17 @@ window.openImportPreview = function(candidateId) {
   bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('import-preview-pane')).show();
 };
 
+// Clicking anywhere on an add_to_existing row (except the action buttons)
+// opens the preview — same delegated-click pattern as the Library page's
+// .row-actions exclusion, so it survives HTMX row swaps.
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.row-actions')) return;
+  var row = e.target.closest('.import-row-clickable');
+  if (!row) return;
+  var candidateId = row.id.replace('import-row-', '');
+  openImportPreview(candidateId);
+});
+
 // After confirm/dismiss inside the preview pane: advance to the next
 // add_to_existing candidate, or close the pane if none are left.
 window.importAdvanceOrClose = function(nextId) {
