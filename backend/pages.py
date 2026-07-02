@@ -1689,10 +1689,15 @@ def search_library_games(
     is_dlc: bool | None = Query(None),
     is_collection: bool | None = Query(None),
     callback: str = Query("selectLibraryParent"),
+    id_field: str = Query("release"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Search user's library games by title, optionally filtered by type."""
+    """Search user's library games by title, optionally filtered by type.
+
+    id_field controls which id the callback receives: 'release' (default,
+    used by the DLC/collection parent pickers) or 'entry' (UserLibraryEntry.id,
+    used by the import candidate manual-link picker)."""
     query = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
@@ -1714,7 +1719,7 @@ def search_library_games(
     return templates.TemplateResponse(
         request=request,
         name="partials/library_game_results.html",
-        context={"entries": entries, "q": q, "callback": callback},
+        context={"entries": entries, "q": q, "callback": callback, "id_field": id_field},
     )
 
 
@@ -2898,6 +2903,94 @@ def import_candidate_preview(
             "import_next_id": next_candidate.id if next_candidate else None,
             **visuals,
         },
+    )
+
+
+@router.get("/library/import/{candidate_id}/edit")
+def import_candidate_edit_form(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Modal content for editing a pending candidate's title/platform, or
+    manually linking it to a specific existing library entry."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .options(joinedload(models.ImportCandidate.platform), joinedload(models.ImportCandidate.library_entry))
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_edit_modal.html",
+        context={"candidate": candidate, "platforms": _get_all_platforms(db)},
+    )
+
+
+@router.post("/library/import/{candidate_id}/edit")
+def import_candidate_edit(
+    candidate_id: int,
+    request: Request,
+    raw_title: str = Form(...),
+    raw_platform: str = Form(...),
+    library_entry_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    candidate.raw_title = raw_title.strip()
+    candidate.raw_platform = raw_platform.strip()
+    candidate.platform_id = models.resolve_platform_id(db, candidate.raw_platform) if candidate.raw_platform else None
+
+    if library_entry_id:
+        # Manual override — user picked a specific entry directly, skip the matcher.
+        entry = (
+            db.query(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
+            .first()
+        )
+        if not entry:
+            return Response(status_code=404)
+        candidate.library_entry_id = entry.id
+        candidate.proposed_action = "add_to_existing"
+    else:
+        best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id)
+        if best_entry:
+            candidate.library_entry_id = best_entry.id
+            candidate.proposed_action = "add_to_existing"
+        elif candidate.platform_id is None:
+            candidate.library_entry_id = None
+            candidate.proposed_action = "needs_review"
+        else:
+            candidate.library_entry_id = None
+            candidate.proposed_action = "create_new"
+
+    db.commit()
+    tab_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_counts_oob.html",
+        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
     )
 
 

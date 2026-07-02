@@ -30,6 +30,7 @@
     {% if c.proposed_action == "add_to_existing" %}
     <button class="btn btn-surface btn-sm" onclick="openImportPreview({{ c.id }})">Preview</button>
     {% endif %}
+    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
     <button class="btn btn-primary btn-sm"
             hx-post="/library/import/{{ c.id }}/confirm"
             hx-target="#import-row-{{ c.id }}"

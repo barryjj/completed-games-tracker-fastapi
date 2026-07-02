@@ -93,6 +93,22 @@
   <div id="import-preview-content"></div>
 </div>
 
+{# Edit modal — fix title/platform and re-match, or manually link to a
+   specific library entry. #}
+<div class="modal fade" id="importEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit candidate</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="import-edit-modal-body">
+        <p class="text-secondary small mb-0">Loading…</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
 (function() {
 
@@ -127,6 +143,17 @@ window.importAdvanceOrClose = function(nextId) {
     var bs = el && bootstrap.Offcanvas.getInstance(el);
     if (bs) bs.hide();
   }
+};
+
+// Edit modal
+window.openImportEdit = function(candidateId) {
+  var body = document.getElementById('import-edit-modal-body');
+  body.innerHTML = '<p class="text-secondary small mb-0">Loading…</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('importEditModal')).show();
+  htmx.ajax('GET', '/library/import/' + candidateId + '/edit', {
+    target: '#import-edit-modal-body',
+    swap: 'innerHTML'
+  });
 };
 
 })();
