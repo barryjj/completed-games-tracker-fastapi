@@ -231,6 +231,14 @@ def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: 
     Stone") or is otherwise part of the base title itself. Returns None if
     the raw title has no subtitle separator, or no base game's title
     contains the prefix.
+
+    Multiple base games can share a prefix — e.g. "Killing Floor" and
+    "Killing Floor: Incursion" are both standalone base games, not DLC. So
+    this collects every prefix match first, then prioritizes an exact
+    full-title match (pass 1) over a DLC-child match (pass 2) over the
+    weakest fallback of "just return the first prefix match" (pass 3) —
+    otherwise "Killing Floor: Incursion" could get shadowed by "Killing
+    Floor" simply because it happened to come first in query order.
     """
     prefix = match_review._colon_prefix(raw_title)
     if not prefix:
@@ -250,20 +258,25 @@ def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: 
         .all()
     )
 
-    for entry in base_entries:
-        base_game = entry.release.game if entry.release else None
-        game_title = base_game.title if base_game else ""
-        if not game_title or not _title_contains_remainder(prefix, game_title):
-            continue
+    prefix_matched = [
+        entry
+        for entry in base_entries
+        if entry.release and entry.release.game and _title_contains_remainder(prefix, entry.release.game.title)
+    ]
+    if not prefix_matched:
+        return None
 
-        # Prefix matched this base game. If the remainder is also part of
-        # the base title itself (or there's no remainder), it's the base
-        # game, not a DLC — done.
+    # Pass 1: exact match — remainder (or no remainder) is part of THIS
+    # entry's own title, e.g. raw "Killing Floor: Incursion" against base
+    # game "Killing Floor: Incursion" itself.
+    for entry in prefix_matched:
+        game_title = entry.release.game.title
         if not remainder or _title_contains_remainder(remainder, game_title):
             return entry
 
-        # Otherwise check whether the remainder identifies a specific DLC
-        # child of this base game.
+    # Pass 2: remainder identifies a DLC child of one of the prefix-matched
+    # base games (e.g. "Hearts of Stone" under "The Witcher 3: Wild Hunt").
+    for entry in prefix_matched:
         child_entries = (
             db.query(models.UserLibraryEntry)
             .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
@@ -271,7 +284,7 @@ def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: 
             .filter(
                 models.UserLibraryEntry.user_id == user_id,
                 models.GameRelease.platform_id == platform_id,
-                models.Game.parent_id == base_game.id,
+                models.Game.parent_id == entry.release.game.id,
             )
             .all()
         )
@@ -280,11 +293,8 @@ def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: 
             if child_title and _title_contains_remainder(remainder, child_title):
                 return child
 
-        # Prefix matched but nothing more specific found — the base game
-        # itself is still the best structural guess.
-        return entry
-
-    return None
+    # Pass 3: nothing more specific anywhere — first prefix match, weakest guess.
+    return prefix_matched[0]
 
 
 def _library_prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
@@ -357,10 +367,38 @@ def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: i
     return best_entry if best_score >= match_review.MIN_SCORE else None
 
 
+def _exact_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Direct normalized-title equality against every entry on the platform
+    (base games and DLC alike). Tried before any of the colon-splitting
+    heuristics below, since an exact match is the strongest possible signal
+    and must never be shadowed by a looser one — e.g. bare "Killing Floor"
+    should match the actual "Killing Floor" base game itself, not get
+    colon-stripped-matched against the unrelated "Killing Floor: Incursion"
+    just because that title happens to start with the same prefix."""
+    needle = _normalize_title(raw_title)
+    entries = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .join(models.Game, models.GameRelease.game_id == models.Game.id)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+        )
+        .all()
+    )
+    for entry in entries:
+        game_title = entry.release.game.title if entry.release and entry.release.game else ""
+        if game_title and _normalize_title(game_title) == needle:
+            return entry
+    return None
+
+
 def _best_matching_entry(db: Session, user_id: int, raw_title: str, platform_id: int | None) -> models.UserLibraryEntry | None:
     """Find the best existing library entry on the same platform for a
-    spreadsheet title. Three passes, in order, each falling through to the
-    next only if it finds nothing:
+    spreadsheet title. Passes, in order, each falling through to the next
+    only if it finds nothing:
+      0. `_exact_match_entry` — direct normalized-title equality, the
+         strongest signal, always wins if present.
       1. `_prefix_match_entry` — spreadsheet title has a colon/dash subtitle
          ("The Witcher 3: Hearts of Stone"); split it and search structurally.
       2. `_library_prefix_match_entry` — spreadsheet title has no subtitle
@@ -372,7 +410,8 @@ def _best_matching_entry(db: Session, user_id: int, raw_title: str, platform_id:
     if not platform_id:
         return None
     return (
-        _prefix_match_entry(db, user_id, raw_title, platform_id)
+        _exact_match_entry(db, user_id, raw_title, platform_id)
+        or _prefix_match_entry(db, user_id, raw_title, platform_id)
         or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
         or _fuzzy_match_entry(db, user_id, raw_title, platform_id)
     )
