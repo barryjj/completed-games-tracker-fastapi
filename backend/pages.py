@@ -1205,6 +1205,7 @@ def add_game(
     is_collection: bool = Form(False),
     parent_game_id: int | None = Form(None),
     igdb_game_id: int | None = Form(None),
+    import_candidate_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -1349,6 +1350,36 @@ def add_game(
             )
         except Exception:
             pass  # metadata failure never blocks the add
+
+    # Import candidate confirmed via this add: log completions from its
+    # parsed spreadsheet rows against the entry we just created, instead of
+    # requiring the user to re-type dates/playthroughs/notes we already have.
+    if import_candidate_id:
+        candidate = (
+            db.query(models.ImportCandidate)
+            .filter(models.ImportCandidate.id == import_candidate_id, models.ImportCandidate.user_id == current_user.id)
+            .options(joinedload(models.ImportCandidate.rows))
+            .first()
+        )
+        if candidate and candidate.status == "pending":
+            for row in candidate.rows:
+                if not row.completed_at:
+                    continue
+                db.add(
+                    models.Completion(
+                        user_id=current_user.id,
+                        library_entry_id=entry.id,
+                        completed_at=row.completed_at,
+                        completed_at_precision=row.completed_at_precision or "day",
+                        playthroughs=row.playthroughs,
+                        notes=row.raw_notes,
+                        sort_order=row.row_number,
+                    )
+                )
+            candidate.library_entry_id = entry.id
+            candidate.status = "confirmed"
+            candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+            db.commit()
 
     return templates.TemplateResponse(
         request=request,

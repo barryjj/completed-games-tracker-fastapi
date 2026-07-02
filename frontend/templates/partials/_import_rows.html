@@ -35,7 +35,7 @@
             hx-target="#import-row-{{ c.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this">
-      Confirm
+      {% if c.proposed_action == "add_to_existing" %}Confirm{% else %}Add new{% endif %}
     </button>
     <button class="btn btn-surface btn-sm"
             hx-post="/library/import/{{ c.id }}/dismiss"
