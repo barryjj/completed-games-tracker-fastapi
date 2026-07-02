@@ -183,31 +183,6 @@ def _colon_prefix(title: str) -> str | None:
     return None
 
 
-def best_title_score(title_a: str, title_b: str) -> float:
-    """Symmetric title match score: tries the direct `_score`, plus colon/dash
-    prefix-stripped comparisons on either side, and returns the best result.
-
-    `_score`'s trailing-number subtitle rule only fires when the *shorter*
-    title ends in a digit ("Witcher 3" -> "Witcher 3: Wild Hunt"). It misses
-    the case where the *shorter* title has no subtitle at all and the longer
-    one does ("Sekiro" -> "Sekiro: Shadows Die Twice", "The Witcher" -> "The
-    Witcher: Enhanced Edition") because a bare single-token title is
-    deliberately excluded from that rule to avoid over-matching franchise
-    names. Prefix-stripping the longer title before scoring catches these
-    without touching `_score` itself.
-    """
-    best = _score(title_a, title_b)
-    prefix_a = _colon_prefix(title_a)
-    if prefix_a:
-        best = max(best, _score(prefix_a, title_b))
-    prefix_b = _colon_prefix(title_b)
-    if prefix_b:
-        best = max(best, _score(title_a, prefix_b))
-    if prefix_a and prefix_b:
-        best = max(best, _score(prefix_a, prefix_b))
-    return best
-
-
 def confidence_label(score: float) -> str:
     if score >= 0.90:
         return "High"

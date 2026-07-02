@@ -2973,7 +2973,8 @@ def import_candidate_edit(
         candidate.library_entry_id = entry.id
         candidate.proposed_action = "add_to_existing"
     else:
-        best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id)
+        candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
+        best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)
         if best_entry:
             candidate.library_entry_id = best_entry.id
             candidate.proposed_action = "add_to_existing"
