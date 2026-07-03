@@ -55,10 +55,15 @@
   hx-target="#import-tab-content"
   hx-swap="innerHTML"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#import-search, change from:#import-platform-filter, change from:#import-year-filter, change from:#import-sort"
+  hx-trigger="input changed delay:300ms from:#import-search, change from:#import-platform-filter, change from:#import-year-filter, change from:#import-sort, submit-view"
 >
   <input type="hidden" name="tab" value="{{ tab }}">
+  <input type="hidden" name="view" id="import-view-field" value="{{ view }}">
   <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+    <div class="btn-group btn-group-sm" role="group" id="import-view-toggle" {% if tab != 'add_to_existing' %}hidden{% endif %}>
+      <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}" onclick="importSetView('list')" title="List view">&equiv;</button>
+      <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}" onclick="importSetView('card')" title="Card view">&#9638;</button>
+    </div>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
     <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
       <option value="">All platforms</option>
@@ -114,15 +119,103 @@
 
 // Tab buttons carry their own hx-get/hx-vals/hx-include (see markup above) so
 // htmx handles the actual data fetch — this just gives instant visual
-// feedback and keeps the filter form's hidden "tab" field in sync so a
-// subsequent search/platform/year/sort change stays scoped to this tab.
+// feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
+// a subsequent search/platform/year/sort change stays scoped correctly.
+// Card view only exists for "Add to existing" — switching away forces list.
 window.importSwitchTab = function(button, tab) {
   document.querySelectorAll('#import-tabs button').forEach(function(b) {
     b.classList.toggle('active', b === button);
   });
   var hiddenTab = document.querySelector('#import-filters-form input[name="tab"]');
   if (hiddenTab) hiddenTab.value = tab;
+  var toggle = document.getElementById('import-view-toggle');
+  if (toggle) toggle.hidden = tab !== 'add_to_existing';
+  if (tab !== 'add_to_existing') {
+    var hiddenView = document.getElementById('import-view-field');
+    if (hiddenView) hiddenView.value = 'list';
+  }
 };
+
+const IMPORT_VIEW_KEY = 'cgt-import-view';
+
+window.importSetView = function(mode) {
+  localStorage.setItem(IMPORT_VIEW_KEY, mode);
+  var hiddenView = document.getElementById('import-view-field');
+  if (hiddenView) hiddenView.value = mode;
+  document.querySelectorAll('#import-view-toggle button').forEach(function(b, i) {
+    b.classList.toggle('active', (i === 0 && mode === 'list') || (i === 1 && mode === 'card'));
+  });
+  htmx.trigger('#import-filters-form', 'submit-view');
+};
+
+// Card stack navigation — same show/advance pattern as sync match review,
+// but only ever toggles --active/--hidden (no peeking prev/next cards).
+let importCardIdx = 0;
+function importCards() { return Array.from(document.querySelectorAll('#import-stack .cgt-match-card')); }
+function importShowCard(idx) {
+  const cards = importCards();
+  const dots = Array.from(document.querySelectorAll('#import-nav-dots .cgt-match-nav__dot'));
+  if (!cards.length) return;
+  importCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
+  cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
+  dots.forEach(function(d, i) { d.classList.toggle('cgt-match-nav__dot--active', i === importCardIdx); });
+}
+window.importCardNav = function(dir) { importShowCard(importCardIdx + dir); };
+
+// Rebuilds the dot nav from whatever cards currently exist in #import-stack.
+// resetIndex=true (tab switch / filter change / fresh card set) jumps back
+// to the first card; omitted (load-more append) keeps the current card
+// visible while just adding dots for the newly-appended ones.
+window.importRebuildNav = function(resetIndex) {
+  var cards = importCards();
+  var nav = document.getElementById('import-nav');
+  var loadMore = document.getElementById('import-card-load-more');
+  if (!cards.length) {
+    if (nav) nav.hidden = true;
+    var stack = document.getElementById('import-stack');
+    if (stack) stack.innerHTML = '<p class="text-secondary p-3 mb-0">Nothing left in this queue.</p>';
+    if (loadMore) loadMore.innerHTML = '';
+    return;
+  }
+  if (nav) nav.hidden = false;
+  var idx = resetIndex ? 0 : Math.min(importCardIdx, cards.length - 1);
+  var dotsWrap = document.getElementById('import-nav-dots');
+  if (dotsWrap) {
+    dotsWrap.innerHTML = cards.map(function(_, i) {
+      return '<span class="cgt-match-nav__dot' + (i === idx ? ' cgt-match-nav__dot--active' : '') + '"></span>';
+    }).join('');
+  }
+  importShowCard(idx);
+};
+
+// Called after a card's Confirm/Dismiss succeeds — remove it and advance.
+window.importCardDone = function(id) {
+  var card = document.getElementById('import-card-' + id);
+  if (card) card.remove();
+  importRebuildNav(false);
+};
+
+// Re-init card nav whenever the tab content swaps in a fresh card stack
+// (tab switch, filter change) — but not on load-more, which calls
+// importRebuildNav(false) itself via hx-on::after-request to preserve
+// the currently-visible card instead of jumping back to the first one.
+document.addEventListener('htmx:afterSwap', function(e) {
+  if (e.target && e.target.id === 'import-tab-content' && document.getElementById('import-stack')) {
+    importCardIdx = 0;
+    importRebuildNav(true);
+  }
+});
+
+// Restore the user's last view choice for Add to existing on page load.
+(function restoreImportView() {
+  var toggle = document.getElementById('import-view-toggle');
+  if (!toggle || toggle.hidden) return;
+  var saved = localStorage.getItem(IMPORT_VIEW_KEY);
+  var hiddenView = document.getElementById('import-view-field');
+  if (saved && hiddenView && saved !== hiddenView.value) {
+    importSetView(saved);
+  }
+})();
 
 // Preview pane
 window.openImportPreview = function(candidateId) {

@@ -1,0 +1,81 @@
+{# Card items for the "Add to existing" tab's card view. Bare cards only —
+   the .cgt-match-stage wrapper and nav live in _import_tab_content.html so
+   "load more" can OOB-append new cards here without duplicating either. #}
+{% for c in candidates %}
+{% set v = candidate_visuals.get(c.id) %}
+<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden"
+     id="import-card-{{ c.id }}">
+
+  <div class="cgt-match-card__body">
+    {% if v and (v.hero_url or v.fallback_hero_url) %}
+    <div class="cgt-detail-hero">
+      <img class="cgt-detail-hero__img" src="{{ v.hero_url or v.fallback_hero_url }}" alt="" loading="lazy">
+      {% if v.logo_url or v.fallback_logo_url %}
+      <img class="cgt-detail-hero__logo" src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="p-3">
+      <div class="d-flex align-items-center gap-2 mb-2">
+        <h6 class="mb-0">{{ c.library_entry.display_name or c.raw_title if c.library_entry else c.raw_title }}</h6>
+        {% if c.platform %}
+        <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+        {% endif %}
+      </div>
+      {% if c.raw_title != (c.library_entry.display_name if c.library_entry else '') %}
+      <div class="small text-secondary mb-2">Matched: {{ c.raw_title }}</div>
+      {% endif %}
+
+      <div class="cgt-detail-block mb-0">
+        {% set import_count = c.rows | length %}
+        <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
+        <ul class="list-unstyled mb-0">
+          {% for r in c.rows %}
+          <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
+            <dl class="cgt-detail-meta mb-0">
+              <dt>Date</dt>
+              <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
+              {% if r.playthroughs %}
+              <dt>Playthroughs</dt>
+              <dd>{{ r.playthroughs }}</dd>
+              {% endif %}
+              {% if r.raw_notes %}
+              <dt>Notes</dt>
+              <dd>{{ r.raw_notes }}</dd>
+              {% endif %}
+            </dl>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
+    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
+    <button class="btn btn-primary btn-sm"
+            hx-post="/library/import/{{ c.id }}/confirm"
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
+      Confirm
+    </button>
+    <button class="btn btn-surface btn-sm"
+            hx-post="/library/import/{{ c.id }}/dismiss"
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
+      Dismiss
+    </button>
+  </div>
+
+  {# Off-DOM anchor for the confirm/dismiss HX-Retarget response — the
+     server always retargets to #import-row-{id} regardless of caller,
+     matching the list view's row id scheme, so it needs to exist even
+     here where there's no literal row. #}
+  <span id="import-row-{{ c.id }}" hidden></span>
+</div>
+{% endfor %}

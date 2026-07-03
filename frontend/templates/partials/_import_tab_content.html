@@ -1,5 +1,27 @@
 {% if not candidates %}
 <p class="text-secondary">Nothing matches these filters in this queue.</p>
+{% elif view == "card" %}
+<div id="import-stack" class="cgt-match-stage cgt-match-stage--import">
+  {% include "partials/_import_cards.html" %}
+</div>
+<div class="cgt-match-nav" id="import-nav">
+  <button class="cgt-match-nav__btn" onclick="importCardNav(-1)">&#8249;</button>
+  <div class="cgt-match-nav__dots" id="import-nav-dots"></div>
+  <button class="cgt-match-nav__btn" onclick="importCardNav(1)">&#8250;</button>
+</div>
+<div id="import-card-load-more">
+  {% if has_more %}
+  <div class="text-center mt-2">
+    <button class="btn btn-sm btn-surface"
+            hx-get="/library/import/review?tab={{ tab }}&view=card&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+            hx-target="#import-card-load-more"
+            hx-swap="innerHTML"
+            hx-on::after-request="importRebuildNav()">
+      Load more
+    </button>
+  </div>
+  {% endif %}
+</div>
 {% else %}
 <div class="table-responsive">
   <table class="table table-sm align-middle" id="import-table">

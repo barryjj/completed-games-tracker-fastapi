@@ -2690,6 +2690,15 @@ def _import_year_options(db: Session, user_id: int, tab: str) -> list[str]:
     return sorted({y for (y,) in rows if y}, reverse=True)
 
 
+def _import_candidate_visuals(db: Session, candidate: models.ImportCandidate) -> dict | None:
+    """Hero/logo visuals for an add_to_existing candidate's matched library
+    entry, for card view. None if the candidate has no matched entry."""
+    entry = candidate.library_entry
+    if not entry or not entry.release or not entry.release.game:
+        return None
+    return _build_detail_pane_visuals(db, entry, entry.release.game, entry.release)
+
+
 @router.get("/library/import/review")
 def import_review_page(
     request: Request,
@@ -2699,6 +2708,7 @@ def import_review_page(
     platform: str = "",
     year: str = "",
     sort: str = "id",
+    view: str = "list",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2706,6 +2716,8 @@ def import_review_page(
         tab = "add_to_existing"
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
+    if view not in ("list", "card") or tab != "add_to_existing":
+        view = "list"
 
     tab_counts = _import_tab_counts(db, current_user.id)
     pending = sum(tab_counts.values())
@@ -2753,26 +2765,41 @@ def import_review_page(
     else:
         ordered_q = ordered_q.order_by(models.ImportCandidate.id)
 
-    candidates = (
-        ordered_q.options(
-            joinedload(models.ImportCandidate.rows),
-            joinedload(models.ImportCandidate.platform),
-            joinedload(models.ImportCandidate.library_entry),
-        )
-        .offset(offset)
-        .limit(_IMPORT_PAGE_SIZE)
-        .all()
-    )
+    candidate_opts = [
+        joinedload(models.ImportCandidate.rows),
+        joinedload(models.ImportCandidate.platform),
+        joinedload(models.ImportCandidate.library_entry),
+    ]
+    if view == "card":
+        candidate_opts += [
+            joinedload(models.ImportCandidate.library_entry)
+            .joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.game),
+            joinedload(models.ImportCandidate.library_entry)
+            .joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.artwork),
+            joinedload(models.ImportCandidate.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
+        ]
+    candidates = ordered_q.options(*candidate_opts).offset(offset).limit(_IMPORT_PAGE_SIZE).all()
     next_offset = offset + _IMPORT_PAGE_SIZE
     has_more = next_offset < tab_total
 
-    filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort}
+    candidate_visuals = {c.id: _import_candidate_visuals(db, c) for c in candidates} if view == "card" else {}
+
+    filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort, "view": view}
 
     if request.headers.get("HX-Request") and offset > 0:
         return templates.TemplateResponse(
             request=request,
-            name="partials/_import_rows.html",
-            context={"candidates": candidates, "next_offset": next_offset, "has_more": has_more, "tab": tab, **filter_ctx},
+            name="partials/_import_card_load_more.html" if view == "card" else "partials/_import_rows.html",
+            context={
+                "candidates": candidates,
+                "next_offset": next_offset,
+                "has_more": has_more,
+                "tab": tab,
+                "candidate_visuals": candidate_visuals,
+                **filter_ctx,
+            },
         )
 
     if request.headers.get("HX-Request"):
@@ -2785,6 +2812,7 @@ def import_review_page(
                 "has_more": has_more,
                 "tab": tab,
                 "tab_counts": tab_counts,
+                "candidate_visuals": candidate_visuals,
                 "platform_options": _import_platform_options(db, current_user.id, tab),
                 "year_options": _import_year_options(db, current_user.id, tab),
                 **filter_ctx,
@@ -2802,6 +2830,7 @@ def import_review_page(
             "tab_counts": tab_counts,
             "next_offset": next_offset,
             "has_more": has_more,
+            "candidate_visuals": candidate_visuals,
             "platform_options": _import_platform_options(db, current_user.id, tab),
             "year_options": _import_year_options(db, current_user.id, tab),
             **filter_ctx,

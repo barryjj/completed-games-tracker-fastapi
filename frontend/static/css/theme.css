@@ -1287,6 +1287,29 @@ body:has(.cgt-sticky-actions) {
   opacity: 0.5;
 }
 
+/* Import review card view — same stack/nav mechanics as match review, sized
+   up to fit a hero image + condensed library info + completions preview.
+   Only ever toggles --active/--hidden (no peeking prev/next cards), so the
+   rotation/offset transforms above never apply here. */
+.cgt-match-stage--import {
+  height: 640px;
+}
+.cgt-match-card--import {
+  width: 680px;
+  margin-left: -340px;
+  display: flex;
+  flex-direction: column;
+  max-height: 640px;
+}
+.cgt-match-card--import .cgt-match-card__body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.cgt-match-card--import .cgt-match-card__footer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--ctp-surface2);
+}
+
 /* ─── Stack nav (chevrons + dots) ───────────────────────────────────────── */
 .cgt-match-nav {
   display: flex;

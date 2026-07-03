@@ -1,0 +1,18 @@
+{# Response for the card-view "Load more" click. The outer content becomes
+   the new contents of #import-card-load-more (next button, or nothing if
+   this was the last page); the OOB div appends the new cards into the
+   existing #import-stack without disturbing already-rendered cards. #}
+<div hx-swap-oob="beforeend:#import-stack">
+  {% include "partials/_import_cards.html" %}
+</div>
+{% if has_more %}
+<div class="text-center mt-2">
+  <button class="btn btn-sm btn-surface"
+          hx-get="/library/import/review?tab={{ tab }}&view=card&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+          hx-target="#import-card-load-more"
+          hx-swap="innerHTML"
+          hx-on::after-request="importRebuildNav()">
+    Load more
+  </button>
+</div>
+{% endif %}
