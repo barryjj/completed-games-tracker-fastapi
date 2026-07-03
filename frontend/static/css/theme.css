@@ -450,6 +450,15 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   color: var(--ctp-teal); background: color-mix(in srgb, var(--ctp-teal) 15%, transparent);
 }
 
+/* Import review: distinguishes a spreadsheet-sourced value from the
+   matched library entry's value, wherever the two might otherwise look
+   identical or get confused. Deliberately neutral/muted (not a new accent
+   color) — this is a provenance label, not a category like platform/DLC,
+   so it shouldn't visually compete with those. */
+.tag-source {
+  color: var(--ctp-subtext0); background: color-mix(in srgb, var(--ctp-subtext0) 12%, transparent);
+}
+
 /* ─── Account section headings ───────────────────────────────────────────── */
 .section-heading {
   font-size: 0.75rem; font-weight: 600; text-transform: uppercase;

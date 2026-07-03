@@ -2,6 +2,8 @@
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
   <td>
+    {% set _lib_release = c.library_entry.release if c.library_entry else None %}
+    {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
     <div class="d-flex align-items-center gap-2">
       {% if c.library_entry %}
       {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
@@ -12,16 +14,16 @@
       {% endif %}
       {% endif %}
       <div class="min-w-0">
-        <div class="fw-medium"><i class="bi bi-file-earmark-spreadsheet text-secondary me-1" title="From spreadsheet"></i>{{ c.raw_title }}</div>
-        {% if c.library_entry %}
-        <div class="small"><i class="bi bi-collection text-secondary me-1" title="Library entry"></i>{{ c.library_entry.display_name or c.raw_title }}</div>
+        <div class="fw-medium">{{ _lib_title or c.raw_title }}</div>
+        {% if _lib_title and _lib_title != c.raw_title %}
+        <div class="small d-flex align-items-center gap-1"><span class="tag-badge tag-source">Sheet</span> {{ c.raw_title }}</div>
         {% endif %}
       </div>
     </div>
   </td>
   <td>
-    {% set _lib_release = c.library_entry.release if c.library_entry else None %}
-    <div><i class="bi bi-file-earmark-spreadsheet text-secondary me-1" title="From spreadsheet"></i>
+    <div class="d-flex align-items-center gap-1">
+      {% if c.library_entry %}<span class="tag-badge tag-source">Sheet</span>{% endif %}
       {% if c.platform %}
       <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
       {% else %}
@@ -29,7 +31,8 @@
       {% endif %}
     </div>
     {% if _lib_release and _lib_release.platform_obj and (not c.platform or _lib_release.platform_obj.id != c.platform.id) %}
-    <div class="mt-1"><i class="bi bi-collection text-secondary me-1" title="Library entry"></i>
+    <div class="d-flex align-items-center gap-1 mt-1">
+      <span class="tag-badge tag-source">Library</span>
       <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
     </div>
     {% endif %}
