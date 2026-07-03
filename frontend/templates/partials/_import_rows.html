@@ -12,18 +12,26 @@
       {% endif %}
       {% endif %}
       <div class="min-w-0">
-        <div class="fw-medium">{{ c.raw_title }} <span class="text-secondary fw-normal small">(spreadsheet)</span></div>
+        <div class="fw-medium"><i class="bi bi-file-earmark-spreadsheet text-secondary me-1" title="From spreadsheet"></i>{{ c.raw_title }}</div>
         {% if c.library_entry %}
-        <div class="small text-secondary">Library: {{ c.library_entry.display_name or c.raw_title }}</div>
+        <div class="small"><i class="bi bi-collection text-secondary me-1" title="Library entry"></i>{{ c.library_entry.display_name or c.raw_title }}</div>
         {% endif %}
       </div>
     </div>
   </td>
   <td>
-    {% if c.platform %}
-    <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-    {% else %}
-    <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+    {% set _lib_release = c.library_entry.release if c.library_entry else None %}
+    <div><i class="bi bi-file-earmark-spreadsheet text-secondary me-1" title="From spreadsheet"></i>
+      {% if c.platform %}
+      <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+      {% else %}
+      <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+      {% endif %}
+    </div>
+    {% if _lib_release and _lib_release.platform_obj and (not c.platform or _lib_release.platform_obj.id != c.platform.id) %}
+    <div class="mt-1"><i class="bi bi-collection text-secondary me-1" title="Library entry"></i>
+      <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+    </div>
     {% endif %}
   </td>
   <td>

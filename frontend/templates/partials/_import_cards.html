@@ -17,18 +17,22 @@
     {% endif %}
 
     <div class="p-3">
-      {% if c.library_entry %}
-      <div class="small text-secondary text-uppercase mb-1" style="font-size:.65rem;letter-spacing:.03em;">Library entry</div>
-      {% endif %}
-      <div class="d-flex align-items-center gap-2 mb-2">
+      {% set _lib_release = c.library_entry.release if c.library_entry else None %}
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <i class="bi bi-collection text-secondary" title="Library entry"></i>
         <h6 class="mb-0">{{ c.library_entry.display_name or c.raw_title if c.library_entry else c.raw_title }}</h6>
-        {% if c.platform %}
+        {% if _lib_release and _lib_release.platform_obj %}
+        <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+        {% elif c.platform %}
         <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
         {% endif %}
       </div>
-      {% if c.raw_title != (c.library_entry.display_name if c.library_entry else '') %}
-      <div class="small text-secondary mb-2">From spreadsheet: {{ c.raw_title }}</div>
-      {% endif %}
+      <div class="small text-secondary mb-2">
+        <i class="bi bi-file-earmark-spreadsheet me-1" title="From spreadsheet"></i>{{ c.raw_title }}
+        {% if c.platform and _lib_release and _lib_release.platform_obj and _lib_release.platform_obj.id != c.platform.id %}
+        <span class="tag-badge {{ c.platform.tag_class }} ms-1">{{ c.platform.display_name or c.platform.name }}</span>
+        {% endif %}
+      </div>
 
       <div class="cgt-import-card-columns">
         <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">

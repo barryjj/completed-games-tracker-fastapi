@@ -2776,7 +2776,9 @@ def import_review_page(
     candidate_opts = [
         joinedload(models.ImportCandidate.rows),
         joinedload(models.ImportCandidate.platform),
-        joinedload(models.ImportCandidate.library_entry),
+        joinedload(models.ImportCandidate.library_entry)
+        .joinedload(models.UserLibraryEntry.release)
+        .joinedload(models.GameRelease.platform_obj),
     ]
     if view == "card":
         candidate_opts += [
