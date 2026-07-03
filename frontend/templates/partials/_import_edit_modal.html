@@ -6,12 +6,17 @@
       hx-post="/library/import/{{ candidate.id }}/edit"
       hx-swap="none"
       hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('importEditModal')).hide(); }">
+  <p class="text-secondary small">
+    The fields below are the raw values parsed from your spreadsheet, not your library. Saving re-runs automatic
+    matching against your library using the edited values — unless you search and link to a specific entry below,
+    which skips matching entirely and uses exactly what you pick.
+  </p>
   <div class="mb-3">
-    <label class="form-label">Title</label>
+    <label class="form-label">Title <span class="text-secondary fw-normal">(from spreadsheet)</span></label>
     <input type="text" class="form-control" name="raw_title" value="{{ candidate.raw_title | e }}" required>
   </div>
   <div class="mb-3">
-    <label class="form-label">Platform</label>
+    <label class="form-label">Platform <span class="text-secondary fw-normal">(from spreadsheet)</span></label>
     <input type="text" class="form-control" name="raw_platform"
            value="{{ candidate.raw_platform | e }}" list="import-edit-platform-suggestions">
     <datalist id="import-edit-platform-suggestions">
@@ -22,7 +27,7 @@
   </div>
 
   <div class="mb-2">
-    <label class="form-label mb-1">Link to a specific library entry <span class="text-secondary fw-normal">(optional — skips automatic matching)</span></label>
+    <label class="form-label mb-1">Link to a specific library entry <span class="text-secondary fw-normal">(optional — skips automatic matching, uses this exact entry)</span></label>
     <input type="text" class="form-control form-control-sm mb-2" id="import-edit-link-search" placeholder="Search your library…" autocomplete="off">
     <div id="import-edit-link-results"></div>
     <div id="import-edit-link-selected" class="small text-secondary mt-1" hidden>

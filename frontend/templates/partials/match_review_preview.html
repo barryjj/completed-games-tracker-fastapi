@@ -113,7 +113,7 @@
           <div>{{ c | completion_date }}
             {% if c.playthroughs %}<small class="text-secondary ms-1">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
           </div>
-          {% if c.notes %}<small class="text-secondary d-block">{{ c.notes }}</small>{% endif %}
+          {% if c.notes %}<small class="text-secondary d-block cgt-notes">{{ c.notes }}</small>{% endif %}
         </li>
         {% endfor %}
       </ul>

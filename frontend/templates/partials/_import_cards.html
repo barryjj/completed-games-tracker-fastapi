@@ -17,6 +17,9 @@
     {% endif %}
 
     <div class="p-3">
+      {% if c.library_entry %}
+      <div class="small text-secondary text-uppercase mb-1" style="font-size:.65rem;letter-spacing:.03em;">Library entry</div>
+      {% endif %}
       <div class="d-flex align-items-center gap-2 mb-2">
         <h6 class="mb-0">{{ c.library_entry.display_name or c.raw_title if c.library_entry else c.raw_title }}</h6>
         {% if c.platform %}
@@ -24,7 +27,7 @@
         {% endif %}
       </div>
       {% if c.raw_title != (c.library_entry.display_name if c.library_entry else '') %}
-      <div class="small text-secondary mb-2">Matched: {{ c.raw_title }}</div>
+      <div class="small text-secondary mb-2">From spreadsheet: {{ c.raw_title }}</div>
       {% endif %}
 
       <div class="cgt-import-card-columns">
@@ -43,7 +46,7 @@
                 {% endif %}
                 {% if r.raw_notes %}
                 <dt>Notes</dt>
-                <dd>{{ r.raw_notes }}</dd>
+                <dd class="cgt-notes">{{ r.raw_notes }}</dd>
                 {% endif %}
               </dl>
             </li>

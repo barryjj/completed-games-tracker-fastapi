@@ -612,6 +612,12 @@ html[data-bs-theme="dark"]  .toast .btn-close { filter: invert(1) grayscale(100%
    simple "Header\nDelta\nTotals" strings instead of HTML. */
 .toast-body { white-space: pre-line; }
 
+/* Same for completion/import-row notes — user-typed notes (spreadsheet
+   cells included) often have real line breaks that HTML's default
+   whitespace collapsing would otherwise silently flatten to a single
+   space. */
+.cgt-notes { white-space: pre-line; }
+
 /* Library rows are clickable (open the detail offcanvas) — show a pointer
    cursor and a subtle highlight on hover so it's obvious. The .row-actions
    buttons inside have their own cursors and stop the click from bubbling. */
