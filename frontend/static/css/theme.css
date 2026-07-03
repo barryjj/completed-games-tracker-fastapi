@@ -1309,10 +1309,13 @@ body:has(.cgt-sticky-actions) {
 
 /* Import review card view — same stack/nav mechanics as match review, sized
    up to fit a hero image + condensed library info + completions preview.
-   Only ever toggles --active/--hidden (no peeking prev/next cards), so the
-   rotation/offset transforms above never apply here. */
+   Only ever toggles --active/--hidden (no peeking prev/next cards) — the
+   rotate/scale/slide transition below exists to sell the illusion of a
+   card sliding out from under its neighbors, which doesn't apply when
+   there are no neighbors ever visible, so it's disabled here in favor of
+   an instant swap. */
 .cgt-match-stage--import {
-  height: 640px;
+  height: 520px;
 }
 .cgt-match-card--import {
   width: 680px;
@@ -1322,7 +1325,12 @@ body:has(.cgt-sticky-actions) {
   /* Fixed height, not max-height — flex children need a definite container
      height to correctly compute internal overflow. With only max-height,
      the body never actually scrolled and the footer got pushed off-card. */
-  height: 640px;
+  height: 520px;
+  transition: none;
+}
+.cgt-match-card--import.cgt-match-card--hidden,
+.cgt-match-card--import.cgt-match-card--active {
+  transform: none;
 }
 .cgt-match-card--import .cgt-match-card__body {
   overflow-y: auto;
@@ -1332,6 +1340,25 @@ body:has(.cgt-sticky-actions) {
 .cgt-match-card--import .cgt-match-card__footer {
   flex-shrink: 0;
   border-top: 1px solid var(--ctp-surface2);
+}
+
+/* Nav pinned to the bottom of the viewport, same pattern as
+   .cgt-sticky-actions — the stack can be taller than the visible viewport
+   once the header/tabs/filters above it are accounted for, so the nav
+   needs to stay reachable without scrolling past a tall card to find it. */
+.cgt-match-nav--sticky {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin-top: 0;
+  padding: 0.75rem 1.5rem;
+  background: var(--ctp-mantle);
+  border-top: 1px solid var(--ctp-surface1);
+  z-index: 1030;
+}
+body:has(.cgt-match-nav--sticky) {
+  padding-bottom: 5rem;
 }
 
 /* ─── Stack nav (chevrons + dots) ───────────────────────────────────────── */
