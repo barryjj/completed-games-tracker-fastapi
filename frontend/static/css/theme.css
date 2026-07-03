@@ -459,6 +459,34 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   color: var(--ctp-subtext0); background: color-mix(in srgb, var(--ctp-subtext0) 12%, transparent);
 }
 
+/* Compact preview of the raw spreadsheet values (title/platform, and for
+   list rows date/playthroughs/notes/collection) — monospace + bordered
+   grid so it visually reads as "a cell from a spreadsheet" rather than
+   ordinary prose, distinct from the library entry's own styling above it. */
+.cgt-sheet-preview {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .72rem;
+  background: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 4px;
+  padding: .45rem .6rem;
+}
+.cgt-sheet-preview dt {
+  color: var(--ctp-subtext0);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  white-space: nowrap;
+}
+.cgt-sheet-preview dd {
+  margin: 0;
+  color: var(--ctp-text);
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
 /* ─── Account section headings ───────────────────────────────────────────── */
 .section-heading {
   font-size: 0.75rem; font-weight: 600; text-transform: uppercase;

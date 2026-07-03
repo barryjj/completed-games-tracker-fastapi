@@ -15,26 +15,20 @@
       {% endif %}
       <div class="min-w-0">
         <div class="fw-medium">{{ _lib_title or c.raw_title }}</div>
-        {% if c.library_entry %}
-        <div class="small text-secondary d-flex align-items-center gap-1">
-          <span class="tag-badge tag-source">Library match</span>
-          {% if _lib_title != c.raw_title %}<span>from “{{ c.raw_title }}”</span>{% endif %}
-        </div>
-        {% endif %}
+        <dl class="cgt-sheet-preview mt-1">
+          <dt>Title</dt><dd>{{ c.raw_title }}</dd>
+          <dt>Platform</dt><dd>{{ c.raw_platform or "—" }}</dd>
+        </dl>
       </div>
     </div>
   </td>
   <td>
-    {% if c.platform %}
+    {% if _lib_release and _lib_release.platform_obj %}
+    <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+    {% elif c.platform %}
     <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
     {% else %}
     <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-    {% endif %}
-    {% if _lib_release and _lib_release.platform_obj and (not c.platform or _lib_release.platform_obj.id != c.platform.id) %}
-    <div class="d-flex align-items-center gap-1 mt-1">
-      <span class="tag-badge tag-source">Library</span>
-      <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-    </div>
     {% endif %}
   </td>
   <td>

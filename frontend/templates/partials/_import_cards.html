@@ -27,15 +27,10 @@
         <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
         {% endif %}
       </div>
-      {% if c.library_entry %}
-      <div class="small text-secondary d-flex align-items-center gap-1 mb-2">
-        <span class="tag-badge tag-source">Library match</span>
-        {% if _lib_title != c.raw_title %}<span>from “{{ c.raw_title }}”</span>{% endif %}
-        {% if c.platform and _lib_release and _lib_release.platform_obj and _lib_release.platform_obj.id != c.platform.id %}
-        <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-        {% endif %}
-      </div>
-      {% endif %}
+      <dl class="cgt-sheet-preview mb-2">
+        <dt>Title</dt><dd>{{ c.raw_title }}</dd>
+        <dt>Platform</dt><dd>{{ c.raw_platform or "—" }}</dd>
+      </dl>
 
       <div class="cgt-import-card-columns">
         <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">
