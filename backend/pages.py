@@ -2691,12 +2691,20 @@ def _import_year_options(db: Session, user_id: int, tab: str) -> list[str]:
 
 
 def _import_candidate_visuals(db: Session, candidate: models.ImportCandidate) -> dict | None:
-    """Hero/logo visuals for an add_to_existing candidate's matched library
-    entry, for card view. None if the candidate has no matched entry."""
+    """Hero/logo visuals + condensed library metadata for an add_to_existing
+    candidate's matched entry, for card view. None if the candidate has no
+    matched entry."""
     entry = candidate.library_entry
     if not entry or not entry.release or not entry.release.game:
         return None
-    return _build_detail_pane_visuals(db, entry, entry.release.game, entry.release)
+    visuals = _build_detail_pane_visuals(db, entry, entry.release.game, entry.release)
+    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
+    return {
+        **visuals,
+        "entry": entry,
+        "release": entry.release,
+        "steam_meta": _extract_steam_meta(appdetails),
+    }
 
 
 @router.get("/library/import/review")

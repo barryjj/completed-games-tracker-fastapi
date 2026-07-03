@@ -207,13 +207,22 @@ document.addEventListener('htmx:afterSwap', function(e) {
 });
 
 // Restore the user's last view choice for Add to existing on page load.
+// If the page already landed in card view server-side (no restore needed,
+// so no htmx swap fires to trigger the afterSwap init above), initialize
+// the card stack directly — otherwise every hard page load shows zero
+// active cards and no nav until something else happens to swap the tab.
 (function restoreImportView() {
   var toggle = document.getElementById('import-view-toggle');
-  if (!toggle || toggle.hidden) return;
+  if (!toggle || toggle.hidden) {
+    if (document.getElementById('import-stack')) importRebuildNav(true);
+    return;
+  }
   var saved = localStorage.getItem(IMPORT_VIEW_KEY);
   var hiddenView = document.getElementById('import-view-field');
   if (saved && hiddenView && saved !== hiddenView.value) {
     importSetView(saved);
+  } else if (document.getElementById('import-stack')) {
+    importRebuildNav(true);
   }
 })();
 

@@ -1309,6 +1309,11 @@ body:has(.cgt-sticky-actions) {
   flex-shrink: 0;
   border-top: 1px solid var(--ctp-surface2);
 }
+/* Shorter hero than the full detail pane's (96/38) — this card also needs
+   room for condensed metadata + the completions preview below it. */
+.cgt-detail-hero--import {
+  aspect-ratio: 96 / 22;
+}
 
 /* ─── Stack nav (chevrons + dots) ───────────────────────────────────────── */
 .cgt-match-nav {

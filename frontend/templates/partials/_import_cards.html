@@ -8,7 +8,7 @@
 
   <div class="cgt-match-card__body">
     {% if v and (v.hero_url or v.fallback_hero_url) %}
-    <div class="cgt-detail-hero">
+    <div class="cgt-detail-hero cgt-detail-hero--import">
       <img class="cgt-detail-hero__img" src="{{ v.hero_url or v.fallback_hero_url }}" alt="" loading="lazy">
       {% if v.logo_url or v.fallback_logo_url %}
       <img class="cgt-detail-hero__logo" src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">
@@ -25,6 +25,31 @@
       </div>
       {% if c.raw_title != (c.library_entry.display_name if c.library_entry else '') %}
       <div class="small text-secondary mb-2">Matched: {{ c.raw_title }}</div>
+      {% endif %}
+
+      {% if v %}
+      <dl class="cgt-detail-meta small mb-3">
+        {% if v.entry.last_played_at %}
+        <dt>Last played</dt>
+        <dd>{{ v.entry.last_played_at.strftime("%B %-d, %Y") }}</dd>
+        {% endif %}
+        {% if v.entry.playtime_minutes %}
+        <dt>Playtime</dt>
+        <dd>{{ v.entry.playtime_minutes | playtime_human }}</dd>
+        {% endif %}
+        {% if v.steam_meta.released %}
+        <dt>Released</dt>
+        <dd>{{ v.steam_meta.released }}</dd>
+        {% endif %}
+        {% if v.steam_meta.developers %}
+        <dt>Developer</dt>
+        <dd>{{ v.steam_meta.developers | join(", ") }}</dd>
+        {% endif %}
+        {% if v.steam_meta.publishers %}
+        <dt>Publisher</dt>
+        <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
+        {% endif %}
+      </dl>
       {% endif %}
 
       <div class="cgt-detail-block mb-0">
