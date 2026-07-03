@@ -8,7 +8,7 @@
 
   <div class="cgt-match-card__body">
     {% if v and (v.hero_url or v.fallback_hero_url) %}
-    <div class="cgt-detail-hero cgt-detail-hero--import">
+    <div class="cgt-import-hero">
       <img class="cgt-detail-hero__img" src="{{ v.hero_url or v.fallback_hero_url }}" alt="" loading="lazy">
       {% if v.logo_url or v.fallback_logo_url %}
       <img class="cgt-detail-hero__logo" src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">

@@ -1040,6 +1040,26 @@ body:has(.cgt-sticky-actions) {
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
 }
 
+/* Import review card hero — its own class, not a .cgt-detail-hero override,
+   so it doesn't depend on cascade order to win. Shorter than the full
+   detail pane's hero (96/38) since this card also needs room for
+   condensed metadata + the completions preview below it. __img/::after/
+   __logo sub-element rules above are shared (not aspect-ratio dependent). */
+.cgt-import-hero {
+  position: relative;
+  width: 100%;
+  background-color: var(--ctp-crust);
+  aspect-ratio: 96 / 22;
+  overflow: hidden;
+}
+.cgt-import-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.55) 100%);
+  pointer-events: none;
+}
+
 /* Content blocks within the pane body. Each section (Description, DLC list,
    Completions, etc.) wraps in this so they read as distinct sections rather
    than a wall of definition lists. Subtle tinted background distinguishes
@@ -1312,13 +1332,6 @@ body:has(.cgt-sticky-actions) {
 .cgt-match-card--import .cgt-match-card__footer {
   flex-shrink: 0;
   border-top: 1px solid var(--ctp-surface2);
-}
-/* Shorter hero than the full detail pane's (96/38) — this card also needs
-   room for condensed metadata + the completions preview below it. Scoped
-   under .cgt-match-card--import for higher specificity than the base
-   .cgt-detail-hero rule, in case of any stylesheet-order ambiguity. */
-.cgt-match-card--import .cgt-detail-hero--import {
-  aspect-ratio: 96 / 22;
 }
 
 /* ─── Stack nav (chevrons + dots) ───────────────────────────────────────── */
