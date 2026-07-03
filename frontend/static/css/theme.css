@@ -1299,19 +1299,25 @@ body:has(.cgt-sticky-actions) {
   margin-left: -340px;
   display: flex;
   flex-direction: column;
-  max-height: 640px;
+  /* Fixed height, not max-height — flex children need a definite container
+     height to correctly compute internal overflow. With only max-height,
+     the body never actually scrolled and the footer got pushed off-card. */
+  height: 640px;
 }
 .cgt-match-card--import .cgt-match-card__body {
   overflow-y: auto;
   flex: 1 1 auto;
+  min-height: 0;
 }
 .cgt-match-card--import .cgt-match-card__footer {
   flex-shrink: 0;
   border-top: 1px solid var(--ctp-surface2);
 }
 /* Shorter hero than the full detail pane's (96/38) — this card also needs
-   room for condensed metadata + the completions preview below it. */
-.cgt-detail-hero--import {
+   room for condensed metadata + the completions preview below it. Scoped
+   under .cgt-match-card--import for higher specificity than the base
+   .cgt-detail-hero rule, in case of any stylesheet-order ambiguity. */
+.cgt-match-card--import .cgt-detail-hero--import {
   aspect-ratio: 96 / 22;
 }
 

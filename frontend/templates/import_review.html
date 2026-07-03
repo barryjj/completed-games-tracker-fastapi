@@ -207,24 +207,22 @@ document.addEventListener('htmx:afterSwap', function(e) {
 });
 
 // Restore the user's last view choice for Add to existing on page load.
-// If the page already landed in card view server-side (no restore needed,
-// so no htmx swap fires to trigger the afterSwap init above), initialize
-// the card stack directly — otherwise every hard page load shows zero
-// active cards and no nav until something else happens to swap the tab.
 (function restoreImportView() {
   var toggle = document.getElementById('import-view-toggle');
-  if (!toggle || toggle.hidden) {
-    if (document.getElementById('import-stack')) importRebuildNav(true);
-    return;
-  }
+  if (!toggle || toggle.hidden) return;
   var saved = localStorage.getItem(IMPORT_VIEW_KEY);
   var hiddenView = document.getElementById('import-view-field');
   if (saved && hiddenView && saved !== hiddenView.value) {
     importSetView(saved);
-  } else if (document.getElementById('import-stack')) {
-    importRebuildNav(true);
   }
 })();
+
+// Unconditional fallback: whatever got us here (server already rendered
+// card view, or the localStorage restore above didn't need to fire a
+// swap), initialize the card stack directly if one exists in the DOM.
+// importRebuildNav is a no-op-safe call — the htmx:afterSwap listener
+// above already re-runs this on every subsequent tab/filter swap.
+if (document.getElementById('import-stack')) importRebuildNav(true);
 
 // Preview pane
 window.openImportPreview = function(candidateId) {
