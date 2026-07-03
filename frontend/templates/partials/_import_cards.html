@@ -27,54 +27,56 @@
       <div class="small text-secondary mb-2">Matched: {{ c.raw_title }}</div>
       {% endif %}
 
-      {% if v %}
-      <div class="cgt-detail-block mb-3">
-        <dl class="cgt-detail-meta small mb-0">
-          {% if v.entry.last_played_at %}
-          <dt>Last played</dt>
-          <dd>{{ v.entry.last_played_at.strftime("%B %-d, %Y") }}</dd>
-          {% endif %}
-          {% if v.entry.playtime_minutes %}
-          <dt>Playtime</dt>
-          <dd>{{ v.entry.playtime_minutes | playtime_human }}</dd>
-          {% endif %}
-          {% if v.steam_meta.released %}
-          <dt>Released</dt>
-          <dd>{{ v.steam_meta.released }}</dd>
-          {% endif %}
-          {% if v.steam_meta.developers %}
-          <dt>Developer</dt>
-          <dd>{{ v.steam_meta.developers | join(", ") }}</dd>
-          {% endif %}
-          {% if v.steam_meta.publishers %}
-          <dt>Publisher</dt>
-          <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
-          {% endif %}
-        </dl>
-      </div>
-      {% endif %}
+      <div class="cgt-import-card-columns">
+        <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">
+          {% set import_count = c.rows | length %}
+          <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
+          <ul class="list-unstyled mb-0">
+            {% for r in c.rows %}
+            <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
+              <dl class="cgt-detail-meta mb-0">
+                <dt>Date</dt>
+                <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
+                {% if r.playthroughs %}
+                <dt>Playthroughs</dt>
+                <dd>{{ r.playthroughs }}</dd>
+                {% endif %}
+                {% if r.raw_notes %}
+                <dt>Notes</dt>
+                <dd>{{ r.raw_notes }}</dd>
+                {% endif %}
+              </dl>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
 
-      <div class="cgt-detail-block mb-0">
-        {% set import_count = c.rows | length %}
-        <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
-        <ul class="list-unstyled mb-0">
-          {% for r in c.rows %}
-          <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
-            <dl class="cgt-detail-meta mb-0">
-              <dt>Date</dt>
-              <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
-              {% if r.playthroughs %}
-              <dt>Playthroughs</dt>
-              <dd>{{ r.playthroughs }}</dd>
-              {% endif %}
-              {% if r.raw_notes %}
-              <dt>Notes</dt>
-              <dd>{{ r.raw_notes }}</dd>
-              {% endif %}
-            </dl>
-          </li>
-          {% endfor %}
-        </ul>
+        {% if v %}
+        <div class="cgt-detail-block mb-0 cgt-import-card-columns__side">
+          <dl class="cgt-detail-meta small mb-0">
+            {% if v.entry.last_played_at %}
+            <dt>Last played</dt>
+            <dd>{{ v.entry.last_played_at.strftime("%B %-d, %Y") }}</dd>
+            {% endif %}
+            {% if v.entry.playtime_minutes %}
+            <dt>Playtime</dt>
+            <dd>{{ v.entry.playtime_minutes | playtime_human }}</dd>
+            {% endif %}
+            {% if v.steam_meta.released %}
+            <dt>Released</dt>
+            <dd>{{ v.steam_meta.released }}</dd>
+            {% endif %}
+            {% if v.steam_meta.developers %}
+            <dt>Developer</dt>
+            <dd>{{ v.steam_meta.developers | join(", ") }}</dd>
+            {% endif %}
+            {% if v.steam_meta.publishers %}
+            <dt>Publisher</dt>
+            <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+        {% endif %}
       </div>
     </div>
   </div>

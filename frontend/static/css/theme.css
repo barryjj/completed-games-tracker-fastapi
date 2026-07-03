@@ -1318,8 +1318,8 @@ body:has(.cgt-sticky-actions) {
   height: 520px;
 }
 .cgt-match-card--import {
-  width: 680px;
-  margin-left: -340px;
+  width: 900px;
+  margin-left: -450px;
   display: flex;
   flex-direction: column;
   /* Fixed height, not max-height — flex children need a definite container
@@ -1340,6 +1340,22 @@ body:has(.cgt-sticky-actions) {
 .cgt-match-card--import .cgt-match-card__footer {
   flex-shrink: 0;
   border-top: 1px solid var(--ctp-surface2);
+}
+/* Wider left column for completions, narrower right column for condensed
+   library metadata — makes better use of the card's width instead of
+   stacking both blocks vertically. */
+.cgt-import-card-columns {
+  display: flex;
+  gap: .75rem;
+  align-items: flex-start;
+}
+.cgt-import-card-columns__main {
+  flex: 2 1 0;
+  min-width: 0;
+}
+.cgt-import-card-columns__side {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* Nav pinned to the bottom of the viewport, same pattern as
