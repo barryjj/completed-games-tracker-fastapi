@@ -28,28 +28,30 @@
       {% endif %}
 
       {% if v %}
-      <dl class="cgt-detail-meta small mb-3">
-        {% if v.entry.last_played_at %}
-        <dt>Last played</dt>
-        <dd>{{ v.entry.last_played_at.strftime("%B %-d, %Y") }}</dd>
-        {% endif %}
-        {% if v.entry.playtime_minutes %}
-        <dt>Playtime</dt>
-        <dd>{{ v.entry.playtime_minutes | playtime_human }}</dd>
-        {% endif %}
-        {% if v.steam_meta.released %}
-        <dt>Released</dt>
-        <dd>{{ v.steam_meta.released }}</dd>
-        {% endif %}
-        {% if v.steam_meta.developers %}
-        <dt>Developer</dt>
-        <dd>{{ v.steam_meta.developers | join(", ") }}</dd>
-        {% endif %}
-        {% if v.steam_meta.publishers %}
-        <dt>Publisher</dt>
-        <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
-        {% endif %}
-      </dl>
+      <div class="cgt-detail-block mb-3">
+        <dl class="cgt-detail-meta small mb-0">
+          {% if v.entry.last_played_at %}
+          <dt>Last played</dt>
+          <dd>{{ v.entry.last_played_at.strftime("%B %-d, %Y") }}</dd>
+          {% endif %}
+          {% if v.entry.playtime_minutes %}
+          <dt>Playtime</dt>
+          <dd>{{ v.entry.playtime_minutes | playtime_human }}</dd>
+          {% endif %}
+          {% if v.steam_meta.released %}
+          <dt>Released</dt>
+          <dd>{{ v.steam_meta.released }}</dd>
+          {% endif %}
+          {% if v.steam_meta.developers %}
+          <dt>Developer</dt>
+          <dd>{{ v.steam_meta.developers | join(", ") }}</dd>
+          {% endif %}
+          {% if v.steam_meta.publishers %}
+          <dt>Publisher</dt>
+          <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
+          {% endif %}
+        </dl>
+      </div>
       {% endif %}
 
       <div class="cgt-detail-block mb-0">
