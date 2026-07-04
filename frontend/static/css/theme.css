@@ -461,17 +461,16 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   flex-shrink: 0;
 }
 
-/* Inline provenance line: a small .tag-source label chip followed by the
-   raw spreadsheet value in full-contrast body text. Only rendered when the
-   raw value differs from the matched library value — the label chip carries
-   the "this is where it came from" meaning so the value itself doesn't need
-   to be muted/secondary to read as distinct. */
-.cgt-sheet-line {
+/* Import review: paired Library/Sheet comparison rows. Each row carries its
+   own source-label chip, title, and platform badge so the two lines read as
+   a direct side-by-side comparison instead of a title floating above a
+   disconnected "Sheet" caption. The Sheet row only renders when its values
+   differ from the Library row. */
+.cgt-source-row {
   display: flex;
   align-items: center;
   gap: 0.5em;
   flex-wrap: wrap;
-  margin-top: 0.35em;
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */

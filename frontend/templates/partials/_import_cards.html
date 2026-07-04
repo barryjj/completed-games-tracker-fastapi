@@ -19,20 +19,29 @@
     <div class="p-3">
       {% set _lib_release = c.library_entry.release if c.library_entry else None %}
       {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
-      <div class="d-flex align-items-center gap-2 mb-1">
-        <h6 class="mb-0">{{ _lib_title or c.raw_title }}</h6>
+      {% if c.library_entry %}
+      <div class="cgt-source-row mb-1">
+        <span class="tag-badge tag-source">Library</span>
+        <h6 class="mb-0">{{ _lib_title }}</h6>
         {% if _lib_release and _lib_release.platform_obj %}
         <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-        {% elif c.platform %}
-        <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
         {% endif %}
       </div>
-      {% set _title_diff = c.raw_title and _lib_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+      {% set _title_diff = c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
       {% set _plat_diff = c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
       {% if _title_diff or _plat_diff %}
-      <div class="cgt-sheet-line mb-2">
+      <div class="cgt-source-row mb-2">
         <span class="tag-badge tag-source">Sheet</span>
-        <span>{{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}</span>
+        <span>{{ c.raw_title }}</span>
+        {% if c.raw_platform %}<span class="tag-badge tag-source">{{ c.raw_platform }}</span>{% endif %}
+      </div>
+      {% endif %}
+      {% else %}
+      <div class="cgt-source-row mb-2">
+        <h6 class="mb-0">{{ c.raw_title }}</h6>
+        {% if c.platform %}
+        <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+        {% endif %}
       </div>
       {% endif %}
 

@@ -14,26 +14,35 @@
       {% endif %}
       {% endif %}
       <div class="min-w-0">
-        <div class="fw-medium">{{ _lib_title or c.raw_title }}</div>
-        {% set _title_diff = c.raw_title and _lib_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+        {% if c.library_entry %}
+        <div class="cgt-source-row">
+          <span class="tag-badge tag-source">Library</span>
+          <span class="fw-medium">{{ _lib_title }}</span>
+          {% if _lib_release and _lib_release.platform_obj %}
+          <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+          {% endif %}
+        </div>
+        {% set _title_diff = c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
         {% set _plat_diff = c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
         {% if _title_diff or _plat_diff %}
-        <div class="cgt-sheet-line mt-1">
+        <div class="cgt-source-row mt-1">
           <span class="tag-badge tag-source">Sheet</span>
-          <span>{{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}</span>
+          <span>{{ c.raw_title }}</span>
+          {% if c.raw_platform %}<span class="tag-badge tag-source">{{ c.raw_platform }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="cgt-source-row">
+          <span class="fw-medium">{{ c.raw_title }}</span>
+          {% if c.platform %}
+          <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+          {% else %}
+          <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+          {% endif %}
         </div>
         {% endif %}
       </div>
     </div>
-  </td>
-  <td>
-    {% if _lib_release and _lib_release.platform_obj %}
-    <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-    {% elif c.platform %}
-    <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-    {% else %}
-    <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-    {% endif %}
   </td>
   <td>
     <span class="text-secondary small">{{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}</span>
@@ -71,6 +80,6 @@
     hx-trigger="revealed"
     hx-target="#import-load-more"
     hx-swap="outerHTML">
-  <td colspan="4" class="text-center text-secondary small py-2">Loading more…</td>
+  <td colspan="3" class="text-center text-secondary small py-2">Loading more…</td>
 </tr>
 {% endif %}
