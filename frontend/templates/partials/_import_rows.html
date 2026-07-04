@@ -15,10 +15,12 @@
       {% endif %}
       <div class="min-w-0">
         <div class="fw-medium">{{ _lib_title or c.raw_title }}</div>
-        <dl class="cgt-sheet-preview mt-1">
-          <dt>Title</dt><dd>{{ c.raw_title }}</dd>
-          <dt>Platform</dt><dd>{{ c.raw_platform or "—" }}</dd>
-        </dl>
+        <div class="cgt-sheet-table-wrap mt-1">
+          <table class="cgt-sheet-table">
+            <thead><tr><th>Title</th><th>Platform</th></tr></thead>
+            <tbody><tr><td>{{ c.raw_title }}</td><td>{{ c.raw_platform or "—" }}</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </div>
   </td>

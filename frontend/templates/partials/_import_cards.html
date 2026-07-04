@@ -27,10 +27,12 @@
         <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
         {% endif %}
       </div>
-      <dl class="cgt-sheet-preview mb-2">
-        <dt>Title</dt><dd>{{ c.raw_title }}</dd>
-        <dt>Platform</dt><dd>{{ c.raw_platform or "—" }}</dd>
-      </dl>
+      <div class="cgt-sheet-table-wrap mb-2">
+        <table class="cgt-sheet-table">
+          <thead><tr><th>Title</th><th>Platform</th></tr></thead>
+          <tbody><tr><td>{{ c.raw_title }}</td><td>{{ c.raw_platform or "—" }}</td></tr></tbody>
+        </table>
+      </div>
 
       <div class="cgt-import-card-columns">
         <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">
