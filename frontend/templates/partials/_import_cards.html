@@ -27,12 +27,14 @@
         <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
         {% endif %}
       </div>
-      <div class="cgt-sheet-table-wrap mb-2">
-        <table class="cgt-sheet-table">
-          <thead><tr><th>Title</th><th>Platform</th></tr></thead>
-          <tbody><tr><td>{{ c.raw_title }}</td><td>{{ c.raw_platform or "—" }}</td></tr></tbody>
-        </table>
+      {% set _title_diff = c.raw_title and _lib_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+      {% set _plat_diff = c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
+      {% if _title_diff or _plat_diff %}
+      <div class="cgt-sheet-line mb-2">
+        <span class="tag-badge tag-source">Sheet</span>
+        <span>{{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}</span>
       </div>
+      {% endif %}
 
       <div class="cgt-import-card-columns">
         <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">

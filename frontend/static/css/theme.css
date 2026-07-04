@@ -459,52 +459,19 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   color: var(--ctp-subtext0); background: color-mix(in srgb, var(--ctp-subtext0) 12%, transparent);
 }
 
-/* Preview of the raw spreadsheet row(s) — an actual horizontal table with
-   a colored header row and grid lines, styled to read as "a literal
-   snippet of a spreadsheet" (Google Sheets / Excel), not another app
-   metadata box. Deliberately breaks from the surrounding Catppuccin
-   surface colors for this reason — light bg + blue header in light mode,
-   dark bg + blue header in dark mode, but always visually distinct from
-   .cgt-detail-block/.tag-badge styling used everywhere else. */
-.cgt-sheet-table-wrap {
-  overflow-x: auto;
-  border-radius: 4px;
-  border: 1px solid #c0c0c0;
+/* Inline provenance line: a small .tag-source label chip followed by the
+   raw spreadsheet value in full-contrast body text. Only rendered when the
+   raw value differs from the matched library value — the label chip carries
+   the "this is where it came from" meaning so the value itself doesn't need
+   to be muted/secondary to read as distinct. */
+.cgt-sheet-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  flex-wrap: wrap;
 }
-.cgt-sheet-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .72rem;
-  background: #fff;
-  color: #202124;
-}
-.cgt-sheet-table th {
-  background: #4285f4;
-  color: #fff;
-  font-weight: 500;
-  text-align: left;
-  padding: 3px 8px;
-  white-space: nowrap;
-  border: 1px solid #3367d6;
-}
-.cgt-sheet-table td {
-  padding: 3px 8px;
-  border: 1px solid #e0e0e0;
-  white-space: nowrap;
-}
-html[data-bs-theme="dark"] .cgt-sheet-table-wrap {
-  border-color: #3c3c3c;
-}
-html[data-bs-theme="dark"] .cgt-sheet-table {
-  background: #1e1e1e;
-  color: #e8eaed;
-}
-html[data-bs-theme="dark"] .cgt-sheet-table th {
-  background: #1a73e8;
-  border-color: #174ea6;
-}
-html[data-bs-theme="dark"] .cgt-sheet-table td {
-  border-color: #3c3c3c;
+.cgt-sheet-line + .cgt-sheet-line {
+  margin-top: 0.25em;
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */
