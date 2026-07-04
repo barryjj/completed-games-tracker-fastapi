@@ -2704,6 +2704,7 @@ def _import_candidate_visuals(db: Session, candidate: models.ImportCandidate) ->
         "entry": entry,
         "release": entry.release,
         "steam_meta": _extract_steam_meta(appdetails),
+        "igdb_meta": _extract_igdb_meta(entry.release),
     }
 
 

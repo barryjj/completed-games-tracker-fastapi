@@ -722,9 +722,12 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
             skipped += 1
             continue
 
-        # Filter out individual rows already confirmed in a previous import
+        # Filter out individual rows already confirmed in a previous import.
+        # Checks ALL confirmed candidates for this title+platform, not just one —
+        # multiple confirmed candidates can accumulate for the same title across
+        # separate uploads over time (e.g. DLC rows added in later sessions).
         confirmed_row_keys: set[tuple] = set()
-        confirmed_candidate = (
+        confirmed_candidates = (
             db.query(models.ImportCandidate)
             .filter(
                 models.ImportCandidate.user_id == user_id,
@@ -732,9 +735,9 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
                 plat_filter,
                 models.ImportCandidate.status == "confirmed",
             )
-            .first()
+            .all()
         )
-        if confirmed_candidate:
+        for confirmed_candidate in confirmed_candidates:
             for r in confirmed_candidate.rows:
                 confirmed_row_keys.add((r.completed_at, r.playthroughs, r.raw_notes))
 

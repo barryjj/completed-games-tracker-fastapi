@@ -40,24 +40,20 @@
         <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">
           {% set import_count = c.rows | length %}
           <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
-          <ul class="list-unstyled mb-0">
-            {% for r in c.rows %}
-            <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
-              <dl class="cgt-detail-meta mb-0">
-                <dt>Date</dt>
-                <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
-                {% if r.playthroughs %}
-                <dt>Playthroughs</dt>
-                <dd>{{ r.playthroughs }}</dd>
-                {% endif %}
-                {% if r.raw_notes %}
-                <dt>Notes</dt>
-                <dd class="cgt-notes">{{ r.raw_notes }}</dd>
-                {% endif %}
-              </dl>
-            </li>
-            {% endfor %}
-          </ul>
+          {% for r in c.rows %}
+          <dl class="cgt-detail-meta small mb-0 {% if not loop.first %}mt-3 pt-3 border-top{% endif %}">
+            <dt>Completed</dt>
+            <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
+            {% if r.playthroughs %}
+            <dt>Playthroughs</dt>
+            <dd>{{ r.playthroughs }}</dd>
+            {% endif %}
+            {% if r.raw_notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ r.raw_notes }}</dd>
+            {% endif %}
+          </dl>
+          {% endfor %}
         </div>
 
         {% if v %}
@@ -74,6 +70,9 @@
             {% if v.steam_meta.released %}
             <dt>Released</dt>
             <dd>{{ v.steam_meta.released }}</dd>
+            {% elif v.igdb_meta.year %}
+            <dt>Released</dt>
+            <dd>{{ v.igdb_meta.year }}</dd>
             {% endif %}
             {% if v.steam_meta.developers %}
             <dt>Developer</dt>
@@ -82,6 +81,10 @@
             {% if v.steam_meta.publishers %}
             <dt>Publisher</dt>
             <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
+            {% endif %}
+            {% if v.igdb_meta.genres %}
+            <dt>Genre</dt>
+            <dd>{{ v.igdb_meta.genres | join(", ") }}</dd>
             {% endif %}
           </dl>
         </div>

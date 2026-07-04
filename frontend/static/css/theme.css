@@ -452,11 +452,13 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 
 /* Import review: distinguishes a spreadsheet-sourced value from the
    matched library entry's value, wherever the two might otherwise look
-   identical or get confused. Deliberately neutral/muted (not a new accent
-   color) — this is a provenance label, not a category like platform/DLC,
-   so it shouldn't visually compete with those. */
+   identical or get confused. Solid neutral surface fill (not a colored-text
+   blend like the platform/DLC tags) so it reads unambiguously as a badge,
+   not as muted/secondary text. */
 .tag-source {
-  color: var(--ctp-subtext0); background: color-mix(in srgb, var(--ctp-subtext0) 12%, transparent);
+  color: var(--ctp-text);
+  background: var(--ctp-surface1);
+  flex-shrink: 0;
 }
 
 /* Inline provenance line: a small .tag-source label chip followed by the
@@ -467,11 +469,9 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 .cgt-sheet-line {
   display: flex;
   align-items: center;
-  gap: 0.4em;
+  gap: 0.5em;
   flex-wrap: wrap;
-}
-.cgt-sheet-line + .cgt-sheet-line {
-  margin-top: 0.25em;
+  margin-top: 0.35em;
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */
