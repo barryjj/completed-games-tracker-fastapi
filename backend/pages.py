@@ -3,11 +3,13 @@ import datetime
 import html as _html
 import logging
 import os
+import re
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
@@ -130,6 +132,27 @@ def _completion_date(obj) -> str:
 
 
 templates.env.filters["completion_date"] = _completion_date
+
+_URL_RE = re.compile(r"https?://[^\s<]+")
+
+
+def _linkify(text: str | None) -> Markup:
+    """Escape text, then turn bare http(s):// URLs into clickable links.
+    Escaping happens first so the filter is safe to use directly in place
+    of Jinja's normal auto-escaping — nothing in the input can inject HTML,
+    only recognized URL substrings become anchor tags."""
+    if not text:
+        return Markup("")
+    escaped = str(escape(text))
+
+    def _replace(m: re.Match) -> str:
+        url = m.group(0)
+        return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a>'
+
+    return Markup(_URL_RE.sub(_replace, escaped))
+
+
+templates.env.filters["linkify"] = _linkify
 
 
 def _base_ctx(db: Session, user: models.User) -> dict:

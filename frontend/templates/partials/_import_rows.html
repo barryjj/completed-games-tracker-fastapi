@@ -69,7 +69,7 @@
             {% endif %}
             {% if r.raw_notes %}
             <dt>Notes</dt>
-            <dd class="cgt-notes">{{ r.raw_notes }}</dd>
+            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
             {% endif %}
             {% if r.raw_collection %}
             <dt>Collection</dt>
