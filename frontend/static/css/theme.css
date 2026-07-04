@@ -478,8 +478,19 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   row-gap: 0.35em;
   column-gap: 0.5em;
 }
+/* justify-self:stretch fills the shared grid column — the column itself
+   was already sized to whichever of "Library"/"Sheet" is wider, but the
+   badge only occupied its own natural width inside it (right-aligned),
+   so the two badges still rendered as visibly different-size boxes.
+   Stretching + centering the badge's own text makes both boxes actually
+   render at the identical width of the shared column. */
 .cgt-source-grid__label {
-  justify-self: end;
+  justify-self: stretch;
+}
+.cgt-source-grid__label .tag-badge {
+  display: block;
+  width: 100%;
+  text-align: center;
 }
 .cgt-source-grid__title {
   justify-self: start;
