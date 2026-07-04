@@ -218,10 +218,6 @@ function resetCompletionForm() {
   _nudgeCompletionData = null;
 }
 
-// Restore Filters / View drawer collapsed state.
-cgtInitDrawer('comp-filters-drawer', 'cgt-comp-filters-open', 'comp-toggle-filters');
-cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view');
-
 // ─── Grid view: view-mode toggle + sliders ────────────────────────────────
 // Mirrors the library page's controls — see library.html for design notes.
 // Uses comp-* localStorage keys so completions remembers its own preferences
@@ -307,24 +303,12 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
 </script>
 {% endblock %}
 
-{# Toolbar: same drawer pattern as library — top strip (primary action +
-   Filters / View toggles), then two independently-collapsible drawer rows. #}
-<div class="d-flex align-items-center gap-2 mb-2">
-  <div class="ms-auto d-flex gap-1">
-    <button type="button" id="comp-toggle-filters"
-            class="btn btn-surface btn-sm"
-            onclick="cgtToggleDrawer('comp-filters-drawer', 'cgt-comp-filters-open', this)"
-            aria-expanded="true">Filters <span class="cgt-chevron">▾</span></button>
-    <button type="button" id="comp-toggle-view"
-            class="btn btn-surface btn-sm"
-            onclick="cgtToggleDrawer('comp-view-drawer', 'cgt-comp-view-open', this)"
-            aria-expanded="true">View <span class="cgt-chevron">▾</span></button>
-  </div>
-</div>
-
+{# Toolbar: filter + view controls, always visible — matches library.html's
+   flat layout (no Filters/View toggle drawers; those were removed there). #}
+<div class="mb-3">
 <form
-  id="comp-filters-drawer"
-  class="row g-2 mb-2 align-items-center"
+  id="comp-filters-form"
+  class="d-flex align-items-center gap-2 flex-wrap mb-2"
   hx-get="/completions"
   hx-target="#completions-content"
   hx-select="#completions-content"
@@ -332,53 +316,26 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
   hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, change from:#comp-sort"
 >
   <input type="hidden" name="view_mode" id="comp-view-mode" value="{{ view_mode }}">
-  <div class="col-md-4">
-    <input
-      type="text"
-      class="form-control form-control-sm"
-      id="comp-q"
-      name="q"
-      placeholder="Search titles…"
-      value="{{ q }}"
-      autocomplete="off"
-    >
-  </div>
-  <div class="col-auto">
-    <select class="form-select form-select-sm" id="comp-platform" name="platform">
-      <option value="">All platforms</option>
-      {% for p in comp_platforms %}
-      <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
-      {% endfor %}
-    </select>
-  </div>
-  <div class="col-auto">
-    <input
-      type="date"
-      class="form-control form-control-sm"
-      id="comp-from"
-      name="completed_from"
-      value="{{ completed_from }}"
-      title="From date"
-    >
-  </div>
-  <div class="col-auto">
-    <input
-      type="date"
-      class="form-control form-control-sm"
-      id="comp-to"
-      name="completed_to"
-      value="{{ completed_to }}"
-      title="To date"
-    >
-  </div>
-  <div class="col-auto">
-    <select class="form-select form-select-sm" id="comp-sort" name="sort">
-      <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
-      <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>
-      <option value="title_asc"  {% if sort == 'title_asc'  %}selected{% endif %}>Title (A – Z)</option>
-      <option value="title_desc" {% if sort == 'title_desc' %}selected{% endif %}>Title (Z – A)</option>
-    </select>
-  </div>
+  <input type="text" class="form-control form-control-sm"
+         style="width:220px;"
+         id="comp-q" name="q" placeholder="Search titles…"
+         value="{{ q }}" autocomplete="off">
+  <select class="form-select form-select-sm w-auto" id="comp-platform" name="platform">
+    <option value="">All platforms</option>
+    {% for p in comp_platforms %}
+    <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
+    {% endfor %}
+  </select>
+  <input type="date" class="form-control form-control-sm w-auto"
+         id="comp-from" name="completed_from" value="{{ completed_from }}" title="From date">
+  <input type="date" class="form-control form-control-sm w-auto"
+         id="comp-to" name="completed_to" value="{{ completed_to }}" title="To date">
+  <select class="form-select form-select-sm w-auto" id="comp-sort" name="sort">
+    <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
+    <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>
+    <option value="title_asc"  {% if sort == 'title_asc'  %}selected{% endif %}>Title (A – Z)</option>
+    <option value="title_desc" {% if sort == 'title_desc' %}selected{% endif %}>Title (Z – A)</option>
+  </select>
 </form>
 
 <div id="comp-view-drawer" class="d-flex align-items-center gap-2 flex-wrap mb-3">
@@ -401,6 +358,7 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
     </div>
   </div>
 </div>
+</div>{# /.mb-3 toolbar wrapper #}
 
 <div id="completions-content">
   <p class="text-secondary mb-2"><small>{{ completions | length }} completion{{ 's' if completions | length != 1 }}</small></p>
