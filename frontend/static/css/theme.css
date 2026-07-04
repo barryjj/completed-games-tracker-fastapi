@@ -472,14 +472,18 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   gap: 0.5em;
   flex-wrap: wrap;
 }
-/* Fixed width so Library/Sheet labels line up regardless of word length.
-   min-width (not width) so the pill grows to fit "Library" instead of
-   clipping it; left-aligned so the text doesn't overflow unevenly on both
-   sides of a too-narrow centered box. */
+/* Hard-coded fixed width (not min-width — min-width let "Library" grow
+   wider than "Sheet", so the two pills ended up different sizes and the
+   titles after them no longer lined up). ch units size off the label's
+   own font, sized to comfortably fit "Library" (the longer word) without
+   wrapping or clipping, so both pills are identical width and everything
+   after them (title, platform badge) starts at the same x on both rows. */
 .cgt-source-row__label {
   display: inline-block;
-  min-width: 5.2em;
-  text-align: left;
+  width: 8ch;
+  text-align: center;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .cgt-source-row__sheet-title {
   color: var(--ctp-subtext);
