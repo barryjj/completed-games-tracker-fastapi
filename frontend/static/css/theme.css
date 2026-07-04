@@ -488,7 +488,7 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 .cgt-source-grid__platform {
   justify-self: start;
 }
-.cgt-source-row__sheet-title {
+.cgt-source-grid__sheet-title {
   color: var(--ctp-subtext);
 }
 
