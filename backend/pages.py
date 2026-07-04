@@ -3169,6 +3169,9 @@ def import_recheck(
 # --- Completions ---
 
 
+COMPLETIONS_SORT_OPTIONS = ["date_desc", "date_asc", "title_asc", "title_desc"]
+
+
 @router.get("/completions")
 def completions_page(
     request: Request,
@@ -3177,6 +3180,7 @@ def completions_page(
     completed_from: str = Query(""),
     completed_to: str = Query(""),
     view_mode: str | None = Query(None),
+    sort: str = Query("date_desc"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -3225,7 +3229,30 @@ def completions_page(
             completions_q = completions_q.filter(models.Completion.completed_at <= datetime.date.fromisoformat(completed_to))
         except ValueError:
             pass
-    completions = completions_q.order_by(models.Completion.id.desc()).all()
+    if sort not in COMPLETIONS_SORT_OPTIONS:
+        sort = "date_desc"
+    # sort_order preserves the original spreadsheet row order for historical
+    # imports (manual/sync completions have sort_order NULL). It's a tiebreaker
+    # within an equal completed_at, never a substitute for it — two rows the
+    # sheet listed 1-2-3 in the same month must stay 1-2-3, not scramble to
+    # 2-3-1. is_(None) sorts False (has a value) before True (NULL) so nulls
+    # always land last regardless of the primary sort direction.
+    if sort in ("title_asc", "title_desc"):
+        title_col = func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE")
+        completions_q = completions_q.order_by(
+            title_col.asc() if sort == "title_asc" else title_col.desc(),
+            models.Completion.completed_at.desc(),
+            models.Completion.sort_order.is_(None),
+            models.Completion.sort_order.asc(),
+        )
+    else:
+        completions_q = completions_q.order_by(
+            models.Completion.completed_at.desc() if sort == "date_desc" else models.Completion.completed_at.asc(),
+            models.Completion.sort_order.is_(None),
+            models.Completion.sort_order.asc(),
+            models.Completion.id.desc(),
+        )
+    completions = completions_q.all()
     # Reuse the library fallback helper — it expects a list of UserLibraryEntry
     # objects, so pass each completion's library_entry. Dedupe on entry.id so
     # entries with multiple completions don't get processed twice.
@@ -3253,6 +3280,7 @@ def completions_page(
             "completed_to": completed_to,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
+            "sort": sort,
             **_base_ctx(db, current_user),
         },
     )

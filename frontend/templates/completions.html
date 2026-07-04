@@ -329,7 +329,7 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
   hx-target="#completions-content"
   hx-select="#completions-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to"
+  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, change from:#comp-sort"
 >
   <input type="hidden" name="view_mode" id="comp-view-mode" value="{{ view_mode }}">
   <div class="col-md-4">
@@ -370,6 +370,14 @@ cgtInitDrawer('comp-view-drawer',    'cgt-comp-view-open',    'comp-toggle-view'
       value="{{ completed_to }}"
       title="To date"
     >
+  </div>
+  <div class="col-auto">
+    <select class="form-select form-select-sm" id="comp-sort" name="sort">
+      <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
+      <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>
+      <option value="title_asc"  {% if sort == 'title_asc'  %}selected{% endif %}>Title (A – Z)</option>
+      <option value="title_desc" {% if sort == 'title_desc' %}selected{% endif %}>Title (Z – A)</option>
+    </select>
   </div>
 </form>
 
