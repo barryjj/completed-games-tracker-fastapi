@@ -3257,22 +3257,28 @@ def completions_page(
     # sort_order preserves the original spreadsheet row order for historical
     # imports (manual/sync completions have sort_order NULL). It's a tiebreaker
     # within an equal completed_at, never a substitute for it — two rows the
-    # sheet listed 1-2-3 in the same month must stay 1-2-3, not scramble to
-    # 2-3-1. is_(None) sorts False (has a value) before True (NULL) so nulls
-    # always land last regardless of the primary sort direction.
+    # sheet listed 1-2-3 in the same month must stay in that relative order.
+    # Critically, "that relative order" flips with the primary direction: in
+    # a newest-first list, row 2 (completed later that same day) is the more
+    # recent one and belongs ABOVE row 1, so the tiebreaker must also run
+    # descending — sorting it ascending regardless of direction put row 1
+    # above row 2 even under "newest first", which reads backwards. is_(None)
+    # sorts False (has a value) before True (NULL) so nulls always land last
+    # regardless of direction.
+    newest_first = sort in ("date_desc", "title_asc", "title_desc")
     if sort in ("title_asc", "title_desc"):
         title_col = func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE")
         completions_q = completions_q.order_by(
             title_col.asc() if sort == "title_asc" else title_col.desc(),
             models.Completion.completed_at.desc(),
             models.Completion.sort_order.is_(None),
-            models.Completion.sort_order.asc(),
+            models.Completion.sort_order.desc() if newest_first else models.Completion.sort_order.asc(),
         )
     else:
         completions_q = completions_q.order_by(
             models.Completion.completed_at.desc() if sort == "date_desc" else models.Completion.completed_at.asc(),
             models.Completion.sort_order.is_(None),
-            models.Completion.sort_order.asc(),
+            models.Completion.sort_order.desc() if newest_first else models.Completion.sort_order.asc(),
             models.Completion.id.desc(),
         )
     completions = completions_q.all()
