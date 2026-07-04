@@ -461,29 +461,32 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   flex-shrink: 0;
 }
 
-/* Import review: paired Library/Sheet comparison rows. Each row carries its
-   own source-label chip, title, and platform badge so the two lines read as
-   a direct side-by-side comparison instead of a title floating above a
-   disconnected "Sheet" caption. The Sheet row only renders when its values
-   differ from the Library row. */
-.cgt-source-row {
-  display: flex;
+/* Import review: paired Library/Sheet comparison. A true CSS grid (not two
+   independent flex rows) so the label/title/platform columns are shared
+   grid tracks across BOTH rows — the label column auto-sizes to whichever
+   of "Library"/"Sheet" is wider, and both rows are forced to that same
+   width, instead of each row sizing its own label independently and
+   drifting out of alignment. Label column is right-aligned, title and
+   platform columns are left-aligned, per the 3-column layout this is
+   meant to produce. Rows with no Sheet line (nothing differs) or no
+   library match still emit all 3 columns (an empty label cell) so the
+   grid tracks stay identical whether one or two lines are shown. */
+.cgt-source-grid {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 0.5em;
-  flex-wrap: wrap;
+  row-gap: 0.35em;
+  column-gap: 0.5em;
 }
-/* Hard-coded fixed width (not min-width — min-width let "Library" grow
-   wider than "Sheet", so the two pills ended up different sizes and the
-   titles after them no longer lined up). ch units size off the label's
-   own font, sized to comfortably fit "Library" (the longer word) without
-   wrapping or clipping, so both pills are identical width and everything
-   after them (title, platform badge) starts at the same x on both rows. */
-.cgt-source-row__label {
-  display: inline-block;
-  width: 8ch;
-  text-align: center;
-  white-space: nowrap;
-  flex-shrink: 0;
+.cgt-source-grid__label {
+  justify-self: end;
+}
+.cgt-source-grid__title {
+  justify-self: start;
+  min-width: 0;
+}
+.cgt-source-grid__platform {
+  justify-self: start;
 }
 .cgt-source-row__sheet-title {
   color: var(--ctp-subtext);
