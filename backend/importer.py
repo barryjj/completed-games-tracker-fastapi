@@ -15,6 +15,7 @@ import re
 from io import BytesIO
 
 import openpyxl
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from . import match_review, models
@@ -230,13 +231,25 @@ def _title_contains_remainder(remainder: str, candidate_title: str) -> bool:
 def _search_pool(
     db: Session, user_id: int, platform_id: int | None, phrase: str, *, base_only: bool = True
 ) -> list[models.UserLibraryEntry]:
-    """SQL-level narrowing before any Python-side token comparison: entries
-    whose game title contains `phrase` as a substring (case-insensitive).
-    A much smaller and more relevant set than scanning the whole library —
-    faster, and critically, safer: a candidate pool narrowed to "titles
-    containing this phrase" is far less likely to contain an unrelated
-    title that merely happens to share one token somewhere in a
-    full-library scan.
+    """SQL-level narrowing before any Python-side token comparison.
+
+    Pass 1 (normalized, tried first because it's the more reliable match):
+    split the phrase into words with the same punctuation-stripping
+    `_normalize_title` uses for Python-side comparison, then require every
+    word to appear somewhere in the title OR display_name (case-insensitive,
+    ANDed across words — narrower than a full scan, but not thrown off by
+    stray characters between words). This exists because library titles
+    pulled from Steam/etc. often carry decorative symbols the spreadsheet
+    text never had (e.g. "Golden Axe™ II" vs spreadsheet "Golden Axe II") —
+    a single-string ILIKE on the raw phrase fails outright on the ™, silently
+    excluding the correct entry from the pool before any Python normalization
+    ever gets a chance to compare them.
+
+    Pass 2 (fallback): the original literal contiguous-phrase ILIKE, kept in
+    case the word-split pass is ever too permissive for some phrase shape
+    ("that quiet game" splitting into overly common individual words, say) —
+    a narrower single-string match is available as a fallback rather than
+    always trusting the wider word-AND pool.
 
     platform_id=None searches across all of the user's platforms — used by
     the collection fallback, where the spreadsheet's platform column often
@@ -247,19 +260,30 @@ def _search_pool(
     """
     if not phrase or not phrase.strip():
         return []
-    q = (
-        db.query(models.UserLibraryEntry)
-        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
-        .join(models.Game, models.GameRelease.game_id == models.Game.id)
-        .filter(
-            models.UserLibraryEntry.user_id == user_id,
-            models.Game.title.ilike(f"%{phrase.strip()}%"),
+
+    def _base_query():
+        q = (
+            db.query(models.UserLibraryEntry)
+            .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+            .join(models.Game, models.GameRelease.game_id == models.Game.id)
+            .filter(models.UserLibraryEntry.user_id == user_id)
         )
-    )
-    if platform_id is not None:
-        q = q.filter(models.GameRelease.platform_id == platform_id)
-    if base_only:
-        q = q.filter(models.Game.parent_id.is_(None), models.Game.is_dlc.is_(False))
+        if platform_id is not None:
+            q = q.filter(models.GameRelease.platform_id == platform_id)
+        if base_only:
+            q = q.filter(models.Game.parent_id.is_(None), models.Game.is_dlc.is_(False))
+        return q
+
+    words = _normalize_title(phrase).split()
+    if words:
+        q = _base_query()
+        for word in words:
+            q = q.filter(or_(models.Game.title.ilike(f"%{word}%"), models.Game.display_name.ilike(f"%{word}%")))
+        pool = q.all()
+        if pool:
+            return pool
+
+    q = _base_query().filter(or_(models.Game.title.ilike(f"%{phrase.strip()}%"), models.Game.display_name.ilike(f"%{phrase.strip()}%")))
     return q.all()
 
 
