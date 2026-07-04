@@ -19,21 +19,22 @@
     <div class="p-3">
       {% set _lib_release = c.library_entry.release if c.library_entry else None %}
       {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
+      {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+      {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
+      {% set _has_diff = _title_diff or _plat_diff %}
       {% if c.library_entry %}
       <div class="cgt-source-row mb-1">
-        <span class="tag-badge tag-source">Library</span>
+        {% if _has_diff %}<span class="tag-badge tag-source cgt-source-row__label">Library</span>{% endif %}
         <h6 class="mb-0">{{ _lib_title }}</h6>
         {% if _lib_release and _lib_release.platform_obj %}
         <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
         {% endif %}
       </div>
-      {% set _title_diff = c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
-      {% set _plat_diff = c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
-      {% if _title_diff or _plat_diff %}
+      {% if _has_diff %}
       <div class="cgt-source-row mb-2">
-        <span class="tag-badge tag-source">Sheet</span>
-        <span>{{ c.raw_title }}</span>
-        {% if c.raw_platform %}<span class="tag-badge tag-source">{{ c.raw_platform }}</span>{% endif %}
+        <span class="tag-badge tag-source cgt-source-row__label">Sheet</span>
+        <span class="cgt-source-row__sheet-title">{{ c.raw_title }}</span>
+        {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
       </div>
       {% endif %}
       {% else %}

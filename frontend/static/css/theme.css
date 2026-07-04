@@ -472,6 +472,15 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   gap: 0.5em;
   flex-wrap: wrap;
 }
+/* Fixed width so Library/Sheet labels line up regardless of word length. */
+.cgt-source-row__label {
+  display: inline-block;
+  width: 4.6em;
+  text-align: center;
+}
+.cgt-source-row__sheet-title {
+  color: var(--ctp-subtext0);
+}
 
 /* ─── Account section headings ───────────────────────────────────────────── */
 .section-heading {
