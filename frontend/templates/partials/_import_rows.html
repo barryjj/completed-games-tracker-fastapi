@@ -1,7 +1,7 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
-  <td>
+  <td class="align-top">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
     {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
     <div class="d-flex align-items-center gap-2">
@@ -48,15 +48,25 @@
       </div>
     </div>
   </td>
-  <td>
+  <td class="align-top">
     <span class="text-secondary small">{{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}</span>
     {% for r in c.rows %}
-    <div class="small mt-1 {% if not loop.first %}border-top pt-1{% endif %}">
-      <div><span class="text-secondary">Date:</span> {% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</div>
-      {% if r.playthroughs %}<div><span class="text-secondary">Playthroughs:</span> {{ r.playthroughs | float | int }}</div>{% endif %}
-      {% if r.raw_notes %}<div class="cgt-notes"><span class="text-secondary">Notes:</span> {{ r.raw_notes }}</div>{% endif %}
-      {% if r.raw_collection %}<div><span class="text-secondary">Collection:</span> {{ r.raw_collection }}</div>{% endif %}
-    </div>
+    <dl class="cgt-detail-meta small mb-0 {% if not loop.first %}mt-2 pt-2 border-top{% else %}mt-1{% endif %}">
+      <dt>Date</dt>
+      <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
+      {% if r.playthroughs %}
+      <dt>Playthroughs</dt>
+      <dd>{{ r.playthroughs | float | int }}</dd>
+      {% endif %}
+      {% if r.raw_notes %}
+      <dt>Notes</dt>
+      <dd class="cgt-notes">{{ r.raw_notes }}</dd>
+      {% endif %}
+      {% if r.raw_collection %}
+      <dt>Collection</dt>
+      <dd>{{ r.raw_collection }}</dd>
+      {% endif %}
+    </dl>
     {% endfor %}
   </td>
   <td class="text-end text-nowrap row-actions">

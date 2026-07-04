@@ -490,6 +490,7 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 }
 .cgt-source-grid__sheet-title {
   color: var(--ctp-subtext);
+  font-weight: 600;
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */
