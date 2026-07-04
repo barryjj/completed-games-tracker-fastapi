@@ -195,6 +195,29 @@ def _colon_remainder(title: str) -> str | None:
     return None
 
 
+def _strip_prefix_tokens(raw_title: str, prefix_title: str) -> str | None:
+    """Return the tokens remaining after removing `prefix_title`'s normalized
+    tokens as a literal prefix of `raw_title`'s, or None if it isn't one.
+
+    Exists because `_colon_remainder` only splits on the FIRST colon/dash in
+    raw_title — wrong when the matched base title itself contains a colon
+    ("F.E.A.R. 2: Project Origin"). For raw_title "F.E.A.R. 2: Project
+    Origin: Reborn", `_colon_remainder` leaves "Project Origin: Reborn" as
+    the supposed DLC subtitle, which never matches the DLC child's actual
+    name ("F.E.A.R. 2: Reborn (DLC)") since "Project Origin" isn't part of
+    it. Stripping the ACTUAL matched entry's full title as the prefix
+    (rather than guessing off the first colon) correctly leaves just
+    "Reborn".
+    """
+    raw_toks = match_review._normalise_tokens(raw_title)
+    prefix_toks = match_review._normalise_tokens(prefix_title)
+    if not prefix_toks or len(raw_toks) <= len(prefix_toks):
+        return None
+    if raw_toks[: len(prefix_toks)] != prefix_toks:
+        return None
+    return " ".join(raw_toks[len(prefix_toks) :])
+
+
 def _title_contains_remainder(remainder: str, candidate_title: str) -> bool:
     """True if `remainder`'s tokens appear as a contiguous, in-order run
     within `candidate_title`'s tokens. DLC titles are typically the full
@@ -384,7 +407,14 @@ def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: 
 
     # Pass 2: remainder identifies a DLC child of one of the prefix-matched
     # base games (e.g. "Hearts of Stone" under "The Witcher 3: Wild Hunt").
+    # Uses each entry's own full title as the prefix to strip (not the naive
+    # first-colon split) so base titles that themselves contain a colon
+    # ("F.E.A.R. 2: Project Origin") don't leave leftover base-title tokens
+    # stuck in front of the real DLC subtitle.
     for entry in prefix_matched:
+        entry_remainder = _strip_prefix_tokens(raw_title, entry.release.game.title) or remainder
+        if not entry_remainder:
+            continue
         child_entries = (
             db.query(models.UserLibraryEntry)
             .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
@@ -398,7 +428,7 @@ def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: 
         )
         for child in child_entries:
             child_title = child.release.game.title if child.release and child.release.game else ""
-            if child_title and _title_contains_remainder(remainder, child_title):
+            if child_title and _title_contains_remainder(entry_remainder, child_title):
                 return child
 
     return None
