@@ -461,45 +461,46 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   flex-shrink: 0;
 }
 
-/* Import review: paired Library/Sheet comparison. A true CSS grid (not two
-   independent flex rows) so the label/title/platform columns are shared
-   grid tracks across BOTH rows — the label column auto-sizes to whichever
-   of "Library"/"Sheet" is wider, and both rows are forced to that same
-   width, instead of each row sizing its own label independently and
-   drifting out of alignment. Label column is right-aligned, title and
-   platform columns are left-aligned, per the 3-column layout this is
-   meant to produce. Rows with no Sheet line (nothing differs) or no
-   library match still emit all 3 columns (an empty label cell) so the
-   grid tracks stay identical whether one or two lines are shown. */
-.cgt-source-grid {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  row-gap: 0.35em;
-  column-gap: 0.5em;
+/* Import review: paired Library/Sheet comparison. A real HTML table instead
+   of CSS grid/flex — browsers guarantee table column widths match across
+   every row natively, which repeated grid/flex attempts here kept almost
+   but not quite achieving. Label column right-aligned, title column left-
+   aligned and expands to fill remaining space, platform column left-
+   aligned. Rows with no Sheet line (nothing differs) or no library match
+   still emit all 3 cells (an empty label td) so a lone row uses the same
+   column layout as a two-row comparison. */
+.cgt-source-table {
+  border-collapse: collapse;
+  width: 100%;
 }
-/* justify-self:stretch fills the shared grid column — the column itself
-   was already sized to whichever of "Library"/"Sheet" is wider, but the
-   badge only occupied its own natural width inside it (right-aligned),
-   so the two badges still rendered as visibly different-size boxes.
-   Stretching + centering the badge's own text makes both boxes actually
-   render at the identical width of the shared column. */
-.cgt-source-grid__label {
-  justify-self: stretch;
+.cgt-source-table td {
+  padding: 0;
+  vertical-align: middle;
 }
-.cgt-source-grid__label .tag-badge {
-  display: block;
+.cgt-source-table tr + tr td {
+  padding-top: 0.35em;
+}
+.cgt-source-table__label {
+  text-align: right;
+  padding-right: 0.5em !important;
+  white-space: nowrap;
+}
+.cgt-source-table__label .tag-badge {
+  display: inline-block;
   width: 100%;
   text-align: center;
 }
-.cgt-source-grid__title {
-  justify-self: start;
-  min-width: 0;
+.cgt-source-table__title {
+  text-align: left;
+  width: 99%; /* forces this column to absorb all remaining width so the
+                 platform column hugs the title instead of stretching */
 }
-.cgt-source-grid__platform {
-  justify-self: start;
+.cgt-source-table__platform {
+  text-align: left;
+  padding-left: 0.5em !important;
+  white-space: nowrap;
 }
-.cgt-source-grid__sheet-title {
+.cgt-source-table__sheet-title {
   color: var(--ctp-subtext);
   font-weight: 600;
 }

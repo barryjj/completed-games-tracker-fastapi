@@ -17,58 +17,68 @@
         {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
         {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
         {% set _has_diff = _title_diff or _plat_diff %}
-        <div class="cgt-source-grid">
+        <table class="cgt-source-table"><tbody>
           {% if c.library_entry %}
-          <span class="cgt-source-grid__label">{% if _has_diff %}<span class="tag-badge tag-source">Library</span>{% endif %}</span>
-          <span class="fw-medium cgt-source-grid__title">{{ _lib_title }}</span>
-          <span class="cgt-source-grid__platform">
-            {% if _lib_release and _lib_release.platform_obj %}
-            <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-            {% endif %}
-          </span>
+          <tr>
+            <td class="cgt-source-table__label">{% if _has_diff %}<span class="tag-badge tag-source">Library</span>{% endif %}</td>
+            <td class="cgt-source-table__title fw-medium">{{ _lib_title }}</td>
+            <td class="cgt-source-table__platform">
+              {% if _lib_release and _lib_release.platform_obj %}
+              <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+              {% endif %}
+            </td>
+          </tr>
           {% if _has_diff %}
-          <span class="cgt-source-grid__label"><span class="tag-badge tag-source">Sheet</span></span>
-          <span class="cgt-source-grid__title cgt-source-grid__sheet-title">{{ c.raw_title }}</span>
-          <span class="cgt-source-grid__platform">
-            {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
-          </span>
+          <tr>
+            <td class="cgt-source-table__label"><span class="tag-badge tag-source">Sheet</span></td>
+            <td class="cgt-source-table__title cgt-source-table__sheet-title">{{ c.raw_title }}</td>
+            <td class="cgt-source-table__platform">
+              {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
+            </td>
+          </tr>
           {% endif %}
           {% else %}
-          <span class="cgt-source-grid__label"></span>
-          <span class="fw-medium cgt-source-grid__title">{{ c.raw_title }}</span>
-          <span class="cgt-source-grid__platform">
-            {% if c.platform %}
-            <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-            {% else %}
-            <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-            {% endif %}
-          </span>
+          <tr>
+            <td class="cgt-source-table__label"></td>
+            <td class="cgt-source-table__title fw-medium">{{ c.raw_title }}</td>
+            <td class="cgt-source-table__platform">
+              {% if c.platform %}
+              <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+              {% else %}
+              <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+              {% endif %}
+            </td>
+          </tr>
           {% endif %}
-        </div>
+        </tbody></table>
       </div>
     </div>
   </td>
   <td class="align-top">
     <div class="cgt-detail-block mb-0">
       <h6 class="cgt-detail-block__heading mb-0">Completions <span class="text-secondary fw-normal">({{ c.rows | length }})</span></h6>
-      {% for r in c.rows %}
-      <dl class="cgt-detail-meta small mb-0 {% if not loop.first %}mt-2 pt-2 border-top{% else %}mt-2{% endif %}">
-        <dt>Date</dt>
-        <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
-        {% if r.playthroughs %}
-        <dt>Playthroughs</dt>
-        <dd>{{ r.playthroughs | float | int }}</dd>
-        {% endif %}
-        {% if r.raw_notes %}
-        <dt>Notes</dt>
-        <dd class="cgt-notes">{{ r.raw_notes }}</dd>
-        {% endif %}
-        {% if r.raw_collection %}
-        <dt>Collection</dt>
-        <dd>{{ r.raw_collection }}</dd>
-        {% endif %}
-      </dl>
-      {% endfor %}
+      <ul class="list-unstyled mb-0 mt-2">
+        {% for r in c.rows %}
+        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
+          <dl class="cgt-detail-meta mb-0">
+            <dt>Date</dt>
+            <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
+            {% if r.playthroughs %}
+            <dt>Playthroughs</dt>
+            <dd>{{ r.playthroughs | float | int }}</dd>
+            {% endif %}
+            {% if r.raw_notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ r.raw_notes }}</dd>
+            {% endif %}
+            {% if r.raw_collection %}
+            <dt>Collection</dt>
+            <dd>{{ r.raw_collection }}</dd>
+            {% endif %}
+          </dl>
+        </li>
+        {% endfor %}
+      </ul>
     </div>
   </td>
   <td class="text-end text-nowrap row-actions">
