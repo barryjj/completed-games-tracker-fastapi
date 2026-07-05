@@ -62,11 +62,10 @@
           <tbody>
             {% for r in c.rows %}
             <tr class="cgt-import-row-new">
-              <td class="text-nowrap">{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</td>
-              <td class="text-nowrap text-secondary">{% if r.playthroughs %}{{ r.playthroughs | float | int }} playthrough{{ 's' if (r.playthroughs | float | int) != 1 }}{% endif %}</td>
-              <td class="cgt-notes">
-                {% if r.raw_notes %}{{ r.raw_notes | linkify }}{% endif %}
-                {% if r.raw_collection %}<br><small class="text-secondary">{{ r.raw_collection }}</small>{% endif %}
+              <td>
+                <div>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}{% if r.playthroughs %}<span class="text-secondary ms-2">{{ r.playthroughs | float | int }} playthrough{{ 's' if (r.playthroughs | float | int) != 1 }}</span>{% endif %}</div>
+                {% if r.raw_notes %}<div class="cgt-notes small text-secondary mt-1">{{ r.raw_notes | linkify }}</div>{% endif %}
+                {% if r.raw_collection %}<div class="small text-secondary mt-1">{{ r.raw_collection }}</div>{% endif %}
               </td>
             </tr>
             {% endfor %}
