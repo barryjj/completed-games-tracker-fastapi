@@ -57,28 +57,22 @@
   <td class="align-top">
     <div class="cgt-detail-block mb-0">
       <h6 class="cgt-detail-block__heading mb-0">Completions <span class="text-secondary fw-normal">({{ c.rows | length }})</span></h6>
-      <ul class="list-unstyled mb-0 mt-2">
-        {% for r in c.rows %}
-        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
-          <dl class="cgt-detail-meta mb-0">
-            <dt>Date</dt>
-            <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
-            {% if r.playthroughs %}
-            <dt>Playthroughs</dt>
-            <dd>{{ r.playthroughs | float | int }}</dd>
-            {% endif %}
-            {% if r.raw_notes %}
-            <dt>Notes</dt>
-            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
-            {% endif %}
-            {% if r.raw_collection %}
-            <dt>Collection</dt>
-            <dd>{{ r.raw_collection }}</dd>
-            {% endif %}
-          </dl>
-        </li>
-        {% endfor %}
-      </ul>
+      <div class="cgt-detail-scroll-list mt-2" style="max-height: 140px;">
+        <table class="table table-sm mb-0">
+          <tbody>
+            {% for r in c.rows %}
+            <tr class="cgt-import-row-new">
+              <td class="text-nowrap">{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</td>
+              <td class="text-nowrap text-secondary">{% if r.playthroughs %}{{ r.playthroughs | float | int }} playthrough{{ 's' if (r.playthroughs | float | int) != 1 }}{% endif %}</td>
+              <td class="cgt-notes">
+                {% if r.raw_notes %}{{ r.raw_notes | linkify }}{% endif %}
+                {% if r.raw_collection %}<br><small class="text-secondary">{{ r.raw_collection }}</small>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </td>
   <td class="text-end text-nowrap row-actions">

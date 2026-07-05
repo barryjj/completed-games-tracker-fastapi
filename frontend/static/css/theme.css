@@ -714,6 +714,15 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
+/* Marks a completions-table row as a pending import row (not yet
+   confirmed) — same yellow-accent meaning as the old left-bordered <li>
+   version, just on a real table row now so multiple rows get proper
+   border separation from Bootstrap's table styles instead of stacking
+   as one visual blob. */
+.cgt-import-row-new > td:first-child {
+  border-left: 2px solid var(--ctp-yellow);
+}
+
 /* "This completion" is the one the pane's +1/Edit actions actually operate
    on — an accent left border visually anchors it against the other
    (visually identical-weight) blocks around it, since nothing else marked
@@ -1158,15 +1167,15 @@ body:has(.cgt-sticky-actions) {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ctp-subtext);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
   font-weight: 600;
+  border-bottom: 1px solid var(--ctp-surface0);
 }
 
-/* Description text inside its block — top border separates it from the heading. */
+/* Description text inside its block. The heading's own border-bottom now
+   provides the separator (was duplicated here before that existed). */
 .cgt-detail-description {
-  border-top: 1px solid var(--ctp-surface0);
-  padding-top: 8px;
-  margin-top: 4px;
   font-size: 0.78rem;
   color: var(--ctp-subtext1);
   line-height: 1.5;

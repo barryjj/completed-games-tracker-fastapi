@@ -114,6 +114,15 @@
   </div>
 </div>
 
+{# Sticky back-to-top button — long candidate lists bury the tab/filter bar
+   at the top with no way back up otherwise. Same pattern as library.html. #}
+<div class="cgt-sticky-actions">
+  <button type="button" id="import-back-to-top"
+          class="btn btn-surface btn-sm"
+          onclick="window.scrollTo({top:0,behavior:'smooth'})"
+          hidden>↑</button>
+</div>
+
 <script>
 (function() {
 
@@ -266,6 +275,17 @@ window.openImportEdit = function(candidateId) {
     swap: 'innerHTML'
   });
 };
+
+// Back-to-top button: appears after scrolling 300px, smooth-scrolls to top.
+// Same pattern as library.html — long candidate lists bury the tab/filter
+// bar with no way back up otherwise.
+(function () {
+  var btn = document.getElementById('import-back-to-top');
+  if (!btn) return;
+  function onScroll() { btn.hidden = window.scrollY < 300; }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
 
 })();
 </script>
