@@ -465,13 +465,18 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
    of CSS grid/flex — browsers guarantee table column widths match across
    every row natively, which repeated grid/flex attempts here kept almost
    but not quite achieving. Label column right-aligned, title column left-
-   aligned and expands to fill remaining space, platform column left-
-   aligned. Rows with no Sheet line (nothing differs) or no library match
-   still emit all 3 cells (an empty label td) so a lone row uses the same
-   column layout as a two-row comparison. */
+   aligned, platform column left-aligned. Rows with no Sheet line (nothing
+   differs) or no library match still emit all 3 cells (an empty label td)
+   so a lone row uses the same column layout as a two-row comparison.
+
+   Deliberately NOT width:100% — a full-width table forces the title
+   column (previously given width:99% to "absorb" the rest) to stretch
+   across the whole card, which shoves the platform badge out to the far
+   right edge with a large dead gap instead of sitting right after the
+   title text. Auto width keeps the table (and the badge) hugging its
+   own content. */
 .cgt-source-table {
   border-collapse: collapse;
-  width: 100%;
 }
 .cgt-source-table td {
   padding: 0;
@@ -492,8 +497,6 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 }
 .cgt-source-table__title {
   text-align: left;
-  width: 99%; /* forces this column to absorb all remaining width so the
-                 platform column hugs the title instead of stretching */
 }
 .cgt-source-table__platform {
   text-align: left;
@@ -502,7 +505,9 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 }
 .cgt-source-table__sheet-title {
   color: var(--ctp-subtext);
-  font-weight: 600;
+  font-weight: 500; /* must match the Library row's weight (h6/.fw-medium
+    are both 500) — a heavier weight renders the same string wider, so the
+    two rows start at the same x but drift apart by the end. */
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */
