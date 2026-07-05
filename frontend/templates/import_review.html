@@ -163,18 +163,23 @@ let importCardIdx = 0;
 function importCards() { return Array.from(document.querySelectorAll('#import-stack .cgt-match-card')); }
 function importShowCard(idx) {
   const cards = importCards();
-  const dots = Array.from(document.querySelectorAll('#import-nav-dots .cgt-match-nav__dot'));
   if (!cards.length) return;
   importCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
   cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
-  dots.forEach(function(d, i) { d.classList.toggle('cgt-match-nav__dot--active', i === importCardIdx); });
+  var counter = document.getElementById('import-nav-counter');
+  if (counter) {
+    var nav = document.getElementById('import-nav');
+    var total = nav ? parseInt(nav.dataset.total, 10) : NaN;
+    counter.textContent = (importCardIdx + 1) + ' of ' + (isNaN(total) ? cards.length : total);
+  }
 }
 window.importCardNav = function(dir) { importShowCard(importCardIdx + dir); };
 
-// Rebuilds the dot nav from whatever cards currently exist in #import-stack.
+// Updates the card stack from whatever cards currently exist in #import-stack.
 // resetIndex=true (tab switch / filter change / fresh card set) jumps back
 // to the first card; omitted (load-more append) keeps the current card
-// visible while just adding dots for the newly-appended ones.
+// visible while the counter's "of N" total stays correct regardless, since
+// it reads the server-provided total rather than counting loaded cards.
 window.importRebuildNav = function(resetIndex) {
   var cards = importCards();
   var nav = document.getElementById('import-nav');
@@ -188,12 +193,6 @@ window.importRebuildNav = function(resetIndex) {
   }
   if (nav) nav.hidden = false;
   var idx = resetIndex ? 0 : Math.min(importCardIdx, cards.length - 1);
-  var dotsWrap = document.getElementById('import-nav-dots');
-  if (dotsWrap) {
-    dotsWrap.innerHTML = cards.map(function(_, i) {
-      return '<span class="cgt-match-nav__dot' + (i === idx ? ' cgt-match-nav__dot--active' : '') + '"></span>';
-    }).join('');
-  }
   importShowCard(idx);
 };
 

@@ -4,9 +4,13 @@
 <div id="import-stack" class="cgt-match-stage cgt-match-stage--import">
   {% include "partials/_import_cards.html" %}
 </div>
-<div class="cgt-match-nav cgt-match-nav--sticky" id="import-nav">
+{# Counter instead of per-card dots — dots don't scale to hundreds of
+   candidates, and had to be fully rebuilt from the DOM on every load-more
+   append (a fragile sync point). data-total is the full filtered-tab count
+   from the server, read once here; it doesn't change as more cards load. #}
+<div class="cgt-match-nav cgt-match-nav--sticky" id="import-nav" data-total="{{ tab_total }}">
   <button class="cgt-match-nav__btn" onclick="importCardNav(-1)">&#8249;</button>
-  <div class="cgt-match-nav__dots" id="import-nav-dots"></div>
+  <span class="cgt-match-nav__counter" id="import-nav-counter"></span>
   <button class="cgt-match-nav__btn" onclick="importCardNav(1)">&#8250;</button>
 </div>
 <div id="import-card-load-more">
