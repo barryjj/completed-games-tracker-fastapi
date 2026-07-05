@@ -151,6 +151,17 @@
       </dd>
       {% endif %}
 
+      {% if game.igdb_id %}
+      <dt>IGDB ID</dt>
+      <dd>
+        <span class="text-nowrap">
+          <code>{{ game.igdb_id }}</code>
+          <a href="https://www.igdb.com/search?type=1&q={{ game.display_title | urlencode }}"
+             target="_blank" rel="noopener" class="ms-2 small">search ↗</a>
+        </span>
+      </dd>
+      {% endif %}
+
       {% if steam_meta.released %}
       <dt>Released</dt>
       <dd>{{ steam_meta.released }}</dd>
@@ -285,11 +296,19 @@
         {% endfor %}
         {% endif %}
         {% for c in completions %}
-        <li class="mb-2">
-          <div>{{ c | completion_date }}
-            {% if c.playthroughs %}<small class="text-secondary ms-1">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
-          </div>
-          {% if c.notes %}<small class="text-secondary d-block cgt-notes">{{ c.notes }}</small>{% endif %}
+        <li class="mb-2 {% if import_rows or not loop.first %}pt-2 border-top{% endif %}">
+          <dl class="cgt-detail-meta mb-0">
+            <dt>Date</dt>
+            <dd>{{ c | completion_date }}</dd>
+            {% if c.playthroughs %}
+            <dt>Playthroughs</dt>
+            <dd>{{ c.playthroughs }}</dd>
+            {% endif %}
+            {% if c.notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ c.notes | linkify }}</dd>
+            {% endif %}
+          </dl>
         </li>
         {% endfor %}
       </ul>

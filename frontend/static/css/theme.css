@@ -714,6 +714,28 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
+/* "This completion" is the one the pane's +1/Edit actions actually operate
+   on — an accent left border visually anchors it against the other
+   (visually identical-weight) blocks around it, since nothing else marked
+   it as the special one. */
+.cgt-detail-block--active {
+  border-left: 3px solid var(--ctp-mauve);
+}
+
+/* "Other completions of this game" rows — same clickable/hover treatment
+   as the DLC child rows above, so the list reads as a set of distinct
+   clickable entries rather than plain inline links stacked at the bottom. */
+.cgt-detail-list-row {
+  display: block;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+.cgt-detail-list-row:hover { background-color: var(--ctp-surface1); }
+html[data-bs-theme="light"] .cgt-detail-list-row:hover { background-color: var(--ctp-surface0); }
+
 /* ─── Active nav indicator ──────────────────────────────────────────────── */
 /* Replaces the dropped <h1>Library</h1>/<h1>Completions</h1> page titles.
    Subtle mauve underline marks the current page in the navbar. */

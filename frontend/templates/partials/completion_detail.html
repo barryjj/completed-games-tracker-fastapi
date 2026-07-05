@@ -73,9 +73,9 @@
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
     </div>
 
-    <div class="cgt-detail-block mb-2">
+    <div class="cgt-detail-block cgt-detail-block--active mb-2">
       <h6 class="cgt-detail-block__heading">This completion</h6>
-      <dl class="cgt-detail-meta small mb-0">
+      <dl class="cgt-detail-meta small mb-2">
         <dt>Completed</dt>
         <dd>{{ completion | completion_date }}</dd>
 
@@ -86,9 +86,25 @@
 
         {% if completion.notes %}
         <dt>Notes</dt>
-        <dd class="cgt-notes">{{ completion.notes }}</dd>
+        <dd class="cgt-notes">{{ completion.notes | linkify }}</dd>
         {% endif %}
       </dl>
+      <div class="d-flex gap-2">
+        <button class="btn btn-surface btn-sm"
+                hx-post="/completions/{{ completion.id }}/increment"
+                hx-vals='{"view_mode": "list"}'
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
+                title="+1 playthrough">+1 playthrough</button>
+        <button class="btn btn-surface btn-sm" href="#"
+                onclick="closeCompletionDetailAndEdit(this.dataset); return false;"
+                data-completion-id="{{ completion.id }}"
+                data-entry-id="{{ entry.id }}"
+                data-label="{{ (game.display_title ~ ' (' ~ release.display_platform ~ ')') | e }}"
+                data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
+                data-playthroughs="{{ (completion.playthroughs or '') | e }}"
+                data-notes="{{ (completion.notes or '') | e }}">Edit</button>
+      </div>
     </div>
 
     <div class="cgt-detail-block mb-2">
@@ -96,6 +112,17 @@
       <dl class="cgt-detail-meta small mb-0">
         <dt>Title</dt>
         <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
+
+        {% if game.igdb_id %}
+        <dt>IGDB ID</dt>
+        <dd>
+          <span class="text-nowrap">
+            <code>{{ game.igdb_id }}</code>
+            <a href="https://www.igdb.com/search?type=1&q={{ game.display_title | urlencode }}"
+               target="_blank" rel="noopener" class="ms-2 small">search ↗</a>
+          </span>
+        </dd>
+        {% endif %}
 
         {# For DLC, lead with the parent breadcrumb + appid. Clickable when
            the user owns the parent. Mirrors the library detail pane. #}
@@ -215,8 +242,8 @@
       <h6 class="cgt-detail-block__heading">Other completions of this game <span class="text-secondary fw-normal ms-1">({{ others | length }})</span></h6>
       <ul class="list-unstyled mb-0">
         {% for c in others %}
-        <li class="mb-1">
-          <a href="#" class="text-decoration-none"
+        <li>
+          <a href="#" class="cgt-detail-list-row"
              hx-get="/completions/{{ c.id }}/detail"
              hx-target="#completion-detail-content"
              hx-swap="innerHTML">
