@@ -174,6 +174,15 @@ def _score(manual_title: str, synced_title: str) -> float:
     return round(min(base_score, 0.99), 4)
 
 
+def _colon_prefix(title: str) -> str | None:
+    """Return the text before a colon or " - " subtitle separator, if any."""
+    for sep in (":", " - "):
+        idx = title.find(sep)
+        if idx > 0:
+            return title[:idx].strip()
+    return None
+
+
 def confidence_label(score: float) -> str:
     if score >= 0.90:
         return "High"

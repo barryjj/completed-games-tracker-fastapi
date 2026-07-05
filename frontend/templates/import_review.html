@@ -1,0 +1,272 @@
+{% extends "base.html" %}
+{% block title %}Import Review{% endblock %}
+
+{% block content %}
+<div class="mb-3 d-flex align-items-start justify-content-between flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0">Import Review</h4>
+    <p class="text-secondary small mb-0">Review and confirm each game from your spreadsheet.</p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-secondary"><span id="import-pending-count">{{ pending }}</span> pending</span>
+    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+            hx-post="/library/import/recheck"
+            hx-confirm="Re-check all pending candidates against your current library? This may take a moment."
+            hx-swap="none"
+            hx-disabled-elt="this">
+      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+      Recheck matches
+    </button>
+    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+            hx-post="/library/import/clear"
+            hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
+            hx-swap="none"
+            hx-disabled-elt="this">
+      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+      Clear all
+    </button>
+  </div>
+</div>
+
+<div class="btn-group btn-group-sm mb-3" role="group" id="import-tabs">
+  <button type="button" class="btn btn-surface{% if tab == 'add_to_existing' %} active{% endif %}" data-tab="add_to_existing"
+          onclick="importSwitchTab(this, 'add_to_existing')"
+          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
+    Add to existing <span class="badge bg-secondary ms-1" id="import-tab-count-add_to_existing">{{ tab_counts.add_to_existing }}</span>
+  </button>
+  <button type="button" class="btn btn-surface{% if tab == 'create_new' %} active{% endif %}" data-tab="create_new"
+          onclick="importSwitchTab(this, 'create_new')"
+          hx-get="/library/import/review" hx-vals='{"tab":"create_new"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
+    Create new <span class="badge bg-secondary ms-1" id="import-tab-count-create_new">{{ tab_counts.create_new }}</span>
+  </button>
+  <button type="button" class="btn btn-surface{% if tab == 'needs_review' %} active{% endif %}" data-tab="needs_review"
+          onclick="importSwitchTab(this, 'needs_review')"
+          hx-get="/library/import/review" hx-vals='{"tab":"needs_review"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
+    Needs review <span class="badge bg-secondary ms-1" id="import-tab-count-needs_review">{{ tab_counts.needs_review }}</span>
+  </button>
+</div>
+
+<form
+  id="import-filters-form"
+  hx-get="/library/import/review"
+  hx-target="#import-tab-content"
+  hx-swap="innerHTML"
+  hx-push-url="true"
+  hx-trigger="input changed delay:300ms from:#import-search, change from:#import-platform-filter, change from:#import-year-filter, change from:#import-sort, submit-view"
+>
+  <input type="hidden" name="tab" value="{{ tab }}">
+  <input type="hidden" name="view" id="import-view-field" value="{{ view }}">
+  <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+    <div class="btn-group btn-group-sm" role="group" id="import-view-toggle" {% if tab != 'add_to_existing' %}hidden{% endif %}>
+      <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}" onclick="importSetView('list')" title="List view">&equiv;</button>
+      <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}" onclick="importSetView('card')" title="Card view">&#9638;</button>
+    </div>
+    <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
+    <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
+      <option value="">All platforms</option>
+      {% for opt in platform_options %}
+      <option value="{{ opt.value }}" {% if opt.value == platform %}selected{% endif %}>{{ opt.label }}</option>
+      {% endfor %}
+    </select>
+    <select id="import-year-filter" name="year" class="form-select form-select-sm" style="max-width:140px">
+      <option value="">All years</option>
+      {% for y in year_options %}
+      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+    <select id="import-sort" name="sort" class="form-select form-select-sm" style="max-width:180px">
+      <option value="id" {% if sort == 'id' %}selected{% endif %}>Upload order</option>
+      <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Completion date (newest)</option>
+      <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Completion date (oldest)</option>
+    </select>
+  </div>
+</form>
+
+<div id="import-tab-content">
+  {% include "partials/_import_tab_content.html" %}
+</div>
+
+{# Preview pane for add_to_existing candidates #}
+<div class="offcanvas offcanvas-end" tabindex="-1" id="import-preview-pane" style="width:420px">
+  <div class="offcanvas-header border-bottom">
+    <h6 class="offcanvas-title mb-0">Review match</h6>
+    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+  </div>
+  <div id="import-preview-content"></div>
+</div>
+
+{# Edit modal — fix title/platform and re-match, or manually link to a
+   specific library entry. #}
+<div class="modal fade" id="importEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit candidate</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="import-edit-modal-body">
+        <p class="text-secondary small mb-0">Loading…</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+
+// Tab buttons carry their own hx-get/hx-vals/hx-include (see markup above) so
+// htmx handles the actual data fetch — this just gives instant visual
+// feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
+// a subsequent search/platform/year/sort change stays scoped correctly.
+// Card view only exists for "Add to existing" — switching away forces list.
+window.importSwitchTab = function(button, tab) {
+  document.querySelectorAll('#import-tabs button').forEach(function(b) {
+    b.classList.toggle('active', b === button);
+  });
+  var hiddenTab = document.querySelector('#import-filters-form input[name="tab"]');
+  if (hiddenTab) hiddenTab.value = tab;
+  var toggle = document.getElementById('import-view-toggle');
+  if (toggle) toggle.hidden = tab !== 'add_to_existing';
+  if (tab !== 'add_to_existing') {
+    var hiddenView = document.getElementById('import-view-field');
+    if (hiddenView) hiddenView.value = 'list';
+  }
+};
+
+const IMPORT_VIEW_KEY = 'cgt-import-view';
+
+window.importSetView = function(mode) {
+  localStorage.setItem(IMPORT_VIEW_KEY, mode);
+  var hiddenView = document.getElementById('import-view-field');
+  if (hiddenView) hiddenView.value = mode;
+  document.querySelectorAll('#import-view-toggle button').forEach(function(b, i) {
+    b.classList.toggle('active', (i === 0 && mode === 'list') || (i === 1 && mode === 'card'));
+  });
+  htmx.trigger('#import-filters-form', 'submit-view');
+};
+
+// Card stack navigation — same show/advance pattern as sync match review,
+// but only ever toggles --active/--hidden (no peeking prev/next cards).
+let importCardIdx = 0;
+function importCards() { return Array.from(document.querySelectorAll('#import-stack .cgt-match-card')); }
+function importShowCard(idx) {
+  const cards = importCards();
+  const dots = Array.from(document.querySelectorAll('#import-nav-dots .cgt-match-nav__dot'));
+  if (!cards.length) return;
+  importCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
+  cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
+  dots.forEach(function(d, i) { d.classList.toggle('cgt-match-nav__dot--active', i === importCardIdx); });
+}
+window.importCardNav = function(dir) { importShowCard(importCardIdx + dir); };
+
+// Rebuilds the dot nav from whatever cards currently exist in #import-stack.
+// resetIndex=true (tab switch / filter change / fresh card set) jumps back
+// to the first card; omitted (load-more append) keeps the current card
+// visible while just adding dots for the newly-appended ones.
+window.importRebuildNav = function(resetIndex) {
+  var cards = importCards();
+  var nav = document.getElementById('import-nav');
+  var loadMore = document.getElementById('import-card-load-more');
+  if (!cards.length) {
+    if (nav) nav.hidden = true;
+    var stack = document.getElementById('import-stack');
+    if (stack) stack.innerHTML = '<p class="text-secondary p-3 mb-0">Nothing left in this queue.</p>';
+    if (loadMore) loadMore.innerHTML = '';
+    return;
+  }
+  if (nav) nav.hidden = false;
+  var idx = resetIndex ? 0 : Math.min(importCardIdx, cards.length - 1);
+  var dotsWrap = document.getElementById('import-nav-dots');
+  if (dotsWrap) {
+    dotsWrap.innerHTML = cards.map(function(_, i) {
+      return '<span class="cgt-match-nav__dot' + (i === idx ? ' cgt-match-nav__dot--active' : '') + '"></span>';
+    }).join('');
+  }
+  importShowCard(idx);
+};
+
+// Called after a card's Confirm/Dismiss succeeds — remove it and advance.
+window.importCardDone = function(id) {
+  var card = document.getElementById('import-card-' + id);
+  if (card) card.remove();
+  importRebuildNav(false);
+};
+
+// Re-init card nav whenever the tab content swaps in a fresh card stack
+// (tab switch, filter change) — but not on load-more, which calls
+// importRebuildNav(false) itself via hx-on::after-request to preserve
+// the currently-visible card instead of jumping back to the first one.
+document.addEventListener('htmx:afterSwap', function(e) {
+  if (e.target && e.target.id === 'import-tab-content' && document.getElementById('import-stack')) {
+    importCardIdx = 0;
+    importRebuildNav(true);
+  }
+});
+
+// Restore the user's last view choice for Add to existing on page load.
+(function restoreImportView() {
+  var toggle = document.getElementById('import-view-toggle');
+  if (!toggle || toggle.hidden) return;
+  var saved = localStorage.getItem(IMPORT_VIEW_KEY);
+  var hiddenView = document.getElementById('import-view-field');
+  if (saved && hiddenView && saved !== hiddenView.value) {
+    importSetView(saved);
+  }
+})();
+
+// Unconditional fallback: whatever got us here (server already rendered
+// card view, or the localStorage restore above didn't need to fire a
+// swap), initialize the card stack directly if one exists in the DOM.
+// importRebuildNav is a no-op-safe call — the htmx:afterSwap listener
+// above already re-runs this on every subsequent tab/filter swap.
+if (document.getElementById('import-stack')) importRebuildNav(true);
+
+// Preview pane
+window.openImportPreview = function(candidateId) {
+  htmx.ajax('GET', '/library/import/' + candidateId + '/preview', {
+    target: '#import-preview-content',
+    swap: 'innerHTML'
+  });
+  bootstrap.Offcanvas.getOrCreateInstance(document.getElementById('import-preview-pane')).show();
+};
+
+// Clicking anywhere on an add_to_existing row (except the action buttons)
+// opens the preview — same delegated-click pattern as the Library page's
+// .row-actions exclusion, so it survives HTMX row swaps.
+document.addEventListener('click', function(e) {
+  if (e.target.closest('.row-actions')) return;
+  var row = e.target.closest('.import-row-clickable');
+  if (!row) return;
+  var candidateId = row.id.replace('import-row-', '');
+  openImportPreview(candidateId);
+});
+
+// After confirm/dismiss inside the preview pane: advance to the next
+// add_to_existing candidate, or close the pane if none are left.
+window.importAdvanceOrClose = function(nextId) {
+  if (nextId) {
+    openImportPreview(nextId);
+  } else {
+    var el = document.getElementById('import-preview-pane');
+    var bs = el && bootstrap.Offcanvas.getInstance(el);
+    if (bs) bs.hide();
+  }
+};
+
+// Edit modal
+window.openImportEdit = function(candidateId) {
+  var body = document.getElementById('import-edit-modal-body');
+  body.innerHTML = '<p class="text-secondary small mb-0">Loading…</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('importEditModal')).show();
+  htmx.ajax('GET', '/library/import/' + candidateId + '/edit', {
+    target: '#import-edit-modal-body',
+    swap: 'innerHTML'
+  });
+};
+
+})();
+</script>
+{% endblock %}

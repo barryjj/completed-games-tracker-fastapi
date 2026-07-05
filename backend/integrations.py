@@ -515,15 +515,19 @@ def jobs_poll(
     """
     pending = jobs.pending_notifications_for(current_user.id)
     active = jobs.active_jobs_for(current_user.id)
+    completed_import = next((j for j in pending if j.kind == "import_xlsx"), None)
     response = templates.TemplateResponse(
         request=request,
         name="partials/job_poller.html",
-        context={"completed_jobs": pending, "active_jobs": active},
+        context={"completed_jobs": pending, "active_jobs": active, "completed_import": completed_import},
     )
-    # If a match scan job just finished, fire a custom event so the match
-    # review page can reload the candidate list without a full page refresh.
+    triggers = []
     if any(j.kind == "match_scan" for j in pending):
-        response.headers["HX-Trigger"] = "cgt:matchScanDone"
+        triggers.append("cgt:matchScanDone")
+    if any(j.kind == "import_xlsx" for j in pending):
+        triggers.append("cgt:importDone")
+    if triggers:
+        response.headers["HX-Trigger"] = ", ".join(triggers)
     return response
 
 

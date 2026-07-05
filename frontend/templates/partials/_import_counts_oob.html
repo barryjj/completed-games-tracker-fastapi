@@ -1,0 +1,4 @@
+{% for action, count in tab_counts.items() %}
+<span id="import-tab-count-{{ action }}" hx-swap-oob="true">{{ count }}</span>
+{% endfor %}
+<span id="import-pending-count" hx-swap-oob="true">{{ pending }}</span>

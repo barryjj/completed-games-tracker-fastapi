@@ -313,6 +313,7 @@
             hx-swap="none"
       >
         <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
+        <input type="hidden" name="import_candidate_id" id="add-import-candidate-id">
         <div class="modal-body">
           <div class="mb-3" id="add-igdb-section">
             <label class="form-label" for="add-title-input">Title
@@ -642,6 +643,41 @@ function closeDetailAndEdit(ds) {
     document.addEventListener('DOMContentLoaded', function() { openLibraryDetail(entryId); });
   } else {
     openLibraryDetail(entryId);
+  }
+})();
+
+// Deep-link support: /library?import_candidate=N&prefill_title=...&prefill_platform=...
+// Confirming a "Create new" / "Needs review" import candidate redirects here
+// instead of pre-filling nothing — open the add-game modal with the parsed
+// title/platform, trigger the IGDB search as if the user had typed the
+// title themselves, and stash the candidate id so the submit endpoint can
+// log its completions against whatever entry gets created.
+(function autoOpenAddFromImportCandidate() {
+  var params = new URLSearchParams(window.location.search);
+  var candidateId = params.get('import_candidate');
+  if (!candidateId) return;
+  var title = params.get('prefill_title') || '';
+  var platform = params.get('prefill_platform') || '';
+
+  function prefill() {
+    openAddGameModal();
+    document.getElementById('add-import-candidate-id').value = candidateId;
+    var titleInput = document.getElementById('add-title-input');
+    if (titleInput) {
+      titleInput.value = title;
+      titleInput.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+    var platformInput = document.getElementById('add-platform');
+    if (platformInput) platformInput.value = platform;
+    syncAddDisplayFromTitle();
+    // Drop the params from the URL so a page refresh doesn't reopen/resubmit.
+    history.replaceState(null, '', window.location.pathname);
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', prefill);
+  } else {
+    prefill();
   }
 })();
 

@@ -1,19 +1,32 @@
+import asyncio
 import datetime
 import html as _html
 import logging
 import os
+import re
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, Query, Request
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup, escape
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from . import match_review, models, users
+from . import importer, jobs, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
+
+_import_upload_lock: asyncio.Lock | None = None
+
+
+def _get_import_lock() -> asyncio.Lock:
+    global _import_upload_lock
+    if _import_upload_lock is None:
+        _import_upload_lock = asyncio.Lock()
+    return _import_upload_lock
+
 
 router = APIRouter()
 
@@ -98,6 +111,48 @@ def _html_unescape(s: str) -> str:
 
 
 templates.env.filters["html_unescape"] = _html_unescape
+
+
+def _completion_date(obj) -> str:
+    """Format a Completion/ImportRow's completed_at according to its
+    completed_at_precision ('day' | 'month' | 'year' | None). completed_at
+    itself always holds a full date (fabricated day/month for coarser
+    precision, for sorting) — this controls what's actually shown so a
+    historical import that only knew "2012" doesn't render as a fake
+    "January 1, 2012"."""
+    d = getattr(obj, "completed_at", None)
+    if not d:
+        return "Unknown"
+    precision = getattr(obj, "completed_at_precision", None) or "day"
+    if precision == "year":
+        return str(d.year)
+    if precision == "month":
+        return d.strftime("%B %Y")
+    return d.strftime("%B %-d, %Y")
+
+
+templates.env.filters["completion_date"] = _completion_date
+
+_URL_RE = re.compile(r"https?://[^\s<]+")
+
+
+def _linkify(text: str | None) -> Markup:
+    """Escape text, then turn bare http(s):// URLs into clickable links.
+    Escaping happens first so the filter is safe to use directly in place
+    of Jinja's normal auto-escaping — nothing in the input can inject HTML,
+    only recognized URL substrings become anchor tags."""
+    if not text:
+        return Markup("")
+    escaped = str(escape(text))
+
+    def _replace(m: re.Match) -> str:
+        url = m.group(0)
+        return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a>'
+
+    return Markup(_URL_RE.sub(_replace, escaped))
+
+
+templates.env.filters["linkify"] = _linkify
 
 
 def _base_ctx(db: Session, user: models.User) -> dict:
@@ -1173,6 +1228,7 @@ def add_game(
     is_collection: bool = Form(False),
     parent_game_id: int | None = Form(None),
     igdb_game_id: int | None = Form(None),
+    import_candidate_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -1317,6 +1373,36 @@ def add_game(
             )
         except Exception:
             pass  # metadata failure never blocks the add
+
+    # Import candidate confirmed via this add: log completions from its
+    # parsed spreadsheet rows against the entry we just created, instead of
+    # requiring the user to re-type dates/playthroughs/notes we already have.
+    if import_candidate_id:
+        candidate = (
+            db.query(models.ImportCandidate)
+            .filter(models.ImportCandidate.id == import_candidate_id, models.ImportCandidate.user_id == current_user.id)
+            .options(joinedload(models.ImportCandidate.rows))
+            .first()
+        )
+        if candidate and candidate.status == "pending":
+            for row in candidate.rows:
+                if not row.completed_at:
+                    continue
+                db.add(
+                    models.Completion(
+                        user_id=current_user.id,
+                        library_entry_id=entry.id,
+                        completed_at=row.completed_at,
+                        completed_at_precision=row.completed_at_precision or "day",
+                        playthroughs=row.playthroughs,
+                        notes=row.raw_notes,
+                        sort_order=row.row_number,
+                    )
+                )
+            candidate.library_entry_id = entry.id
+            candidate.status = "confirmed"
+            candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+            db.commit()
 
     return templates.TemplateResponse(
         request=request,
@@ -1626,10 +1712,15 @@ def search_library_games(
     is_dlc: bool | None = Query(None),
     is_collection: bool | None = Query(None),
     callback: str = Query("selectLibraryParent"),
+    id_field: str = Query("release"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Search user's library games by title, optionally filtered by type."""
+    """Search user's library games by title, optionally filtered by type.
+
+    id_field controls which id the callback receives: 'release' (default,
+    used by the DLC/collection parent pickers) or 'entry' (UserLibraryEntry.id,
+    used by the import candidate manual-link picker)."""
     query = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
@@ -1651,7 +1742,7 @@ def search_library_games(
     return templates.TemplateResponse(
         request=request,
         name="partials/library_game_results.html",
-        context={"entries": entries, "q": q, "callback": callback},
+        context={"entries": entries, "q": q, "callback": callback, "id_field": id_field},
     )
 
 
@@ -2387,7 +2478,721 @@ def match_review_clear_dismissed(
     )
 
 
+# --- Historical import ---
+
+
+@router.get("/library/import")
+def import_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    pending = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .count()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="import.html",
+        context={"current_user": current_user, "pending": pending, **_base_ctx(db, current_user)},
+    )
+
+
+@router.post("/library/import/upload")
+async def import_upload(
+    request: Request,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_toast.html",
+            context={"kind": "error", "body": "Please upload an xlsx file."},
+            headers={"HX-Reswap": "none"},
+        )
+    contents = await file.read()
+    jobs.enqueue_import(current_user.id, file.filename, contents)
+    # Start draining the queue only if nothing is currently running
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx" and j.status == jobs.JobStatus.RUNNING]
+    if not active:
+        asyncio.create_task(_drain_import_queue(current_user.id))
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": f"Queued: {file.filename}"},
+    )
+
+
+async def _drain_import_queue(user_id: int) -> None:
+    """Process queued import jobs one at a time until the queue is empty."""
+    while True:
+        item = jobs.next_queued_import(user_id)
+        if not item:
+            break
+        job_id, _filename, file_bytes = item
+        await _run_import_job(job_id, user_id, file_bytes)
+
+
+async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING, progress={"phase": "Parsing", "done": 0, "total": 0})
+    db = models.SessionLocal()
+    try:
+        result = await asyncio.to_thread(importer.parse_xlsx, file_bytes, db, user_id)
+        total = len(result.candidates)
+        jobs.update(job_id, progress={"phase": "Writing", "done": 0, "total": total})
+
+        def on_progress(done: int) -> None:
+            jobs.update(job_id, progress={"phase": "Writing", "done": done, "total": total})
+            j = jobs.get(job_id)
+            if j and j.cancel_requested:
+                raise RuntimeError("cancelled")
+
+        count = await asyncio.to_thread(importer.write_candidates, result, db, user_id, on_progress)
+        skipped_msg = f" ({result.skipped_rows} blank rows skipped)" if result.skipped_rows else ""
+        jobs.mark_done(
+            job_id,
+            f"Import complete — {count} candidate{'s' if count != 1 else ''} ready to review.{skipped_msg}",
+        )
+    except RuntimeError as e:
+        if str(e) == "cancelled":
+            jobs.mark_failed(job_id, "Import cancelled.")
+        else:
+            logger.exception("Import job %s failed", job_id)
+            jobs.mark_failed(job_id, f"Import failed: {e}")
+    except Exception as e:
+        logger.exception("Import job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Import failed: {e}")
+    finally:
+        db.close()
+
+
+_IMPORT_PAGE_SIZE = 50
+
+
+@router.post("/library/import/cancel")
+def import_cancel_job(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+    for j in active:
+        jobs.request_cancel(j.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success" if active else "error", "body": "Import cancelled." if active else "No active import."},
+    )
+
+
+@router.post("/library/import/cancel/{job_id}")
+def import_cancel_queued(
+    request: Request,
+    job_id: str,
+    current_user: models.User = Depends(get_web_user),
+):
+    removed = jobs.cancel_queued_import(job_id, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success" if removed else "error", "body": "Queued upload removed." if removed else "Not found."},
+    )
+
+
+@router.get("/library/import/progress")
+def import_progress(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
+    job = active[0] if active else None
+    queue = jobs.queued_imports_for(current_user.id)
+    pending = (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_progress.html",
+        context={"job": job, "queue": queue, "pending": pending},
+    )
+
+
+@router.get("/library/import/status")
+def import_status(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Replaces #import-status after an import job completes."""
+    pending = (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
+    )
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_status.html",
+        context={"pending": pending},
+    )
+
+
+_IMPORT_TABS = ("add_to_existing", "create_new", "needs_review")
+
+
+def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
+    counts = dict.fromkeys(_IMPORT_TABS, 0)
+    rows = (
+        db.query(models.ImportCandidate.proposed_action, func.count())
+        .filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "pending")
+        .group_by(models.ImportCandidate.proposed_action)
+        .all()
+    )
+    for action, count in rows:
+        if action in counts:
+            counts[action] = count
+    return counts
+
+
+def _import_platform_options(db: Session, user_id: int, tab: str) -> list[dict]:
+    """Distinct platforms across ALL pending candidates in this tab (not just
+    the currently loaded page) for the filter dropdown."""
+    rows = (
+        db.query(models.ImportCandidate.platform_id, models.ImportCandidate.raw_platform)
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == tab,
+        )
+        .distinct()
+        .all()
+    )
+    pids = {pid for pid, _ in rows if pid}
+    pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(pids)).all()} if pids else {}
+    seen_pids: set[int] = set()
+    options = []
+    for pid, raw in rows:
+        if pid and pid in pmap:
+            if pid in seen_pids:
+                continue
+            seen_pids.add(pid)
+            options.append({"value": f"pid:{pid}", "label": pmap[pid].display_name or pmap[pid].name})
+        elif not pid and raw:
+            options.append({"value": f"raw:{raw}", "label": f"{raw} (unresolved)"})
+    options.sort(key=lambda p: p["label"])
+    return options
+
+
+def _import_year_options(db: Session, user_id: int, tab: str) -> list[str]:
+    """Distinct completion years across ALL pending candidates in this tab."""
+    rows = (
+        db.query(func.strftime("%Y", models.ImportRow.completed_at))
+        .join(models.ImportCandidate, models.ImportRow.candidate_id == models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == tab,
+            models.ImportRow.completed_at.isnot(None),
+        )
+        .distinct()
+        .all()
+    )
+    return sorted({y for (y,) in rows if y}, reverse=True)
+
+
+def _import_candidate_visuals(db: Session, candidate: models.ImportCandidate) -> dict | None:
+    """Hero/logo visuals + condensed library metadata for an add_to_existing
+    candidate's matched entry, for card view. None if the candidate has no
+    matched entry."""
+    entry = candidate.library_entry
+    if not entry or not entry.release or not entry.release.game:
+        return None
+    visuals = _build_detail_pane_visuals(db, entry, entry.release.game, entry.release)
+    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
+    return {
+        **visuals,
+        "entry": entry,
+        "release": entry.release,
+        "steam_meta": _extract_steam_meta(appdetails),
+        "igdb_meta": _extract_igdb_meta(entry.release),
+    }
+
+
+@router.get("/library/import/review")
+def import_review_page(
+    request: Request,
+    tab: str = "add_to_existing",
+    offset: int = 0,
+    q: str = "",
+    platform: str = "",
+    year: str = "",
+    sort: str = "id",
+    view: str = "list",
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    if tab not in _IMPORT_TABS:
+        tab = "add_to_existing"
+    if sort not in ("id", "date_desc", "date_asc"):
+        sort = "id"
+    if view not in ("list", "card") or tab != "add_to_existing":
+        view = "list"
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+
+    filtered_q = db.query(models.ImportCandidate).filter(
+        models.ImportCandidate.user_id == current_user.id,
+        models.ImportCandidate.status == "pending",
+        models.ImportCandidate.proposed_action == tab,
+    )
+
+    if q:
+        filtered_q = filtered_q.filter(models.ImportCandidate.raw_title.ilike(f"%{q}%"))
+
+    if platform.startswith("pid:"):
+        filtered_q = filtered_q.filter(models.ImportCandidate.platform_id == int(platform[4:]))
+    elif platform.startswith("raw:"):
+        filtered_q = filtered_q.filter(
+            models.ImportCandidate.platform_id.is_(None),
+            models.ImportCandidate.raw_platform == platform[4:],
+        )
+
+    if year:
+        filtered_q = filtered_q.filter(
+            models.ImportCandidate.id.in_(
+                db.query(models.ImportRow.candidate_id).filter(func.strftime("%Y", models.ImportRow.completed_at) == year)
+            )
+        )
+
+    tab_total = filtered_q.count()
+
+    ordered_q = filtered_q
+    if sort in ("date_desc", "date_asc"):
+        row_agg = (
+            db.query(
+                models.ImportRow.candidate_id.label("candidate_id"),
+                func.min(models.ImportRow.completed_at).label("min_date"),
+            )
+            .group_by(models.ImportRow.candidate_id)
+            .subquery()
+        )
+        order_col = row_agg.c.min_date
+        ordered_q = ordered_q.outerjoin(row_agg, row_agg.c.candidate_id == models.ImportCandidate.id).order_by(
+            order_col.desc() if sort == "date_desc" else order_col.asc(), models.ImportCandidate.id
+        )
+    else:
+        ordered_q = ordered_q.order_by(models.ImportCandidate.id)
+
+    candidate_opts = [
+        joinedload(models.ImportCandidate.rows),
+        joinedload(models.ImportCandidate.platform),
+        joinedload(models.ImportCandidate.library_entry)
+        .joinedload(models.UserLibraryEntry.release)
+        .joinedload(models.GameRelease.platform_obj),
+    ]
+    if view == "card":
+        candidate_opts += [
+            joinedload(models.ImportCandidate.library_entry)
+            .joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.game),
+            joinedload(models.ImportCandidate.library_entry)
+            .joinedload(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.artwork),
+            joinedload(models.ImportCandidate.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
+        ]
+    candidates = ordered_q.options(*candidate_opts).offset(offset).limit(_IMPORT_PAGE_SIZE).all()
+    next_offset = offset + _IMPORT_PAGE_SIZE
+    has_more = next_offset < tab_total
+
+    candidate_visuals = {c.id: _import_candidate_visuals(db, c) for c in candidates} if view == "card" else {}
+
+    filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort, "view": view}
+
+    if request.headers.get("HX-Request") and offset > 0:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_card_load_more.html" if view == "card" else "partials/_import_rows.html",
+            context={
+                "candidates": candidates,
+                "next_offset": next_offset,
+                "has_more": has_more,
+                "tab": tab,
+                "candidate_visuals": candidate_visuals,
+                **filter_ctx,
+            },
+        )
+
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_tab_content.html",
+            context={
+                "candidates": candidates,
+                "next_offset": next_offset,
+                "has_more": has_more,
+                "tab": tab,
+                "tab_counts": tab_counts,
+                "candidate_visuals": candidate_visuals,
+                "platform_options": _import_platform_options(db, current_user.id, tab),
+                "year_options": _import_year_options(db, current_user.id, tab),
+                **filter_ctx,
+            },
+        )
+
+    return templates.TemplateResponse(
+        request=request,
+        name="import_review.html",
+        context={
+            "current_user": current_user,
+            "candidates": candidates,
+            "pending": pending,
+            "tab": tab,
+            "tab_counts": tab_counts,
+            "next_offset": next_offset,
+            "has_more": has_more,
+            "candidate_visuals": candidate_visuals,
+            "platform_options": _import_platform_options(db, current_user.id, tab),
+            "year_options": _import_year_options(db, current_user.id, tab),
+            **filter_ctx,
+            **_base_ctx(db, current_user),
+        },
+    )
+
+
+@router.get("/library/import/{candidate_id}/preview")
+def import_candidate_preview(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Detail pane content for an add_to_existing candidate — shows the matched
+    library entry with an import-specific Confirm footer."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .options(
+            joinedload(models.ImportCandidate.rows),
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+        )
+        .first()
+    )
+    if not candidate or not candidate.library_entry_id:
+        return Response(status_code=404)
+
+    next_candidate = (
+        db.query(models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == "add_to_existing",
+            models.ImportCandidate.id > candidate.id,
+        )
+        .order_by(models.ImportCandidate.id)
+        .first()
+    )
+
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            joinedload(models.UserLibraryEntry.completions),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter(models.UserLibraryEntry.id == candidate.library_entry_id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    game = entry.release.game
+    child_entries = []
+    if not game.is_dlc:
+        child_entries = (
+            db.query(models.UserLibraryEntry)
+            .options(
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+                joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+                selectinload(models.UserLibraryEntry.user_artwork),
+            )
+            .join(models.GameRelease)
+            .join(models.Game)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.parent_id == game.id,
+            )
+            .order_by(models.Game.title)
+            .all()
+        )
+
+    visuals = _build_detail_pane_visuals(db, entry, game, entry.release)
+    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/library_detail.html",
+        context={
+            "entry": entry,
+            "game": game,
+            "release": entry.release,
+            "appdetails": appdetails,
+            "steam_meta": _extract_steam_meta(appdetails),
+            "igdb_meta": _extract_igdb_meta(entry.release),
+            "child_entries": child_entries,
+            "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
+            "current_user": current_user,
+            "needs_refresh": False,
+            "fresh_open": False,
+            "candidate": candidate,
+            "import_rows": sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True),
+            "import_next_id": next_candidate.id if next_candidate else None,
+            **visuals,
+        },
+    )
+
+
+@router.get("/library/import/{candidate_id}/edit")
+def import_candidate_edit_form(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Modal content for editing a pending candidate's title/platform, or
+    manually linking it to a specific existing library entry."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .options(joinedload(models.ImportCandidate.platform), joinedload(models.ImportCandidate.library_entry))
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_edit_modal.html",
+        context={"candidate": candidate, "platforms": _get_all_platforms(db)},
+    )
+
+
+@router.post("/library/import/{candidate_id}/edit")
+def import_candidate_edit(
+    candidate_id: int,
+    request: Request,
+    raw_title: str = Form(...),
+    raw_platform: str = Form(...),
+    library_entry_id: int | None = Form(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    candidate.raw_title = raw_title.strip()
+    candidate.raw_platform = raw_platform.strip()
+    candidate.platform_id = models.resolve_platform_id(db, candidate.raw_platform) if candidate.raw_platform else None
+
+    if library_entry_id:
+        # Manual override — user picked a specific entry directly, skip the matcher.
+        entry = (
+            db.query(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
+            .first()
+        )
+        if not entry:
+            return Response(status_code=404)
+        candidate.library_entry_id = entry.id
+        candidate.proposed_action = "add_to_existing"
+    else:
+        candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
+        best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)
+        if best_entry:
+            candidate.library_entry_id = best_entry.id
+            candidate.proposed_action = "add_to_existing"
+        elif candidate.platform_id is None:
+            candidate.library_entry_id = None
+            candidate.proposed_action = "needs_review"
+        else:
+            candidate.library_entry_id = None
+            candidate.proposed_action = "create_new"
+
+    db.commit()
+    tab_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_counts_oob.html",
+        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+    )
+
+
+@router.post("/library/import/{candidate_id}/dismiss")
+def import_dismiss(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    candidate.status = "dismissed"
+    candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    tab_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_counts_oob.html",
+        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+    )
+
+
+@router.post("/library/import/{candidate_id}/confirm")
+def import_confirm(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .options(
+            joinedload(models.ImportCandidate.rows),
+        )
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
+        # Log all completions against the existing library entry, skipping exact duplicates
+        for row in candidate.rows:
+            if not row.completed_at:
+                continue
+            already_exists = (
+                db.query(models.Completion)
+                .filter(
+                    models.Completion.library_entry_id == candidate.library_entry_id,
+                    models.Completion.completed_at == row.completed_at,
+                    models.Completion.sort_order == row.row_number,
+                )
+                .first()
+            )
+            if already_exists:
+                continue
+            db.add(
+                models.Completion(
+                    user_id=current_user.id,
+                    library_entry_id=candidate.library_entry_id,
+                    completed_at=row.completed_at,
+                    completed_at_precision=row.completed_at_precision or "day",
+                    playthroughs=row.playthroughs,
+                    notes=row.raw_notes,
+                    sort_order=row.row_number,
+                )
+            )
+        candidate.status = "confirmed"
+        candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
+        tab_counts = _import_tab_counts(db, current_user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_counts_oob.html",
+            context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+            headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+        )
+
+    # create_new / needs_review — redirect to library with modal pre-filled
+    platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
+    redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
+    return Response(status_code=200, headers={"HX-Redirect": redirect_url})
+
+
+@router.post("/library/import/clear")
+def import_clear_all(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Cancel running/queued import jobs, then delete pending candidates (confirmed stay)."""
+    for j in jobs.active_jobs_for(current_user.id):
+        if j.kind == "import_xlsx":
+            jobs.request_cancel(j.id)
+    for job_id, _ in jobs.queued_imports_for(current_user.id):
+        jobs.cancel_queued_import(job_id, current_user.id)
+    pending_ids = [
+        r[0]
+        for r in db.query(models.ImportCandidate.id)
+        .filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .all()
+    ]
+    if pending_ids:
+        db.query(models.ImportRow).filter(models.ImportRow.candidate_id.in_(pending_ids)).delete(synchronize_session=False)
+        db.query(models.ImportCandidate).filter(models.ImportCandidate.id.in_(pending_ids)).delete(synchronize_session=False)
+    db.commit()
+    return Response(
+        headers={"HX-Redirect": "/library/import"},
+        status_code=200,
+    )
+
+
+@router.post("/library/import/recheck")
+def import_recheck(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Re-run title matching against the current library for all pending
+    candidates, without re-uploading the spreadsheet."""
+    importer.rematch_pending_candidates(db, current_user.id)
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
+
+
 # --- Completions ---
+
+
+COMPLETIONS_SORT_OPTIONS = ["date_desc", "date_asc", "title_asc", "title_desc"]
 
 
 @router.get("/completions")
@@ -2398,6 +3203,7 @@ def completions_page(
     completed_from: str = Query(""),
     completed_to: str = Query(""),
     view_mode: str | None = Query(None),
+    sort: str = Query("date_desc"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -2446,7 +3252,36 @@ def completions_page(
             completions_q = completions_q.filter(models.Completion.completed_at <= datetime.date.fromisoformat(completed_to))
         except ValueError:
             pass
-    completions = completions_q.order_by(models.Completion.id.desc()).all()
+    if sort not in COMPLETIONS_SORT_OPTIONS:
+        sort = "date_desc"
+    # sort_order preserves the original spreadsheet row order for historical
+    # imports (manual/sync completions have sort_order NULL). It's a tiebreaker
+    # within an equal completed_at, never a substitute for it — two rows the
+    # sheet listed 1-2-3 in the same month must stay in that relative order.
+    # Critically, "that relative order" flips with the primary direction: in
+    # a newest-first list, row 2 (completed later that same day) is the more
+    # recent one and belongs ABOVE row 1, so the tiebreaker must also run
+    # descending — sorting it ascending regardless of direction put row 1
+    # above row 2 even under "newest first", which reads backwards. is_(None)
+    # sorts False (has a value) before True (NULL) so nulls always land last
+    # regardless of direction.
+    newest_first = sort in ("date_desc", "title_asc", "title_desc")
+    if sort in ("title_asc", "title_desc"):
+        title_col = func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE")
+        completions_q = completions_q.order_by(
+            title_col.asc() if sort == "title_asc" else title_col.desc(),
+            models.Completion.completed_at.desc(),
+            models.Completion.sort_order.is_(None),
+            models.Completion.sort_order.desc() if newest_first else models.Completion.sort_order.asc(),
+        )
+    else:
+        completions_q = completions_q.order_by(
+            models.Completion.completed_at.desc() if sort == "date_desc" else models.Completion.completed_at.asc(),
+            models.Completion.sort_order.is_(None),
+            models.Completion.sort_order.desc() if newest_first else models.Completion.sort_order.asc(),
+            models.Completion.id.desc(),
+        )
+    completions = completions_q.all()
     # Reuse the library fallback helper — it expects a list of UserLibraryEntry
     # objects, so pass each completion's library_entry. Dedupe on entry.id so
     # entries with multiple completions don't get processed twice.
@@ -2474,6 +3309,7 @@ def completions_page(
             "completed_to": completed_to,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
+            "sort": sort,
             **_base_ctx(db, current_user),
         },
     )

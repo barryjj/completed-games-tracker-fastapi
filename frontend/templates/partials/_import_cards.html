@@ -1,0 +1,143 @@
+{# Card items for the "Add to existing" tab's card view. Bare cards only —
+   the .cgt-match-stage wrapper and nav live in _import_tab_content.html so
+   "load more" can OOB-append new cards here without duplicating either. #}
+{% for c in candidates %}
+{% set v = candidate_visuals.get(c.id) %}
+<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden"
+     id="import-card-{{ c.id }}">
+
+  <div class="cgt-match-card__body">
+    {% if v and (v.hero_url or v.fallback_hero_url) %}
+    <div class="cgt-import-hero">
+      <img class="cgt-detail-hero__img" src="{{ v.hero_url or v.fallback_hero_url }}" alt="" loading="lazy">
+      {% if v.logo_url or v.fallback_logo_url %}
+      <img class="cgt-detail-hero__logo" src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="p-3">
+      {% set _lib_release = c.library_entry.release if c.library_entry else None %}
+      {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
+      {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+      {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
+      {% set _has_diff = _title_diff or _plat_diff %}
+      <table class="cgt-source-table mb-2"><tbody>
+        {% if c.library_entry %}
+        <tr>
+          <td class="cgt-source-table__label">{% if _has_diff %}<span class="tag-badge tag-source">Library</span>{% endif %}</td>
+          <td class="cgt-source-table__title"><h6 class="mb-0">{{ _lib_title }}</h6></td>
+          <td class="cgt-source-table__platform">
+            {% if _lib_release and _lib_release.platform_obj %}
+            <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% if _has_diff %}
+        <tr>
+          <td class="cgt-source-table__label"><span class="tag-badge tag-source">Sheet</span></td>
+          <td class="cgt-source-table__title cgt-source-table__sheet-title">{{ c.raw_title }}</td>
+          <td class="cgt-source-table__platform">
+            {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% else %}
+        <tr>
+          <td class="cgt-source-table__label"></td>
+          <td class="cgt-source-table__title"><h6 class="mb-0">{{ c.raw_title }}</h6></td>
+          <td class="cgt-source-table__platform">
+            {% if c.platform %}<span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endif %}
+      </tbody></table>
+
+      <div class="cgt-import-card-columns">
+        <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">
+          {% set import_count = c.rows | length %}
+          <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
+          <ul class="list-unstyled mb-0">
+            {% for r in c.rows %}
+            <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
+              <dl class="cgt-detail-meta mb-0">
+                <dt>Date</dt>
+                <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
+                {% if r.playthroughs %}
+                <dt>Playthroughs</dt>
+                <dd>{{ r.playthroughs }}</dd>
+                {% endif %}
+                {% if r.raw_notes %}
+                <dt>Notes</dt>
+                <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
+                {% endif %}
+              </dl>
+            </li>
+            {% endfor %}
+          </ul>
+        </div>
+
+        {% if v %}
+        <div class="cgt-detail-block mb-0 cgt-import-card-columns__side">
+          <dl class="cgt-detail-meta small mb-0">
+            {% if v.entry.last_played_at %}
+            <dt>Last played</dt>
+            <dd>{{ v.entry.last_played_at.strftime("%B %-d, %Y") }}</dd>
+            {% endif %}
+            {% if v.entry.playtime_minutes %}
+            <dt>Playtime</dt>
+            <dd>{{ v.entry.playtime_minutes | playtime_human }}</dd>
+            {% endif %}
+            {% if v.steam_meta.released %}
+            <dt>Released</dt>
+            <dd>{{ v.steam_meta.released }}</dd>
+            {% elif v.igdb_meta.year %}
+            <dt>Released</dt>
+            <dd>{{ v.igdb_meta.year }}</dd>
+            {% endif %}
+            {% if v.steam_meta.developers %}
+            <dt>Developer</dt>
+            <dd>{{ v.steam_meta.developers | join(", ") }}</dd>
+            {% endif %}
+            {% if v.steam_meta.publishers %}
+            <dt>Publisher</dt>
+            <dd>{{ v.steam_meta.publishers | join(", ") }}</dd>
+            {% endif %}
+            {% if v.igdb_meta.genres %}
+            <dt>Genre</dt>
+            <dd>{{ v.igdb_meta.genres | join(", ") }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
+    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
+    <button class="btn btn-primary btn-sm"
+            hx-post="/library/import/{{ c.id }}/confirm"
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
+      Confirm
+    </button>
+    <button class="btn btn-surface btn-sm"
+            hx-post="/library/import/{{ c.id }}/dismiss"
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
+      Dismiss
+    </button>
+  </div>
+
+  {# Off-DOM anchor for the confirm/dismiss HX-Retarget response — the
+     server always retargets to #import-row-{id} regardless of caller,
+     matching the list view's row id scheme, so it needs to exist even
+     here where there's no literal row. #}
+  <span id="import-row-{{ c.id }}" hidden></span>
+</div>
+{% endfor %}
