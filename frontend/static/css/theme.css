@@ -632,6 +632,53 @@ tr:focus-within .row-actions {
   opacity: 1;
   transform: translateX(0);
 }
+/* Import review's Confirm/Edit/Dismiss are the whole point of the page,
+   not secondary clutter to hide until hover — with large, tall rows the
+   constant appear/disappear as the cursor moved down the list read as
+   janky. Always visible here; the fade-in-on-hover pattern above still
+   applies to library/completions rows where it works fine. */
+#import-table .row-actions {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+/* Row actions as small text links instead of stacked buttons — three full
+   buttons per row were visually heavy next to the sparser title column.
+   Confirm is bold/accented since it's the primary action; Edit/Dismiss
+   are plain, same hover treatment as the completion-pane header links. */
+.cgt-row-actions-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+.cgt-row-actions-links a {
+  font-size: 0.78rem;
+  color: var(--ctp-subtext);
+  text-decoration: none;
+  cursor: pointer;
+}
+.cgt-row-actions-links a:hover {
+  color: var(--ctp-text);
+  text-decoration: underline;
+}
+.cgt-row-actions-links__primary {
+  font-weight: 700;
+  color: var(--ctp-mauve) !important;
+}
+.cgt-row-actions-links__primary:hover {
+  color: var(--ctp-lavender) !important;
+}
+/* Import review's Confirm/Edit/Dismiss are the whole point of the page,
+   not secondary clutter to hide until hover — with large, tall rows the
+   constant appear/disappear as the cursor moves down the list read as
+   janky rather than a subtle reveal. Always visible here instead. */
+#import-table .row-actions {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
 
 /* ─── HTMX ───────────────────────────────────────────────────────────────── */
 .htmx-indicator { display: none; }
