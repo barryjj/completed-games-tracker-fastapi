@@ -102,6 +102,7 @@ if DB_URL.startswith("sqlite"):
     def _set_sqlite_pragma(conn, _record):
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=10000")
+        conn.execute("PRAGMA foreign_keys=ON")
 
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -136,6 +137,8 @@ class User(Base):
     twitch_client_secret: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
+    __table_args__ = {"sqlite_autoincrement": True}
+
 
 class PlatformFamily(Base):
     """Groups platforms by manufacturer / ecosystem (PlayStation, Nintendo, etc.).
@@ -152,6 +155,8 @@ class PlatformFamily(Base):
     color: Mapped[str | None] = mapped_column(String, nullable=True)
 
     platforms: Mapped[list["Platform"]] = relationship("Platform", back_populates="family")
+
+    __table_args__ = {"sqlite_autoincrement": True}
 
 
 class Platform(Base):
@@ -197,6 +202,8 @@ class Platform(Base):
             return f"tag-platform-{c}"
         return _platform_heuristic_css(self.name)
 
+    __table_args__ = {"sqlite_autoincrement": True}
+
 
 class PlatformAlias(Base):
     """User-managed alternate names / abbreviations for a platform.
@@ -213,6 +220,8 @@ class PlatformAlias(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
 
     platform: Mapped["Platform"] = relationship("Platform", back_populates="aliases")
+
+    __table_args__ = {"sqlite_autoincrement": True}
 
 
 def _norm_platform(s: str) -> str:
@@ -322,7 +331,7 @@ class Game(Base):
     # True if this entry is itself a collection (e.g. Anniversary Collection)
     is_collection: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
     # DLC -> base game, or standalone game -> collection it belongs to
-    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True, index=True)
+    parent_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id", ondelete="SET NULL"), nullable=True, index=True)
     igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True, unique=True)
     # User-override flags. When True, the corresponding field has been explicitly
     # set by the user and no heuristic (sync's _clean_title, enrichment worker,
@@ -346,6 +355,8 @@ class Game(Base):
         primaryjoin="GameArtwork.game_id == Game.id",
         foreign_keys="GameArtwork.game_id",
     )
+    __table_args__ = {"sqlite_autoincrement": True}
+
     user_artwork: Mapped[list["UserArtwork"]] = relationship(
         "UserArtwork",
         back_populates="game",
@@ -380,7 +391,10 @@ class GameRelease(Base):
     artwork: Mapped[list["GameArtwork"]] = relationship("GameArtwork", back_populates="release")
     library_entries: Mapped[list["UserLibraryEntry"]] = relationship("UserLibraryEntry", back_populates="release")
 
-    __table_args__ = (UniqueConstraint("game_id", "platform", name="uq_release_game_platform"),)
+    __table_args__ = (
+        UniqueConstraint("game_id", "platform", name="uq_release_game_platform"),
+        {"sqlite_autoincrement": True},
+    )
 
     @property
     def display_platform(self) -> str:
@@ -418,8 +432,8 @@ class GameArtwork(Base):
     __tablename__ = "game_artwork"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     # One of release_id / game_id must be set.
-    release_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=True)
-    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True)
+    release_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("game_releases.id", ondelete="CASCADE"), nullable=True)
+    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id", ondelete="CASCADE"), nullable=True)
     artwork_type: Mapped[str] = mapped_column(String, nullable=False)
     source: Mapped[str] = mapped_column(String, nullable=False)
     # The native API field name this URL came from, e.g. 'header_image',
@@ -445,6 +459,7 @@ class GameArtwork(Base):
         #   game-level rows (game_id set, release_id null)    → governed by second constraint
         UniqueConstraint("release_id", "artwork_type", "source", name="uq_artwork_release_type_source"),
         UniqueConstraint("game_id", "artwork_type", "source", name="uq_artwork_game_type_source"),
+        {"sqlite_autoincrement": True},
     )
 
 
@@ -462,9 +477,9 @@ class UserArtwork(Base):
 
     __tablename__ = "user_artwork"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True, index=True)
-    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id"), nullable=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=True, index=True)
+    game_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("games.id", ondelete="CASCADE"), nullable=True, index=True)
     artwork_type: Mapped[str] = mapped_column(String, nullable=False)
     source: Mapped[str] = mapped_column(String, nullable=False)
     url: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -481,6 +496,7 @@ class UserArtwork(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "entry_id", "artwork_type", name="uq_user_artwork_entry_type"),
         UniqueConstraint("user_id", "game_id", "artwork_type", name="uq_user_artwork_game_type"),
+        {"sqlite_autoincrement": True},
     )
 
 
@@ -489,7 +505,7 @@ class UserLibraryEntry(Base):
 
     __tablename__ = "user_library"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id"), nullable=False, index=True)
     playtime_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     last_played_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -501,7 +517,7 @@ class UserLibraryEntry(Base):
     # "steam_import" | "psn_import" | "manual"
     import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry
-    parent_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True)
+    parent_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=True)
     imported_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC), onupdate=lambda: datetime.datetime.now(datetime.UTC)
@@ -517,7 +533,10 @@ class UserLibraryEntry(Base):
     completions: Mapped[list["Completion"]] = relationship("Completion", back_populates="library_entry")
     user_artwork: Mapped[list["UserArtwork"]] = relationship("UserArtwork", back_populates="entry")
 
-    __table_args__ = (UniqueConstraint("user_id", "release_id", name="uq_library_user_release"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "release_id", name="uq_library_user_release"),
+        {"sqlite_autoincrement": True},
+    )
 
     @property
     def title(self) -> str:
@@ -530,7 +549,7 @@ class UserAchievement(Base):
 
     __tablename__ = "user_achievements"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=False)
+    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=False)
     # platform-specific identifier: Steam achievement API name or PSN trophy ID
     external_id: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -543,7 +562,10 @@ class UserAchievement(Base):
 
     library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="achievements")
 
-    __table_args__ = (UniqueConstraint("library_entry_id", "external_id", name="uq_achievement_entry_external"),)
+    __table_args__ = (
+        UniqueConstraint("library_entry_id", "external_id", name="uq_achievement_entry_external"),
+        {"sqlite_autoincrement": True},
+    )
 
 
 class SyncMatchCandidate(Base):
@@ -578,7 +600,10 @@ class SyncMatchCandidate(Base):
 
     manual_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", foreign_keys=[manual_entry_id])
 
-    __table_args__ = (UniqueConstraint("manual_entry_id", "platform_source", "external_id", name="uq_match_candidate"),)
+    __table_args__ = (
+        UniqueConstraint("manual_entry_id", "platform_source", "external_id", name="uq_match_candidate"),
+        {"sqlite_autoincrement": True},
+    )
 
 
 class ImportCandidate(Base):
@@ -597,12 +622,12 @@ class ImportCandidate(Base):
 
     __tablename__ = "import_candidates"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     raw_title: Mapped[str] = mapped_column(String, nullable=False)
     raw_platform: Mapped[str] = mapped_column(String, nullable=False)
     platform_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platforms.id"), nullable=True)
     # Set when proposed_action == "add_to_existing"
-    library_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=True)
+    library_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
     proposed_action: Mapped[str] = mapped_column(String, nullable=False, default="needs_review")
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
@@ -611,6 +636,8 @@ class ImportCandidate(Base):
     platform: Mapped["Platform | None"] = relationship("Platform")
     library_entry: Mapped["UserLibraryEntry | None"] = relationship("UserLibraryEntry")
     rows: Mapped[list["ImportRow"]] = relationship("ImportRow", back_populates="candidate", cascade="save-update, merge")
+
+    __table_args__ = {"sqlite_autoincrement": True}
 
 
 class ImportRow(Base):
@@ -642,12 +669,14 @@ class ImportRow(Base):
 
     candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
 
+    __table_args__ = {"sqlite_autoincrement": True}
+
 
 class Completion(Base):
     __tablename__ = "completions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=False)
     completed_at: Mapped[datetime.date] = mapped_column(Date, nullable=False)
     # 'day' | 'month' | 'year' — what precision the source actually knew.
     # Manual/sync entries are always 'day'; historical import can be coarser
@@ -665,6 +694,8 @@ class Completion(Base):
 
     user: Mapped["User"] = relationship("User")
     library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="completions")
+
+    __table_args__ = {"sqlite_autoincrement": True}
 
 
 def get_db() -> Iterator[Session]:
