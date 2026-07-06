@@ -38,10 +38,19 @@
           {% endif %}
         </div>
         {% if _title_diff or _plat_diff %}
+        {# Paired Library/Sheet lines — showing only the Sheet side lost the
+           point of this comparison. Seeing both side by side (even when
+           only the platform badge differs and titles repeat) is what makes
+           it obvious at a glance what actually changed. #}
+        <div class="small d-flex align-items-center gap-1 flex-wrap">
+          <span class="tag-badge tag-source">Library</span>
+          {% if _title_diff %}<span>{{ _lib_title }}</span>{% endif %}
+          {% if _lib_release and _lib_release.platform_obj %}<span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>{% endif %}
+        </div>
         <div class="small d-flex align-items-center gap-1 flex-wrap">
           <span class="tag-badge tag-source">Sheet</span>
           {% if _title_diff %}<span>{{ c.raw_title }}</span>{% endif %}
-          {% if _plat_diff and c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
+          {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
         </div>
         {% endif %}
       </div>
