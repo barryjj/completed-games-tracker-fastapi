@@ -808,6 +808,15 @@ a.cgt-completion-record:hover {
 html[data-bs-theme="light"] a.cgt-completion-record:hover {
   background-color: var(--ctp-surface0);
 }
+/* Compact one-line version of the same left-accent treatment, for the
+   completions summary in list rows — full-contrast text instead of muted
+   secondary color, same neutral grey accent as .cgt-completion-record
+   (no special meaning, just visual weight). */
+.cgt-completion-summary-slat {
+  display: inline-block;
+  border-left: 3px solid var(--ctp-surface2);
+  padding: 2px 8px;
+}
 
 /* "This completion" is the one the pane's +1/Edit actions actually operate
    on — an accent left border visually anchors it against the other
@@ -1332,10 +1341,13 @@ body:has(.cgt-sticky-actions) {
   line-height: 1;
 }
 
-/* Small warning flag — sheet data differs from the matched library entry.
-   Just a flag, not an explanation (no tooltip content beyond "click to see
-   details") — the actual comparison lives in the preview pane's warning
-   banner, opened by clicking the row. */
+/* Accent color system: yellow is already established as "new/pending
+   import" (cgt-completion-record--new, cgt-import-row-new). Reusing it for
+   "this differs from the sheet, pay attention" put two unrelated meanings
+   on the same color and the two literally sat right next to each other in
+   the preview pane, clashing. Peach is "warning / differs / needs a look" —
+   a distinct accent from yellow's "new" meaning. Grey (surface2/overlay0)
+   stays "no particular meaning" (Other completions, DLC list stripe). */
 .cgt-diff-flag {
   display: inline-flex;
   align-items: center;
@@ -1343,12 +1355,36 @@ body:has(.cgt-sticky-actions) {
   width: 1.1em;
   height: 1.1em;
   border-radius: 50%;
-  background: var(--ctp-yellow);
+  background: var(--ctp-peach);
   color: var(--ctp-crust);
   font-size: 0.7rem;
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
+}
+/* Inline marker next to a specific field whose sheet value differs — pairs
+   with .cgt-diff-flag (same peach) and the pane's .cgt-diff-alert banner,
+   so all three "this differs" signals read as the same thing. */
+.cgt-diff-marker {
+  display: inline-block;
+  width: 0.5em;
+  height: 0.5em;
+  border-radius: 50%;
+  background: var(--ctp-peach);
+  flex-shrink: 0;
+}
+/* Warning banner in the preview pane listing what differs — same peach
+   accent as the row flag/field markers, not yellow (which already means
+   "new/pending" on the completions immediately below this banner). */
+.cgt-diff-alert {
+  background-color: color-mix(in srgb, var(--ctp-peach) 12%, var(--ctp-mantle));
+  border: 1px solid var(--ctp-surface0);
+  border-left: 3px solid var(--ctp-peach);
+  border-radius: 6px;
+  padding: 9px 12px;
+}
+html[data-bs-theme="light"] .cgt-diff-alert {
+  background-color: color-mix(in srgb, var(--ctp-peach) 18%, var(--ctp-base));
 }
 
 /* ─── Uniform-width action buttons (integrations pages) ─────────────────── */

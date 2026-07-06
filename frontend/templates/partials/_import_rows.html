@@ -39,15 +39,20 @@
     {% if _lib_release and _lib_release.platform_obj %}
     <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
     {% elif c.platform %}
-    <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+    <span class="tag-badge {{ c.platform | platform_color }}">{{ c.platform.display_name or c.platform.name }}</span>
     {% else %}
     <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
     {% endif %}
   </td>
-  <td class="align-middle text-secondary small">
+  <td class="align-middle">
     {% set _dated = c.rows | selectattr("completed_at") | list %}
-    {{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}
-    {% if _dated %}· latest {{ (_dated | sort(attribute="completed_at") | last) | completion_date }}{% endif %}
+    {# Neutral grey slat — no special meaning (not "new", not "differs"),
+       just visual weight to match the completion boxes elsewhere instead
+       of throwaway muted text. #}
+    <span class="cgt-completion-summary-slat small">
+      {{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}
+      {% if _dated %}· latest {{ (_dated | sort(attribute="completed_at") | last) | completion_date }}{% endif %}
+    </span>
   </td>
   <td class="align-middle text-end text-nowrap row-actions">
     {% if c.proposed_action != "add_to_existing" %}

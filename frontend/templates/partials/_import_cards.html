@@ -47,7 +47,7 @@
           <td class="cgt-source-table__label"></td>
           <td class="cgt-source-table__title"><h6 class="mb-0">{{ c.raw_title }}</h6></td>
           <td class="cgt-source-table__platform">
-            {% if c.platform %}<span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>{% endif %}
+            {% if c.platform %}<span class="tag-badge {{ c.platform | platform_color }}">{{ c.platform.display_name or c.platform.name }}</span>{% endif %}
           </td>
         </tr>
         {% endif %}
