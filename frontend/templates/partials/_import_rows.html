@@ -1,10 +1,14 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
-  {# Vertically centered (not align-top like the other cells) — the title
-     column is sparse (thumb + title + maybe one badge) next to a visually
-     dense multi-record Completions column, so it read as pinned to the
-     top with dead space below rather than balanced against the row. #}
+  {# Compact row: thumb + title/badge, a one-line completion summary, and
+     (only for tabs with no click-to-preview pane) actions. Previously each
+     row tried to show the full Library/Sheet comparison, every completion
+     as its own bordered box, and three actions — all inline, repeated for
+     however many hundreds of rows exist. That's fine for card view (one
+     candidate on screen at a time) but not for a scanning list. Full
+     detail (all completions, Confirm/Edit/Dismiss) now lives in the
+     preview pane opened by clicking the row. #}
   <td class="align-middle">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
     {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
@@ -12,90 +16,46 @@
     {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
     {% set _has_diff = _title_diff or _plat_diff %}
     <div class="d-flex align-items-center gap-2">
-      {# Thumbnail + platform badge(s) stacked in one column, in the same
-         top-to-bottom order as the Library/Sheet rows beside them — keeps
-         the pairing readable without the badge living inline after the
-         title text, where it visually "moved" depending on title length. #}
-      <div class="d-flex flex-column align-items-center gap-1">
-        {% if c.library_entry %}
-        {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
-        {% if _thumb %}
-        <img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy">
-        {% else %}
-        <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
-        {% endif %}
-        {% if _lib_release and _lib_release.platform_obj %}
-        <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-        {% endif %}
-        {% if _has_diff and c.raw_platform %}
-        <span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>
-        {% endif %}
-        {% else %}
-        <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
-        {% if c.platform %}
-        <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-        {% else %}
-        <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-        {% endif %}
-        {% endif %}
-      </div>
+      {% if c.library_entry %}
+      {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
+      {% if _thumb %}
+      <img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy">
+      {% else %}
+      <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
+      {% endif %}
+      {% else %}
+      <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
+      {% endif %}
       <div class="min-w-0">
-        <table class="cgt-source-table"><tbody>
-          {% if c.library_entry %}
-          <tr>
-            <td class="cgt-source-table__label">{% if _has_diff %}<span class="tag-badge tag-source">Library</span>{% endif %}</td>
-            <td class="cgt-source-table__title fw-medium">{{ _lib_title }}</td>
-          </tr>
-          {% if _has_diff %}
-          <tr>
-            <td class="cgt-source-table__label"><span class="tag-badge tag-source">Sheet</span></td>
-            <td class="cgt-source-table__title cgt-source-table__sheet-title">{{ c.raw_title }}</td>
-          </tr>
-          {% endif %}
+        <div class="d-flex align-items-center gap-2">
+          <span class="fw-medium">{{ _lib_title or c.raw_title }}</span>
+          {% if _lib_release and _lib_release.platform_obj %}
+          <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+          {% elif c.platform %}
+          <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
           {% else %}
-          <tr>
-            <td class="cgt-source-table__label"></td>
-            <td class="cgt-source-table__title fw-medium">{{ c.raw_title }}</td>
-          </tr>
+          <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
           {% endif %}
-        </tbody></table>
-      </div>
-    </div>
-  </td>
-  <td class="align-top">
-    <div class="cgt-detail-block mb-0">
-      <h6 class="cgt-detail-block__heading mb-0">Completions <span class="text-secondary fw-normal">({{ c.rows | length }})</span></h6>
-      <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded mt-2" style="max-height: 140px;">
-        {% for r in c.rows %}
-        <div class="cgt-completion-record cgt-completion-record--new">
-          <dl class="cgt-detail-meta small mb-0">
-            <dt>Date</dt>
-            <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
-            {% if r.playthroughs %}
-            <dt>Clears</dt>
-            <dd>{{ r.playthroughs | float | int }}</dd>
-            {% endif %}
-            {% if r.raw_notes %}
-            <dt>Notes</dt>
-            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
-            {% endif %}
-            {% if r.raw_collection %}
-            <dt>Collection</dt>
-            <dd>{{ r.raw_collection }}</dd>
-            {% endif %}
-          </dl>
         </div>
-        {% endfor %}
+        {% if _has_diff %}
+        <div class="text-secondary small">Sheet: {{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}</div>
+        {% endif %}
       </div>
     </div>
   </td>
-  <td class="align-middle text-nowrap row-actions">
+  <td class="align-middle text-secondary small">
+    {% set _dated = c.rows | selectattr("completed_at") | list %}
+    {{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}
+    {% if _dated %}· latest {{ (_dated | sort(attribute="completed_at") | last) | completion_date }}{% endif %}
+  </td>
+  <td class="align-middle text-end text-nowrap row-actions">
+    {% if c.proposed_action != "add_to_existing" %}
     <div class="cgt-row-actions-links">
       <a href="#" class="cgt-row-actions-links__primary"
          hx-post="/library/import/{{ c.id }}/confirm"
          hx-target="#import-row-{{ c.id }}"
          hx-swap="outerHTML">
-        {% if c.proposed_action == "add_to_existing" %}Confirm{% else %}Add new{% endif %}
+        Add new
       </a>
       <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
       <a href="#"
@@ -105,6 +65,7 @@
         Dismiss
       </a>
     </div>
+    {% endif %}
   </td>
 </tr>
 {% endfor %}
