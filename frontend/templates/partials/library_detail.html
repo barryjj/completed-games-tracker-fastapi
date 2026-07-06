@@ -148,7 +148,20 @@
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
 
-    {% if candidate %}{{ completions_block() }}{% endif %}
+    {% if candidate %}
+    {% set _title_diff = candidate.raw_title and candidate.raw_title.strip().lower() != game.display_title.strip().lower() %}
+    {% set _plat_diff = candidate.raw_platform and release.display_platform and candidate.raw_platform.strip().lower() != release.display_platform.strip().lower() %}
+    {% if _title_diff or _plat_diff %}
+    <div class="alert alert-warning small mb-2">
+      <strong>The matched title differs from the sheet:</strong>
+      <ul class="mb-0 ps-3">
+        {% if _title_diff %}<li>Title: "{{ candidate.raw_title }}" (sheet) vs "{{ game.display_title }}" (library)</li>{% endif %}
+        {% if _plat_diff %}<li>Platform: {{ candidate.raw_platform }} (sheet) vs {{ release.display_platform }} (library)</li>{% endif %}
+      </ul>
+    </div>
+    {% endif %}
+    {{ completions_block() }}
+    {% endif %}
 
     {# Metadata section — same tinted-block treatment as Description/DLC/etc. #}
     <div class="cgt-detail-block mb-2">

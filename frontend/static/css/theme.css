@@ -1332,6 +1332,25 @@ body:has(.cgt-sticky-actions) {
   line-height: 1;
 }
 
+/* Small warning flag — sheet data differs from the matched library entry.
+   Just a flag, not an explanation (no tooltip content beyond "click to see
+   details") — the actual comparison lives in the preview pane's warning
+   banner, opened by clicking the row. */
+.cgt-diff-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  background: var(--ctp-yellow);
+  color: var(--ctp-crust);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
 /* ─── Uniform-width action buttons (integrations pages) ─────────────────── */
 /* All buttons in a justify-content-between row share this width so they
    align to a common right edge regardless of label length. Sized to the

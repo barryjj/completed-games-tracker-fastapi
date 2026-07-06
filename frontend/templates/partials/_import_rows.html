@@ -27,8 +27,11 @@
       {% endif %}
       <span class="fw-medium">{{ _lib_title or c.raw_title }}</span>
       {% if _has_diff %}
-      <span class="tag-badge tag-source"
-            title="Sheet: {{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}">Sheet ≠</span>
+      {# Just a flag that something differs — the actual explanation lives
+         in the preview pane's warning banner, opened by clicking the row,
+         where there's room to lay it out properly instead of cramming it
+         into the row itself. #}
+      <span class="cgt-diff-flag" title="Sheet data differs — click to see details">!</span>
       {% endif %}
     </div>
   </td>
