@@ -64,7 +64,7 @@
             <dt>Date</dt>
             <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
             {% if r.playthroughs %}
-            <dt>Plays</dt>
+            <dt>Clears</dt>
             <dd>{{ r.playthroughs | float | int }}</dd>
             {% endif %}
             {% if r.raw_notes %}

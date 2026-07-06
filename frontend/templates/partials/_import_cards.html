@@ -64,7 +64,7 @@
                 <dt>Date</dt>
                 <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
                 {% if r.playthroughs %}
-                <dt>Plays</dt>
+                <dt>Clears</dt>
                 <dd>{{ r.playthroughs }}</dd>
                 {% endif %}
                 {% if r.raw_notes %}
