@@ -124,7 +124,17 @@
 </div>
 
 <script>
-(function() {
+// Wrapped in DOMContentLoaded rather than an immediately-invoked function:
+// this inline script has no `src`, so `defer` has no effect on it — it runs
+// synchronously as the parser reaches it, which is BEFORE the deferred
+// htmx.org <script src> in base.html has executed. Anything here that calls
+// htmx.* immediately (restoreImportView -> importSetView -> htmx.trigger)
+// threw "htmx is not defined" and killed the rest of this script, including
+// the click-listener registration below — silently breaking "click a row to
+// preview" whenever a saved view preference differed from the server's
+// default render. DOMContentLoaded fires after deferred scripts have run,
+// so htmx is guaranteed to exist by the time any of this executes.
+document.addEventListener('DOMContentLoaded', function() {
 
 // Tab buttons carry their own hx-get/hx-vals/hx-include (see markup above) so
 // htmx handles the actual data fetch — this just gives instant visual
@@ -294,6 +304,6 @@ window.openImportEdit = function(candidateId) {
   onScroll();
 })();
 
-})();
+});
 </script>
 {% endblock %}
