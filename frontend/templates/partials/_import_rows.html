@@ -37,8 +37,12 @@
           <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
           {% endif %}
         </div>
-        {% if _has_diff %}
-        <div class="text-secondary small">Sheet: {{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}</div>
+        {% if _title_diff or _plat_diff %}
+        <div class="small d-flex align-items-center gap-1 flex-wrap">
+          <span class="tag-badge tag-source">Sheet</span>
+          {% if _title_diff %}<span>{{ c.raw_title }}</span>{% endif %}
+          {% if _plat_diff and c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
+        </div>
         {% endif %}
       </div>
     </div>
