@@ -665,11 +665,11 @@ def test_completion_detail_shows_sibling_completions(client, db_session):
     # Viewing c2's detail should list c1 and c3 in "other completions"
     r = client.get(f"/completions/{c2.id}/detail")
     assert r.status_code == 200
-    assert b"Other completions of this game" in r.content
+    assert b"Other completions" in r.content
     assert f"/completions/{c1.id}/detail".encode() in r.content
     assert f"/completions/{c3.id}/detail".encode() in r.content
     # c2 itself shouldn't be in the sibling list (hx-get links in the <ul>)
-    sibling_section = b"Other completions of this game"
+    sibling_section = b"Other completions"
     sibling_start = r.content.find(sibling_section)
     assert sibling_start != -1
     sibling_html = r.content[sibling_start:]
@@ -688,7 +688,7 @@ def test_completion_detail_single_completion_no_others_section(client, db_sessio
     db_session.commit()
 
     r = client.get(f"/completions/{comp.id}/detail")
-    assert b"Other completions of this game" not in r.content
+    assert b"Other completions" not in r.content
 
 
 def test_edit_title_ignored_for_imported_entry(client, db_session):

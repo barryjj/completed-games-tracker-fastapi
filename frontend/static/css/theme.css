@@ -1235,7 +1235,7 @@ body:has(.cgt-sticky-actions) {
   white-space: nowrap;
 }
 .cgt-detail-block__actions a {
-  font-size: 0.7rem;
+  font-size: 0.62rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ctp-subtext);
@@ -1246,7 +1246,7 @@ body:has(.cgt-sticky-actions) {
   text-decoration: underline;
 }
 .cgt-detail-block__actions a + a {
-  margin-left: 0.75rem;
+  margin-left: 1.25rem;
 }
 
 /* Description text inside its block. The heading's own border-bottom now

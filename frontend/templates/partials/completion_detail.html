@@ -240,7 +240,7 @@
     {% set others = sibling_completions | rejectattr("id", "equalto", completion.id) | list %}
     {% if others %}
     <div class="cgt-detail-block mb-3">
-      <h6 class="cgt-detail-block__heading">Other completions of this game <span class="text-secondary fw-normal ms-1">({{ others | length }})</span></h6>
+      <h6 class="cgt-detail-block__heading">Other completions <span class="text-secondary fw-normal ms-1">({{ others | length }})</span></h6>
       <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded" style="max-height: 160px;">
         {% for c in others %}
         <a href="#" class="cgt-completion-record d-block text-decoration-none text-body"
