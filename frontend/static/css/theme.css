@@ -717,23 +717,33 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
   border: 1px solid var(--ctp-surface1);
   border-radius: 4px;
 }
+/* Used when the scroll list holds bordered record boxes (completions)
+   rather than a flush table (DLC list) — gives them breathing room
+   against the outer border instead of touching it directly. */
+.cgt-detail-scroll-list--padded {
+  padding: 6px;
+}
 /* Child DLC rows inside the detail pane: clickable, hover hint. */
 .cgt-detail-child-row { cursor: pointer; }
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
-/* Every completions-table row gets a left-edge accent by default — DLC list
-   rows get their visual anchor from the thumbnail column; completions have
-   no thumbnail (it's just metadata), so without this they read as flatter/
-   plainer than the DLC rows sitting right above them. Pending import rows
-   override to yellow — same meaning as the old left-bordered <li> version,
-   just on a real table row now so multiple rows get proper border
-   separation from Bootstrap's table styles instead of stacking as one
-   visual blob. */
-.cgt-completions-table > tbody > tr > td:first-child {
+/* Each completion is its own bordered record box using the same labeled
+   dt/dl meta style as "This completion" in the completion detail pane,
+   instead of a bare table row — table-row borders read as cramped/wonky
+   packed this tight together. Left-edge accent gives it the same visual
+   weight DLC rows get from their thumbnail column (completions have no
+   thumbnail, it's just metadata). Pending import rows override to yellow. */
+.cgt-completion-record {
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 4px;
+  padding: 6px 10px;
   border-left: 3px solid var(--ctp-surface2);
 }
-.cgt-completions-table > tbody > tr.cgt-import-row-new > td:first-child {
+.cgt-completion-record + .cgt-completion-record {
+  margin-top: 0.5rem;
+}
+.cgt-completion-record--new {
   border-left-color: var(--ctp-yellow);
 }
 

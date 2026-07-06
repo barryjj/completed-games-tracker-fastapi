@@ -96,29 +96,41 @@
       {% set import_count = (import_rows | length) if import_rows else 0 %}
       {% set existing_count = completions | length %}
       <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({% if existing_count %}{{ existing_count }}{% if import_count %} + {% endif %}{% endif %}{% if import_count %}{{ import_count }} importing{% endif %}{% if not existing_count and not import_count %}0{% endif %})</span></h6>
-      <div class="cgt-detail-scroll-list" style="max-height: 160px;">
-        <table class="table table-sm mb-0 cgt-completions-table">
-          <tbody>
-            {% if import_rows %}
-            {% for r in import_rows %}
-            <tr class="cgt-import-row-new">
-              <td>
-                <div>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}{% if r.playthroughs %}<span class="text-secondary ms-2">{{ r.playthroughs }} playthrough{{ 's' if r.playthroughs != '1' }}</span>{% endif %}</div>
-                {% if r.raw_notes %}<div class="cgt-notes small text-secondary mt-1">{{ r.raw_notes | linkify }}</div>{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
+      <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded mt-2" style="max-height: 160px;">
+        {% if import_rows %}
+        {% for r in import_rows %}
+        <div class="cgt-completion-record cgt-completion-record--new">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Date</dt>
+            <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
+            {% if r.playthroughs %}
+            <dt>Plays</dt>
+            <dd>{{ r.playthroughs }}</dd>
             {% endif %}
-            {% for c in completions %}
-            <tr>
-              <td>
-                <div>{{ c | completion_date }}{% if c.playthroughs %}<span class="text-secondary ms-2">{{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</span>{% endif %}</div>
-                {% if c.notes %}<div class="cgt-notes small text-secondary mt-1">{{ c.notes | linkify }}</div>{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+            {% if r.raw_notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% for c in completions %}
+        <div class="cgt-completion-record">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Date</dt>
+            <dd>{{ c | completion_date }}</dd>
+            {% if c.playthroughs %}
+            <dt>Plays</dt>
+            <dd>{{ c.playthroughs }}</dd>
+            {% endif %}
+            {% if c.notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ c.notes | linkify }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+        {% endfor %}
       </div>
     </div>
     {% endif %}
