@@ -714,13 +714,19 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
 
-/* Marks a completions-table row as a pending import row (not yet
-   confirmed) — same yellow-accent meaning as the old left-bordered <li>
-   version, just on a real table row now so multiple rows get proper
-   border separation from Bootstrap's table styles instead of stacking
-   as one visual blob. */
-.cgt-import-row-new > td:first-child {
-  border-left: 2px solid var(--ctp-yellow);
+/* Every completions-table row gets a left-edge accent by default — DLC list
+   rows get their visual anchor from the thumbnail column; completions have
+   no thumbnail (it's just metadata), so without this they read as flatter/
+   plainer than the DLC rows sitting right above them. Pending import rows
+   override to yellow — same meaning as the old left-bordered <li> version,
+   just on a real table row now so multiple rows get proper border
+   separation from Bootstrap's table styles instead of stacking as one
+   visual blob. */
+.cgt-completions-table > tbody > tr > td:first-child {
+  border-left: 3px solid var(--ctp-surface2);
+}
+.cgt-completions-table > tbody > tr.cgt-import-row-new > td:first-child {
+  border-left-color: var(--ctp-yellow);
 }
 
 /* "This completion" is the one the pane's +1/Edit actions actually operate

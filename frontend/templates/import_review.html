@@ -130,7 +130,9 @@
 // htmx handles the actual data fetch — this just gives instant visual
 // feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
 // a subsequent search/platform/year/sort change stays scoped correctly.
-// Card view only exists for "Add to existing" — switching away forces list.
+// Card view only exists for "Add to existing" — switching away forces list,
+// switching back restores whatever view was saved (was previously left
+// stuck on "list" with the toggle showing "card" as active — mismatched).
 window.importSwitchTab = function(button, tab) {
   document.querySelectorAll('#import-tabs button').forEach(function(b) {
     b.classList.toggle('active', b === button);
@@ -139,9 +141,15 @@ window.importSwitchTab = function(button, tab) {
   if (hiddenTab) hiddenTab.value = tab;
   var toggle = document.getElementById('import-view-toggle');
   if (toggle) toggle.hidden = tab !== 'add_to_existing';
+  var hiddenView = document.getElementById('import-view-field');
   if (tab !== 'add_to_existing') {
-    var hiddenView = document.getElementById('import-view-field');
     if (hiddenView) hiddenView.value = 'list';
+  } else if (hiddenView) {
+    var saved = localStorage.getItem(IMPORT_VIEW_KEY) || 'list';
+    hiddenView.value = saved;
+    document.querySelectorAll('#import-view-toggle button').forEach(function(b, i) {
+      b.classList.toggle('active', (i === 0 && saved === 'list') || (i === 1 && saved === 'card'));
+    });
   }
 };
 

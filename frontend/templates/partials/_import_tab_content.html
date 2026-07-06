@@ -7,15 +7,17 @@
 {# Counter instead of per-card dots — dots don't scale to hundreds of
    candidates, and had to be fully rebuilt from the DOM on every load-more
    append (a fragile sync point). data-total is the full filtered-tab count
-   from the server, read once here; it doesn't change as more cards load. #}
+   from the server, read once here; it doesn't change as more cards load.
+   Load-more lives INSIDE this fixed bar (not as a separate in-flow element
+   below it) — it used to sit in normal document flow after this bar, which
+   is position:fixed, so the button ended up floating disconnected mid-page
+   depending on scroll position instead of reading as part of the nav. #}
 <div class="cgt-match-nav cgt-match-nav--sticky" id="import-nav" data-total="{{ tab_total }}">
   <button class="cgt-match-nav__btn" onclick="importCardNav(-1)">&#8249;</button>
   <span class="cgt-match-nav__counter" id="import-nav-counter"></span>
   <button class="cgt-match-nav__btn" onclick="importCardNav(1)">&#8250;</button>
-</div>
-<div id="import-card-load-more">
-  {% if has_more %}
-  <div class="text-center mt-2">
+  <div id="import-card-load-more" class="ms-2">
+    {% if has_more %}
     <button class="btn btn-sm btn-surface"
             hx-get="/library/import/review?tab={{ tab }}&view=card&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
             hx-target="#import-card-load-more"
@@ -23,8 +25,8 @@
             hx-on::after-request="importRebuildNav()">
       Load more
     </button>
+    {% endif %}
   </div>
-  {% endif %}
 </div>
 {% else %}
 <div class="table-responsive">

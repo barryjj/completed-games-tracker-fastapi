@@ -83,6 +83,47 @@
   </div>
 {% endif %}
 
+  {# Completions block factored into a macro so it can render in two
+     different positions: right after the badges row when this is an
+     import-candidate preview (candidate is set) — the whole point of that
+     view is reviewing what's being imported, so it shouldn't be buried
+     below Description/DLC like it is for a normal library-entry view —
+     or in its original bottom position otherwise (plain library detail,
+     match review reuse, etc., which are unaffected). #}
+  {% macro completions_block() %}
+    {% if import_rows or completions %}
+    <div class="cgt-detail-block mb-3">
+      {% set import_count = (import_rows | length) if import_rows else 0 %}
+      {% set existing_count = completions | length %}
+      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({% if existing_count %}{{ existing_count }}{% if import_count %} + {% endif %}{% endif %}{% if import_count %}{{ import_count }} importing{% endif %}{% if not existing_count and not import_count %}0{% endif %})</span></h6>
+      <div class="cgt-detail-scroll-list" style="max-height: 160px;">
+        <table class="table table-sm mb-0 cgt-completions-table">
+          <tbody>
+            {% if import_rows %}
+            {% for r in import_rows %}
+            <tr class="cgt-import-row-new">
+              <td>
+                <div>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}{% if r.playthroughs %}<span class="text-secondary ms-2">{{ r.playthroughs }} playthrough{{ 's' if r.playthroughs != '1' }}</span>{% endif %}</div>
+                {% if r.raw_notes %}<div class="cgt-notes small text-secondary mt-1">{{ r.raw_notes | linkify }}</div>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+            {% endif %}
+            {% for c in completions %}
+            <tr>
+              <td>
+                <div>{{ c | completion_date }}{% if c.playthroughs %}<span class="text-secondary ms-2">{{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</span>{% endif %}</div>
+                {% if c.notes %}<div class="cgt-notes small text-secondary mt-1">{{ c.notes | linkify }}</div>{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+  {% endmacro %}
+
   {# Content padding — pushes everything below the hero in from the edges.
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
   <div class="cgt-detail-body">
@@ -94,6 +135,8 @@
       {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
+
+    {% if candidate %}{{ completions_block() }}{% endif %}
 
     {# Metadata section — same tinted-block treatment as Description/DLC/etc. #}
     <div class="cgt-detail-block mb-2">
@@ -271,37 +314,7 @@
     </div>
     {% endif %}
 
-    {% if import_rows or completions %}
-    <div class="cgt-detail-block mb-3">
-      {% set import_count = (import_rows | length) if import_rows else 0 %}
-      {% set existing_count = completions | length %}
-      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({% if existing_count %}{{ existing_count }}{% if import_count %} + {% endif %}{% endif %}{% if import_count %}{{ import_count }} importing{% endif %}{% if not existing_count and not import_count %}0{% endif %})</span></h6>
-      <div class="cgt-detail-scroll-list" style="max-height: 160px;">
-        <table class="table table-sm mb-0">
-          <tbody>
-            {% if import_rows %}
-            {% for r in import_rows %}
-            <tr class="cgt-import-row-new">
-              <td>
-                <div>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}{% if r.playthroughs %}<span class="text-secondary ms-2">{{ r.playthroughs }} playthrough{{ 's' if r.playthroughs != '1' }}</span>{% endif %}</div>
-                {% if r.raw_notes %}<div class="cgt-notes small text-secondary mt-1">{{ r.raw_notes | linkify }}</div>{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-            {% endif %}
-            {% for c in completions %}
-            <tr>
-              <td>
-                <div>{{ c | completion_date }}{% if c.playthroughs %}<span class="text-secondary ms-2">{{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</span>{% endif %}</div>
-                {% if c.notes %}<div class="cgt-notes small text-secondary mt-1">{{ c.notes | linkify }}</div>{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
+    {% if not candidate %}{{ completions_block() }}{% endif %}
 
     {# Actions footer was here — moved OUT of .offcanvas-body so it pins to
        the bottom of the pane as a sibling, always visible regardless of

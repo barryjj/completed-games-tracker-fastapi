@@ -58,7 +58,7 @@
           {% set import_count = c.rows | length %}
           <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
           <div class="cgt-detail-scroll-list" style="max-height: 160px;">
-            <table class="table table-sm mb-0">
+            <table class="table table-sm mb-0 cgt-completions-table">
               <tbody>
                 {% for r in c.rows %}
                 <tr class="cgt-import-row-new">
