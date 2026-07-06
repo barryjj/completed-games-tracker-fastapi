@@ -74,13 +74,30 @@
     </div>
 
     <div class="cgt-detail-block cgt-detail-block--active mb-2">
-      <h6 class="cgt-detail-block__heading">This completion</h6>
-      <dl class="cgt-detail-meta small mb-2">
+      <div class="cgt-detail-block__heading-row">
+        <h6 class="cgt-detail-block__heading">This completion</h6>
+        <div class="cgt-detail-block__actions">
+          <a href="#"
+             hx-post="/completions/{{ completion.id }}/increment"
+             hx-vals='{"view_mode": "list"}'
+             hx-swap="none"
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">+1 Clear</a>
+          <a href="#"
+             onclick="closeCompletionDetailAndEdit(this.dataset); return false;"
+             data-completion-id="{{ completion.id }}"
+             data-entry-id="{{ entry.id }}"
+             data-label="{{ (game.display_title ~ ' (' ~ release.display_platform ~ ')') | e }}"
+             data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
+             data-playthroughs="{{ (completion.playthroughs or '') | e }}"
+             data-notes="{{ (completion.notes or '') | e }}">Edit</a>
+        </div>
+      </div>
+      <dl class="cgt-detail-meta small mb-0">
         <dt>Completed</dt>
         <dd>{{ completion | completion_date }}</dd>
 
         {% if completion.playthroughs %}
-        <dt>Playthroughs</dt>
+        <dt>Clears</dt>
         <dd>{{ completion.playthroughs }}</dd>
         {% endif %}
 
@@ -89,22 +106,6 @@
         <dd class="cgt-notes">{{ completion.notes | linkify }}</dd>
         {% endif %}
       </dl>
-      <div class="d-flex gap-2">
-        <button class="btn btn-surface btn-sm"
-                hx-post="/completions/{{ completion.id }}/increment"
-                hx-vals='{"view_mode": "list"}'
-                hx-swap="none"
-                hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
-                title="+1 playthrough">+1 playthrough</button>
-        <button class="btn btn-surface btn-sm" href="#"
-                onclick="closeCompletionDetailAndEdit(this.dataset); return false;"
-                data-completion-id="{{ completion.id }}"
-                data-entry-id="{{ entry.id }}"
-                data-label="{{ (game.display_title ~ ' (' ~ release.display_platform ~ ')') | e }}"
-                data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
-                data-playthroughs="{{ (completion.playthroughs or '') | e }}"
-                data-notes="{{ (completion.notes or '') | e }}">Edit</button>
-      </div>
     </div>
 
     <div class="cgt-detail-block mb-2">
@@ -240,19 +241,23 @@
     {% if others %}
     <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Other completions of this game <span class="text-secondary fw-normal ms-1">({{ others | length }})</span></h6>
-      <ul class="list-unstyled mb-0">
+      <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded" style="max-height: 160px;">
         {% for c in others %}
-        <li>
-          <a href="#" class="cgt-detail-list-row"
-             hx-get="/completions/{{ c.id }}/detail"
-             hx-target="#completion-detail-content"
-             hx-swap="innerHTML">
-            {{ c | completion_date }}
-            {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
-          </a>
-        </li>
+        <a href="#" class="cgt-completion-record d-block text-decoration-none text-body"
+           hx-get="/completions/{{ c.id }}/detail"
+           hx-target="#completion-detail-content"
+           hx-swap="innerHTML">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Date</dt>
+            <dd>{{ c | completion_date }}</dd>
+            {% if c.playthroughs %}
+            <dt>Clears</dt>
+            <dd>{{ c.playthroughs }}</dd>
+            {% endif %}
+          </dl>
+        </a>
         {% endfor %}
-      </ul>
+      </div>
     </div>
     {% endif %}
 
@@ -264,13 +269,9 @@
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
   <a class="btn btn-surface btn-sm"
      href="/library?detail={{ entry.id }}">View in library ↗</a>
-  <button class="btn btn-surface btn-sm"
-          hx-post="/completions/{{ completion.id }}/increment"
-          hx-vals='{"view_mode": "list"}'
-          hx-swap="none"
-          hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
-          title="+1 playthrough">+1 playthrough</button>
 
+  {# +1/Edit for this completion now live as small links in "This
+     completion"'s own header — this footer no longer duplicates them. #}
   <div class="dropdown ms-auto">
     <button class="btn btn-surface btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
