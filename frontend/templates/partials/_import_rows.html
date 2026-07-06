@@ -1,14 +1,13 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
-  {# Compact row: thumb + title/badge, a one-line completion summary, and
-     (only for tabs with no click-to-preview pane) actions. Previously each
-     row tried to show the full Library/Sheet comparison, every completion
-     as its own bordered box, and three actions — all inline, repeated for
-     however many hundreds of rows exist. That's fine for card view (one
-     candidate on screen at a time) but not for a scanning list. Full
-     detail (all completions, Confirm/Edit/Dismiss) now lives in the
-     preview pane opened by clicking the row. #}
+  {# Every row is exactly one line — thumb, title, a small "≠" marker only
+     when the sheet's title/platform differ from the match (full comparison
+     is one click away in the preview pane's Library/Sheet table). Platform
+     is its own real table column, same as Completions/thumbnail, so it
+     lines up identically across every row regardless of title length —
+     previously it lived inline after a variable-length title (or a second
+     wrapped line for diff rows), which is why nothing aligned. #}
   <td class="align-middle">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
     {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
@@ -26,35 +25,21 @@
       {% else %}
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}
-      <div class="min-w-0">
-        <div class="d-flex align-items-center gap-2">
-          <span class="fw-medium">{{ _lib_title or c.raw_title }}</span>
-          {% if _lib_release and _lib_release.platform_obj %}
-          <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-          {% elif c.platform %}
-          <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-          {% else %}
-          <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-          {% endif %}
-        </div>
-        {% if _title_diff or _plat_diff %}
-        {# Paired Library/Sheet lines — showing only the Sheet side lost the
-           point of this comparison. Seeing both side by side (even when
-           only the platform badge differs and titles repeat) is what makes
-           it obvious at a glance what actually changed. #}
-        <div class="small d-flex align-items-center gap-1 flex-wrap">
-          <span class="tag-badge tag-source">Library</span>
-          {% if _title_diff %}<span>{{ _lib_title }}</span>{% endif %}
-          {% if _lib_release and _lib_release.platform_obj %}<span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>{% endif %}
-        </div>
-        <div class="small d-flex align-items-center gap-1 flex-wrap">
-          <span class="tag-badge tag-source">Sheet</span>
-          {% if _title_diff %}<span>{{ c.raw_title }}</span>{% endif %}
-          {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
-        </div>
-        {% endif %}
-      </div>
+      <span class="fw-medium">{{ _lib_title or c.raw_title }}</span>
+      {% if _has_diff %}
+      <span class="tag-badge tag-source"
+            title="Sheet: {{ c.raw_title }}{% if c.raw_platform %} · {{ c.raw_platform }}{% endif %}">Sheet ≠</span>
+      {% endif %}
     </div>
+  </td>
+  <td class="align-middle text-nowrap">
+    {% if _lib_release and _lib_release.platform_obj %}
+    <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+    {% elif c.platform %}
+    <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
+    {% else %}
+    <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+    {% endif %}
   </td>
   <td class="align-middle text-secondary small">
     {% set _dated = c.rows | selectattr("completed_at") | list %}
@@ -88,6 +73,6 @@
     hx-trigger="revealed"
     hx-target="#import-load-more"
     hx-swap="outerHTML">
-  <td colspan="3" class="text-center text-secondary small py-2">Loading more…</td>
+  <td colspan="4" class="text-center text-secondary small py-2">Loading more…</td>
 </tr>
 {% endif %}
