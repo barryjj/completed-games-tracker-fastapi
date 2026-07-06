@@ -401,15 +401,17 @@ html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !impor
   border-left-color: var(--ctp-yellow);
 }
 /* Peach — "differs from sheet / imperfect match", distinct from yellow's
-   established "new/pending import" meaning elsewhere. */
+   established "new/pending import" meaning elsewhere. Plain mantle
+   background (no color-mix tint like the other alert variants) — peach
+   tinted into a dark background read muddy/off, not a clean accent. */
 .alert-peach {
-  background-color: color-mix(in srgb, var(--ctp-peach) 12%, var(--ctp-mantle));
+  background-color: var(--ctp-mantle);
   border-left-color: var(--ctp-peach);
 }
 html[data-bs-theme="light"] .alert-success { background-color: color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base)); }
 html[data-bs-theme="light"] .alert-danger  { background-color: color-mix(in srgb, var(--ctp-red)   18%, var(--ctp-base)); }
 html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb, var(--ctp-yellow) 18%, var(--ctp-base)); }
-html[data-bs-theme="light"] .alert-peach   { background-color: color-mix(in srgb, var(--ctp-peach)  18%, var(--ctp-base)); }
+html[data-bs-theme="light"] .alert-peach   { background-color: var(--ctp-base); }
 
 /* Import-vs-library comparison table inside the "Imperfect match" alert. */
 .cgt-match-warning-table {
@@ -432,7 +434,10 @@ html[data-bs-theme="light"] .alert-peach   { background-color: color-mix(in srgb
 }
 .cgt-match-warning-table th:first-child,
 .cgt-match-warning-table td:first-child {
-  padding-left: 0;
+  /* No padding-left override here anymore — zeroing it out made "Platform"
+     flush against the alert's border while the paragraph text above kept
+     the alert's own padding, so the two didn't line up. Uniform 8px on
+     every column (inherited from the base th/td rules) matches it. */
   color: var(--ctp-subtext);
 }
 

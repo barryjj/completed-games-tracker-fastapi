@@ -156,8 +156,13 @@
     {% if _plat_diff %}{% set _ = _reasons.append("the platforms didn't match") %}{% endif %}
     {% if _title_diff %}{% set _ = _reasons.append("the title wasn't an exact match") %}{% endif %}
     <div class="alert alert-peach small mb-2">
-      <strong>Imperfect match.</strong>
-      This wasn't an exact match, but looks like the right game — it differs from your imported data because {{ _reasons | join(" and ") }}.
+      {# ps-2 matches the table's own first-column padding below, so the
+         paragraph text and "Platform"/"Title" actually share the same
+         left edge instead of approximately lining up by coincidence. #}
+      <p class="ps-2 mb-0">
+        <strong>Imperfect match.</strong>
+        This wasn't an exact match, but looks like the right game — it differs from your imported data because {{ _reasons | join(" and ") }}.
+      </p>
       <table class="cgt-match-warning-table mt-2">
         <thead><tr><th></th><th>Import</th><th>Library</th></tr></thead>
         <tbody>
