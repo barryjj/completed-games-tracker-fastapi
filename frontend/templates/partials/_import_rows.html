@@ -1,7 +1,11 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
-  <td class="align-top">
+  {# Vertically centered (not align-top like the other cells) — the title
+     column is sparse (thumb + title + maybe one badge) next to a visually
+     dense multi-record Completions column, so it read as pinned to the
+     top with dead space below rather than balanced against the row. #}
+  <td class="align-middle">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
     {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
     <div class="d-flex align-items-center gap-2">

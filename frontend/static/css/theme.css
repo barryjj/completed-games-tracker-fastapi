@@ -718,10 +718,14 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
   border-radius: 4px;
 }
 /* Used when the scroll list holds bordered record boxes (completions)
-   rather than a flush table (DLC list) — gives them breathing room
-   against the outer border instead of touching it directly. */
+   rather than a flush table (DLC list). Each record already has its own
+   border/accent, so an outer container border on top of that just adds
+   another competing line right next to the heading's own border-bottom —
+   drop it here and keep only the max-height/scroll behavior. */
 .cgt-detail-scroll-list--padded {
   padding: 6px;
+  border: none;
+  border-radius: 0;
 }
 /* Child DLC rows inside the detail pane: clickable, hover hint. */
 .cgt-detail-child-row { cursor: pointer; }
