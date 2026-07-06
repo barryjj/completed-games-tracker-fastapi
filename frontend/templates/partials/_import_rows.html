@@ -74,22 +74,24 @@
       </div>
     </div>
   </td>
-  <td class="text-end text-nowrap row-actions">
-    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
-    <button class="btn btn-primary btn-sm"
-            hx-post="/library/import/{{ c.id }}/confirm"
-            hx-target="#import-row-{{ c.id }}"
-            hx-swap="outerHTML"
-            hx-disabled-elt="this">
-      {% if c.proposed_action == "add_to_existing" %}Confirm{% else %}Add new{% endif %}
-    </button>
-    <button class="btn btn-surface btn-sm"
-            hx-post="/library/import/{{ c.id }}/dismiss"
-            hx-target="#import-row-{{ c.id }}"
-            hx-swap="outerHTML"
-            hx-disabled-elt="this">
-      Dismiss
-    </button>
+  <td class="align-top text-nowrap row-actions">
+    <div class="d-flex flex-column gap-1">
+      <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
+      <button class="btn btn-primary btn-sm"
+              hx-post="/library/import/{{ c.id }}/confirm"
+              hx-target="#import-row-{{ c.id }}"
+              hx-swap="outerHTML"
+              hx-disabled-elt="this">
+        {% if c.proposed_action == "add_to_existing" %}Confirm{% else %}Add new{% endif %}
+      </button>
+      <button class="btn btn-surface btn-sm"
+              hx-post="/library/import/{{ c.id }}/dismiss"
+              hx-target="#import-row-{{ c.id }}"
+              hx-swap="outerHTML"
+              hx-disabled-elt="this">
+        Dismiss
+      </button>
+    </div>
   </td>
 </tr>
 {% endfor %}
