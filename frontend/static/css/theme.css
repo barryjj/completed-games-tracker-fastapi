@@ -382,7 +382,8 @@ html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !impor
    --ctp-text for readability in both themes. */
 .alert-success,
 .alert-danger,
-.alert-warning {
+.alert-warning,
+.alert-peach {
   color: var(--ctp-text);
   border: 1px solid var(--ctp-surface1);
   border-left-width: 4px;
@@ -399,9 +400,41 @@ html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !impor
   background-color: color-mix(in srgb, var(--ctp-yellow) 12%, var(--ctp-mantle));
   border-left-color: var(--ctp-yellow);
 }
+/* Peach — "differs from sheet / imperfect match", distinct from yellow's
+   established "new/pending import" meaning elsewhere. */
+.alert-peach {
+  background-color: color-mix(in srgb, var(--ctp-peach) 12%, var(--ctp-mantle));
+  border-left-color: var(--ctp-peach);
+}
 html[data-bs-theme="light"] .alert-success { background-color: color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base)); }
 html[data-bs-theme="light"] .alert-danger  { background-color: color-mix(in srgb, var(--ctp-red)   18%, var(--ctp-base)); }
 html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb, var(--ctp-yellow) 18%, var(--ctp-base)); }
+html[data-bs-theme="light"] .alert-peach   { background-color: color-mix(in srgb, var(--ctp-peach)  18%, var(--ctp-base)); }
+
+/* Import-vs-library comparison table inside the "Imperfect match" alert. */
+.cgt-match-warning-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.cgt-match-warning-table th {
+  text-align: left;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-subtext);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+.cgt-match-warning-table td {
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+.cgt-match-warning-table th:first-child,
+.cgt-match-warning-table td:first-child {
+  padding-left: 0;
+  color: var(--ctp-subtext);
+}
 
 /* ─── Tags / Badges ──────────────────────────────────────────────────────── */
 .tag-badge {
@@ -1361,15 +1394,6 @@ body:has(.cgt-sticky-actions) {
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
-}
-/* Banner in the preview pane listing what differs from the sheet. Same
-   .cgt-detail-block box every other section in this pane uses (plain
-   mantle background, no special tint) with a peach left-border, exactly
-   the same modifier pattern as .cgt-detail-block--active (mauve) — a
-   standalone alert-style color-tinted box didn't fit the rest of the
-   pane's visual language. */
-.cgt-detail-block--diff {
-  border-left: 3px solid var(--ctp-peach);
 }
 
 /* ─── Uniform-width action buttons (integrations pages) ─────────────────── */

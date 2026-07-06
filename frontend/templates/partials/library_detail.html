@@ -152,18 +152,19 @@
 
     {% if candidate %}
     {% if _title_diff or _plat_diff %}
-    <div class="cgt-detail-block cgt-detail-block--diff mb-2">
-      <h6 class="cgt-detail-block__heading">Differs from sheet</h6>
-      <dl class="cgt-detail-meta small mb-0">
-        {% if _title_diff %}
-        <dt>Title</dt>
-        <dd>{{ candidate.raw_title }} <span class="text-secondary">(sheet)</span></dd>
-        {% endif %}
-        {% if _plat_diff %}
-        <dt>Platform</dt>
-        <dd>{{ candidate.raw_platform }} <span class="text-secondary">(sheet)</span></dd>
-        {% endif %}
-      </dl>
+    {% set _reasons = [] %}
+    {% if _plat_diff %}{% set _ = _reasons.append("the platforms didn't match") %}{% endif %}
+    {% if _title_diff %}{% set _ = _reasons.append("the title wasn't an exact match") %}{% endif %}
+    <div class="alert alert-peach small mb-2">
+      <strong>Imperfect match.</strong>
+      This wasn't an exact match, but looks like the right game — it differs from your imported data because {{ _reasons | join(" and ") }}.
+      <table class="cgt-match-warning-table mt-2">
+        <thead><tr><th></th><th>Import</th><th>Library</th></tr></thead>
+        <tbody>
+          {% if _plat_diff %}<tr><td>Platform</td><td>{{ candidate.raw_platform }}</td><td>{{ release.display_platform }}</td></tr>{% endif %}
+          {% if _title_diff %}<tr><td>Title</td><td>{{ candidate.raw_title }}</td><td>{{ game.display_title }}</td></tr>{% endif %}
+        </tbody>
+      </table>
     </div>
     {% endif %}
     {{ completions_block() }}
