@@ -144,7 +144,6 @@
     {# Badges row: platform + flags. #}
     <div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
       <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
-      {% if _plat_diff %}<span class="cgt-diff-marker" title="Sheet said: {{ candidate.raw_platform }}"></span>{% endif %}
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
       {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
@@ -153,12 +152,18 @@
 
     {% if candidate %}
     {% if _title_diff or _plat_diff %}
-    <div class="cgt-diff-alert small mb-2">
-      <strong>The matched title differs from the sheet:</strong>
-      <ul class="mb-0 ps-3">
-        {% if _title_diff %}<li>Title: "{{ candidate.raw_title }}" (sheet) vs "{{ game.display_title }}" (library)</li>{% endif %}
-        {% if _plat_diff %}<li>Platform: {{ candidate.raw_platform }} (sheet) vs {{ release.display_platform }} (library)</li>{% endif %}
-      </ul>
+    <div class="cgt-detail-block cgt-detail-block--diff mb-2">
+      <h6 class="cgt-detail-block__heading">Differs from sheet</h6>
+      <dl class="cgt-detail-meta small mb-0">
+        {% if _title_diff %}
+        <dt>Title</dt>
+        <dd>{{ candidate.raw_title }} <span class="text-secondary">(sheet)</span></dd>
+        {% endif %}
+        {% if _plat_diff %}
+        <dt>Platform</dt>
+        <dd>{{ candidate.raw_platform }} <span class="text-secondary">(sheet)</span></dd>
+        {% endif %}
+      </dl>
     </div>
     {% endif %}
     {{ completions_block() }}
@@ -168,10 +173,7 @@
     <div class="cgt-detail-block mb-2">
     <dl class="cgt-detail-meta small mb-0">
       <dt>Title</dt>
-      <dd class="cgt-detail-title-value">
-        {{ game.display_title }}
-        {% if candidate and _title_diff %}<span class="cgt-diff-marker" title="Sheet said: {{ candidate.raw_title }}"></span>{% endif %}
-      </dd>
+      <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
 
       {# Parent relationship row. Label is contextual:
            DLC entry        → "DLC for"

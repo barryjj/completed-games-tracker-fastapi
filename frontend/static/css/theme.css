@@ -1362,29 +1362,14 @@ body:has(.cgt-sticky-actions) {
   line-height: 1;
   flex-shrink: 0;
 }
-/* Inline marker next to a specific field whose sheet value differs — pairs
-   with .cgt-diff-flag (same peach) and the pane's .cgt-diff-alert banner,
-   so all three "this differs" signals read as the same thing. */
-.cgt-diff-marker {
-  display: inline-block;
-  width: 0.5em;
-  height: 0.5em;
-  border-radius: 50%;
-  background: var(--ctp-peach);
-  flex-shrink: 0;
-}
-/* Warning banner in the preview pane listing what differs — same peach
-   accent as the row flag/field markers, not yellow (which already means
-   "new/pending" on the completions immediately below this banner). */
-.cgt-diff-alert {
-  background-color: color-mix(in srgb, var(--ctp-peach) 12%, var(--ctp-mantle));
-  border: 1px solid var(--ctp-surface0);
+/* Banner in the preview pane listing what differs from the sheet. Same
+   .cgt-detail-block box every other section in this pane uses (plain
+   mantle background, no special tint) with a peach left-border, exactly
+   the same modifier pattern as .cgt-detail-block--active (mauve) — a
+   standalone alert-style color-tinted box didn't fit the rest of the
+   pane's visual language. */
+.cgt-detail-block--diff {
   border-left: 3px solid var(--ctp-peach);
-  border-radius: 6px;
-  padding: 9px 12px;
-}
-html[data-bs-theme="light"] .cgt-diff-alert {
-  background-color: color-mix(in srgb, var(--ctp-peach) 18%, var(--ctp-base));
 }
 
 /* ─── Uniform-width action buttons (integrations pages) ─────────────────── */
