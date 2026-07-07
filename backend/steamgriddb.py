@@ -389,3 +389,66 @@ def bulk_fill_missing(
 
     db.commit()
     return {"filled": filled, "no_candidate": no_candidate, "skipped": skipped, "errored": errored}
+
+
+def fill_import_candidate_thumbnails(
+    db: Session,
+    user: models.User,
+    progress_callback=None,
+) -> dict:
+    """Background pass over pending create_new/needs_review import candidates:
+    look up each one's raw_title on SGDB and cache the top horizontal grid
+    result as a placeholder thumbnail for the review list.
+
+    These candidates have no Game/GameRelease/UserLibraryEntry yet (that only
+    happens on confirm), so there's nothing to look up by appid or existing
+    art — just a raw title guess, good enough for "here's roughly what this
+    game looks like" while reviewing, not a canonical match.
+
+    Returns: {"filled": N, "no_candidate": N, "errored": N}
+    """
+    if not user.steamgriddb_api_key:
+        raise ValueError("User has no SteamGridDB API key set.")
+
+    api_key = user.steamgriddb_api_key
+    candidates = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.user_id == user.id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action.in_(["create_new", "needs_review"]),
+            models.ImportCandidate.thumbnail_url.is_(None),
+        )
+        .all()
+    )
+    total = len(candidates)
+    filled = 0
+    no_candidate = 0
+    errored = 0
+
+    for i, candidate in enumerate(candidates):
+        if progress_callback:
+            progress_callback(i, total, candidate.raw_title)
+        if re.match(r"^App \d+$", candidate.raw_title or ""):
+            no_candidate += 1
+            continue
+        try:
+            results = search_games(api_key, candidate.raw_title)
+            sgdb_game = results[0] if results else None
+            if not sgdb_game:
+                no_candidate += 1
+                continue
+            grids = get_grids_for_game(api_key, sgdb_game["id"], orientation="h")
+            url = grids[0].get("url") if grids else None
+            if not url:
+                no_candidate += 1
+                continue
+            candidate.thumbnail_url = url
+            filled += 1
+        except Exception as e:
+            logger.warning("SGDB thumbnail fetch failed for import candidate %s: %s", candidate.id, e)
+            errored += 1
+            continue
+
+    db.commit()
+    return {"filled": filled, "no_candidate": no_candidate, "errored": errored}

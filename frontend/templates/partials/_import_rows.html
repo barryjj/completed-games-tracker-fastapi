@@ -17,11 +17,11 @@
     <div class="d-flex align-items-center gap-2">
       {% if c.library_entry %}
       {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
+      {% else %}
+      {% set _thumb = c.thumbnail_url %}
+      {% endif %}
       {% if _thumb %}
       <img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy">
-      {% else %}
-      <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
-      {% endif %}
       {% else %}
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}

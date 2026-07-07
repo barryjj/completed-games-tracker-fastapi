@@ -630,6 +630,10 @@ class ImportCandidate(Base):
     library_entry_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="SET NULL"), nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
     proposed_action: Mapped[str] = mapped_column(String, nullable=False, default="needs_review")
+    # SGDB grid URL fetched by raw_title for create_new/needs_review candidates
+    # (no library_entry to auto-fetch art for yet) — background job populates
+    # this after import finishes so the review list isn't all blank thumbnails.
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

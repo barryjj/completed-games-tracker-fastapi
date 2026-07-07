@@ -1535,3 +1535,91 @@ def test_sgdb_fill_missing_endpoint_requires_api_key(client, db_session):
     r = client.post("/integrations/steamgriddb/fill-missing", data={"image_type": "v"})
     assert r.status_code == 422
     assert "API key" in r.text
+
+
+def test_fill_import_candidate_thumbnails_applies_top_result(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    candidate = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Castlevania 3",
+        raw_platform="NES",
+        status="pending",
+        proposed_action="create_new",
+    )
+    db_session.add(candidate)
+    db_session.commit()
+
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [{"id": 555, "name": "Castlevania III"}])
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, orientation, page=0: [{"url": "https://sgdb/top.png"}])
+
+    result = steamgriddb.fill_import_candidate_thumbnails(db_session, user)
+    assert result == {"filled": 1, "no_candidate": 0, "errored": 0}
+    db_session.refresh(candidate)
+    assert candidate.thumbnail_url == "https://sgdb/top.png"
+
+
+def test_fill_import_candidate_thumbnails_skips_already_filled_and_confirmed(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    already_filled = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Already filled",
+        raw_platform="NES",
+        status="pending",
+        proposed_action="create_new",
+        thumbnail_url="https://sgdb/existing.png",
+    )
+    confirmed = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Confirmed entry",
+        raw_platform="NES",
+        status="confirmed",
+        proposed_action="create_new",
+    )
+    matched = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Already matched",
+        raw_platform="NES",
+        status="pending",
+        proposed_action="add_to_existing",
+    )
+    db_session.add_all([already_filled, confirmed, matched])
+    db_session.commit()
+
+    calls = []
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: calls.append(q) or [])
+
+    result = steamgriddb.fill_import_candidate_thumbnails(db_session, user)
+    assert result == {"filled": 0, "no_candidate": 0, "errored": 0}
+    assert calls == []
+
+
+def test_fill_import_candidate_thumbnails_counts_no_candidate(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    candidate = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Totally Obscure Game",
+        raw_platform="NES",
+        status="pending",
+        proposed_action="needs_review",
+    )
+    db_session.add(candidate)
+    db_session.commit()
+
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [])
+
+    result = steamgriddb.fill_import_candidate_thumbnails(db_session, user)
+    assert result == {"filled": 0, "no_candidate": 1, "errored": 0}
+    db_session.refresh(candidate)
+    assert candidate.thumbnail_url is None

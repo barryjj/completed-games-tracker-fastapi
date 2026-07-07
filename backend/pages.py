@@ -14,6 +14,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import importer, jobs, match_review, models, users
+from . import steamgriddb as sgdb
 from .models import get_db
 
 logger = logging.getLogger(__name__)
@@ -2571,6 +2572,33 @@ async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
     finally:
         db.close()
 
+    user = models.SessionLocal()
+    try:
+        current_user = user.query(models.User).filter(models.User.id == user_id).first()
+        if current_user and current_user.steamgriddb_api_key:
+            asyncio.create_task(_run_import_thumbnails_job(user_id))
+    finally:
+        user.close()
+
+
+async def _run_import_thumbnails_job(user_id: int) -> None:
+    """Fire-and-forget follow-up after an import finishes: fetch a SGDB
+    placeholder thumbnail for every pending create_new/needs_review
+    candidate, keyed by raw title. No job-tracker entry — this is a quiet
+    cosmetic fill, not something the user needs a toast for; the thumbnails
+    just appear in the review list as they're fetched (each commit is
+    visible to new requests immediately)."""
+    db = models.SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user is None:
+            return
+        await asyncio.to_thread(sgdb.fill_import_candidate_thumbnails, db, user)
+    except Exception:
+        logger.exception("Import candidate thumbnail fetch failed for user %s", user_id)
+    finally:
+        db.close()
+
 
 _IMPORT_PAGE_SIZE = 50
 
@@ -3147,6 +3175,25 @@ def import_confirm(
     platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
     redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
     return Response(status_code=200, headers={"HX-Redirect": redirect_url})
+
+
+@router.post("/library/import/fetch-thumbnails")
+def import_fetch_thumbnails(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Kick off a background pass fetching SGDB placeholder thumbnails for
+    pending create_new/needs_review candidates that don't have one yet.
+
+    Manual trigger for candidates already sitting in the queue from a past
+    import (the automatic trigger only fires right after a fresh import
+    finishes). No job-tracker entry, same as the automatic trigger — this
+    is a quiet fill, not something worth a toast; thumbnails just appear
+    in the review list as they're fetched."""
+    if not current_user.steamgriddb_api_key:
+        return Response(status_code=422, content="Set your SteamGridDB API key first.")
+    asyncio.create_task(_run_import_thumbnails_job(current_user.id))
+    return Response(status_code=202)
 
 
 @router.post("/library/import/clear")
