@@ -116,7 +116,7 @@
         {% endfor %}
         {% endif %}
         {% for c in completions %}
-        <div class="cgt-completion-record">
+        <a href="/completions?detail={{ c.id }}" class="cgt-completion-record d-block text-decoration-none text-body">
           <dl class="cgt-detail-meta small mb-0">
             <dt>Date</dt>
             <dd>{{ c | completion_date }}</dd>
@@ -129,7 +129,7 @@
             <dd class="cgt-notes">{{ c.notes | linkify }}</dd>
             {% endif %}
           </dl>
-        </div>
+        </a>
         {% endfor %}
       </div>
     </div>

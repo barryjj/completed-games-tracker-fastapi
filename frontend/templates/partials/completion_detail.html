@@ -254,6 +254,10 @@
             <dt>Clears</dt>
             <dd>{{ c.playthroughs }}</dd>
             {% endif %}
+            {% if c.notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ c.notes | linkify }}</dd>
+            {% endif %}
           </dl>
         </a>
         {% endfor %}
@@ -314,19 +318,19 @@
       {% endif %}
       {% if current_user and current_user.steamgriddb_api_key %}
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'v', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'v', '#completion-detail-content', {{ completion.id }}); return false;">
            Find vertical cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'h', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'h', '#completion-detail-content', {{ completion.id }}); return false;">
            Find horizontal cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#completion-detail-content', {{ completion.id }}); return false;">
            Find hero image
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#completion-detail-content', {{ completion.id }}); return false;">
            Find logo
          </a></li>
       <li><hr class="dropdown-divider"></li>
@@ -339,7 +343,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "v"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'v', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'v', '#completion-detail-content', {{ completion.id }})">
              Reset vertical cover
            </a></li>
         {% endif %}
@@ -348,7 +352,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "h"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'h', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'h', '#completion-detail-content', {{ completion.id }})">
              Reset horizontal cover
            </a></li>
         {% endif %}
@@ -357,7 +361,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'hero', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'hero', '#completion-detail-content', {{ completion.id }})">
              Reset hero image
            </a></li>
         {% endif %}
@@ -366,7 +370,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'logo', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'logo', '#completion-detail-content', {{ completion.id }})">
              Reset logo
            </a></li>
         {% endif %}
@@ -376,7 +380,7 @@
              hx-delete="/completions/{{ completion.id }}"
              hx-swap="none"
              hx-confirm="Delete this completion?"
-             hx-on::after-request="if(event.detail.successful){ location.reload(); }">Delete</a></li>
+             hx-on::after-request="if(event.detail.successful){ cgtReloadWithoutDetailParam(); }">Delete</a></li>
     </ul>
   </div>
 </div>

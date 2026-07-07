@@ -1,3 +1,5 @@
+import datetime
+
 from backend import models
 
 
@@ -147,6 +149,28 @@ def test_completions_invalid_view_mode_falls_back_to_list(client):
     assert r.status_code == 200
     # Falls back to list — no grid container.
     assert b"cgt-library-grid--grid" not in r.content
+
+
+def test_completions_year_default_hides_past_year_completion(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Old Game From The Past")
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(2020, 5, 1)))
+    db_session.commit()
+
+    r = client.get("/completions")
+    assert b"Old Game From The Past" not in r.content
+
+
+def test_completions_all_time_shows_past_year_completion(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Old Game From The Past")
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(2020, 5, 1)))
+    db_session.commit()
+
+    r = client.get("/completions?all_time=true")
+    assert b"Old Game From The Past" in r.content
 
 
 def test_log_completion(client, db_session):

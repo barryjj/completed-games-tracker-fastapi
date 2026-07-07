@@ -3252,6 +3252,7 @@ def completions_page(
     platform: str = Query(""),
     completed_from: str = Query(""),
     completed_to: str = Query(""),
+    all_time: bool = Query(False),
     view_mode: str | None = Query(None),
     sort: str = Query("date_desc"),
     db: Session = Depends(get_db),
@@ -3259,8 +3260,11 @@ def completions_page(
 ):
     # Resolved from query → cookie → default (see _resolve_view_mode docstring).
     view_mode = _resolve_view_mode(request, view_mode, "cgt-completions-view-mode")
-    # Default to current calendar year if neither date filter is set.
-    if not completed_from and not completed_to:
+    # Default to current calendar year if neither date filter is set — unless
+    # all_time is explicitly set, which is the only way to distinguish "user
+    # cleared both fields to see everything" from "fresh page load with no
+    # filters yet" (both look identical as blank query params otherwise).
+    if not completed_from and not completed_to and not all_time:
         completed_from = f"{datetime.date.today().year}-01-01"
     completions_q = (
         db.query(models.Completion)
@@ -3357,6 +3361,7 @@ def completions_page(
             "platform": platform,
             "completed_from": completed_from,
             "completed_to": completed_to,
+            "all_time": all_time,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
             "sort": sort,
