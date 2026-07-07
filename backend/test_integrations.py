@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend import models
 
 
@@ -1556,11 +1558,8 @@ def test_fetch_owned_appids_raises_on_empty_result(db_session, monkeypatch):
     fake_userdata.raise_for_status.return_value = None
     monkeypatch.setattr(steam.httpx, "get", lambda *a, **k: fake_userdata)
 
-    try:
+    with pytest.raises(ValueError, match="expired"):
         steam._fetch_owned_appids(user)
-        assert False, "expected ValueError"
-    except ValueError as e:
-        assert "expired" in str(e)
 
 
 def test_fill_import_candidate_thumbnails_applies_top_result(db_session, monkeypatch):
