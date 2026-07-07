@@ -1537,6 +1537,32 @@ def test_sgdb_fill_missing_endpoint_requires_api_key(client, db_session):
     assert "API key" in r.text
 
 
+def test_fetch_owned_appids_raises_on_empty_result(db_session, monkeypatch):
+    """Steam returns HTTP 200 with well-formed but empty rgOwnedApps when the
+    session cookies are stale/expired, instead of an auth error — must be
+    treated as a failure, not "0 apps owned", or DLC sync silently no-ops."""
+    from backend import steam
+
+    user = models.User(
+        name="t",
+        username="t",
+        password_hash="x",
+        api_token="tok",
+        steam_session_id="sess",
+        steam_login_secure="login",
+    )
+    fake_userdata = MagicMock()
+    fake_userdata.json.return_value = {"rgOwnedApps": []}
+    fake_userdata.raise_for_status.return_value = None
+    monkeypatch.setattr(steam.httpx, "get", lambda *a, **k: fake_userdata)
+
+    try:
+        steam._fetch_owned_appids(user)
+        assert False, "expected ValueError"
+    except ValueError as e:
+        assert "expired" in str(e)
+
+
 def test_fill_import_candidate_thumbnails_applies_top_result(db_session, monkeypatch):
     from backend import steamgriddb
 
