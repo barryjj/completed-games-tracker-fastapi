@@ -198,6 +198,13 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - IGDB artwork no longer used as hero images — poor aspect ratio; 10 existing IGDB hero records purged
 - Button consistency sweep: all secondary buttons use btn-surface (solid surface1 bg) across the entire app
 
+### Unified "matching details" confidence coding (pending design)
+- Rework import review's `add_to_existing`/`create_new`/`needs_review` tabs (and their preview/card panes) plus sync match review to share one confidence-coded box component instead of each screen inventing its own explanation UI
+- Color scale: green = certain/exact match (title + platform both match), peach = uncertain but plausible (e.g. title matched but platform didn't), pink (new accent, not yet in the theme) = needs manual input (no match found, or platform unrecognized)
+- Each state gets a plain-language "why" line — e.g. exact match: "The title and platform are a perfect match for this library entry"; needs_review: "This entry needs review because the platform listed wasn't found in the known platforms or their aliases"
+- Surface the "why" at the top of the preview pane (not just buried mid-scroll) so it's the first thing seen when opening a candidate
+- Should also translate to the card view for matched completions, and to sync match review's existing green/peach confidence badges so the two features stop drifting into inconsistent conventions for the same underlying concept
+
 ### Multiple completions on merge (pending design)
 - When both the synced entry and manual entry have completions, both survive the merge
 - Need to decide: prompt user during review to collapse same-timeframe completions, auto-collapse, or leave manual

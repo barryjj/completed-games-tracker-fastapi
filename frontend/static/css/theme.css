@@ -382,8 +382,7 @@ html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !impor
    --ctp-text for readability in both themes. */
 .alert-success,
 .alert-danger,
-.alert-warning,
-.alert-peach {
+.alert-warning {
   color: var(--ctp-text);
   border: 1px solid var(--ctp-surface1);
   border-left-width: 4px;
@@ -400,46 +399,9 @@ html[data-bs-theme="light"] .badge.bg-success { background-color: #d1e7dd !impor
   background-color: color-mix(in srgb, var(--ctp-yellow) 12%, var(--ctp-mantle));
   border-left-color: var(--ctp-yellow);
 }
-/* Peach — "differs from sheet / imperfect match", distinct from yellow's
-   established "new/pending import" meaning elsewhere. Plain mantle
-   background (no color-mix tint like the other alert variants) — peach
-   tinted into a dark background read muddy/off, not a clean accent. */
-.alert-peach {
-  background-color: var(--ctp-mantle);
-  border-left-color: var(--ctp-peach);
-}
 html[data-bs-theme="light"] .alert-success { background-color: color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base)); }
 html[data-bs-theme="light"] .alert-danger  { background-color: color-mix(in srgb, var(--ctp-red)   18%, var(--ctp-base)); }
 html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb, var(--ctp-yellow) 18%, var(--ctp-base)); }
-html[data-bs-theme="light"] .alert-peach   { background-color: var(--ctp-base); }
-
-/* Import-vs-library comparison table inside the "Imperfect match" alert. */
-.cgt-match-warning-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.cgt-match-warning-table th {
-  text-align: left;
-  font-size: 0.65rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ctp-subtext);
-  font-weight: 600;
-  padding: 2px 8px;
-  border-bottom: 1px solid var(--ctp-surface1);
-}
-.cgt-match-warning-table td {
-  padding: 3px 8px;
-  border-bottom: 1px solid var(--ctp-surface1);
-}
-.cgt-match-warning-table th:first-child,
-.cgt-match-warning-table td:first-child {
-  /* No padding-left override here anymore — zeroing it out made "Platform"
-     flush against the alert's border while the paragraph text above kept
-     the alert's own padding, so the two didn't line up. Uniform 8px on
-     every column (inherited from the base th/td rules) matches it. */
-  color: var(--ctp-subtext);
-}
 
 /* ─── Tags / Badges ──────────────────────────────────────────────────────── */
 .tag-badge {
@@ -1294,6 +1256,51 @@ body:has(.cgt-sticky-actions) {
   border: 1px solid var(--ctp-surface0);
   border-radius: 6px;
   padding: 9px 12px;
+}
+
+/* Titlebar variant — a solid-color header strip instead of a left accent
+   stripe. Used for the "Imperfect match" warning: a colored left border
+   plus border-radius on the same box reads as slightly bulging past the
+   rounded corner (thicker colored region vs. the 1px grey border on every
+   other block), so alignment never quite looked right next to it. This
+   reuses the exact same .cgt-detail-block box (border/radius/background),
+   just with padding zeroed and a full-width title bar inset instead. */
+.cgt-detail-block--titled {
+  padding: 0;
+  overflow: hidden;
+}
+.cgt-detail-block__titlebar {
+  padding: 6px 12px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background-color: var(--ctp-peach);
+  color: var(--ctp-crust);
+}
+.cgt-detail-block__titled-body {
+  padding: 9px 12px;
+}
+
+/* Warning variant — peach left accent stripe + a title line, instead of a
+   solid titlebar. Shifted 4px right (margin-left) to compensate for its
+   border-left being 4px instead of every other block's 1px — otherwise the
+   thicker colored edge reads as sticking out past the other boxes' edges
+   even though both boxes technically start at the same x position. */
+.cgt-detail-block--warning {
+  margin-left: 4px;
+  border-left-width: 4px;
+  border-left-color: var(--ctp-peach);
+}
+.cgt-detail-block__warning-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-peach);
+  font-weight: 700;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ctp-surface0);
 }
 .cgt-detail-block__heading {
   font-size: 0.7rem;

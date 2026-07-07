@@ -152,24 +152,22 @@
 
     {% if candidate %}
     {% if _title_diff or _plat_diff %}
-    {% set _reasons = [] %}
-    {% if _plat_diff %}{% set _ = _reasons.append("the platforms didn't match") %}{% endif %}
-    {% if _title_diff %}{% set _ = _reasons.append("the title wasn't an exact match") %}{% endif %}
-    <div class="alert alert-peach small mb-2">
-      {# ps-2 matches the table's own first-column padding below, so the
-         paragraph text and "Platform"/"Title" actually share the same
-         left edge instead of approximately lining up by coincidence. #}
-      <p class="ps-2 mb-0">
-        <strong>Imperfect match.</strong>
-        This wasn't an exact match, but looks like the right game — it differs from your imported data because {{ _reasons | join(" and ") }}.
-      </p>
-      <table class="cgt-match-warning-table mt-2">
-        <thead><tr><th></th><th>Import</th><th>Library</th></tr></thead>
-        <tbody>
-          {% if _plat_diff %}<tr><td>Platform</td><td>{{ candidate.raw_platform }}</td><td>{{ release.display_platform }}</td></tr>{% endif %}
-          {% if _title_diff %}<tr><td>Title</td><td>{{ candidate.raw_title }}</td><td>{{ game.display_title }}</td></tr>{% endif %}
-        </tbody>
-      </table>
+    <div class="cgt-detail-block cgt-detail-block--warning small mb-2">
+      <div class="cgt-detail-block__warning-title">Imperfect match</div>
+      <dl class="cgt-detail-meta small mb-0">
+        {% if _plat_diff %}
+        <dt>Platform</dt>
+        <dd class="d-flex align-items-center gap-1">
+          <span class="tag-badge {{ candidate.raw_platform | platform_color }}">{{ candidate.raw_platform }}</span>
+          <span class="text-secondary">&rarr;</span>
+          <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
+        </dd>
+        {% endif %}
+        {% if _title_diff %}
+        <dt>Title</dt>
+        <dd>{{ candidate.raw_title }} <span class="text-secondary">&rarr;</span> {{ game.display_title }}</dd>
+        {% endif %}
+      </dl>
     </div>
     {% endif %}
     {{ completions_block() }}
