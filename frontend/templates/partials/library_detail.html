@@ -152,22 +152,22 @@
 
     {% if candidate %}
     {% if _title_diff or _plat_diff %}
-    <div class="cgt-detail-block cgt-detail-block--warning small mb-2">
-      <div class="cgt-detail-block__warning-title">Imperfect match</div>
-      <dl class="cgt-detail-meta small mb-0">
-        {% if _plat_diff %}
-        <dt>Platform</dt>
-        <dd class="d-flex align-items-center gap-1">
-          <span class="tag-badge {{ candidate.raw_platform | platform_color }}">{{ candidate.raw_platform }}</span>
-          <span class="text-secondary">&rarr;</span>
-          <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
-        </dd>
-        {% endif %}
-        {% if _title_diff %}
-        <dt>Title</dt>
-        <dd>{{ candidate.raw_title }} <span class="text-secondary">&rarr;</span> {{ game.display_title }}</dd>
-        {% endif %}
-      </dl>
+    <div class="cgt-detail-block small mb-2">
+      <div class="cgt-detail-block__heading">Uncertain match</div>
+      {% if _plat_diff %}
+      <div class="cgt-completion-record cgt-completion-record--peach">
+        <span class="cgt-slat__label">Platform</span>
+        <span class="tag-badge {{ candidate.raw_platform | platform_color }}">{{ candidate.raw_platform }}</span>
+        <span class="text-secondary">&rarr;</span>
+        <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
+      </div>
+      {% endif %}
+      {% if _title_diff %}
+      <div class="cgt-completion-record cgt-completion-record--peach">
+        <span class="cgt-slat__label">Title</span>
+        <span>{{ candidate.raw_title }} <span class="text-secondary">&rarr;</span> {{ game.display_title }}</span>
+      </div>
+      {% endif %}
     </div>
     {% endif %}
     {{ completions_block() }}

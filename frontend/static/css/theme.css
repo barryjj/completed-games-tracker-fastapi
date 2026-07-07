@@ -797,6 +797,12 @@ html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color:
 .cgt-completion-record--new {
   border-left-color: var(--ctp-yellow);
 }
+.cgt-completion-record--peach {
+  border-left-color: var(--ctp-peach);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
 /* Clickable variant ("Other completions of this game" links to that
    completion's own detail view). */
 a.cgt-completion-record {
@@ -1258,49 +1264,22 @@ body:has(.cgt-sticky-actions) {
   padding: 9px 12px;
 }
 
-/* Titlebar variant — a solid-color header strip instead of a left accent
-   stripe. Used for the "Imperfect match" warning: a colored left border
-   plus border-radius on the same box reads as slightly bulging past the
-   rounded corner (thicker colored region vs. the 1px grey border on every
-   other block), so alignment never quite looked right next to it. This
-   reuses the exact same .cgt-detail-block box (border/radius/background),
-   just with padding zeroed and a full-width title bar inset instead. */
-.cgt-detail-block--titled {
-  padding: 0;
-  overflow: hidden;
-}
-.cgt-detail-block__titlebar {
-  padding: 6px 12px;
-  font-size: 0.7rem;
-  font-weight: 700;
+/* Label for a single fact inside a .cgt-completion-record row (e.g. each
+   differing field in the "Uncertain match" box) — same small-caps treatment
+   as .cgt-detail-meta's dt, reused outside a dl since these rows are each
+   their own bordered record rather than one shared definition list. */
+.cgt-slat__label {
+  font-size: 0.63rem;
+  font-weight: 400;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background-color: var(--ctp-peach);
-  color: var(--ctp-crust);
+  letter-spacing: 0.06em;
+  color: var(--ctp-overlay1);
+  white-space: nowrap;
 }
-.cgt-detail-block__titled-body {
-  padding: 9px 12px;
-}
-
-/* Warning variant — peach left accent stripe + a title line, instead of a
-   solid titlebar. Shifted 4px right (margin-left) to compensate for its
-   border-left being 4px instead of every other block's 1px — otherwise the
-   thicker colored edge reads as sticking out past the other boxes' edges
-   even though both boxes technically start at the same x position. */
-.cgt-detail-block--warning {
-  margin-left: 4px;
-  border-left-width: 4px;
-  border-left-color: var(--ctp-peach);
-}
-.cgt-detail-block__warning-title {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--ctp-peach);
-  font-weight: 700;
-  margin-bottom: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--ctp-surface0);
+.cgt-slat__label::after {
+  content: ':';
+  color: var(--ctp-overlay0);
+  margin-left: 0.05em;
 }
 .cgt-detail-block__heading {
   font-size: 0.7rem;
