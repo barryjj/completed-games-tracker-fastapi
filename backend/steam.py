@@ -599,8 +599,7 @@ def _fetch_owned_appids(user: models.User) -> set[int]:
     # nothing (missed real, newly-added DLC with no error surfaced anywhere).
     if not owned:
         raise ValueError(
-            "Steam returned 0 owned apps — your session cookies are likely expired. "
-            "Re-capture fresh sessionid/steamLoginSecure values and try again."
+            "Steam session cookies have expired — log in to Steam again and re-capture sessionid/steamLoginSecure, then retry."
         )
     return owned
 
