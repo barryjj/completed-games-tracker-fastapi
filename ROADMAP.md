@@ -402,8 +402,20 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
   per-entry fetch happens opportunistically on detail-pane open like metadata refresh
 - Pairs with: URL-verification follow-on (a 404 during download IS the verification),
   Tauri desktop packaging (covers work offline), and drops the SGDB/Steam hotlink dependency
-- Sizing/re-encode question deferred: store originals first; thumbnail variants only if
-  grid load times justify it
+- **Logistics at current scale (~18.3k entries, sized 2026-07-08):**
+  - Covers only (v+h, ~50-150 KB each) ≈ 2-3 GB on disk; heroes/logos for everything pushes
+    toward 10 GB+ — so default to covers, fetch hero/logo opportunistically on detail-pane
+    open (same pattern as the stale-metadata refresh)
+  - One-time warm ≈ 30-40k downloads, hours as a rate-limited resumable background job —
+    the enrichment worker already proved this shape over 10-hour runs
+  - Grid slowness has two halves: CDN latency/variance (fixed by same-origin serving) and
+    shipping 600x900 originals into 170px cards (fixed only by thumbnail variants, which
+    needs Pillow — new dependency, requires approval). Sequence: cache+serve first, measure,
+    thumbnails second if grids still feel slow.
+- **Tauri note:** no separate client cache needed — the FastAPI backend runs as a local
+  sidecar under Tauri, so this server-side disk cache IS the persistent local cache there
+  (no WebView cache eviction, survives updates, works offline). Building it now pre-pays
+  the Tauri work.
 
 ### Stats & dashboard / home page
 - **Minimal version lands as Home v1 in the Home / Tools / Settings restructure (phase 2, see Near-term)** — this item becomes the widget expansion on top of it
