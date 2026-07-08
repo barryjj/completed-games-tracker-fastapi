@@ -359,7 +359,7 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 
 **Phases:**
 1. **Restructure PR** ✅ (this PR) — real Tools page, Settings shell with grouped left nav, navbar/redirect cleanup, Integrations hub retired. No widget system yet.
-2. **Home v1** — static default widget layout (hardcoded stat widgets + needs-attention tool cards); `/` becomes the landing route. This is the minimal landing of the "Stats & dashboard" item below.
+2. **Home v1** ✅ (this PR) — static default widget layout (completions-this-year vs. 52 goal, library totals, recently completed, needs-attention counts); `/` is the landing route after login. This is the minimal landing of the "Stats & dashboard" item below.
 3. **Customization** — pin/unpin persistence, widget picker, arrangement.
 
 ### Sort name field

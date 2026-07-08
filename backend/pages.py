@@ -553,7 +553,7 @@ def signup_submit(
             status_code=422,
         )
     u = users.signup_user(db, username.strip(), password)
-    response = RedirectResponse("/library", status_code=302)
+    response = RedirectResponse("/", status_code=302)
     response.set_cookie("session", u.api_token, httponly=True, samesite="lax")
     return response
 
@@ -573,7 +573,7 @@ def login_submit(
             context={"error": "Invalid username or password"},
             status_code=401,
         )
-    response = RedirectResponse("/library", status_code=302)
+    response = RedirectResponse("/", status_code=302)
     response.set_cookie("session", user.api_token, httponly=True, samesite="lax")
     return response
 
@@ -633,6 +633,75 @@ def _steam_counts(db: Session, user: models.User) -> dict | None:
     games = sum(count for is_dlc, count in rows if not is_dlc)
     dlc = sum(count for is_dlc, count in rows if is_dlc)
     return {"games": games, "dlc": dlc, "total": games + dlc}
+
+
+# TODO(phase 3): user-configurable yearly goal — hardcoded until widget
+# customization lands (see ROADMAP "Home / Tools / Settings restructure").
+_YEARLY_GOAL = 52
+
+
+@router.get("/")
+def home_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Home v1 (restructure phase 2): landing page with a static set of stat
+    widgets — completions this year vs. goal, library totals, recent
+    completions, needs-attention counts. Pin/customize is phase 3."""
+    year = datetime.date.today().year
+    comp_base = db.query(models.Completion).filter(models.Completion.user_id == current_user.id)
+    completions_this_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year)).count()
+    recent_completions = (
+        comp_base.join(models.Completion.library_entry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .options(
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .contains_eager(models.GameRelease.game),
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.platform_obj),
+        )
+        # Same ordering contract as the completions page's date sort: date
+        # first, spreadsheet row order as the same-date tiebreaker.
+        .order_by(
+            models.Completion.completed_at.desc(),
+            models.Completion.sort_order.asc().nulls_last(),
+            models.Completion.id.desc(),
+        )
+        .limit(5)
+        .all()
+    )
+    library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()
+    platform_count = (
+        db.query(func.count(func.distinct(models.GameRelease.platform_id)))
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.platform_id.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+    import_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={
+            "current_user": current_user,
+            "year": year,
+            "yearly_goal": _YEARLY_GOAL,
+            "completions_this_year": completions_this_year,
+            "recent_completions": recent_completions,
+            "library_total": library_total,
+            "platform_count": platform_count,
+            "steam_counts": _steam_counts(db, current_user),
+            "import_pending": sum(import_counts.values()),
+            **_base_ctx(db, current_user),
+        },
+    )
 
 
 @router.get("/tools")

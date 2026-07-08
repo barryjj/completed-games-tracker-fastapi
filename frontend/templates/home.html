@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <h4 class="mb-0">Home</h4>
+  <p class="text-secondary small mb-0">Your library and completions at a glance.</p>
+</div>
+
+<div class="cgt-tool-grid">
+
+  {# ── Completions this year ──────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">This year</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--flamingo">
+        <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
+        <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
+      </div>
+      <div class="cgt-tool-stat cgt-tool-stat--muted">
+        <div class="cgt-tool-stat__value">{{ yearly_goal }}</div>
+        <div class="cgt-tool-stat__label">Goal</div>
+      </div>
+    </div>
+    <div class="small text-secondary">
+      {% if recent_completions %}
+      Latest: {{ recent_completions[0].library_entry.release.game.display_title }} — {{ recent_completions[0]|completion_date }}
+      {% else %}
+      Nothing logged yet — go finish something.
+      {% endif %}
+    </div>
+    <div class="cgt-tool-card__actions">
+      <a href="/completions" class="btn btn-surface btn-sm">Open completions</a>
+    </div>
+  </div>
+
+  {# ── Library ────────────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Library</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
+        <div class="cgt-tool-stat__label">Games</div>
+      </div>
+    </div>
+    <div class="small text-secondary">
+      {% if platform_count %}Across {{ platform_count }} platform{{ 's' if platform_count != 1 }}.{% endif %}
+      {% if steam_counts is not none %}{{ "{:,}".format(steam_counts.total) }} synced from Steam.{% endif %}
+    </div>
+    <div class="cgt-tool-card__actions">
+      <a href="/library" class="btn btn-surface btn-sm">Open library</a>
+    </div>
+  </div>
+
+  {# ── Recently completed ─────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Recently completed</div>
+    {% if recent_completions %}
+    <div>
+      {% for c in recent_completions %}
+      <a class="cgt-detail-list-row d-flex justify-content-between align-items-baseline gap-3"
+         href="/completions?detail={{ c.id }}">
+        <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
+        <span class="text-secondary small flex-shrink-0">{{ c|completion_date }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="small text-secondary">Completions you log will show up here.</div>
+    {% endif %}
+  </div>
+
+  {# ── Needs attention ────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Needs attention</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if pending_matches else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ pending_matches or 0 }}</div>
+        <div class="cgt-tool-stat__label">Matches</div>
+      </div>
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if import_pending else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_pending) }}</div>
+        <div class="cgt-tool-stat__label">Import candidates</div>
+      </div>
+    </div>
+    {% if not pending_matches and not import_pending %}
+    <div class="small text-secondary">All caught up.</div>
+    {% endif %}
+    <div class="cgt-tool-card__actions">
+      {% if pending_matches %}<a href="/library/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
+      {% if import_pending %}<a href="/library/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
+      <a href="/tools" class="btn btn-surface btn-sm">All tools</a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

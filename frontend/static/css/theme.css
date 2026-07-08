@@ -2092,6 +2092,7 @@ body:has(.cgt-match-nav--sticky) {
 .cgt-tool-stat--blue     .cgt-tool-stat__value { color: var(--ctp-blue); }
 .cgt-tool-stat--pink     .cgt-tool-stat__value { color: var(--ctp-pink); }
 .cgt-tool-stat--maroon   .cgt-tool-stat__value { color: var(--ctp-maroon); }
+.cgt-tool-stat--flamingo .cgt-tool-stat__value { color: var(--ctp-flamingo); }
 .cgt-tool-stat--muted    .cgt-tool-stat__value { color: var(--ctp-overlay0); }
 /* Latte's accents miss 3:1 contrast for large text on the card surface —
    mix each toward text ink (same spirit as the light-mode button shades). */
@@ -2103,3 +2104,4 @@ html[data-bs-theme="light"] .cgt-tool-stat--green    .cgt-tool-stat__value { col
 html[data-bs-theme="light"] .cgt-tool-stat--blue     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
 html[data-bs-theme="light"] .cgt-tool-stat--pink     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
 html[data-bs-theme="light"] .cgt-tool-stat--maroon   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }

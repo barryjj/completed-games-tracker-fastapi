@@ -27,7 +27,7 @@ def test_signup_creates_account_and_redirects(client):
         follow_redirects=False,
     )
     assert r.status_code == 302
-    assert r.headers["location"] == "/library"
+    assert r.headers["location"] == "/"
     assert "session" in r.cookies
 
 
@@ -192,7 +192,7 @@ def test_new_password_works_for_login(client):
     client.get("/logout")
     r = client.post("/login", data={"username": "changer", "password": "newpass"}, follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == "/library"
+    assert r.headers["location"] == "/"
 
 
 # --- delete account ---

@@ -190,8 +190,3 @@ def me(current_user: models.User = Depends(get_current_user)):
 def get_user(id: int, db: Session = Depends(get_db)) -> users.UserResponse:
     u = users.get_user(db, id)
     return users.UserResponse.model_validate(u, from_attributes=True)
-
-
-@app.get("/")
-def index():
-    return RedirectResponse("/library", status_code=302)
