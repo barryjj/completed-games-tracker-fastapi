@@ -347,11 +347,20 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - `pages.py` becomes a thin aggregator; shared helpers (`_base_ctx`, auth wrappers, template setup) move to `pages_common.py`
 - Do after PR #115 merges so the import module boundary is stable
 
-### Settings / navigation restructure
-- Current "Integrations" page conflates two different things: actual third-party integrations (Steam, IGDB, SteamGridDB) and one-off function cards (spreadsheet import, sync match review). Split these apart.
-- Proposed: a dedicated Settings area (gear icon in the navbar, not a top-level "Integrations" tab) with its own sub-navigation — e.g. Integrations / Library / Completions / Platforms — as a horizontal tab row or left nav within Settings
-- Integrations sub-page keeps the actual integration cards; import/match-review-type actions move to their own section (possibly under Library, since that's what they operate on)
-- No firm layout decision yet — needs a mockup pass before implementation
+### Home / Tools / Settings restructure (direction agreed 2026-07-07 via in-app mockups)
+Replaces the old "Settings / navigation restructure" item. The current Integrations page conflated third-party integrations with function cards (import, match review), and Import lived in the user dropdown next to Settings — inconsistent and clunky. Direction settled with static mockup pages (`/mockup1`, `/mockup2` — temporary uncommitted templates/routes/nav-links, delete when phase 1 lands); **mockup 2 rev 2 approved**.
+
+**Target IA — navbar becomes Home / Library / Completions / Tools + gear (Settings):**
+- **Home** — new default landing page after login. Widget grid mixing stats (completions this year vs. 52-game goal, library counts, recently completed) with tool cards pinned from the Tools page. User-customizable eventually (see phases).
+- **Tools** — top-level page: the complete inventory of recurring operations as cards — Steam sync, Match review, Spreadsheet import, Artwork (bulk fill / URL verify), PSN sync later. The pending-count badge moves here from the user dropdown. Every pinnable card gets a thumbtack toggle (Explorer-style: tilted grey = unpinned, upright mauve = pinned) at the right end of its title strip; pinning mirrors the card onto Home. Everything is always findable on Tools even if unpinned — Home customization can never hide functionality.
+- **Settings** — gear icon in the navbar. Grouped left-nav layout (no tabs): *Account* (Profile / Security / Appearance) + *Configuration* (Platforms, Integrations). The Integrations sub-page keeps only credentials/connection state as compact service rows (name, status badge, one-liner, Configure) — all sync/review *actions* live on Tools.
+- User dropdown shrinks to Settings / Sign out; Import leaves it. Old `/integrations` and `/account` routes redirect.
+- Library and Completions pages are untouched by this restructure.
+
+**Phases:**
+1. **Restructure PR** — real Tools page, Settings shell with grouped left nav, navbar/redirect cleanup, Integrations hub retired. No widget system yet.
+2. **Home v1** — static default widget layout (hardcoded stat widgets + needs-attention tool cards); `/` becomes the landing route. This is the minimal landing of the "Stats & dashboard" item below.
+3. **Customization** — pin/unpin persistence, widget picker, arrangement.
 
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
@@ -367,10 +376,10 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 ## Medium-term
 
 ### Stats & dashboard / home page
-- Customizable widget-based home page
+- **Minimal version lands as Home v1 in the Home / Tools / Settings restructure (phase 2, see Near-term)** — this item becomes the widget expansion on top of it
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
-- User can pick which widgets are shown and arrange them
-- Deferred until library has more non-Steam data (PSN, historical import) so the stats are actually interesting
+- User can pick which widgets are shown and arrange them (restructure phase 3 provides pin/unpin + arrangement plumbing)
+- Original "wait for non-Steam data" deferral is satisfied — historical import brought in the 2006+ spreadsheet era, so the stats are already interesting
 
 ### Achievements / trophies
 - Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
