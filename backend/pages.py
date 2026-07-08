@@ -645,6 +645,9 @@ def tools_page(
     import, artwork) as cards. Replaces the action half of the old
     /integrations hub; configuration lives under /settings."""
     import_counts = _import_tab_counts(db, current_user.id)
+    # Entries with no vertical cover (the canonical orientation) — same filter
+    # the library's "Missing artwork" checkbox applies in grid_v.
+    missing_q, _, _ = _build_lib_query(db, current_user, "", "", "default", "name", False, True, "grid_v")
     return templates.TemplateResponse(
         request=request,
         name="tools.html",
@@ -653,6 +656,7 @@ def tools_page(
             "steam_counts": _steam_counts(db, current_user),
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
+            "missing_covers": missing_q.count(),
             **_base_ctx(db, current_user),
         },
     )

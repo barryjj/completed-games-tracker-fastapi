@@ -1942,6 +1942,10 @@ body:has(.cgt-match-nav--sticky) {
 .cgt-tool-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  /* Every implicit row shares the tallest card's height, so tiles stay
+     uniform regardless of how much content each one carries — matching
+     sizes is structural, not an accident of similar text lengths. */
+  grid-auto-rows: 1fr;
   gap: 1rem;
 }
 .cgt-tool-card {
@@ -2047,3 +2051,55 @@ body:has(.cgt-match-nav--sticky) {
 
 /* Gear icon nav link — same underline treatment as text nav links. */
 .cgt-nav-gear svg { display: block; }
+
+/* ─── Tool-card stat row ────────────────────────────────────────────────── */
+/* Big labeled numbers inside tool cards (and, later, Home widgets). Values
+   are the only colored text — labels stay muted ink so identity is never
+   color-alone. Accent assignments are semantic, not decorative:
+     teal = Steam games      peach = DLC (matches the tag-dlc badge)
+     lavender = totals       yellow = pending / needs attention
+     green = matched/certain blue = new / informational
+     pink = needs manual input (per the confidence-coding roadmap item)
+     maroon = missing / gap
+   Triplets that appear side by side were validated for colorblind
+   separation (teal/peach/lavender and green/blue/pink both pass). */
+.cgt-tool-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.4rem;
+  margin: 0.15rem 0;
+}
+.cgt-tool-stat { min-width: 0; }
+.cgt-tool-stat__value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--ctp-text);
+}
+.cgt-tool-stat__label {
+  font-size: 0.63rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-overlay1);
+  white-space: nowrap;
+}
+.cgt-tool-stat--teal     .cgt-tool-stat__value { color: var(--ctp-teal); }
+.cgt-tool-stat--peach    .cgt-tool-stat__value { color: var(--ctp-peach); }
+.cgt-tool-stat--lavender .cgt-tool-stat__value { color: var(--ctp-lavender); }
+.cgt-tool-stat--yellow   .cgt-tool-stat__value { color: var(--ctp-yellow); }
+.cgt-tool-stat--green    .cgt-tool-stat__value { color: var(--ctp-green); }
+.cgt-tool-stat--blue     .cgt-tool-stat__value { color: var(--ctp-blue); }
+.cgt-tool-stat--pink     .cgt-tool-stat__value { color: var(--ctp-pink); }
+.cgt-tool-stat--maroon   .cgt-tool-stat__value { color: var(--ctp-maroon); }
+.cgt-tool-stat--muted    .cgt-tool-stat__value { color: var(--ctp-overlay0); }
+/* Latte's accents miss 3:1 contrast for large text on the card surface —
+   mix each toward text ink (same spirit as the light-mode button shades). */
+html[data-bs-theme="light"] .cgt-tool-stat--teal     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--peach    .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--lavender .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--yellow   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--green    .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--blue     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--pink     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] .cgt-tool-stat--maroon   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }

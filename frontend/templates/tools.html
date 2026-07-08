@@ -37,10 +37,19 @@
       </div>
     </div>
     {% if steam_counts is not none %}
-    <div class="small text-secondary">
-      {{ "{:,}".format(steam_counts.games) }} game{{ 's' if steam_counts.games != 1 }} ·
-      {{ "{:,}".format(steam_counts.dlc) }} DLC ·
-      {{ "{:,}".format(steam_counts.total) }} total
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--teal">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(steam_counts.games) }}</div>
+        <div class="cgt-tool-stat__label">Games</div>
+      </div>
+      <div class="cgt-tool-stat cgt-tool-stat--peach">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(steam_counts.dlc) }}</div>
+        <div class="cgt-tool-stat__label">DLC</div>
+      </div>
+      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(steam_counts.total) }}</div>
+        <div class="cgt-tool-stat__label">Total</div>
+      </div>
     </div>
     {% endif %}
     {# Enrichment status — renders nothing when the queue is idle. #}
@@ -78,9 +87,14 @@
       <span class="badge rounded-pill cgt-pending-badge">{{ pending_matches }}</span>
       {% endif %}
     </div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if pending_matches else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ pending_matches or 0 }}</div>
+        <div class="cgt-tool-stat__label">Pending review</div>
+      </div>
+    </div>
     <div class="small text-secondary">
-      Synced games that look like existing manual entries.
-      {% if pending_matches %}{{ pending_matches }} pending your review.{% else %}All caught up.{% endif %}
+      Synced games that look like existing manual entries.{% if not pending_matches %} All caught up.{% endif %}
     </div>
     <div class="cgt-tool-card__actions">
       <a href="/library/match-review" class="btn btn-primary btn-sm">Open review</a>
@@ -99,15 +113,26 @@
       <span class="badge rounded-pill cgt-pending-badge">{{ import_pending }}</span>
       {% endif %}
     </div>
-    <div class="small text-secondary">
-      {% if import_pending %}
-      Add to existing {{ import_counts.add_to_existing }} ·
-      Create new {{ import_counts.create_new }} ·
-      Needs review {{ import_counts.needs_review }}
-      {% else %}
-      Bring in historical completions from a CSV or spreadsheet. Nothing writes to the library without review.
-      {% endif %}
+    {% if import_pending %}
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--green">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.add_to_existing) }}</div>
+        <div class="cgt-tool-stat__label">Add to existing</div>
+      </div>
+      <div class="cgt-tool-stat cgt-tool-stat--blue">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.create_new) }}</div>
+        <div class="cgt-tool-stat__label">Create new</div>
+      </div>
+      <div class="cgt-tool-stat cgt-tool-stat--pink">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.needs_review) }}</div>
+        <div class="cgt-tool-stat__label">Needs review</div>
+      </div>
     </div>
+    {% else %}
+    <div class="small text-secondary">
+      Bring in historical completions from a CSV or spreadsheet. Nothing writes to the library without review.
+    </div>
+    {% endif %}
     <div class="cgt-tool-card__actions">
       {% if import_pending %}
       <a href="/library/import/review" class="btn btn-primary btn-sm">Open review</a>
@@ -122,6 +147,12 @@
   {# ── Artwork ────────────────────────────────────────────────────────── #}
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">Artwork</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--maroon' if missing_covers else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(missing_covers) }}</div>
+        <div class="cgt-tool-stat__label">Missing covers</div>
+      </div>
+    </div>
     <div class="small text-secondary">
       {% if current_user.steamgriddb_api_key %}
       Bulk-fill missing covers, heroes, and logos from SteamGridDB, or re-verify stored artwork URLs.
@@ -133,6 +164,9 @@
       <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">
         {% if current_user.steamgriddb_api_key %}Open artwork tools{% else %}Configure{% endif %}
       </a>
+      {% if missing_covers %}
+      <a href="/library?missing_art=true" class="btn btn-surface btn-sm">Show in library</a>
+      {% endif %}
     </div>
   </div>
 
