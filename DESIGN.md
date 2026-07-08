@@ -20,8 +20,10 @@ Both palettes are defined in `frontend/static/css/theme.css`.
 Navbar: **Home · Library · Completions · Tools** on the left; **gear (Settings) + user dropdown** on the right.
 
 - **Home** (`/`) — landing page after login. Static widget grid (Home v1) reusing the
-  tool-card + stat-row components: completions this year vs. goal (flamingo accent),
-  library totals, recently completed list (rows deep-link to `/completions?detail=N`),
+  tool-card + stat-row components: completions this year vs. goal (flamingo accent) with a
+  12-month bar strip (`.cgt-month-bars`, single hue, tooltips carry exact counts), library
+  platform breakdown (badge + count rows linking to the filtered library), recently
+  completed list with cover thumbnails (rows deep-link to `/completions?detail=N`),
   needs-attention counts. Widget pin/customize is restructure phase 3.
 
 - **Tools** (`/tools`) — recurring operations as `.cgt-tool-card` cards: Steam sync, match

@@ -652,6 +652,17 @@ def home_page(
     year = datetime.date.today().year
     comp_base = db.query(models.Completion).filter(models.Completion.user_id == current_user.id)
     completions_this_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year)).count()
+    # Per-month counts for the current year (mini bar strip on the This-year
+    # widget). Always 12 slots; future months render as stubs client-side.
+    month_rows = (
+        comp_base.with_entities(func.strftime("%m", models.Completion.completed_at), func.count())
+        .filter(func.strftime("%Y", models.Completion.completed_at) == str(year))
+        .group_by(func.strftime("%m", models.Completion.completed_at))
+        .all()
+    )
+    completions_by_month = [0] * 12
+    for m, n in month_rows:
+        completions_by_month[int(m) - 1] = n
     recent_completions = (
         comp_base.join(models.Completion.library_entry)
         .join(models.UserLibraryEntry.release)
@@ -718,6 +729,22 @@ def home_page(
             "year": year,
             "yearly_goal": _YEARLY_GOAL,
             "completions_this_year": completions_this_year,
+            "completions_by_month": completions_by_month,
+            "current_month": datetime.date.today().month,
+            "month_names": [
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ],
             "recent_completions": recent_completions,
             "library_total": library_total,
             "platform_breakdown": platform_breakdown,

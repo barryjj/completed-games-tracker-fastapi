@@ -22,20 +22,21 @@
         <div class="cgt-tool-stat__label">Goal</div>
       </div>
     </div>
-    {% if recent_completions %}
-    {% set latest = recent_completions[0] %}
-    {% set _thumb = latest.library_entry | grid_cover_url('grid_h') %}
-    <div class="cgt-tool-stat__label mb-1">Latest</div>
-    <a class="cgt-detail-list-row d-flex align-items-center gap-2"
-       href="/completions?detail={{ latest.id }}">
-      {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
-      {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
-      <span class="text-truncate small">{{ latest.library_entry.release.game.display_title }}</span>
-      <span class="text-secondary small flex-shrink-0 ms-auto">{{ latest|completion_date }}</span>
-    </a>
-    {% else %}
-    <div class="small text-secondary">Nothing logged yet — go finish something.</div>
-    {% endif %}
+    {# Completions per month, current year. Single series, one hue; future
+       months render as faint stubs. Tooltip carries the exact count. #}
+    {% set maxn = completions_by_month | max %}
+    <div class="cgt-month-bars">
+      {% for n in completions_by_month %}
+      <div class="cgt-month-bars__col"
+           title="{{ month_names[loop.index0] }} — {{ n }} completion{{ 's' if n != 1 }}">
+        <div class="cgt-month-bars__track">
+          <div class="cgt-month-bars__bar{% if loop.index > current_month %} cgt-month-bars__bar--future{% elif not n %} cgt-month-bars__bar--zero{% endif %}"
+               {% if n and maxn %}style="height: {{ (n / maxn * 100) | round(1) }}%"{% endif %}></div>
+        </div>
+        <div class="cgt-month-bars__label">{{ month_names[loop.index0][0] }}</div>
+      </div>
+      {% endfor %}
+    </div>
     <div class="cgt-tool-card__actions">
       <a href="/completions" class="btn btn-surface btn-sm">Open completions</a>
     </div>

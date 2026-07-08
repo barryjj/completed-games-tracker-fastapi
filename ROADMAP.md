@@ -362,6 +362,18 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 2. **Home v1** ✅ (this PR) — static default widget layout (completions-this-year vs. 52 goal, library totals, recently completed, needs-attention counts); `/` is the landing route after login. This is the minimal landing of the "Stats & dashboard" item below.
 3. **Customization** — pin/unpin persistence, widget picker, arrangement.
 
+### Detail-pane hero logo position / hide (agreed 2026-07-08)
+- Steam-client-style logo placement over the hero image, per library entry: preset anchors
+  (bottom-left default / top-left / top-center / center / bottom-center / bottom-right / hidden)
+- Some logos blend into their hero art or cover the focal point (e.g. Man of Medan) — moving
+  or hiding beats living with it
+- `logo_position` nullable column on `UserLibraryEntry` + small POST endpoint + CSS anchor
+  classes + "Logo position" options in the detail pane's More dropdown
+- **Presets only for v1.** Freeform drag/drop was considered and deliberately rejected:
+  pointer+touch handling, coordinate persistence, and bounds clamping on a responsive hero
+  is triple the work for marginal gain over anchors. Revisit only if presets feel insufficient.
+- Small standalone PR, after restructure phase 2 merges
+
 ### Sort name field
 - `sort_name` nullable column on `Game`; auto-populated from `display_name` (or `title`) on create/edit unless explicitly overridden
 - Lets users fix franchise sort order (e.g. "DmC: Devil May Cry" → sort as "Devil May Cry 0") without touching the display name

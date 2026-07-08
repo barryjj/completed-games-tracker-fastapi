@@ -2117,3 +2117,39 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   background-color: var(--ctp-crust);
 }
 .cgt-thumb-sm--empty { background-color: var(--ctp-surface0); }
+
+/* Month bar strip (This-year Home widget): 12 columns, completions per
+   month in the goal accent (flamingo). One series, one hue; zero months
+   show a faint stub (lighter step, same idea as an unfilled track), future
+   months fainter still. Exact counts live in the column title tooltip. */
+.cgt-month-bars {
+  display: flex;
+  gap: 3px;
+  margin: 0.25rem 0 0.1rem;
+}
+.cgt-month-bars__col {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.cgt-month-bars__track {
+  height: 44px;
+  display: flex;
+  align-items: flex-end;
+}
+.cgt-month-bars__bar {
+  width: 100%;
+  min-height: 3px;
+  background: var(--ctp-flamingo);
+  border-radius: 2px 2px 0 0;
+}
+.cgt-month-bars__bar--zero   { background: var(--ctp-surface1); }
+.cgt-month-bars__bar--future { background: var(--ctp-surface0); }
+.cgt-month-bars__label {
+  font-size: 0.55rem;
+  text-align: center;
+  text-transform: uppercase;
+  color: var(--ctp-overlay0);
+}
