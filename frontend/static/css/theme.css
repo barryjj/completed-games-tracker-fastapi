@@ -2105,3 +2105,15 @@ html[data-bs-theme="light"] .cgt-tool-stat--blue     .cgt-tool-stat__value { col
 html[data-bs-theme="light"] .cgt-tool-stat--pink     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
 html[data-bs-theme="light"] .cgt-tool-stat--maroon   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
 html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
+
+/* Small generic thumbnail (Home rows, anywhere a 64x30 header-art chip is
+   needed outside a table). Same shape as the match-review row thumb. */
+.cgt-thumb-sm {
+  width: 64px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background-color: var(--ctp-crust);
+}
+.cgt-thumb-sm--empty { background-color: var(--ctp-surface0); }

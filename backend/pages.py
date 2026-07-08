@@ -663,6 +663,10 @@ def home_page(
             contains_eager(models.Completion.library_entry)
             .contains_eager(models.UserLibraryEntry.release)
             .joinedload(models.GameRelease.platform_obj),
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .selectinload(models.GameRelease.artwork),
+            contains_eager(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
         )
         # Same ordering contract as the completions page's date sort: date
         # first, spreadsheet row order as the same-date tiebreaker.
@@ -675,16 +679,36 @@ def home_page(
         .all()
     )
     library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()
-    platform_count = (
-        db.query(func.count(func.distinct(models.GameRelease.platform_id)))
-        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
-        .filter(
-            models.UserLibraryEntry.user_id == current_user.id,
-            models.GameRelease.platform_id.isnot(None),
+    # Platform breakdown of the same default view, so the rows sum to the
+    # headline total. Grouped by platform_id (multiple raw strings can map to
+    # one linked Platform); unlinked entries group by their raw string.
+    breakdown_rows = (
+        _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0]
+        .with_entities(
+            models.GameRelease.platform_id,
+            models.GameRelease.platform,
+            func.count(models.UserLibraryEntry.id),
         )
-        .scalar()
-        or 0
+        .group_by(models.GameRelease.platform_id, models.GameRelease.platform)
+        .all()
     )
+    counts: dict = {}
+    raw_labels: dict = {}
+    for pid, raw, n in breakdown_rows:
+        key = ("pid", pid) if pid else ("raw", raw)
+        counts[key] = counts.get(key, 0) + n
+        raw_labels[key] = raw
+    pids = [k[1] for k in counts if k[0] == "pid"]
+    pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(pids)).all()} if pids else {}
+    platform_breakdown = []
+    for key, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        kind, val = key
+        if kind == "pid" and val in pmap:
+            p = pmap[val]
+            platform_breakdown.append({"label": p.display_title, "css": p.css_class, "value": f"pid:{val}", "count": n})
+        else:
+            label = raw_labels[key] or "Unknown"
+            platform_breakdown.append({"label": label, "css": models._platform_heuristic_css(label), "value": label, "count": n})
     import_counts = _import_tab_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
@@ -696,8 +720,7 @@ def home_page(
             "completions_this_year": completions_this_year,
             "recent_completions": recent_completions,
             "library_total": library_total,
-            "platform_count": platform_count,
-            "steam_counts": _steam_counts(db, current_user),
+            "platform_breakdown": platform_breakdown,
             "import_pending": sum(import_counts.values()),
             **_base_ctx(db, current_user),
         },

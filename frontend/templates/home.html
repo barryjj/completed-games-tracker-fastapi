@@ -22,13 +22,20 @@
         <div class="cgt-tool-stat__label">Goal</div>
       </div>
     </div>
-    <div class="small text-secondary">
-      {% if recent_completions %}
-      Latest: {{ recent_completions[0].library_entry.release.game.display_title }} — {{ recent_completions[0]|completion_date }}
-      {% else %}
-      Nothing logged yet — go finish something.
-      {% endif %}
-    </div>
+    {% if recent_completions %}
+    {% set latest = recent_completions[0] %}
+    {% set _thumb = latest.library_entry | grid_cover_url('grid_h') %}
+    <div class="cgt-tool-stat__label mb-1">Latest</div>
+    <a class="cgt-detail-list-row d-flex align-items-center gap-2"
+       href="/completions?detail={{ latest.id }}">
+      {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
+      {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
+      <span class="text-truncate small">{{ latest.library_entry.release.game.display_title }}</span>
+      <span class="text-secondary small flex-shrink-0 ms-auto">{{ latest|completion_date }}</span>
+    </a>
+    {% else %}
+    <div class="small text-secondary">Nothing logged yet — go finish something.</div>
+    {% endif %}
     <div class="cgt-tool-card__actions">
       <a href="/completions" class="btn btn-surface btn-sm">Open completions</a>
     </div>
@@ -43,10 +50,22 @@
         <div class="cgt-tool-stat__label">Games</div>
       </div>
     </div>
-    <div class="small text-secondary">
-      {% if platform_count %}Across {{ platform_count }} platform{{ 's' if platform_count != 1 }}.{% endif %}
-      {% if steam_counts is not none %}{{ "{:,}".format(steam_counts.total) }} synced from Steam.{% endif %}
+    {% if platform_breakdown %}
+    <div>
+      {% for row in platform_breakdown[:6] %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
+         href="/library?platform={{ row.value | urlencode }}">
+        <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
+        <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
+      </a>
+      {% endfor %}
+      {% if platform_breakdown | length > 6 %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
+        <span class="small text-secondary">…and {{ platform_breakdown | length - 6 }} more</span>
+      </a>
+      {% endif %}
     </div>
+    {% endif %}
     <div class="cgt-tool-card__actions">
       <a href="/library" class="btn btn-surface btn-sm">Open library</a>
     </div>
@@ -58,10 +77,13 @@
     {% if recent_completions %}
     <div>
       {% for c in recent_completions %}
-      <a class="cgt-detail-list-row d-flex justify-content-between align-items-baseline gap-3"
+      {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
          href="/completions?detail={{ c.id }}">
+        {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
+        {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
         <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
-        <span class="text-secondary small flex-shrink-0">{{ c|completion_date }}</span>
+        <span class="text-secondary small flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
       </a>
       {% endfor %}
     </div>
