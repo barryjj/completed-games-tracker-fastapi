@@ -62,9 +62,10 @@
       </div>
       <div class="d-flex align-items-center gap-1">
         {# Identity label — not a control. Sign out lives at the bottom of the
-           Settings left nav; the gear is the only interactive element here. #}
+           Settings left nav; the gear is the only interactive element here.
+           This slot becomes the avatar when the navbar-avatar roadmap item
+           (upload / pick from Steam/PSN) lands. #}
         <span class="cgt-nav-user" title="Signed in as {{ current_user.username }}">
-          <span class="cgt-nav-user__badge">{{ current_user.name[0] | upper }}</span>
           <span class="cgt-nav-user__name">{{ current_user.name }}</span>
         </span>
         {# Gear = Settings. Also lights up on the per-service configure pages
