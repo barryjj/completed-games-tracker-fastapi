@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <h4 class="mb-0">Home</h4>
+  <p class="text-secondary small mb-0">Your library and completions at a glance.</p>
+</div>
+
+<div class="cgt-tool-grid">
+
+  {# ── Completions this year ──────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">This year</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--flamingo">
+        <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
+        <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
+      </div>
+      <div class="cgt-tool-stat cgt-tool-stat--muted">
+        <div class="cgt-tool-stat__value">{{ yearly_goal }}</div>
+        <div class="cgt-tool-stat__label">Goal</div>
+      </div>
+    </div>
+    {# Completions per month, current year. Single series, one hue; future
+       months render as faint stubs. Tooltip carries the exact count. #}
+    {% set maxn = completions_by_month | max %}
+    <div class="cgt-month-bars">
+      {% for n in completions_by_month %}
+      <div class="cgt-month-bars__col"
+           title="{{ month_names[loop.index0] }} — {{ n }} completion{{ 's' if n != 1 }}">
+        <div class="cgt-month-bars__track">
+          <div class="cgt-month-bars__bar{% if loop.index > current_month %} cgt-month-bars__bar--future{% elif not n %} cgt-month-bars__bar--zero{% endif %}"
+               {% if n and maxn %}style="height: {{ (n / maxn * 100) | round(1) }}%"{% endif %}></div>
+        </div>
+        <div class="cgt-month-bars__label">{{ month_names[loop.index0][0] }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="cgt-tool-card__actions">
+      <a href="/completions" class="btn btn-surface btn-sm">Open completions</a>
+    </div>
+  </div>
+
+  {# ── Library ────────────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Library</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
+        <div class="cgt-tool-stat__label">Games</div>
+      </div>
+    </div>
+    {% if platform_breakdown %}
+    <div>
+      {% for row in platform_breakdown[:6] %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
+         href="/library?platform={{ row.value | urlencode }}">
+        <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
+        <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
+      </a>
+      {% endfor %}
+      {% if platform_breakdown | length > 6 %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
+        <span class="small text-secondary">…and {{ platform_breakdown | length - 6 }} more</span>
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="cgt-tool-card__actions">
+      <a href="/library" class="btn btn-surface btn-sm">Open library</a>
+    </div>
+  </div>
+
+  {# ── Recently completed ─────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Recently completed</div>
+    {% if recent_completions %}
+    <div>
+      {% for c in recent_completions %}
+      {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
+         href="/completions?detail={{ c.id }}">
+        {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
+        {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
+        <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
+        <span class="text-secondary small flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="small text-secondary">Completions you log will show up here.</div>
+    {% endif %}
+  </div>
+
+  {# ── Needs attention ────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Needs attention</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if pending_matches else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ pending_matches or 0 }}</div>
+        <div class="cgt-tool-stat__label">Matches</div>
+      </div>
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if import_pending else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_pending) }}</div>
+        <div class="cgt-tool-stat__label">Import candidates</div>
+      </div>
+    </div>
+    {% if not pending_matches and not import_pending %}
+    <div class="small text-secondary">All caught up.</div>
+    {% endif %}
+    <div class="cgt-tool-card__actions">
+      {% if pending_matches %}<a href="/library/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
+      {% if import_pending %}<a href="/library/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
+      <a href="/tools" class="btn btn-surface btn-sm">All tools</a>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

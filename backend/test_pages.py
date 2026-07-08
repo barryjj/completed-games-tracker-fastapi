@@ -39,7 +39,7 @@ def test_login_valid_credentials(client):
     client.post("/signup", data={"username": "u1", "password": "pw", "password_confirm": "pw"})
     r = client.post("/login", data={"username": "u1", "password": "pw"}, follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == "/library"
+    assert r.headers["location"] == "/"
     assert "session" in r.cookies
 
 
@@ -71,10 +71,19 @@ def test_completions_requires_auth(client):
     assert "/login" in r.headers["location"]
 
 
-def test_root_redirects_to_library(client):
+def test_root_requires_auth(client):
     r = client.get("/", follow_redirects=False)
     assert r.status_code == 302
-    assert r.headers["location"] == "/library"
+    assert "/login" in r.headers["location"]
+
+
+def test_home_page_loads(client):
+    _signup_and_login(client)
+    r = client.get("/")
+    assert r.status_code == 200
+    assert b"This year" in r.content
+    assert b"Recently completed" in r.content
+    assert b"Needs attention" in r.content
 
 
 # --- library page ---

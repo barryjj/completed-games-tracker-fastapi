@@ -553,7 +553,7 @@ def signup_submit(
             status_code=422,
         )
     u = users.signup_user(db, username.strip(), password)
-    response = RedirectResponse("/library", status_code=302)
+    response = RedirectResponse("/", status_code=302)
     response.set_cookie("session", u.api_token, httponly=True, samesite="lax")
     return response
 
@@ -573,7 +573,7 @@ def login_submit(
             context={"error": "Invalid username or password"},
             status_code=401,
         )
-    response = RedirectResponse("/library", status_code=302)
+    response = RedirectResponse("/", status_code=302)
     response.set_cookie("session", user.api_token, httponly=True, samesite="lax")
     return response
 
@@ -635,6 +635,125 @@ def _steam_counts(db: Session, user: models.User) -> dict | None:
     return {"games": games, "dlc": dlc, "total": games + dlc}
 
 
+# TODO(phase 3): user-configurable yearly goal — hardcoded until widget
+# customization lands (see ROADMAP "Home / Tools / Settings restructure").
+_YEARLY_GOAL = 52
+
+
+@router.get("/")
+def home_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Home v1 (restructure phase 2): landing page with a static set of stat
+    widgets — completions this year vs. goal, library totals, recent
+    completions, needs-attention counts. Pin/customize is phase 3."""
+    year = datetime.date.today().year
+    comp_base = db.query(models.Completion).filter(models.Completion.user_id == current_user.id)
+    completions_this_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year)).count()
+    # Per-month counts for the current year (mini bar strip on the This-year
+    # widget). Always 12 slots; future months render as stubs client-side.
+    month_rows = (
+        comp_base.with_entities(func.strftime("%m", models.Completion.completed_at), func.count())
+        .filter(func.strftime("%Y", models.Completion.completed_at) == str(year))
+        .group_by(func.strftime("%m", models.Completion.completed_at))
+        .all()
+    )
+    completions_by_month = [0] * 12
+    for m, n in month_rows:
+        completions_by_month[int(m) - 1] = n
+    recent_completions = (
+        comp_base.join(models.Completion.library_entry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .options(
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .contains_eager(models.GameRelease.game),
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .joinedload(models.GameRelease.platform_obj),
+            contains_eager(models.Completion.library_entry)
+            .contains_eager(models.UserLibraryEntry.release)
+            .selectinload(models.GameRelease.artwork),
+            contains_eager(models.Completion.library_entry).selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        # Same ordering contract as the completions page's date sort: date
+        # first, spreadsheet row order as the same-date tiebreaker.
+        .order_by(
+            models.Completion.completed_at.desc(),
+            models.Completion.sort_order.asc().nulls_last(),
+            models.Completion.id.desc(),
+        )
+        .limit(5)
+        .all()
+    )
+    library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()
+    # Platform breakdown of the same default view, so the rows sum to the
+    # headline total. Grouped by platform_id (multiple raw strings can map to
+    # one linked Platform); unlinked entries group by their raw string.
+    breakdown_rows = (
+        _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0]
+        .with_entities(
+            models.GameRelease.platform_id,
+            models.GameRelease.platform,
+            func.count(models.UserLibraryEntry.id),
+        )
+        .group_by(models.GameRelease.platform_id, models.GameRelease.platform)
+        .all()
+    )
+    counts: dict = {}
+    raw_labels: dict = {}
+    for pid, raw, n in breakdown_rows:
+        key = ("pid", pid) if pid else ("raw", raw)
+        counts[key] = counts.get(key, 0) + n
+        raw_labels[key] = raw
+    pids = [k[1] for k in counts if k[0] == "pid"]
+    pmap = {p.id: p for p in db.query(models.Platform).filter(models.Platform.id.in_(pids)).all()} if pids else {}
+    platform_breakdown = []
+    for key, n in sorted(counts.items(), key=lambda kv: -kv[1]):
+        kind, val = key
+        if kind == "pid" and val in pmap:
+            p = pmap[val]
+            platform_breakdown.append({"label": p.display_title, "css": p.css_class, "value": f"pid:{val}", "count": n})
+        else:
+            label = raw_labels[key] or "Unknown"
+            platform_breakdown.append({"label": label, "css": models._platform_heuristic_css(label), "value": label, "count": n})
+    import_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="home.html",
+        context={
+            "current_user": current_user,
+            "year": year,
+            "yearly_goal": _YEARLY_GOAL,
+            "completions_this_year": completions_this_year,
+            "completions_by_month": completions_by_month,
+            "current_month": datetime.date.today().month,
+            "month_names": [
+                "January",
+                "February",
+                "March",
+                "April",
+                "May",
+                "June",
+                "July",
+                "August",
+                "September",
+                "October",
+                "November",
+                "December",
+            ],
+            "recent_completions": recent_completions,
+            "library_total": library_total,
+            "platform_breakdown": platform_breakdown,
+            "import_pending": sum(import_counts.values()),
+            **_base_ctx(db, current_user),
+        },
+    )
+
+
 @router.get("/tools")
 def tools_page(
     request: Request,
@@ -645,6 +764,9 @@ def tools_page(
     import, artwork) as cards. Replaces the action half of the old
     /integrations hub; configuration lives under /settings."""
     import_counts = _import_tab_counts(db, current_user.id)
+    # Entries with no vertical cover (the canonical orientation) — same filter
+    # the library's "Missing artwork" checkbox applies in grid_v.
+    missing_q, _, _ = _build_lib_query(db, current_user, "", "", "default", "name", False, True, "grid_v")
     return templates.TemplateResponse(
         request=request,
         name="tools.html",
@@ -653,6 +775,7 @@ def tools_page(
             "steam_counts": _steam_counts(db, current_user),
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
+            "missing_covers": missing_q.count(),
             **_base_ctx(db, current_user),
         },
     )

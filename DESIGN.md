@@ -17,7 +17,14 @@ Both palettes are defined in `frontend/static/css/theme.css`.
 
 ## Navigation & Page Layout
 
-Navbar: **Library · Completions · Tools** on the left; **gear (Settings) + user dropdown** on the right.
+Navbar: **Home · Library · Completions · Tools** on the left; **gear (Settings) + user dropdown** on the right.
+
+- **Home** (`/`) — landing page after login. Static widget grid (Home v1) reusing the
+  tool-card + stat-row components: completions this year vs. goal (flamingo accent) with a
+  12-month bar strip (`.cgt-month-bars`, single hue, tooltips carry exact counts), library
+  platform breakdown (badge + count rows linking to the filtered library), recently
+  completed list with cover thumbnails (rows deep-link to `/completions?detail=N`),
+  needs-attention counts. Widget pin/customize is restructure phase 3.
 
 - **Tools** (`/tools`) — recurring operations as `.cgt-tool-card` cards: Steam sync, match
   review, spreadsheet import, artwork. The yellow pending-matches badge lives on the Tools
@@ -191,6 +198,36 @@ Selected chip gets `btn-primary` / loses `btn-outline-secondary`.
 Title strip is uppercase small-caps with badges inline; actions row pins to the card
 bottom via `margin-top: auto`. Action buttons use `hx-swap="none"` — results arrive as
 OOB toasts. Muted placeholder cards add `.cgt-tool-card--muted`.
+
+### Tool-card stat row (big labeled numbers)
+```html
+<div class="cgt-tool-stats">
+  <div class="cgt-tool-stat cgt-tool-stat--teal">
+    <div class="cgt-tool-stat__value">9,945</div>
+    <div class="cgt-tool-stat__label">Games</div>
+  </div>
+</div>
+```
+Values are the only colored text; labels stay muted ink (identity is never color-alone).
+**Accent meanings are semantic — reuse them, don't invent new assignments:**
+
+| Accent | Meaning |
+|--------|---------|
+| `teal` | Steam games |
+| `peach` | DLC (matches `tag-dlc`) |
+| `lavender` | totals |
+| `yellow` | pending / needs attention |
+| `green` | matched / certain |
+| `blue` | new / informational |
+| `pink` | needs manual input (confidence-coding roadmap item) |
+| `maroon` | missing / gap |
+| `--muted` modifier | zero / nothing to do |
+
+Side-by-side triplets (teal/peach/lavender, green/blue/pink) are validated for
+colorblind separation. Light mode auto-darkens values via `color-mix` toward text ink —
+don't hardcode Latte shades. The tool grid uses `grid-auto-rows: 1fr` so all cards in
+a row share the tallest card's height — uniform tiles are structural, not dependent on
+text happening to wrap evenly.
 
 ### Settings left-nav item
 ```html
