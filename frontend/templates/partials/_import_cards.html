@@ -10,8 +10,9 @@
     {% if v and (v.hero_url or v.fallback_hero_url) %}
     <div class="cgt-import-hero">
       <img class="cgt-detail-hero__img" src="{{ v.hero_url or v.fallback_hero_url }}" alt="" loading="lazy">
-      {% if v.logo_url or v.fallback_logo_url %}
-      <img class="cgt-detail-hero__logo" src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">
+      {% set _lp = c.library_entry.logo_position if c.library_entry else None %}
+      {% if (v.logo_url or v.fallback_logo_url) and _lp != 'hidden' %}
+      <img class="cgt-detail-hero__logo{% if _lp %} cgt-detail-hero__logo--{{ _lp }}{% endif %}" src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">
       {% endif %}
     </div>
     {% endif %}
