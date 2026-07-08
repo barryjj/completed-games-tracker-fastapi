@@ -76,6 +76,9 @@ def test_account_redirects_to_settings(client):
     assert r.headers["location"] == "/settings"
     r = client.get("/account?tab=platforms", follow_redirects=False)
     assert r.headers["location"] == "/settings?section=platforms"
+    # Unknown/malicious tab values are dropped, never echoed into the redirect
+    r = client.get("/account?tab=//evil.example", follow_redirects=False)
+    assert r.headers["location"] == "/settings"
 
 
 def test_settings_requires_auth(client):
