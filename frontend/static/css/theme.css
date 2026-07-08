@@ -768,8 +768,7 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
 }
 /* Child DLC rows inside the detail pane: clickable, hover hint. */
 .cgt-detail-child-row { cursor: pointer; }
-.cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
-html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
+.cgt-detail-child-row:hover > td { background-color: color-mix(in srgb, var(--ctp-mauve) 10%, transparent); }
 
 /* Each completion is its own bordered record box using the same labeled
    dt/dl meta style as "This completion" in the completion detail pane,
@@ -801,10 +800,7 @@ a.cgt-completion-record {
   cursor: pointer;
 }
 a.cgt-completion-record:hover {
-  background-color: var(--ctp-surface1);
-}
-html[data-bs-theme="light"] a.cgt-completion-record:hover {
-  background-color: var(--ctp-surface0);
+  background-color: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
 }
 /* Compact one-line version of the same left-accent treatment, for the
    completions summary in list rows — full-contrast text instead of muted
@@ -835,8 +831,7 @@ html[data-bs-theme="light"] a.cgt-completion-record:hover {
   text-decoration: none;
   color: inherit;
 }
-.cgt-detail-list-row:hover { background-color: var(--ctp-surface1); }
-html[data-bs-theme="light"] .cgt-detail-list-row:hover { background-color: var(--ctp-surface0); }
+.cgt-detail-list-row:hover { background-color: color-mix(in srgb, var(--ctp-mauve) 10%, transparent); }
 
 /* ─── Active nav indicator ──────────────────────────────────────────────── */
 /* Replaces the dropped <h1>Library</h1>/<h1>Completions</h1> page titles.

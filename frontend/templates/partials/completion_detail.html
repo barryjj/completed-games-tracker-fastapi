@@ -289,6 +289,21 @@
              data-playthroughs="{{ (completion.playthroughs or '') | e }}"
              data-notes="{{ (completion.notes or '') | e }}">Edit completion</a></li>
       <li><hr class="dropdown-divider"></li>
+      {% if hero_url or fallback_hero_url %}{% if logo_url or fallback_logo_url or entry.logo_position == 'hidden' %}
+      <li><h6 class="dropdown-header">Logo position</h6></li>
+      {% for _val, _label in [('', 'Bottom left'), ('bottom-center', 'Bottom center'), ('bottom-right', 'Bottom right'),
+                              ('top-left', 'Top left'), ('top-center', 'Top center'), ('top-right', 'Top right'),
+                              ('center', 'Center'), ('hidden', 'Hidden')] %}
+      <li><a class="dropdown-item" href="#"
+             hx-post="/library/entries/{{ entry.id }}/logo-position"
+             hx-vals='{"position": "{{ _val }}"}'
+             hx-swap="none"
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">
+           {{ '✓' if (entry.logo_position or '') == _val else ' ' }} {{ _label }}
+         </a></li>
+      {% endfor %}
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}{% endif %}
       {% if release.source == "steam" %}
       <li><a class="dropdown-item" href="#"
              hx-post="/library/entries/{{ entry.id }}/refresh-metadata"
