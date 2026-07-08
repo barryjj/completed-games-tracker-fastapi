@@ -45,14 +45,28 @@
     {% endif %}
   </td>
   <td class="align-middle">
-    {% set _dated = c.rows | selectattr("completed_at") | list %}
-    {# Neutral grey slat — no special meaning (not "new", not "differs"),
-       just visual weight to match the completion boxes elsewhere instead
-       of throwaway muted text. #}
-    <span class="cgt-completion-summary-slat small">
-      {{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}
-      {% if _dated %}· latest {{ (_dated | sort(attribute="completed_at") | last) | completion_date }}{% endif %}
-    </span>
+    {# One slat chip per completion date (precision-aware) instead of a
+       "N completions · latest X" sentence — the actual dates fit fine for
+       the common 1-2 row case and use the column's width for real data.
+       Playthroughs tag along when they're more than a plain single run. #}
+    {% set _dated = c.rows | selectattr("completed_at") | sort(attribute="completed_at") | list %}
+    {% set _undated = c.rows | rejectattr("completed_at") | list %}
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      {% for r in _dated[:4] %}
+      <span class="cgt-completion-summary-slat small">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} · ×{{ r.playthroughs }}{% endif %}</span>
+      {% endfor %}
+      {% if _dated | length > 4 %}
+      <span class="small text-secondary">+{{ _dated | length - 4 }} more</span>
+      {% endif %}
+      {% if _undated %}
+      <span class="small text-secondary">{{ _undated | length }} undated</span>
+      {% endif %}
+      {% if c.status == "confirmed" and c.reviewed_at %}
+      {# The Confirmed tab's one distinguishing fact — parked at the right
+         end of the column where the dead space was. #}
+      <span class="small text-secondary ms-auto me-3">imported {{ c.reviewed_at.strftime("%b %-d, %Y") }}</span>
+      {% endif %}
+    </div>
   </td>
   <td class="align-middle text-end text-nowrap row-actions">
     {% if c.status == "confirmed" %}
