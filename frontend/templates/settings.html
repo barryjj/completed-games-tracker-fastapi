@@ -13,6 +13,11 @@
     <div class="cgt-settings-nav__group">Configuration</div>
     <a class="cgt-settings-nav__item" data-section="platforms" href="?section=platforms">Platforms</a>
     <a class="cgt-settings-nav__item" data-section="integrations" href="?section=integrations">Integrations</a>
+
+    <div class="cgt-settings-nav__group">Session</div>
+    {# Plain link, not a section — the navbar dropdown is gone, so this is
+       where signing out lives now. #}
+    <a class="cgt-settings-nav__item cgt-settings-nav__item--signout" href="/logout">Sign out</a>
   </nav>
 
   <div class="cgt-settings-content" id="settings-content">
@@ -325,7 +330,9 @@
   }
 
   (function () {
-    var items    = document.querySelectorAll('#settings-nav .cgt-settings-nav__item');
+    // [data-section] only — the Sign out link at the bottom is a real
+    // navigation and must not be preventDefault'd into a section switch.
+    var items    = document.querySelectorAll('#settings-nav .cgt-settings-nav__item[data-section]');
     var sections = document.querySelectorAll('.settings-section');
     var content  = document.getElementById('settings-content');
 

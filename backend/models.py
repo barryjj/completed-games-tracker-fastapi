@@ -514,6 +514,12 @@ class UserLibraryEntry(Base):
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
     # must not touch this entry. Same pattern as the *_user_set flags on Game.
     is_hidden_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Detail-pane hero logo placement — preset anchor ('top-left', 'top-center',
+    # 'top-right', 'center', 'bottom-center', 'bottom-right') or 'hidden'.
+    # NULL = default bottom-left. Cosmetic, per entry.
+    logo_position: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Hero-logo size preset: 'small' | 'large' | 'xlarge'; NULL = default.
+    logo_scale: Mapped[str | None] = mapped_column(String, nullable=True)
     # "steam_import" | "psn_import" | "manual"
     import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry
@@ -670,6 +676,12 @@ class ImportRow(Base):
     # raw_date by rematch_pending_candidates-adjacent tooling.
     completed_at_precision: Mapped[str | None] = mapped_column(String, nullable=True)
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Completion this row created when its candidate was confirmed — lets
+    # Reopen delete exactly what confirm made. Plain int (no FK DDL; SQLite
+    # ALTER can't add enforced constraints and doesn't enforce them anyway).
+    # NULL for rows confirmed before this column existed; Reopen falls back
+    # to matching entry + date + sort_order for those.
+    created_completion_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
 

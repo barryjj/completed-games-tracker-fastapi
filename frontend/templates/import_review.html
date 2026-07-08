@@ -47,6 +47,12 @@
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Needs review <span class="badge bg-secondary ms-1" id="import-tab-count-needs_review">{{ tab_counts.needs_review }}</span>
   </button>
+  <button type="button" class="btn btn-surface{% if tab == 'confirmed' %} active{% endif %}" data-tab="confirmed"
+          onclick="importSwitchTab(this, 'confirmed')"
+          hx-get="/library/import/review" hx-vals='{"tab":"confirmed"}' hx-include="#import-filters-form [name]"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
+    Confirmed <span class="badge bg-secondary ms-1" id="import-tab-count-confirmed">{{ confirmed_count }}</span>
+  </button>
 </div>
 
 <form

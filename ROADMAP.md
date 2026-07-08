@@ -272,7 +272,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## Near-term
 
-### IGDB / Twitch integration
+### IGDB / Twitch integration ✅ (shipped — see DESIGN.md "IGDB Integration" for the as-built reference)
 - Agreed priority: IGDB → Platforms → PSN → Historical import
 - Twitch Client Credentials OAuth (Client ID + Secret stored per-user on the integrations page, same pattern as SGDB)
 - Access token fetched and cached (expires hourly); auto-refreshed on use
@@ -282,19 +282,29 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Platform data from IGDB `/platforms` used to seed the platforms table (see below)
 - Enrichment path: background worker can fill `igdb_id` on existing manual entries by title-matching (optional, user-triggered)
 
-### Platforms table (after IGDB)
+### Platforms table ✅ (shipped — platforms/aliases/families with Catppuccin badge colors, managed under Settings → Platforms)
 - `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`, **`igdb_id`** (nullable int)
 - Seeded from IGDB's `/platforms` endpoint so our IDs align with IGDB from day one — no reconciliation needed when IGDB integration lands
 - Platform taxonomy is complex (Xbox naming, handheld generations, backward-compat edge cases); IGDB has already solved it, so we don't invent our own
 - When this lands: `GameRelease.platform` free-text replaced by `platform_id` FK; `_platform_color_class` regex replaced by a table lookup; manual add modal gets a platform dropdown instead of free text
 - All current releases are Steam so the backfill migration is a trivial one-row update
 
-### Sync match review (after platforms)
+### Sync match review ✅ (shipped as PR #114 — full detail in the "Sync match review" entry under In progress/next up)
 - When a Steam (or later PSN) sync finds a game that looks like an existing manual entry on the same platform, queue it for review rather than silently creating a duplicate
 - Dedicated review page: side-by-side per match — manual entry vs. detected game; user picks Merge / Keep Separate / Always Separate
 - Merge: the manual `UserLibraryEntry` survives (preserving logged completions), `release` row gets the platform's `external_id` + `raw_data` + artwork, `source` flips from `"manual"` to `"steam"` / `"psn"`; `display_name_user_set=True` protects the user's display name
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
+
+### Desktop packaging (Tauri) — promoted from Later, 2026-07-08
+- Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
+- **Why now: it gates the sign-in story for both platform integrations.** A WebView we
+  control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
+  at login time — one "Sign in" click replaces manual cookie paste for both
+- Bundles into a single .app / .exe; target Mac first (user's primary machine), Windows second
+- **Explicitly does NOT change image loading.** The backend already runs locally; Tauri just
+  swaps browser for WebView. Cover-art speed comes from the "Local artwork cache" item
+  (Medium-term), which is independent, backend-only, and carries into Tauri unchanged.
 
 ### PSN integration (after sync match review)
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
@@ -333,7 +343,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   - **Still open:** collection-match pre-check idea — when a collection is matched but no child game found (→ create_new), carry that info forward so the add-game modal can pre-check "in a collection" and prepopulate it (not built yet)
   - **Still open:** Pinball FX2's DLC-style table entries ("Pinball FX2 - Deadpool Table" etc.) are all top-level unparented games rather than linked via `parent_id` to a "Pinball FX2" base — same shape as the SEGA Mega Drive/Genesis Classics situation. Left alone deliberately; they should still be individually matchable by title via normal (non-collection) matching, just unconfirmed whether that actually works end-to-end for this specific naming pattern
   - **Still open:** layout polish — tabs currently styled as a `btn-group`, inconsistent with the existing settings-page tab component; long lists bury the tab/filter bar with no way back to the top
-  - **Still open, worth doing:** "Reopen" action for confirmed import candidates — currently a wrongly-matched confirm (e.g. matched to the wrong sequel) has to be fixed by manually deleting the Completion via the Completions page and there's no way to get the candidate back into the review queue at all. A Reopen action would delete the Completion(s) it created and flip the candidate back to `pending`. No UI or endpoint for this exists yet. Worth having regardless of how good the matcher gets — some future bug will produce a wrong confirm eventually, and manual DB surgery isn't a real workflow
+  - ~~Still open, worth doing: "Reopen" action for confirmed import candidates~~ ✅ shipped 2026-07-08: Confirmed tab on import review lists confirmed candidates; Reopen deletes the completions the confirm created (exact linkage via `ImportRow.created_completion_id`, stamped at confirm; legacy confirms matched by entry+date+sheet-row sort_order) and flips the candidate back to pending. A reopened create_new keeps its library entry and becomes add_to_existing so re-confirm can't duplicate it
   - Real matcher bug fixed this session: SQL-level candidate narrowing (`_search_pool`) did a literal contiguous-phrase `ILIKE`, which failed outright when the library title had stray characters the spreadsheet text didn't (e.g. "Golden Axe™ II" vs spreadsheet "Golden Axe II") — the correct entry was silently excluded before Python-side normalization ever ran. Combined with "III" containing "II" as a literal substring, this caused "Golden Axe II" to wrongly match "Golden Axe III"'s library entry. Fixed by tokenizing the search phrase (same punctuation-stripping as `_normalize_title`) and requiring each word to independently appear in `title` OR `display_name`, falling back to the old literal-phrase search only if the tokenized pass finds nothing
   - Not yet confirmed whether sync match review's `_score()` has a similar subtitle-insertion blind spot to what the importer had — untested there, not confirmed-safe
 
@@ -362,7 +372,7 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 2. **Home v1** ✅ (this PR) — static default widget layout (completions-this-year vs. 52 goal, library totals, recently completed, needs-attention counts); `/` is the landing route after login. This is the minimal landing of the "Stats & dashboard" item below.
 3. **Customization** — pin/unpin persistence, widget picker, arrangement.
 
-### Detail-pane hero logo position / hide (agreed 2026-07-08)
+### Detail-pane hero logo position / hide ✅ (agreed + shipped 2026-07-08, this PR)
 - Steam-client-style logo placement over the hero image, per library entry: preset anchors
   (bottom-left default / top-left / top-center / center / bottom-center / bottom-right / hidden)
 - Some logos blend into their hero art or cover the focal point (e.g. Man of Medan) — moving
@@ -387,6 +397,36 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 
 ## Medium-term
 
+### Local artwork cache — serve images to the client from our own disk
+- Today every cover/hero/logo render hotlinks the remote CDN (Steam / SGDB / IGDB) on every
+  page load. Remote URLs rot (the whole `is_valid` verification apparatus and the
+  broken-cover requeue exist because of it), SGDB hotlinking burns their bandwidth, and a
+  grid of 200 covers re-fetches everything on each visit.
+- Background job downloads artwork referenced by `GameArtwork` / `UserArtwork` into a local
+  store (e.g. `data/artwork/{hash}.{ext}`), keyed by artwork row; new `cached_path` column
+  or sidecar table
+- New `/artwork/{id}` route serves the cached file with long-lived cache headers; the
+  `grid_cover_url` resolution chain prefers the cached copy and falls back to the remote
+  URL when not yet downloaded — nothing breaks mid-migration
+- Cache-warming goes through the existing job system (started/completion toasts, counts);
+  per-entry fetch happens opportunistically on detail-pane open like metadata refresh
+- Pairs with: URL-verification follow-on (a 404 during download IS the verification),
+  Tauri desktop packaging (covers work offline), and drops the SGDB/Steam hotlink dependency
+- **Logistics at current scale (~18.3k entries, sized 2026-07-08):**
+  - Covers only (v+h, ~50-150 KB each) ≈ 2-3 GB on disk; heroes/logos for everything pushes
+    toward 10 GB+ — so default to covers, fetch hero/logo opportunistically on detail-pane
+    open (same pattern as the stale-metadata refresh)
+  - One-time warm ≈ 30-40k downloads, hours as a rate-limited resumable background job —
+    the enrichment worker already proved this shape over 10-hour runs
+  - Grid slowness has two halves: CDN latency/variance (fixed by same-origin serving) and
+    shipping 600x900 originals into 170px cards (fixed only by thumbnail variants, which
+    needs Pillow — new dependency, requires approval). Sequence: cache+serve first, measure,
+    thumbnails second if grids still feel slow.
+- **Tauri note:** no separate client cache needed — the FastAPI backend runs as a local
+  sidecar under Tauri, so this server-side disk cache IS the persistent local cache there
+  (no WebView cache eviction, survives updates, works offline). Building it now pre-pays
+  the Tauri work.
+
 ### Stats & dashboard / home page
 - **Minimal version lands as Home v1 in the Home / Tools / Settings restructure (phase 2, see Near-term)** — this item becomes the widget expansion on top of it
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
@@ -408,12 +448,6 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 ---
 
 ## Later
-
-### Desktop packaging (Tauri)
-- Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
-- Enables proper OAuth/cookie capture flows for Steam and PSN without manual copy-paste
-- Bundles into a single .app / .exe
-- Target Mac first (user's primary machine), Windows second
 
 ### Platform preferences
 - User settings: check/uncheck platforms you own or want to track
