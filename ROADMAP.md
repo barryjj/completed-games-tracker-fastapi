@@ -387,6 +387,24 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 
 ## Medium-term
 
+### Local artwork cache — serve images to the client from our own disk
+- Today every cover/hero/logo render hotlinks the remote CDN (Steam / SGDB / IGDB) on every
+  page load. Remote URLs rot (the whole `is_valid` verification apparatus and the
+  broken-cover requeue exist because of it), SGDB hotlinking burns their bandwidth, and a
+  grid of 200 covers re-fetches everything on each visit.
+- Background job downloads artwork referenced by `GameArtwork` / `UserArtwork` into a local
+  store (e.g. `data/artwork/{hash}.{ext}`), keyed by artwork row; new `cached_path` column
+  or sidecar table
+- New `/artwork/{id}` route serves the cached file with long-lived cache headers; the
+  `grid_cover_url` resolution chain prefers the cached copy and falls back to the remote
+  URL when not yet downloaded — nothing breaks mid-migration
+- Cache-warming goes through the existing job system (started/completion toasts, counts);
+  per-entry fetch happens opportunistically on detail-pane open like metadata refresh
+- Pairs with: URL-verification follow-on (a 404 during download IS the verification),
+  Tauri desktop packaging (covers work offline), and drops the SGDB/Steam hotlink dependency
+- Sizing/re-encode question deferred: store originals first; thumbnail variants only if
+  grid load times justify it
+
 ### Stats & dashboard / home page
 - **Minimal version lands as Home v1 in the Home / Tools / Settings restructure (phase 2, see Near-term)** — this item becomes the widget expansion on top of it
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
