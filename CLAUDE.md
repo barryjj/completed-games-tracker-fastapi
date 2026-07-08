@@ -39,9 +39,14 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 
 ## PR workflow
 
-1. Feature branch → work → commit → push → open PR → **immediately `git checkout main`**
-2. Stay on `main` while the PR is open. If fixes are needed: checkout the feature branch, fix, push, return to `main`.
-3. When the user confirms the PR is merged: `git pull origin main` → create next feature branch → delete old branch locally and remotely.
+1. Feature branch → work → commit → push → open PR → **stay on the feature branch.**
+   The user tests PRs by running the app from the local checkout — switching to `main`
+   strands them on old code. Never checkout `main` while a PR is open.
+2. If fixes are needed while the PR is open: fix, commit, push on the same branch.
+3. When the user confirms the PR is merged: `git checkout main` → `git pull origin main` →
+   delete the old branch locally and remotely → create the next feature branch.
+4. **Ask before any git operation beyond committing/pushing the current feature branch**
+   (branch switching, deletions, rebases, stashes, resets).
 
 ## Code
 
