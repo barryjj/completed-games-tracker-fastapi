@@ -2049,8 +2049,12 @@ body:has(.cgt-match-nav--sticky) {
 .cgt-service-row--muted { opacity: .6; }
 .cgt-service-row__body { min-width: 0; flex: 1 1 auto; }
 
-/* Gear icon nav link — same underline treatment as text nav links. */
+/* Gear icon nav link. The text links' active underline looks broken under
+   a 16px icon — the active state is the icon itself filling mauve instead.
+   (!important matches the specificity of the base .nav-link color rules.) */
 .cgt-nav-gear svg { display: block; }
+.cgt-nav-gear.cgt-nav-active { color: var(--ctp-mauve) !important; }
+.cgt-nav-gear.cgt-nav-active::after { display: none; }
 
 /* ─── Tool-card stat row ────────────────────────────────────────────────── */
 /* Big labeled numbers inside tool cards (and, later, Home widgets). Values
