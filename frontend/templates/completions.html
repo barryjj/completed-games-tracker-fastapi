@@ -98,6 +98,22 @@ function openCompletionDetail(completionId) {
   });
 }
 
+// After deleting a completion, reload to refresh the list — but strip
+// ?detail=N first if present (arriving here via a completion's deep link,
+// e.g. from the library detail pane). Reloading the same URL would re-run
+// autoOpenFromQueryParam and try to reopen the completion that was just
+// deleted, showing a stale/broken pane instead of the list.
+function cgtReloadWithoutDetailParam() {
+  var url = new URL(window.location.href);
+  var hadDetail = url.searchParams.has('detail');
+  url.searchParams.delete('detail');
+  if (hadDetail) {
+    window.location.href = url.toString();
+  } else {
+    location.reload();
+  }
+}
+
 function closeCompletionDetailAndEdit(ds) {
   if (_completionDetailOffcanvas) _completionDetailOffcanvas.hide();
   editCompletion(ds);
@@ -300,6 +316,22 @@ function resetCompletionForm() {
     });
   }
 })();
+
+// Deep-link support: /completions?detail=N auto-opens completion N's pane
+// on load. Mirrors library.html's autoOpenFromQueryParam — used by
+// completion rows in the library detail pane and the import-review match
+// preview so clicking one navigates here with the pane pre-opened, instead
+// of duplicating the completion-detail offcanvas/opener on those pages.
+(function autoOpenFromQueryParam() {
+  var params = new URLSearchParams(window.location.search);
+  var completionId = params.get('detail');
+  if (!completionId) return;
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() { openCompletionDetail(completionId); });
+  } else {
+    openCompletionDetail(completionId);
+  }
+})();
 </script>
 {% endblock %}
 
@@ -313,7 +345,7 @@ function resetCompletionForm() {
   hx-target="#completions-content"
   hx-select="#completions-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, change from:#comp-sort"
+  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, change from:#comp-all-time, change from:#comp-sort"
 >
   <input type="hidden" name="view_mode" id="comp-view-mode" value="{{ view_mode }}">
   <input type="text" class="form-control form-control-sm"
@@ -327,9 +359,24 @@ function resetCompletionForm() {
     {% endfor %}
   </select>
   <input type="date" class="form-control form-control-sm w-auto"
-         id="comp-from" name="completed_from" value="{{ completed_from }}" title="From date">
+         id="comp-from" name="completed_from" value="{{ completed_from }}" title="From date"
+         {% if all_time %}disabled{% endif %}>
   <input type="date" class="form-control form-control-sm w-auto"
-         id="comp-to" name="completed_to" value="{{ completed_to }}" title="To date">
+         id="comp-to" name="completed_to" value="{{ completed_to }}" title="To date"
+         {% if all_time %}disabled{% endif %}>
+  {# Escape hatch for the current-year default below — blank from/to always
+     re-applies that default (the server can't tell "fresh page load" from
+     "user cleared both fields"), so there was no way to browse older
+     completions without first picking a specific date. Disabling the date
+     inputs (rather than clearing them) means the browser excludes them from
+     the request entirely while checked, and unchecking naturally restores
+     whatever was in the boxes before — no extra JS state to track. #}
+  <div class="form-check mb-0">
+    <input class="form-check-input" type="checkbox" id="comp-all-time" name="all_time" value="true"
+           {% if all_time %}checked{% endif %}
+           onchange="document.getElementById('comp-from').disabled = this.checked; document.getElementById('comp-to').disabled = this.checked;">
+    <label class="form-check-label text-secondary" for="comp-all-time"><small>All time</small></label>
+  </div>
   <select class="form-select form-select-sm w-auto" id="comp-sort" name="sort">
     <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
     <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>

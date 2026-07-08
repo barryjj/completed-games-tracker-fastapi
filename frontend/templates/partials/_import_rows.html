@@ -1,102 +1,77 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
-  <td class="align-top">
+  {# Every row is exactly one line — thumb, title, a small "≠" marker only
+     when the sheet's title/platform differ from the match (full comparison
+     is one click away in the preview pane's Library/Sheet table). Platform
+     is its own real table column, same as Completions/thumbnail, so it
+     lines up identically across every row regardless of title length —
+     previously it lived inline after a variable-length title (or a second
+     wrapped line for diff rows), which is why nothing aligned. #}
+  <td class="align-middle">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
     {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
+    {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+    {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
+    {% set _has_diff = _title_diff or _plat_diff %}
     <div class="d-flex align-items-center gap-2">
       {% if c.library_entry %}
       {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
+      {% else %}
+      {% set _thumb = c.thumbnail_url %}
+      {% endif %}
       {% if _thumb %}
       <img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy">
       {% else %}
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}
+      <span class="fw-medium">{{ _lib_title or c.raw_title }}</span>
+      {% if _has_diff %}
+      {# Just a flag that something differs — the actual explanation lives
+         in the preview pane's warning banner, opened by clicking the row,
+         where there's room to lay it out properly instead of cramming it
+         into the row itself. #}
+      <span class="cgt-diff-flag" title="Sheet data differs — click to see details">!</span>
       {% endif %}
-      <div class="min-w-0">
-        {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
-        {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
-        {% set _has_diff = _title_diff or _plat_diff %}
-        <table class="cgt-source-table"><tbody>
-          {% if c.library_entry %}
-          <tr>
-            <td class="cgt-source-table__label">{% if _has_diff %}<span class="tag-badge tag-source">Library</span>{% endif %}</td>
-            <td class="cgt-source-table__title fw-medium">{{ _lib_title }}</td>
-            <td class="cgt-source-table__platform">
-              {% if _lib_release and _lib_release.platform_obj %}
-              <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% if _has_diff %}
-          <tr>
-            <td class="cgt-source-table__label"><span class="tag-badge tag-source">Sheet</span></td>
-            <td class="cgt-source-table__title cgt-source-table__sheet-title">{{ c.raw_title }}</td>
-            <td class="cgt-source-table__platform">
-              {% if c.raw_platform %}<span class="tag-badge {{ c.raw_platform | platform_color }}">{{ c.raw_platform }}</span>{% endif %}
-            </td>
-          </tr>
-          {% endif %}
-          {% else %}
-          <tr>
-            <td class="cgt-source-table__label"></td>
-            <td class="cgt-source-table__title fw-medium">{{ c.raw_title }}</td>
-            <td class="cgt-source-table__platform">
-              {% if c.platform %}
-              <span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>
-              {% else %}
-              <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
-              {% endif %}
-            </td>
-          </tr>
-          {% endif %}
-        </tbody></table>
-      </div>
     </div>
   </td>
-  <td class="align-top">
-    <div class="cgt-detail-block mb-0">
-      <h6 class="cgt-detail-block__heading mb-0">Completions <span class="text-secondary fw-normal">({{ c.rows | length }})</span></h6>
-      <ul class="list-unstyled mb-0 mt-2">
-        {% for r in c.rows %}
-        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
-          <dl class="cgt-detail-meta mb-0">
-            <dt>Date</dt>
-            <dd>{% if r.completed_at %}{{ r | completion_date }}{% else %}<span style="color:var(--ctp-yellow)">Unknown{% if r.source_tab %} ({{ r.source_tab }}){% endif %}</span>{% endif %}</dd>
-            {% if r.playthroughs %}
-            <dt>Playthroughs</dt>
-            <dd>{{ r.playthroughs | float | int }}</dd>
-            {% endif %}
-            {% if r.raw_notes %}
-            <dt>Notes</dt>
-            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
-            {% endif %}
-            {% if r.raw_collection %}
-            <dt>Collection</dt>
-            <dd>{{ r.raw_collection }}</dd>
-            {% endif %}
-          </dl>
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
+  <td class="align-middle text-nowrap">
+    {% if _lib_release and _lib_release.platform_obj %}
+    <span class="tag-badge {{ _lib_release.platform_tag_class }}">{{ _lib_release.display_platform }}</span>
+    {% elif c.platform %}
+    <span class="tag-badge {{ c.platform | platform_color }}">{{ c.platform.display_name or c.platform.name }}</span>
+    {% else %}
+    <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ c.raw_platform or "Unknown" }}</span>
+    {% endif %}
   </td>
-  <td class="text-end text-nowrap row-actions">
-    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
-    <button class="btn btn-primary btn-sm"
-            hx-post="/library/import/{{ c.id }}/confirm"
-            hx-target="#import-row-{{ c.id }}"
-            hx-swap="outerHTML"
-            hx-disabled-elt="this">
-      {% if c.proposed_action == "add_to_existing" %}Confirm{% else %}Add new{% endif %}
-    </button>
-    <button class="btn btn-surface btn-sm"
-            hx-post="/library/import/{{ c.id }}/dismiss"
-            hx-target="#import-row-{{ c.id }}"
-            hx-swap="outerHTML"
-            hx-disabled-elt="this">
-      Dismiss
-    </button>
+  <td class="align-middle">
+    {% set _dated = c.rows | selectattr("completed_at") | list %}
+    {# Neutral grey slat — no special meaning (not "new", not "differs"),
+       just visual weight to match the completion boxes elsewhere instead
+       of throwaway muted text. #}
+    <span class="cgt-completion-summary-slat small">
+      {{ c.rows | length }} completion{{ 's' if c.rows | length != 1 }}
+      {% if _dated %}· latest {{ (_dated | sort(attribute="completed_at") | last) | completion_date }}{% endif %}
+    </span>
+  </td>
+  <td class="align-middle text-end text-nowrap row-actions">
+    {% if c.proposed_action != "add_to_existing" %}
+    <div class="cgt-row-actions-links">
+      <a href="#" class="cgt-row-actions-links__primary"
+         hx-post="/library/import/{{ c.id }}/confirm"
+         hx-target="#import-row-{{ c.id }}"
+         hx-swap="outerHTML">
+        Add new
+      </a>
+      <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
+      <a href="#"
+         hx-post="/library/import/{{ c.id }}/dismiss"
+         hx-target="#import-row-{{ c.id }}"
+         hx-swap="outerHTML">
+        Dismiss
+      </a>
+    </div>
+    {% endif %}
   </td>
 </tr>
 {% endfor %}
@@ -106,6 +81,6 @@
     hx-trigger="revealed"
     hx-target="#import-load-more"
     hx-swap="outerHTML">
-  <td colspan="3" class="text-center text-secondary small py-2">Loading more…</td>
+  <td colspan="4" class="text-center text-secondary small py-2">Loading more…</td>
 </tr>
 {% endif %}

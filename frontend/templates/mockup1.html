@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}Mockup 1{% endblock %}
+
+{% block content %}
+{# ============================================================================
+   MOCKUP 1 — "Everything under Settings"
+   Static IA mockup. Nothing here is wired to the backend; buttons are inert.
+   Delete this template (plus the /mockup1 route and nav link) when done.
+   ============================================================================ #}
+<style>
+  /* Scoped mockup styles — intentionally NOT in theme.css so removal is a
+     file delete. Prefix: .cgt-mock- (shared) / .m1- (page-specific). */
+  .cgt-mock-banner {
+    border: 1px dashed var(--ctp-mauve);
+    border-radius: 6px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.82rem;
+    color: var(--ctp-subtext);
+    margin-bottom: 1.25rem;
+    background: color-mix(in srgb, var(--ctp-mauve) 6%, transparent);
+  }
+  .cgt-mock-banner strong { color: var(--ctp-mauve); }
+
+  /* Simulated top navbar — mirrors the real one so the proposed IA reads
+     in context. */
+  .cgt-mock-navbar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--ctp-mantle);
+    border: 1px solid var(--ctp-surface0);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .cgt-mock-navbar a {
+    color: var(--ctp-subtext);
+    text-decoration: none;
+    font-size: 0.95rem;
+    padding: 0.25rem 0.75rem;
+    position: relative;
+    cursor: default;
+  }
+  .cgt-mock-navbar a.cgt-mock-active {
+    color: var(--ctp-text);
+  }
+  .cgt-mock-navbar a.cgt-mock-active::after {
+    content: "";
+    position: absolute;
+    left: 0.75rem; right: 0.75rem; bottom: -0.5rem;
+    height: 2px;
+    background: var(--ctp-mauve);
+  }
+  .cgt-mock-navbar__gear {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.6rem;
+  }
+  .cgt-mock-navbar__gear svg { display: block; }
+
+  /* Settings shell: grouped left nav + content pane. */
+  .cgt-settings-wrap {
+    display: flex;
+    gap: 2.25rem;
+    align-items: flex-start;
+  }
+  .cgt-settings-nav {
+    width: 215px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 4.5rem;
+  }
+  .cgt-settings-nav__group {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ctp-overlay0);
+    margin: 1.1rem 0 0.35rem 0.6rem;
+  }
+  .cgt-settings-nav__group:first-child { margin-top: 0; }
+  .cgt-settings-nav__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.32rem 0.6rem;
+    border-radius: 4px;
+    border-left: 2px solid transparent;
+    font-size: 0.88rem;
+    color: var(--ctp-subtext);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .cgt-settings-nav__item:hover {
+    background: var(--ctp-surface0);
+    color: var(--ctp-text);
+  }
+  .cgt-settings-nav__item.active {
+    color: var(--ctp-mauve);
+    background: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
+    border-left-color: var(--ctp-mauve);
+    border-radius: 0 4px 4px 0;
+  }
+  .cgt-settings-nav__item--muted { color: var(--ctp-overlay0); }
+  .cgt-settings-nav__item--muted:hover { background: none; color: var(--ctp-overlay0); }
+  .cgt-settings-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 660px;
+  }
+  .cgt-settings-content--wide { max-width: none; }
+
+  /* Integration service row — tighter than the current hub's card grid. */
+  .cgt-mock-service {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--ctp-surface0);
+    border-radius: 6px;
+    background: var(--ctp-mantle);
+  }
+  .cgt-mock-service + .cgt-mock-service { margin-top: 0.5rem; }
+  .cgt-mock-service__body { min-width: 0; flex: 1 1 auto; }
+
+  .cgt-mock-count-badge {
+    background: var(--ctp-yellow);
+    color: var(--ctp-crust);
+    font-size: 0.65rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0.15em 0.5em;
+  }
+</style>
+
+<div class="cgt-mock-banner">
+  <strong>Mockup 1 — everything under Settings.</strong>
+  One gear icon in the navbar opens a single Settings area with a grouped left nav.
+  Integrations, Import, and Match Review all move inside it; the top nav shrinks to
+  Library and Completions. Static — nothing is wired up.
+  Compare with <a href="/mockup2">Mockup 2</a>.
+</div>
+
+{# Simulated navbar: Integrations tab is gone, Import leaves the user menu.
+   Settings gets a gear next to the user name. #}
+<div class="cgt-mock-navbar">
+  <a>Library</a>
+  <a>Completions</a>
+  <span class="ms-auto d-flex align-items-center">
+    <a class="cgt-mock-navbar__gear cgt-mock-active" title="Settings">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+        <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+      </svg>
+    </a>
+    <a>{{ current_user.name }} ▾</a>
+  </span>
+</div>
+<p class="small text-secondary mb-4">
+  User menu shrinks to <em>Settings · Sign out</em>. The pending-matches badge moves onto
+  the gear (dot or count) and onto the Match review nav item below.
+</p>
+
+<div class="cgt-settings-wrap">
+  <nav class="cgt-settings-nav" id="m1-nav">
+    <div class="cgt-settings-nav__group">Account</div>
+    <a class="cgt-settings-nav__item active" data-pane="profile">Profile</a>
+    <a class="cgt-settings-nav__item" data-pane="security">Security</a>
+    <a class="cgt-settings-nav__item" data-pane="appearance">Appearance</a>
+
+    <div class="cgt-settings-nav__group">Library data</div>
+    <a class="cgt-settings-nav__item" data-pane="platforms">Platforms</a>
+    <a class="cgt-settings-nav__item" data-pane="import">Import</a>
+    <a class="cgt-settings-nav__item" data-pane="matches">
+      Match review
+      {% if pending_matches %}<span class="cgt-mock-count-badge">{{ pending_matches }}</span>{% endif %}
+    </a>
+
+    <div class="cgt-settings-nav__group">Integrations</div>
+    <a class="cgt-settings-nav__item" data-pane="int-overview">Overview</a>
+    <a class="cgt-settings-nav__item" data-pane="int-steam">Steam</a>
+    <a class="cgt-settings-nav__item" data-pane="int-igdb">IGDB / Twitch</a>
+    <a class="cgt-settings-nav__item" data-pane="int-sgdb">SteamGridDB</a>
+    <a class="cgt-settings-nav__item cgt-settings-nav__item--muted" data-pane="int-psn">PlayStation <span class="small">soon</span></a>
+  </nav>
+
+  <div class="cgt-settings-content" id="m1-content">
+
+    <div data-pane-body="profile">
+      <p class="section-heading">Display name</p>
+      <div class="input-group mb-1" style="max-width: 420px;">
+        <input type="text" class="form-control" value="{{ current_user.name }}">
+        <button type="button" class="btn btn-surface">Save</button>
+      </div>
+    </div>
+
+    <div data-pane-body="security" hidden>
+      <p class="section-heading">Username</p>
+      <div class="input-group mb-3" style="max-width: 420px;">
+        <input type="text" class="form-control" value="{{ current_user.username }}">
+        <button type="button" class="btn btn-surface">Save</button>
+      </div>
+      <p class="section-heading">Password</p>
+      <div class="mb-3" style="max-width: 420px;">
+        <input type="password" class="form-control mb-2" placeholder="Current password">
+        <input type="password" class="form-control mb-2" placeholder="New password">
+        <button type="button" class="btn btn-surface">Change password</button>
+      </div>
+      <hr>
+      <p class="section-heading" style="color: var(--ctp-red);">Delete account</p>
+      <button type="button" class="btn btn-ghost-danger btn-sm">Delete account…</button>
+    </div>
+
+    <div data-pane-body="appearance" hidden>
+      <p class="section-heading">Color theme</p>
+      <button type="button" class="theme-picker-trigger">System default</button>
+    </div>
+
+    <div data-pane-body="platforms" hidden>
+      <p class="section-heading">Platforms</p>
+      <p class="text-secondary small mb-3">Rename display names and pick badge colors. Same table as today, just living here.</p>
+      <table class="table table-sm align-middle" style="font-size:.85rem; max-width: 480px;">
+        <thead><tr><th>Badge</th><th>Name / Family</th></tr></thead>
+        <tbody>
+          <tr><td><span class="tag-badge tag-platform-teal">Steam</span></td><td>Steam · PC</td></tr>
+          <tr><td><span class="tag-badge tag-platform-lavender">PS5</span></td><td>PlayStation 5 · PlayStation</td></tr>
+          <tr><td><span class="tag-badge tag-platform-red">Switch</span></td><td>Nintendo Switch · Nintendo</td></tr>
+          <tr><td><span class="tag-badge tag-platform-green">Xbox 360</span></td><td>Xbox 360 · Xbox</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div data-pane-body="import" hidden>
+      <p class="section-heading">Spreadsheet import</p>
+      <p class="text-secondary small mb-2">Upload a CSV/XLSX of historical completions. Rows go to the review queue below — nothing writes to the library without confirmation.</p>
+      <div class="d-flex align-items-center gap-2 mb-4" style="max-width: 480px;">
+        <input type="file" class="form-control form-control-sm">
+        <button type="button" class="btn btn-primary btn-sm" style="white-space:nowrap;">Upload</button>
+      </div>
+      <p class="section-heading">Review queue</p>
+      <div class="cgt-mock-service" style="max-width: 480px;">
+        <div class="cgt-mock-service__body">
+          <div class="fw-semibold small">Import review <span class="cgt-mock-count-badge ms-1">46</span></div>
+          <div class="small text-secondary">Add to existing 12 · Create new 28 · Needs review 6</div>
+        </div>
+        <button type="button" class="btn btn-surface btn-sm">Open</button>
+      </div>
+    </div>
+
+    <div data-pane-body="matches" hidden>
+      <p class="section-heading">Sync match review</p>
+      <p class="text-secondary small mb-2">Synced games that look like existing manual entries. Merge to consolidate playtime and artwork, or dismiss to keep them separate.</p>
+      <div class="cgt-mock-service" style="max-width: 480px;">
+        <div class="cgt-mock-service__body">
+          <div class="fw-semibold small">
+            Pending matches
+            {% if pending_matches %}<span class="cgt-mock-count-badge ms-1">{{ pending_matches }}</span>{% endif %}
+          </div>
+          <div class="small text-secondary">{% if pending_matches %}Waiting on your review{% else %}All caught up{% endif %}</div>
+        </div>
+        <button type="button" class="btn btn-surface btn-sm">Open</button>
+      </div>
+    </div>
+
+    <div data-pane-body="int-overview" hidden>
+      <p class="section-heading">Connected services</p>
+      <div class="cgt-mock-service">
+        <div class="cgt-mock-service__body">
+          <div class="fw-semibold small">Steam <span class="badge bg-success ms-1">Connected</span></div>
+          <div class="small text-secondary">{{ current_user.steam_persona_name or "Signed in" }} · last synced yesterday · 1,284 games</div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm">Sync</button>
+        <button type="button" class="btn btn-surface btn-sm">Configure</button>
+      </div>
+      <div class="cgt-mock-service">
+        <div class="cgt-mock-service__body">
+          <div class="fw-semibold small">IGDB / Twitch <span class="badge bg-success ms-1">Connected</span></div>
+          <div class="small text-secondary">Metadata, cover art, and typeahead search for manual adds</div>
+        </div>
+        <button type="button" class="btn btn-surface btn-sm">Configure</button>
+      </div>
+      <div class="cgt-mock-service">
+        <div class="cgt-mock-service__body">
+          <div class="fw-semibold small">SteamGridDB <span class="badge bg-success ms-1">Connected</span></div>
+          <div class="small text-secondary">Cover-art fallback and custom artwork picker</div>
+        </div>
+        <button type="button" class="btn btn-surface btn-sm">Configure</button>
+      </div>
+      <div class="cgt-mock-service" style="opacity:.6;">
+        <div class="cgt-mock-service__body">
+          <div class="fw-semibold small">PlayStation Network <span class="badge bg-secondary ms-1">Coming soon</span></div>
+          <div class="small text-secondary">Library and trophy sync</div>
+        </div>
+      </div>
+    </div>
+
+    <div data-pane-body="int-steam" hidden>
+      <p class="section-heading">Steam</p>
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <div style="width:32px;height:32px;border-radius:3px;background:var(--ctp-surface1);flex-shrink:0;"></div>
+        <div class="small">
+          <div class="fw-semibold">{{ current_user.steam_persona_name or "Steam user" }}</div>
+          <div class="text-secondary">Signed in via Steam · last synced yesterday</div>
+        </div>
+      </div>
+      <div class="d-flex gap-2 mb-3">
+        <button type="button" class="btn btn-primary btn-sm">Sync</button>
+        <button type="button" class="btn btn-surface btn-sm">Test cookies</button>
+      </div>
+      <details class="cgt-details-subtle"><summary>More sync options</summary>
+        <p class="small text-secondary mb-0">DLC only · Games only · Refresh app catalog · Refresh metadata · Re-clean display names…</p>
+      </details>
+    </div>
+
+    <div data-pane-body="int-igdb" hidden>
+      <p class="section-heading">IGDB / Twitch</p>
+      <div style="max-width: 420px;">
+        <input type="text" class="form-control mb-2" placeholder="Twitch Client ID" value="••••••••">
+        <input type="password" class="form-control mb-2" placeholder="Twitch Client Secret" value="••••••••">
+        <button type="button" class="btn btn-surface btn-sm">Save credentials</button>
+      </div>
+    </div>
+
+    <div data-pane-body="int-sgdb" hidden>
+      <p class="section-heading">SteamGridDB</p>
+      <div style="max-width: 420px;">
+        <input type="password" class="form-control mb-2" placeholder="API key" value="••••••••">
+        <button type="button" class="btn btn-surface btn-sm">Save key</button>
+      </div>
+      <p class="section-heading mt-4">Bulk artwork</p>
+      <p class="small text-secondary mb-2">Fill missing covers / heroes / logos across the library.</p>
+      <button type="button" class="btn btn-surface btn-sm">Fill missing artwork…</button>
+    </div>
+
+    <div data-pane-body="int-psn" hidden>
+      <p class="section-heading">PlayStation Network</p>
+      <p class="text-secondary small">Coming soon — library and trophy sync via NPSSO token.</p>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  (function () {
+    var items = document.querySelectorAll('#m1-nav .cgt-settings-nav__item');
+    var panes = document.querySelectorAll('#m1-content [data-pane-body]');
+    items.forEach(function (item) {
+      item.addEventListener('click', function () {
+        items.forEach(function (i) { i.classList.remove('active'); });
+        panes.forEach(function (p) { p.hidden = true; });
+        item.classList.add('active');
+        var pane = document.querySelector('#m1-content [data-pane-body="' + item.dataset.pane + '"]');
+        if (pane) pane.hidden = false;
+      });
+    });
+  })();
+</script>
+{% endblock %}

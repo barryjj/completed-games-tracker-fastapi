@@ -1,0 +1,493 @@
+{% extends "base.html" %}
+{% block title %}Mockup 2{% endblock %}
+
+{% block content %}
+{# ============================================================================
+   MOCKUP 2 (rev 2) — "Home + Tools + slimmer Settings"
+   Static IA mockup. Three views: Home (widget landing page), Tools (recurring
+   operations), Settings (configuration only). Nothing is wired up. Delete
+   this template (plus the /mockup2 route and nav link) when done.
+   ============================================================================ #}
+<style>
+  /* Scoped mockup styles — same .cgt-mock- vocabulary as mockup1.html,
+     duplicated on purpose so each mockup is one self-contained file. */
+  .cgt-mock-banner {
+    border: 1px dashed var(--ctp-mauve);
+    border-radius: 6px;
+    padding: 0.6rem 0.9rem;
+    font-size: 0.82rem;
+    color: var(--ctp-subtext);
+    margin-bottom: 1.25rem;
+    background: color-mix(in srgb, var(--ctp-mauve) 6%, transparent);
+  }
+  .cgt-mock-banner strong { color: var(--ctp-mauve); }
+
+  .cgt-mock-navbar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    background: var(--ctp-mantle);
+    border: 1px solid var(--ctp-surface0);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+  }
+  .cgt-mock-navbar a {
+    color: var(--ctp-subtext);
+    text-decoration: none;
+    font-size: 0.95rem;
+    padding: 0.25rem 0.75rem;
+    position: relative;
+    cursor: default;
+  }
+  .cgt-mock-navbar a.cgt-mock-clickable { cursor: pointer; }
+  .cgt-mock-navbar a.cgt-mock-active { color: var(--ctp-text); }
+  .cgt-mock-navbar a.cgt-mock-active::after {
+    content: "";
+    position: absolute;
+    left: 0.75rem; right: 0.75rem; bottom: -0.5rem;
+    height: 2px;
+    background: var(--ctp-mauve);
+  }
+  .cgt-mock-navbar__gear {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.6rem;
+  }
+  .cgt-mock-navbar__gear svg { display: block; }
+  .cgt-mock-count-badge {
+    background: var(--ctp-yellow);
+    color: var(--ctp-crust);
+    font-size: 0.65rem;
+    font-weight: 700;
+    border-radius: 999px;
+    padding: 0.15em 0.5em;
+  }
+
+  /* Card grid shared by Home widgets and Tools cards. */
+  .cgt-mock-data-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+  }
+  .cgt-mock-data-card {
+    background: var(--ctp-mantle);
+    border: 1px solid var(--ctp-surface0);
+    border-radius: 6px;
+    padding: 0.9rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .cgt-mock-data-card__title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--ctp-subtext);
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--ctp-surface0);
+  }
+  .cgt-mock-data-card__actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto;
+    padding-top: 0.4rem;
+  }
+  /* Home-only bits: big stat value, pinned-tool hint tag. */
+  .cgt-mock-stat {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--ctp-text);
+    line-height: 1.1;
+  }
+  .cgt-mock-stat small {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--ctp-subtext);
+  }
+  /* Thumbtack pin toggle — Explorer-style on/off. Right end of the card
+     title strip. Unpinned: muted + tilted; pinned: mauve + upright. */
+  .cgt-mock-pin {
+    margin-left: auto;
+    background: none;
+    border: none;
+    padding: 0.1rem;
+    line-height: 1;
+    cursor: pointer;
+    color: var(--ctp-overlay0);
+    transform: rotate(45deg);
+    transition: color 0.12s ease, transform 0.12s ease;
+    flex-shrink: 0;
+  }
+  .cgt-mock-pin:hover { color: var(--ctp-text); }
+  .cgt-mock-pin.is-pinned {
+    color: var(--ctp-mauve);
+    transform: rotate(0deg);
+  }
+  .cgt-mock-pin svg { display: block; }
+
+  .cgt-mock-recent-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    padding: 0.25rem 0;
+    border-bottom: 1px solid var(--ctp-surface0);
+  }
+  .cgt-mock-recent-row:last-child { border-bottom: none; }
+  .cgt-mock-recent-row span:last-child { color: var(--ctp-subtext); white-space: nowrap; }
+
+  /* Settings shell (config only). */
+  .cgt-settings-wrap { display: flex; gap: 2.25rem; align-items: flex-start; }
+  .cgt-settings-nav { width: 215px; flex-shrink: 0; position: sticky; top: 4.5rem; }
+  .cgt-settings-nav__group {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ctp-overlay0);
+    margin: 1.1rem 0 0.35rem 0.6rem;
+  }
+  .cgt-settings-nav__group:first-child { margin-top: 0; }
+  .cgt-settings-nav__item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.32rem 0.6rem;
+    border-radius: 4px;
+    border-left: 2px solid transparent;
+    font-size: 0.88rem;
+    color: var(--ctp-subtext);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .cgt-settings-nav__item:hover { background: var(--ctp-surface0); color: var(--ctp-text); }
+  .cgt-settings-nav__item.active {
+    color: var(--ctp-mauve);
+    background: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
+    border-left-color: var(--ctp-mauve);
+    border-radius: 0 4px 4px 0;
+  }
+  .cgt-settings-content { flex: 1 1 auto; min-width: 0; max-width: 660px; }
+
+  .cgt-mock-service {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 0.7rem 0.9rem;
+    border: 1px solid var(--ctp-surface0);
+    border-radius: 6px;
+    background: var(--ctp-mantle);
+  }
+  .cgt-mock-service + .cgt-mock-service { margin-top: 0.5rem; }
+  .cgt-mock-service__body { min-width: 0; flex: 1 1 auto; }
+</style>
+
+<div class="cgt-mock-banner">
+  <strong>Mockup 2, rev 2 — Home + Tools + slimmer Settings.</strong>
+  Home is the landing page: configurable widgets mixing library/completion stats with
+  tool cards pinned from the Tools page. Tools is the complete inventory of recurring
+  operations (sync, import, match review) — everything is always findable there even if
+  it isn't pinned to Home. Settings keeps only configuration. Click <em>Home</em> /
+  <em>Tools</em> / the gear in the fake navbar to switch views.
+  Compare with <a href="/mockup1">Mockup 1</a>.
+</div>
+
+{# Simulated navbar: Home lands first, Tools replaces Integrations, gear = Settings. #}
+<div class="cgt-mock-navbar" id="m2-navbar">
+  <a class="cgt-mock-clickable cgt-mock-active" data-view="home">Home</a>
+  <a>Library</a>
+  <a>Completions</a>
+  <a class="cgt-mock-clickable" data-view="tools">
+    Tools
+    {% if pending_matches %}<span class="cgt-mock-count-badge">{{ pending_matches }}</span>{% endif %}
+  </a>
+  <span class="ms-auto d-flex align-items-center">
+    <a class="cgt-mock-navbar__gear cgt-mock-clickable" data-view="settings" title="Settings">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+        <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+        <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+      </svg>
+    </a>
+    <a>{{ current_user.name }} ▾</a>
+  </span>
+</div>
+<p class="small text-secondary mb-4">
+  The yellow badge lives on <em>Tools</em>; anything pinned to Home also shows its own
+  count. Library and Completions are unchanged.
+</p>
+
+{# ─── View 1: Home (widget landing page) ─────────────────────────────────── #}
+<div id="m2-view-home">
+  <div class="mb-3 d-flex align-items-start justify-content-between flex-wrap gap-2">
+    <div>
+      <h4 class="mb-0">Home</h4>
+      <p class="text-secondary small mb-0">Your landing page — pick and arrange widgets.</p>
+    </div>
+    <button type="button" class="btn btn-surface btn-sm">Customize widgets</button>
+  </div>
+
+  <div class="cgt-mock-data-grid">
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">Completions this year</div>
+      <div class="cgt-mock-stat">14 <small>/ 52 goal</small></div>
+      <div class="small text-secondary">Latest: Kingdom Hearts III — Jun 15</div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">Library</div>
+      <div class="cgt-mock-stat">1,284 <small>games</small></div>
+      <div class="small text-secondary">312 DLC · 23 missing artwork · 4 platforms</div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">Recently completed</div>
+      <div>
+        <div class="cgt-mock-recent-row"><span>Kingdom Hearts III</span><span>Jun 15</span></div>
+        <div class="cgt-mock-recent-row"><span>Golden Axe II</span><span>Jun 02</span></div>
+        <div class="cgt-mock-recent-row"><span>Street Fighter 6</span><span>May 24</span></div>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">
+        Match review
+        {% if pending_matches %}<span class="cgt-mock-count-badge">{{ pending_matches }}</span>{% endif %}
+        <span class="cgt-mock-pin is-pinned" title="Pinned from Tools — manage on the Tools page"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg></span>
+      </div>
+      <div class="small text-secondary">
+        {% if pending_matches %}{{ pending_matches }} synced game{{ 's' if pending_matches != 1 }} pending your review.{% else %}All caught up.{% endif %}
+      </div>
+      <div class="cgt-mock-data-card__actions">
+        <button type="button" class="btn btn-surface btn-sm">Open review</button>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">
+        Spreadsheet import <span class="cgt-mock-count-badge">46</span>
+        <span class="cgt-mock-pin is-pinned" title="Pinned from Tools — manage on the Tools page"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg></span>
+      </div>
+      <div class="small text-secondary">Add to existing 12 · Create new 28 · Needs review 6</div>
+      <div class="cgt-mock-data-card__actions">
+        <button type="button" class="btn btn-surface btn-sm">Open review</button>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card" style="border-style: dashed; opacity: .65; align-items: center; justify-content: center;">
+      <div class="small text-secondary py-3">+ Add widget</div>
+    </div>
+  </div>
+</div>
+
+{# ─── View 2: Tools (complete inventory of operations) ───────────────────── #}
+<div id="m2-view-tools" hidden>
+  <div class="mb-3">
+    <h4 class="mb-0">Tools</h4>
+    <p class="text-secondary small mb-0">Sync, import, and review operations on your library. Any card can be pinned to Home.</p>
+  </div>
+
+  <div class="cgt-mock-data-grid">
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">Steam sync <span class="badge bg-success">Connected</span><button type="button" class="cgt-mock-pin" title="Pin to Home" aria-pressed="false"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg></button></div>
+      <div class="small text-secondary">
+        {{ current_user.steam_persona_name or "Signed in" }} · last synced yesterday<br>
+        1,284 games · 312 DLC · enrichment caught up
+      </div>
+      <div class="cgt-mock-data-card__actions">
+        <button type="button" class="btn btn-primary btn-sm">Sync</button>
+        <button type="button" class="btn btn-surface btn-sm">More options</button>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">
+        Match review
+        {% if pending_matches %}<span class="cgt-mock-count-badge">{{ pending_matches }}</span>{% endif %}
+        <button type="button" class="cgt-mock-pin is-pinned" title="Pinned to Home — click to unpin" aria-pressed="true"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg></button>
+      </div>
+      <div class="small text-secondary">
+        Synced games that look like existing manual entries.
+        {% if pending_matches %}{{ pending_matches }} pending your review.{% else %}All caught up.{% endif %}
+      </div>
+      <div class="cgt-mock-data-card__actions">
+        <button type="button" class="btn btn-surface btn-sm">Open review</button>
+        <button type="button" class="btn btn-surface btn-sm">Re-scan</button>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">Spreadsheet import <span class="cgt-mock-count-badge">46</span><button type="button" class="cgt-mock-pin is-pinned" title="Pinned to Home — click to unpin" aria-pressed="true"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg></button></div>
+      <div class="small text-secondary">
+        Add to existing 12 · Create new 28 · Needs review 6<br>
+        Upload a new sheet or continue reviewing.
+      </div>
+      <div class="cgt-mock-data-card__actions">
+        <button type="button" class="btn btn-surface btn-sm">Open review</button>
+        <button type="button" class="btn btn-surface btn-sm">Upload sheet</button>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card">
+      <div class="cgt-mock-data-card__title">Artwork<button type="button" class="cgt-mock-pin" title="Pin to Home" aria-pressed="false"><svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M4.146.146A.5.5 0 0 1 4.5 0h7a.5.5 0 0 1 .5.5c0 .68-.342 1.174-.646 1.479-.126.125-.25.224-.354.298v4.431l.078.048c.203.127.476.314.751.555C12.36 7.775 13 8.527 13 9.5a.5.5 0 0 1-.5.5h-4v4.5c0 .276-.224 1.5-.5 1.5s-.5-1.224-.5-1.5V10h-4a.5.5 0 0 1-.5-.5c0-.973.64-1.725 1.17-2.189A6 6 0 0 1 5 6.708V2.277a3 3 0 0 1-.354-.298C4.342 1.674 4 1.179 4 .5a.5.5 0 0 1 .146-.354z"/></svg></button></div>
+      <div class="small text-secondary">
+        Bulk-fill missing covers, heroes, and logos from SteamGridDB.
+        23 entries missing vertical covers.
+      </div>
+      <div class="cgt-mock-data-card__actions">
+        <button type="button" class="btn btn-surface btn-sm">Fill missing…</button>
+        <button type="button" class="btn btn-surface btn-sm">Verify URLs</button>
+      </div>
+    </div>
+
+    <div class="cgt-mock-data-card" style="opacity:.6;">
+      <div class="cgt-mock-data-card__title">PSN sync <span class="badge bg-secondary">Coming soon</span></div>
+      <div class="small text-secondary">Library and trophy sync will land here alongside Steam.</div>
+    </div>
+  </div>
+</div>
+
+{# ─── View 3: Settings (configuration only) ──────────────────────────────── #}
+<div id="m2-view-settings" hidden>
+  <div class="cgt-settings-wrap">
+    <nav class="cgt-settings-nav" id="m2-nav">
+      <div class="cgt-settings-nav__group">Account</div>
+      <a class="cgt-settings-nav__item active" data-pane="profile">Profile</a>
+      <a class="cgt-settings-nav__item" data-pane="security">Security</a>
+      <a class="cgt-settings-nav__item" data-pane="appearance">Appearance</a>
+
+      <div class="cgt-settings-nav__group">Configuration</div>
+      <a class="cgt-settings-nav__item" data-pane="platforms">Platforms</a>
+      <a class="cgt-settings-nav__item" data-pane="integrations">Integrations</a>
+    </nav>
+
+    <div class="cgt-settings-content" id="m2-content">
+
+      <div data-pane-body="profile">
+        <p class="section-heading">Display name</p>
+        <div class="input-group mb-1" style="max-width: 420px;">
+          <input type="text" class="form-control" value="{{ current_user.name }}">
+          <button type="button" class="btn btn-surface">Save</button>
+        </div>
+      </div>
+
+      <div data-pane-body="security" hidden>
+        <p class="section-heading">Username</p>
+        <div class="input-group mb-3" style="max-width: 420px;">
+          <input type="text" class="form-control" value="{{ current_user.username }}">
+          <button type="button" class="btn btn-surface">Save</button>
+        </div>
+        <p class="section-heading">Password</p>
+        <div class="mb-3" style="max-width: 420px;">
+          <input type="password" class="form-control mb-2" placeholder="Current password">
+          <input type="password" class="form-control mb-2" placeholder="New password">
+          <button type="button" class="btn btn-surface">Change password</button>
+        </div>
+        <hr>
+        <p class="section-heading" style="color: var(--ctp-red);">Delete account</p>
+        <button type="button" class="btn btn-ghost-danger btn-sm">Delete account…</button>
+      </div>
+
+      <div data-pane-body="appearance" hidden>
+        <p class="section-heading">Color theme</p>
+        <button type="button" class="theme-picker-trigger">System default</button>
+      </div>
+
+      <div data-pane-body="platforms" hidden>
+        <p class="section-heading">Platforms</p>
+        <p class="text-secondary small mb-3">Rename display names and pick badge colors.</p>
+        <table class="table table-sm align-middle" style="font-size:.85rem; max-width: 480px;">
+          <thead><tr><th>Badge</th><th>Name / Family</th></tr></thead>
+          <tbody>
+            <tr><td><span class="tag-badge tag-platform-teal">Steam</span></td><td>Steam · PC</td></tr>
+            <tr><td><span class="tag-badge tag-platform-lavender">PS5</span></td><td>PlayStation 5 · PlayStation</td></tr>
+            <tr><td><span class="tag-badge tag-platform-red">Switch</span></td><td>Nintendo Switch · Nintendo</td></tr>
+            <tr><td><span class="tag-badge tag-platform-green">Xbox 360</span></td><td>Xbox 360 · Xbox</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div data-pane-body="integrations" hidden>
+        <p class="section-heading">Connected services</p>
+        <p class="text-secondary small mb-3">
+          Credentials and connection state only — sync and review actions live on the Tools page.
+        </p>
+        <div class="cgt-mock-service">
+          <div class="cgt-mock-service__body">
+            <div class="fw-semibold small">Steam <span class="badge bg-success ms-1">Connected</span></div>
+            <div class="small text-secondary">{{ current_user.steam_persona_name or "Signed in" }} · API key + cookies saved</div>
+          </div>
+          <button type="button" class="btn btn-surface btn-sm">Configure</button>
+        </div>
+        <div class="cgt-mock-service">
+          <div class="cgt-mock-service__body">
+            <div class="fw-semibold small">IGDB / Twitch <span class="badge bg-success ms-1">Connected</span></div>
+            <div class="small text-secondary">Client ID + secret saved</div>
+          </div>
+          <button type="button" class="btn btn-surface btn-sm">Configure</button>
+        </div>
+        <div class="cgt-mock-service">
+          <div class="cgt-mock-service__body">
+            <div class="fw-semibold small">SteamGridDB <span class="badge bg-success ms-1">Connected</span></div>
+            <div class="small text-secondary">API key saved</div>
+          </div>
+          <button type="button" class="btn btn-surface btn-sm">Configure</button>
+        </div>
+        <div class="cgt-mock-service" style="opacity:.6;">
+          <div class="cgt-mock-service__body">
+            <div class="fw-semibold small">PlayStation Network <span class="badge bg-secondary ms-1">Coming soon</span></div>
+            <div class="small text-secondary">NPSSO token sign-in</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    // Fake-navbar view switch (Home / Tools / Settings)
+    var navLinks = document.querySelectorAll('#m2-navbar [data-view]');
+    var views = { home: document.getElementById('m2-view-home'),
+                  tools: document.getElementById('m2-view-tools'),
+                  settings: document.getElementById('m2-view-settings') };
+    navLinks.forEach(function (link) {
+      link.addEventListener('click', function () {
+        navLinks.forEach(function (l) { l.classList.remove('cgt-mock-active'); });
+        link.classList.add('cgt-mock-active');
+        Object.keys(views).forEach(function (name) {
+          views[name].hidden = name !== link.dataset.view;
+        });
+      });
+    });
+
+    // Thumbtack pin toggles on Tools cards (visual only in the mockup)
+    document.querySelectorAll('#m2-view-tools .cgt-mock-pin').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var pinned = btn.classList.toggle('is-pinned');
+        btn.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+        btn.title = pinned ? 'Pinned to Home — click to unpin' : 'Pin to Home';
+      });
+    });
+
+    // Settings left-nav pane switch
+    var items = document.querySelectorAll('#m2-nav .cgt-settings-nav__item');
+    var panes = document.querySelectorAll('#m2-content [data-pane-body]');
+    items.forEach(function (item) {
+      item.addEventListener('click', function () {
+        items.forEach(function (i) { i.classList.remove('active'); });
+        panes.forEach(function (p) { p.hidden = true; });
+        item.classList.add('active');
+        var pane = document.querySelector('#m2-content [data-pane-body="' + item.dataset.pane + '"]');
+        if (pane) pane.hidden = false;
+      });
+    });
+  })();
+</script>
+{% endblock %}

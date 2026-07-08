@@ -131,6 +131,12 @@
     <p class="text-secondary mb-3"><small>Last DLC sync <span class="local-time" data-utc="{{ current_user.steam_last_dlc_synced_at.isoformat() }}">{{ current_user.steam_last_dlc_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% endif %}
 
+    {# Swap target for the job-poller's OOB sync-progress indicator (see
+       partials/job_poller.html) — without this div present, the "sync in
+       progress" spinner has nowhere to render and clicking Sync looks like
+       nothing happened until the completion toast arrives. #}
+    <div id="sync-indicator"></div>
+
     {# Primary action — the 95% case. #}
     {% if current_user.steam_session_id and current_user.steam_login_secure %}
     <div class="mb-3">

@@ -1,3 +1,5 @@
+import datetime
+
 from backend import models
 
 
@@ -147,6 +149,28 @@ def test_completions_invalid_view_mode_falls_back_to_list(client):
     assert r.status_code == 200
     # Falls back to list — no grid container.
     assert b"cgt-library-grid--grid" not in r.content
+
+
+def test_completions_year_default_hides_past_year_completion(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Old Game From The Past")
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(2020, 5, 1)))
+    db_session.commit()
+
+    r = client.get("/completions")
+    assert b"Old Game From The Past" not in r.content
+
+
+def test_completions_all_time_shows_past_year_completion(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Old Game From The Past")
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(2020, 5, 1)))
+    db_session.commit()
+
+    r = client.get("/completions?all_time=true")
+    assert b"Old Game From The Past" in r.content
 
 
 def test_log_completion(client, db_session):
@@ -665,11 +689,11 @@ def test_completion_detail_shows_sibling_completions(client, db_session):
     # Viewing c2's detail should list c1 and c3 in "other completions"
     r = client.get(f"/completions/{c2.id}/detail")
     assert r.status_code == 200
-    assert b"Other completions of this game" in r.content
+    assert b"Other completions" in r.content
     assert f"/completions/{c1.id}/detail".encode() in r.content
     assert f"/completions/{c3.id}/detail".encode() in r.content
     # c2 itself shouldn't be in the sibling list (hx-get links in the <ul>)
-    sibling_section = b"Other completions of this game"
+    sibling_section = b"Other completions"
     sibling_start = r.content.find(sibling_section)
     assert sibling_start != -1
     sibling_html = r.content[sibling_start:]
@@ -688,7 +712,7 @@ def test_completion_detail_single_completion_no_others_section(client, db_sessio
     db_session.commit()
 
     r = client.get(f"/completions/{comp.id}/detail")
-    assert b"Other completions of this game" not in r.content
+    assert b"Other completions" not in r.content
 
 
 def test_edit_title_ignored_for_imported_entry(client, db_session):

@@ -6,13 +6,11 @@
   {% include "partials/_import_cards.html" %}
 </div>
 {% if has_more %}
-<div class="text-center mt-2">
-  <button class="btn btn-sm btn-surface"
-          hx-get="/library/import/review?tab={{ tab }}&view=card&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
-          hx-target="#import-card-load-more"
-          hx-swap="innerHTML"
-          hx-on::after-request="importRebuildNav()">
-    Load more
-  </button>
-</div>
+<button class="btn btn-sm btn-surface"
+        hx-get="/library/import/review?tab={{ tab }}&view=card&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+        hx-target="#import-card-load-more"
+        hx-swap="innerHTML"
+        hx-on::after-request="importRebuildNav()">
+  Load more
+</button>
 {% endif %}

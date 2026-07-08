@@ -2,7 +2,8 @@
 html[data-bs-theme="dark"] {
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
-  --ctp-overlay0: #6c7086; --ctp-text:     #cdd6f4; --ctp-subtext:  #a6adc8;
+  --ctp-overlay0: #6c7086; --ctp-overlay1: #7f849c; --ctp-text:     #cdd6f4;
+  --ctp-subtext:  #a6adc8; --ctp-subtext0: #a6adc8; --ctp-subtext1: #bac2de;
   --ctp-rosewater:#f5e0dc; --ctp-flamingo:  #f2cdcd; --ctp-pink:     #f5c2e7;
   --ctp-mauve:    #cba6f7; --ctp-lavender: #b4befe; --ctp-blue:     #89b4fa;
   --ctp-maroon:   #eba0ac; --ctp-red:      #f38ba8; --ctp-peach:    #fab387;
@@ -64,7 +65,8 @@ html[data-bs-theme="dark"] {
 html[data-bs-theme="light"] {
   --ctp-base:     #eff1f5; --ctp-mantle:   #e6e9ef; --ctp-crust:    #dce0e8;
   --ctp-surface0: #ccd0da; --ctp-surface1: #bcc0cc; --ctp-surface2: #acb0be;
-  --ctp-overlay0: #9ca0b0; --ctp-text:     #4c4f69; --ctp-subtext:  #5c5f77;
+  --ctp-overlay0: #9ca0b0; --ctp-overlay1: #8c8fa1; --ctp-text:     #4c4f69;
+  --ctp-subtext:  #5c5f77; --ctp-subtext0: #6c6f85; --ctp-subtext1: #5c5f77;
   --ctp-rosewater:#dc8a78; --ctp-flamingo:  #dd7878; --ctp-pink:     #ea76cb;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
   --ctp-maroon:   #e64553; --ctp-red:      #d20f39; --ctp-peach:    #fe640b;
@@ -464,18 +466,26 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 /* Import review: paired Library/Sheet comparison. A real HTML table instead
    of CSS grid/flex — browsers guarantee table column widths match across
    every row natively, which repeated grid/flex attempts here kept almost
-   but not quite achieving. Label column right-aligned, title column left-
-   aligned and expands to fill remaining space, platform column left-
-   aligned. Rows with no Sheet line (nothing differs) or no library match
-   still emit all 3 cells (an empty label td) so a lone row uses the same
-   column layout as a two-row comparison. */
+   but not quite achieving. Label column right-aligned, platform column
+   left-aligned. Rows with no Sheet line (nothing differs) or no library
+   match still emit all 3 cells (an empty label td) so a lone row uses the
+   same column layout as a two-row comparison.
+
+   Deliberately NOT width:100% — a full-width table forces the title column
+   to stretch across the whole row, shoving the platform badge out to a
+   far edge with a large dead gap instead of sitting right after the title
+   text. Auto width keeps the table (and the badge) hugging its own
+   content — important in list view especially, where the surrounding
+   table cell can be very wide. */
 .cgt-source-table {
   border-collapse: collapse;
-  width: 100%;
 }
 .cgt-source-table td {
   padding: 0;
-  vertical-align: middle;
+  /* top, not middle — a wrapped multi-line title otherwise leaves the
+     platform badge floating vertically centered next to the whole
+     wrapped block instead of anchored near the first line of text. */
+  vertical-align: top;
 }
 .cgt-source-table tr + tr td {
   padding-top: 0.35em;
@@ -492,8 +502,6 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 }
 .cgt-source-table__title {
   text-align: left;
-  width: 99%; /* forces this column to absorb all remaining width so the
-                 platform column hugs the title instead of stretching */
 }
 .cgt-source-table__platform {
   text-align: left;
@@ -502,7 +510,9 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 }
 .cgt-source-table__sheet-title {
   color: var(--ctp-subtext);
-  font-weight: 600;
+  font-weight: 500; /* must match the Library row's weight (h6/.fw-medium
+    are both 500) — a heavier weight renders the same string wider, so the
+    two rows start at the same x but drift apart by the end. */
 }
 
 /* ─── Account section headings ───────────────────────────────────────────── */
@@ -624,7 +634,44 @@ tr:focus-within .row-actions {
   opacity: 1;
   transform: translateX(0);
 }
+/* Import review's Confirm/Edit/Dismiss are the whole point of the page,
+   not secondary clutter to hide until hover — with large, tall rows the
+   constant appear/disappear as the cursor moved down the list read as
+   janky. Always visible here; the fade-in-on-hover pattern above still
+   applies to library/completions rows where it works fine. */
+#import-table .row-actions {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
 
+/* Row actions as small text links instead of stacked buttons — three full
+   buttons per row were visually heavy next to the sparser title column.
+   Confirm is bold/accented since it's the primary action; Edit/Dismiss
+   are plain, same hover treatment as the completion-pane header links. */
+.cgt-row-actions-links {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.35rem;
+}
+.cgt-row-actions-links a {
+  font-size: 0.78rem;
+  color: var(--ctp-subtext);
+  text-decoration: none;
+  cursor: pointer;
+}
+.cgt-row-actions-links a:hover {
+  color: var(--ctp-text);
+  text-decoration: underline;
+}
+.cgt-row-actions-links__primary {
+  font-weight: 700;
+  color: var(--ctp-mauve) !important;
+}
+.cgt-row-actions-links__primary:hover {
+  color: var(--ctp-lavender) !important;
+}
 /* ─── HTMX ───────────────────────────────────────────────────────────────── */
 .htmx-indicator { display: none; }
 .htmx-request .htmx-indicator { display: inline-block; }
@@ -709,10 +756,87 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
   border: 1px solid var(--ctp-surface1);
   border-radius: 4px;
 }
+/* Used when the scroll list holds bordered record boxes (completions)
+   rather than a flush table (DLC list). Each record already has its own
+   border/accent, so an outer container border on top of that just adds
+   another competing line right next to the heading's own border-bottom —
+   drop it here and keep only the max-height/scroll behavior. */
+.cgt-detail-scroll-list--padded {
+  padding: 6px;
+  border: none;
+  border-radius: 0;
+}
 /* Child DLC rows inside the detail pane: clickable, hover hint. */
 .cgt-detail-child-row { cursor: pointer; }
 .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface1); }
 html[data-bs-theme="light"] .cgt-detail-child-row:hover > td { background-color: var(--ctp-surface0); }
+
+/* Each completion is its own bordered record box using the same labeled
+   dt/dl meta style as "This completion" in the completion detail pane,
+   instead of a bare table row — table-row borders read as cramped/wonky
+   packed this tight together. Left-edge accent gives it the same visual
+   weight DLC rows get from their thumbnail column (completions have no
+   thumbnail, it's just metadata). Pending import rows override to yellow. */
+.cgt-completion-record {
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 4px;
+  padding: 6px 10px;
+  border-left: 3px solid var(--ctp-surface2);
+}
+.cgt-completion-record + .cgt-completion-record {
+  margin-top: 0.5rem;
+}
+.cgt-completion-record--new {
+  border-left-color: var(--ctp-yellow);
+}
+.cgt-completion-record--peach {
+  border-left-color: var(--ctp-peach);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+/* Clickable variant ("Other completions of this game" links to that
+   completion's own detail view). */
+a.cgt-completion-record {
+  cursor: pointer;
+}
+a.cgt-completion-record:hover {
+  background-color: var(--ctp-surface1);
+}
+html[data-bs-theme="light"] a.cgt-completion-record:hover {
+  background-color: var(--ctp-surface0);
+}
+/* Compact one-line version of the same left-accent treatment, for the
+   completions summary in list rows — full-contrast text instead of muted
+   secondary color, same neutral grey accent as .cgt-completion-record
+   (no special meaning, just visual weight). */
+.cgt-completion-summary-slat {
+  display: inline-block;
+  border-left: 3px solid var(--ctp-surface2);
+  padding: 2px 8px;
+}
+
+/* "This completion" is the one the pane's +1/Edit actions actually operate
+   on — an accent left border visually anchors it against the other
+   (visually identical-weight) blocks around it, since nothing else marked
+   it as the special one. */
+.cgt-detail-block--active {
+  border-left: 3px solid var(--ctp-mauve);
+}
+
+/* "Other completions of this game" rows — same clickable/hover treatment
+   as the DLC child rows above, so the list reads as a set of distinct
+   clickable entries rather than plain inline links stacked at the bottom. */
+.cgt-detail-list-row {
+  display: block;
+  padding: 6px 8px;
+  margin: 0 -8px;
+  border-radius: 4px;
+  text-decoration: none;
+  color: inherit;
+}
+.cgt-detail-list-row:hover { background-color: var(--ctp-surface1); }
+html[data-bs-theme="light"] .cgt-detail-list-row:hover { background-color: var(--ctp-surface0); }
 
 /* ─── Active nav indicator ──────────────────────────────────────────────── */
 /* Replaces the dropped <h1>Library</h1>/<h1>Completions</h1> page titles.
@@ -1131,20 +1255,75 @@ body:has(.cgt-sticky-actions) {
   border-radius: 6px;
   padding: 9px 12px;
 }
+
+/* Label for a single fact inside a .cgt-completion-record row (e.g. each
+   differing field in the "Uncertain match" box) — same small-caps treatment
+   as .cgt-detail-meta's dt, reused outside a dl since these rows are each
+   their own bordered record rather than one shared definition list. */
+.cgt-slat__label {
+  font-size: 0.63rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-overlay1);
+  white-space: nowrap;
+}
+.cgt-slat__label::after {
+  content: ':';
+  color: var(--ctp-overlay0);
+  margin-left: 0.05em;
+}
 .cgt-detail-block__heading {
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--ctp-subtext);
-  margin-bottom: 6px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
   font-weight: 600;
+  border-bottom: 1px solid var(--ctp-surface0);
 }
 
-/* Description text inside its block — top border separates it from the heading. */
+/* Heading + small text-link actions on one row (e.g. "This completion" ->
+   +1 Clear / Edit) instead of full buttons sitting inside the block below
+   the data — the border-bottom moves here so the row itself is the
+   separator, and the plain .cgt-detail-block__heading loses its own. */
+.cgt-detail-block__heading-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--ctp-surface0);
+}
+.cgt-detail-block__heading-row .cgt-detail-block__heading {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.cgt-detail-block__actions {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.cgt-detail-block__actions a {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-subtext);
+  text-decoration: none;
+}
+.cgt-detail-block__actions a:hover {
+  color: var(--ctp-text);
+  text-decoration: underline;
+}
+.cgt-detail-block__actions a + a {
+  margin-left: 1.25rem;
+}
+
+/* Description text inside its block. The heading's own border-bottom now
+   provides the separator (was duplicated here before that existed). */
 .cgt-detail-description {
-  border-top: 1px solid var(--ctp-surface0);
-  padding-top: 8px;
-  margin-top: 4px;
   font-size: 0.78rem;
   color: var(--ctp-subtext1);
   line-height: 1.5;
@@ -1176,6 +1355,28 @@ body:has(.cgt-sticky-actions) {
   color: var(--ctp-crust);
   flex-shrink: 0;
   line-height: 1;
+}
+
+/* Accent color system: yellow is already established as "new/pending
+   import" (cgt-completion-record--new, cgt-import-row-new). Reusing it for
+   "this differs from the sheet, pay attention" put two unrelated meanings
+   on the same color and the two literally sat right next to each other in
+   the preview pane, clashing. Peach is "warning / differs / needs a look" —
+   a distinct accent from yellow's "new" meaning. Grey (surface2/overlay0)
+   stays "no particular meaning" (Other completions, DLC list stripe). */
+.cgt-diff-flag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  border-radius: 50%;
+  background: var(--ctp-peach);
+  color: var(--ctp-crust);
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
 /* ─── Uniform-width action buttons (integrations pages) ─────────────────── */
@@ -1489,6 +1690,16 @@ body:has(.cgt-match-nav--sticky) {
 .cgt-match-nav__dot--active {
   background: var(--ctp-mauve);
   transform: scale(1.3);
+}
+
+/* Text counter alternative to dots — used by import review, where
+   candidate counts can run into the hundreds (dots don't scale). */
+.cgt-match-nav__counter {
+  font-size: .8rem;
+  color: var(--ctp-subtext);
+  padding: 0 .5rem;
+  min-width: 5rem;
+  text-align: center;
 }
 
 /* ─── Card interior ──────────────────────────────────────────────────────── */

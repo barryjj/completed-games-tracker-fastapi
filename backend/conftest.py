@@ -2,7 +2,7 @@ import os
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -20,6 +20,11 @@ def db_engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(conn, _record):
+        conn.execute("PRAGMA foreign_keys=ON")
+
     models.Base.metadata.create_all(bind=engine)
     yield engine
     models.Base.metadata.drop_all(bind=engine)

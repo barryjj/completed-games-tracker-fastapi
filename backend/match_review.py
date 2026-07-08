@@ -327,25 +327,55 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
         # Collect all scoring candidates for this manual entry
         scored: list[tuple[float, models.UserLibraryEntry]] = []
 
-        for synced in synced_entries:
-            if not _platform_compatible(
-                manual_platform_id,
-                manual.release.platform,
-                synced.release.platform_id,
-                synced.release.platform,
-                id_compat,
-                name_compat,
-            ):
-                continue
+        # Exact external_id match beats fuzzy title scoring entirely — if the
+        # manual entry already carries the same platform external_id as a
+        # synced entry, that's the match, full stop. Skips fuzzy scoring for
+        # this manual entry so a bad title score can never override a known
+        # exact identifier match.
+        manual_external_id = manual.release.external_id
+        exact_synced = None
+        if manual_external_id:
+            for synced in synced_entries:
+                if synced.release.external_id == manual_external_id and _platform_compatible(
+                    manual_platform_id,
+                    manual.release.platform,
+                    synced.release.platform_id,
+                    synced.release.platform,
+                    id_compat,
+                    name_compat,
+                ):
+                    exact_synced = synced
+                    break
 
+        if exact_synced is not None:
             pairs_checked += 1
-            synced_title = synced.release.game.display_name or synced.release.game.title
-            score = _score(manual_title, synced_title)
+            scored.append((1.0, exact_synced))
+        else:
+            for synced in synced_entries:
+                if not _platform_compatible(
+                    manual_platform_id,
+                    manual.release.platform,
+                    synced.release.platform_id,
+                    synced.release.platform,
+                    id_compat,
+                    name_compat,
+                ):
+                    continue
 
-            if score >= MIN_SCORE:
-                scored.append((score, synced))
+                pairs_checked += 1
+                synced_title = synced.release.game.display_name or synced.release.game.title
+                score = _score(manual_title, synced_title)
+
+                if score >= MIN_SCORE:
+                    scored.append((score, synced))
 
         if not scored:
+            # No qualifying match this run — still purge any stale pending
+            # candidates left over from a past (possibly buggy) scoring pass.
+            for key, existing in list(existing_candidates.items()):
+                if key[0] == manual.id and existing.status == "pending":
+                    db.delete(existing)
+                    del existing_candidates[key]
             continue
 
         # Sort descending by score
@@ -375,12 +405,15 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
 
         candidates_to_write = high_scored if len(high_scored) >= 2 else scored[:1]
 
+        fresh_keys = set()
+
         for best_score, best_synced in candidates_to_write:
             synced_title = best_synced.release.game.display_name or best_synced.release.game.title
             external_id = best_synced.release.external_id or str(best_synced.release.id)
             platform_source = best_synced.release.source
 
             key = (manual.id, platform_source, external_id)
+            fresh_keys.add(key)
             existing = existing_candidates.get(key)
 
             if existing is None:
@@ -400,6 +433,18 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
                 existing.synced_title = synced_title
                 updated += 1
             # merged / dismissed — leave alone
+
+        # Remove stale pending candidates for this manual entry that no
+        # longer qualify under the current scoring pass — otherwise a
+        # candidate produced by a past (possibly buggy) scoring run lingers
+        # forever, since the write loop above only ever adds/updates keys
+        # that scored above threshold on *this* run.
+        for key, existing in list(existing_candidates.items()):
+            if key[0] != manual.id or key in fresh_keys:
+                continue
+            if existing.status == "pending":
+                db.delete(existing)
+                del existing_candidates[key]
 
     db.commit()
     return {"candidates_added": added, "candidates_updated": updated, "pairs_checked": pairs_checked}

@@ -26,8 +26,11 @@ These are the vars actually used in templates and CSS. All resolve correctly in 
 | `--ctp-surface0` | `#313244` | `#ccd0da` | Card bg, input bg |
 | `--ctp-surface1` | `#45475a` | `#bcc0cc` | Hover / raised surfaces, IGDB linked card bg |
 | `--ctp-overlay0` | `#6c7086` | `#9ca0b0` | Placeholder text |
+| `--ctp-overlay1` | `#7f849c` | `#8c8fa1` | Detail-pane meta labels (`dt`), light-mode outline-button borders |
 | `--ctp-text` | `#cdd6f4` | `#4c4f69` | Body text |
 | `--ctp-subtext` | `#a6adc8` | `#5c5f77` | Secondary / muted text |
+| `--ctp-subtext0` | `#a6adc8` | `#6c6f85` | Unmatched platform badge, match-review side labels |
+| `--ctp-subtext1` | `#bac2de` | `#5c5f77` | Detail-pane description text, match-result strip |
 | `--ctp-mauve` | `#cba6f7` | `#8839ef` | Primary accent (buttons, active tabs, GIF badge) |
 | `--ctp-lavender` | `#b4befe` | `#7287fd` | Hover on primary, range thumb hover |
 | `--ctp-blue` | `#89b4fa` | `#1e66f5` | Steam platform badge |

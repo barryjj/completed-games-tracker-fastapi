@@ -47,7 +47,7 @@
           <td class="cgt-source-table__label"></td>
           <td class="cgt-source-table__title"><h6 class="mb-0">{{ c.raw_title }}</h6></td>
           <td class="cgt-source-table__platform">
-            {% if c.platform %}<span class="tag-badge {{ c.platform.tag_class }}">{{ c.platform.display_name or c.platform.name }}</span>{% endif %}
+            {% if c.platform %}<span class="tag-badge {{ c.platform | platform_color }}">{{ c.platform.display_name or c.platform.name }}</span>{% endif %}
           </td>
         </tr>
         {% endif %}
@@ -57,14 +57,14 @@
         <div class="cgt-detail-block mb-0 cgt-import-card-columns__main">
           {% set import_count = c.rows | length %}
           <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({{ import_count }} importing)</span></h6>
-          <ul class="list-unstyled mb-0">
+          <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded mt-2" style="max-height: 160px;">
             {% for r in c.rows %}
-            <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
-              <dl class="cgt-detail-meta mb-0">
+            <div class="cgt-completion-record cgt-completion-record--new">
+              <dl class="cgt-detail-meta small mb-0">
                 <dt>Date</dt>
                 <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
                 {% if r.playthroughs %}
-                <dt>Playthroughs</dt>
+                <dt>Clears</dt>
                 <dd>{{ r.playthroughs }}</dd>
                 {% endif %}
                 {% if r.raw_notes %}
@@ -72,9 +72,9 @@
                 <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
                 {% endif %}
               </dl>
-            </li>
+            </div>
             {% endfor %}
-          </ul>
+          </div>
         </div>
 
         {% if v %}
@@ -115,7 +115,6 @@
   </div>
 
   <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
-    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
     <button class="btn btn-primary btn-sm"
             hx-post="/library/import/{{ c.id }}/confirm"
             hx-target="#import-row-{{ c.id }}"
@@ -124,6 +123,7 @@
             hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
       Confirm
     </button>
+    <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
     <button class="btn btn-surface btn-sm"
             hx-post="/library/import/{{ c.id }}/dismiss"
             hx-target="#import-row-{{ c.id }}"

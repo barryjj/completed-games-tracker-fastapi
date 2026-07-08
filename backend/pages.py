@@ -14,6 +14,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import importer, jobs, match_review, models, users
+from . import steamgriddb as sgdb
 from .models import get_db
 
 logger = logging.getLogger(__name__)
@@ -631,6 +632,36 @@ def account_page(
             "has_library_platforms": has_library_platforms,
             **_base_ctx(db, current_user),
         },
+    )
+
+
+# Temporary IA mockups for the settings/navigation restructure (see
+# ROADMAP.md "Settings / navigation restructure"). Static pages — delete
+# these routes plus mockup1.html / mockup2.html and the base.html nav links
+# once a direction is picked.
+@router.get("/mockup1")
+def mockup1_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="mockup1.html",
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
+    )
+
+
+@router.get("/mockup2")
+def mockup2_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="mockup2.html",
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
     )
 
 
@@ -2571,6 +2602,33 @@ async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
     finally:
         db.close()
 
+    user = models.SessionLocal()
+    try:
+        current_user = user.query(models.User).filter(models.User.id == user_id).first()
+        if current_user and current_user.steamgriddb_api_key:
+            asyncio.create_task(_run_import_thumbnails_job(user_id))
+    finally:
+        user.close()
+
+
+async def _run_import_thumbnails_job(user_id: int) -> None:
+    """Fire-and-forget follow-up after an import finishes: fetch a SGDB
+    placeholder thumbnail for every pending create_new/needs_review
+    candidate, keyed by raw title. No job-tracker entry — this is a quiet
+    cosmetic fill, not something the user needs a toast for; the thumbnails
+    just appear in the review list as they're fetched (each commit is
+    visible to new requests immediately)."""
+    db = models.SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user is None:
+            return
+        await asyncio.to_thread(sgdb.fill_import_candidate_thumbnails, db, user)
+    except Exception:
+        logger.exception("Import candidate thumbnail fetch failed for user %s", user_id)
+    finally:
+        db.close()
+
 
 _IMPORT_PAGE_SIZE = 50
 
@@ -2831,6 +2889,7 @@ def import_review_page(
                 "next_offset": next_offset,
                 "has_more": has_more,
                 "tab": tab,
+                "tab_total": tab_total,
                 "candidate_visuals": candidate_visuals,
                 **filter_ctx,
             },
@@ -2845,6 +2904,7 @@ def import_review_page(
                 "next_offset": next_offset,
                 "has_more": has_more,
                 "tab": tab,
+                "tab_total": tab_total,
                 "tab_counts": tab_counts,
                 "candidate_visuals": candidate_visuals,
                 "platform_options": _import_platform_options(db, current_user.id, tab),
@@ -2861,6 +2921,7 @@ def import_review_page(
             "candidates": candidates,
             "pending": pending,
             "tab": tab,
+            "tab_total": tab_total,
             "tab_counts": tab_counts,
             "next_offset": next_offset,
             "has_more": has_more,
@@ -3146,6 +3207,25 @@ def import_confirm(
     return Response(status_code=200, headers={"HX-Redirect": redirect_url})
 
 
+@router.post("/library/import/fetch-thumbnails")
+def import_fetch_thumbnails(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Kick off a background pass fetching SGDB placeholder thumbnails for
+    pending create_new/needs_review candidates that don't have one yet.
+
+    Manual trigger for candidates already sitting in the queue from a past
+    import (the automatic trigger only fires right after a fresh import
+    finishes). No job-tracker entry, same as the automatic trigger — this
+    is a quiet fill, not something worth a toast; thumbnails just appear
+    in the review list as they're fetched."""
+    if not current_user.steamgriddb_api_key:
+        return Response(status_code=422, content="Set your SteamGridDB API key first.")
+    asyncio.create_task(_run_import_thumbnails_job(current_user.id))
+    return Response(status_code=202)
+
+
 @router.post("/library/import/clear")
 def import_clear_all(
     request: Request,
@@ -3202,6 +3282,7 @@ def completions_page(
     platform: str = Query(""),
     completed_from: str = Query(""),
     completed_to: str = Query(""),
+    all_time: bool = Query(False),
     view_mode: str | None = Query(None),
     sort: str = Query("date_desc"),
     db: Session = Depends(get_db),
@@ -3209,8 +3290,11 @@ def completions_page(
 ):
     # Resolved from query → cookie → default (see _resolve_view_mode docstring).
     view_mode = _resolve_view_mode(request, view_mode, "cgt-completions-view-mode")
-    # Default to current calendar year if neither date filter is set.
-    if not completed_from and not completed_to:
+    # Default to current calendar year if neither date filter is set — unless
+    # all_time is explicitly set, which is the only way to distinguish "user
+    # cleared both fields to see everything" from "fresh page load with no
+    # filters yet" (both look identical as blank query params otherwise).
+    if not completed_from and not completed_to and not all_time:
         completed_from = f"{datetime.date.today().year}-01-01"
     completions_q = (
         db.query(models.Completion)
@@ -3307,6 +3391,7 @@ def completions_page(
             "platform": platform,
             "completed_from": completed_from,
             "completed_to": completed_to,
+            "all_time": all_time,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
             "sort": sort,

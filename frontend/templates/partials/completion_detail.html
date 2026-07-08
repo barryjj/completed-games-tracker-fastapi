@@ -73,20 +73,37 @@
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
     </div>
 
-    <div class="cgt-detail-block mb-2">
-      <h6 class="cgt-detail-block__heading">This completion</h6>
+    <div class="cgt-detail-block cgt-detail-block--active mb-2">
+      <div class="cgt-detail-block__heading-row">
+        <h6 class="cgt-detail-block__heading">This completion</h6>
+        <div class="cgt-detail-block__actions">
+          <a href="#"
+             hx-post="/completions/{{ completion.id }}/increment"
+             hx-vals='{"view_mode": "list"}'
+             hx-swap="none"
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }">+1 Clear</a>
+          <a href="#"
+             onclick="closeCompletionDetailAndEdit(this.dataset); return false;"
+             data-completion-id="{{ completion.id }}"
+             data-entry-id="{{ entry.id }}"
+             data-label="{{ (game.display_title ~ ' (' ~ release.display_platform ~ ')') | e }}"
+             data-date="{{ completion.completed_at.strftime('%Y-%m-%d') }}"
+             data-playthroughs="{{ (completion.playthroughs or '') | e }}"
+             data-notes="{{ (completion.notes or '') | e }}">Edit</a>
+        </div>
+      </div>
       <dl class="cgt-detail-meta small mb-0">
         <dt>Completed</dt>
         <dd>{{ completion | completion_date }}</dd>
 
         {% if completion.playthroughs %}
-        <dt>Playthroughs</dt>
+        <dt>Clears</dt>
         <dd>{{ completion.playthroughs }}</dd>
         {% endif %}
 
         {% if completion.notes %}
         <dt>Notes</dt>
-        <dd class="cgt-notes">{{ completion.notes }}</dd>
+        <dd class="cgt-notes">{{ completion.notes | linkify }}</dd>
         {% endif %}
       </dl>
     </div>
@@ -96,6 +113,17 @@
       <dl class="cgt-detail-meta small mb-0">
         <dt>Title</dt>
         <dd class="cgt-detail-title-value">{{ game.display_title }}</dd>
+
+        {% if game.igdb_id %}
+        <dt>IGDB ID</dt>
+        <dd>
+          <span class="text-nowrap">
+            <code>{{ game.igdb_id }}</code>
+            <a href="https://www.igdb.com/search?type=1&q={{ game.display_title | urlencode }}"
+               target="_blank" rel="noopener" class="ms-2 small">search ↗</a>
+          </span>
+        </dd>
+        {% endif %}
 
         {# For DLC, lead with the parent breadcrumb + appid. Clickable when
            the user owns the parent. Mirrors the library detail pane. #}
@@ -212,20 +240,28 @@
     {% set others = sibling_completions | rejectattr("id", "equalto", completion.id) | list %}
     {% if others %}
     <div class="cgt-detail-block mb-3">
-      <h6 class="cgt-detail-block__heading">Other completions of this game <span class="text-secondary fw-normal ms-1">({{ others | length }})</span></h6>
-      <ul class="list-unstyled mb-0">
+      <h6 class="cgt-detail-block__heading">Other completions <span class="text-secondary fw-normal ms-1">({{ others | length }})</span></h6>
+      <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded" style="max-height: 160px;">
         {% for c in others %}
-        <li class="mb-1">
-          <a href="#" class="text-decoration-none"
-             hx-get="/completions/{{ c.id }}/detail"
-             hx-target="#completion-detail-content"
-             hx-swap="innerHTML">
-            {{ c | completion_date }}
-            {% if c.playthroughs %}<small class="text-secondary">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
-          </a>
-        </li>
+        <a href="#" class="cgt-completion-record d-block text-decoration-none text-body"
+           hx-get="/completions/{{ c.id }}/detail"
+           hx-target="#completion-detail-content"
+           hx-swap="innerHTML">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Date</dt>
+            <dd>{{ c | completion_date }}</dd>
+            {% if c.playthroughs %}
+            <dt>Clears</dt>
+            <dd>{{ c.playthroughs }}</dd>
+            {% endif %}
+            {% if c.notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ c.notes | linkify }}</dd>
+            {% endif %}
+          </dl>
+        </a>
         {% endfor %}
-      </ul>
+      </div>
     </div>
     {% endif %}
 
@@ -237,13 +273,9 @@
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
   <a class="btn btn-surface btn-sm"
      href="/library?detail={{ entry.id }}">View in library ↗</a>
-  <button class="btn btn-surface btn-sm"
-          hx-post="/completions/{{ completion.id }}/increment"
-          hx-vals='{"view_mode": "list"}'
-          hx-swap="none"
-          hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/completions/{{ completion.id }}/detail', {target: '#completion-detail-content', swap: 'innerHTML'}); }"
-          title="+1 playthrough">+1 playthrough</button>
 
+  {# +1/Edit for this completion now live as small links in "This
+     completion"'s own header — this footer no longer duplicates them. #}
   <div class="dropdown ms-auto">
     <button class="btn btn-surface btn-sm dropdown-toggle" type="button"
             data-bs-toggle="dropdown" aria-expanded="false">More</button>
@@ -286,19 +318,19 @@
       {% endif %}
       {% if current_user and current_user.steamgriddb_api_key %}
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'v', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'v', '#completion-detail-content', {{ completion.id }}); return false;">
            Find vertical cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'h', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'h', '#completion-detail-content', {{ completion.id }}); return false;">
            Find horizontal cover
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'hero', '#completion-detail-content', {{ completion.id }}); return false;">
            Find hero image
          </a></li>
       <li><a class="dropdown-item" href="#"
-             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#completion-detail-content'); return false;">
+             onclick="openSgdbPicker({{ entry.id }}, 'logo', '#completion-detail-content', {{ completion.id }}); return false;">
            Find logo
          </a></li>
       <li><hr class="dropdown-divider"></li>
@@ -311,7 +343,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "v"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'v', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'v', '#completion-detail-content', {{ completion.id }})">
              Reset vertical cover
            </a></li>
         {% endif %}
@@ -320,7 +352,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "h"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'h', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'h', '#completion-detail-content', {{ completion.id }})">
              Reset horizontal cover
            </a></li>
         {% endif %}
@@ -329,7 +361,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "hero"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'hero', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'hero', '#completion-detail-content', {{ completion.id }})">
              Reset hero image
            </a></li>
         {% endif %}
@@ -338,7 +370,7 @@
                hx-post="/library/entries/{{ entry.id }}/clear-cover-override"
                hx-vals='{"image_type": "logo"}'
                hx-swap="none"
-               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'logo', '#completion-detail-content')">
+               hx-on::after-request="if(event.detail.successful) cgtAfterArtReset({{ entry.id }}, 'logo', '#completion-detail-content', {{ completion.id }})">
              Reset logo
            </a></li>
         {% endif %}
@@ -348,7 +380,7 @@
              hx-delete="/completions/{{ completion.id }}"
              hx-swap="none"
              hx-confirm="Delete this completion?"
-             hx-on::after-request="if(event.detail.successful){ location.reload(); }">Delete</a></li>
+             hx-on::after-request="if(event.detail.successful){ cgtReloadWithoutDetailParam(); }">Delete</a></li>
     </ul>
   </div>
 </div>

@@ -83,17 +83,95 @@
   </div>
 {% endif %}
 
+  {# Completions block factored into a macro so it can render in two
+     different positions: right after the badges row when this is an
+     import-candidate preview (candidate is set) — the whole point of that
+     view is reviewing what's being imported, so it shouldn't be buried
+     below Description/DLC like it is for a normal library-entry view —
+     or in its original bottom position otherwise (plain library detail,
+     match review reuse, etc., which are unaffected). #}
+  {% macro completions_block() %}
+    {% if import_rows or completions %}
+    <div class="cgt-detail-block mb-3">
+      {% set import_count = (import_rows | length) if import_rows else 0 %}
+      {% set existing_count = completions | length %}
+      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({% if existing_count %}{{ existing_count }}{% if import_count %} + {% endif %}{% endif %}{% if import_count %}{{ import_count }} importing{% endif %}{% if not existing_count and not import_count %}0{% endif %})</span></h6>
+      <div class="cgt-detail-scroll-list cgt-detail-scroll-list--padded mt-2" style="max-height: 160px;">
+        {% if import_rows %}
+        {% for r in import_rows %}
+        <div class="cgt-completion-record cgt-completion-record--new">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Date</dt>
+            <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
+            {% if r.playthroughs %}
+            <dt>Clears</dt>
+            <dd>{{ r.playthroughs }}</dd>
+            {% endif %}
+            {% if r.raw_notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
+            {% endif %}
+          </dl>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% for c in completions %}
+        <a href="/completions?detail={{ c.id }}" class="cgt-completion-record d-block text-decoration-none text-body">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Date</dt>
+            <dd>{{ c | completion_date }}</dd>
+            {% if c.playthroughs %}
+            <dt>Clears</dt>
+            <dd>{{ c.playthroughs }}</dd>
+            {% endif %}
+            {% if c.notes %}
+            <dt>Notes</dt>
+            <dd class="cgt-notes">{{ c.notes | linkify }}</dd>
+            {% endif %}
+          </dl>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  {% endmacro %}
+
   {# Content padding — pushes everything below the hero in from the edges.
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
   <div class="cgt-detail-body">
+    {% set _title_diff = candidate and candidate.raw_title and candidate.raw_title.strip().lower() != game.display_title.strip().lower() %}
+    {% set _plat_diff = candidate and candidate.raw_platform and release.display_platform and candidate.raw_platform.strip().lower() != release.display_platform.strip().lower() %}
     {# Badges row: platform + flags. #}
-    <div class="mb-2 d-flex flex-wrap gap-1">
+    <div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
       <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
       {% if game.is_dlc %}<span class="tag-badge tag-dlc">DLC</span>{% endif %}
       {% if game.is_collection %}<span class="tag-badge tag-collection">Collection</span>{% endif %}
       {% if game.parent_id and not game.is_dlc %}<span class="tag-badge tag-in-collection">In collection</span>{% endif %}
       {% if entry.is_hidden %}<span class="tag-badge tag-in-collection">Hidden</span>{% endif %}
     </div>
+
+    {% if candidate %}
+    {% if _title_diff or _plat_diff %}
+    <div class="cgt-detail-block small mb-2">
+      <div class="cgt-detail-block__heading">Uncertain match</div>
+      {% if _plat_diff %}
+      <div class="cgt-completion-record cgt-completion-record--peach">
+        <span class="cgt-slat__label">Platform</span>
+        <span class="tag-badge {{ candidate.raw_platform | platform_color }}">{{ candidate.raw_platform }}</span>
+        <span class="text-secondary">&rarr;</span>
+        <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
+      </div>
+      {% endif %}
+      {% if _title_diff %}
+      <div class="cgt-completion-record cgt-completion-record--peach">
+        <span class="cgt-slat__label">Title</span>
+        <span>{{ candidate.raw_title }} <span class="text-secondary">&rarr;</span> {{ game.display_title }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+    {{ completions_block() }}
+    {% endif %}
 
     {# Metadata section — same tinted-block treatment as Description/DLC/etc. #}
     <div class="cgt-detail-block mb-2">
@@ -147,6 +225,17 @@
           <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
              target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
           {% endif %}
+        </span>
+      </dd>
+      {% endif %}
+
+      {% if game.igdb_id %}
+      <dt>IGDB ID</dt>
+      <dd>
+        <span class="text-nowrap">
+          <code>{{ game.igdb_id }}</code>
+          <a href="https://www.igdb.com/search?type=1&q={{ game.display_title | urlencode }}"
+             target="_blank" rel="noopener" class="ms-2 small">search ↗</a>
         </span>
       </dd>
       {% endif %}
@@ -260,41 +349,7 @@
     </div>
     {% endif %}
 
-    {% if import_rows or completions %}
-    <div class="cgt-detail-block mb-3">
-      {% set import_count = (import_rows | length) if import_rows else 0 %}
-      {% set existing_count = completions | length %}
-      <h6 class="cgt-detail-block__heading">Completions <span class="text-secondary fw-normal ms-1">({% if existing_count %}{{ existing_count }}{% if import_count %} + {% endif %}{% endif %}{% if import_count %}{{ import_count }} importing{% endif %}{% if not existing_count and not import_count %}0{% endif %})</span></h6>
-      <ul class="list-unstyled mb-0">
-        {% if import_rows %}
-        {% for r in import_rows %}
-        <li class="mb-2 ps-2" style="border-left: 2px solid var(--ctp-yellow);">
-          <dl class="cgt-detail-meta mb-0">
-            <dt>Date</dt>
-            <dd>{{ r | completion_date if r.completed_at else (r.raw_date or "Unknown") }}</dd>
-            {% if r.playthroughs %}
-            <dt>Playthroughs</dt>
-            <dd>{{ r.playthroughs }}</dd>
-            {% endif %}
-            {% if r.raw_notes %}
-            <dt>Notes</dt>
-            <dd class="cgt-notes">{{ r.raw_notes | linkify }}</dd>
-            {% endif %}
-          </dl>
-        </li>
-        {% endfor %}
-        {% endif %}
-        {% for c in completions %}
-        <li class="mb-2">
-          <div>{{ c | completion_date }}
-            {% if c.playthroughs %}<small class="text-secondary ms-1">· {{ c.playthroughs }} playthrough{{ 's' if c.playthroughs != '1' }}</small>{% endif %}
-          </div>
-          {% if c.notes %}<small class="text-secondary d-block cgt-notes">{{ c.notes }}</small>{% endif %}
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-    {% endif %}
+    {% if not candidate %}{{ completions_block() }}{% endif %}
 
     {# Actions footer was here — moved OUT of .offcanvas-body so it pins to
        the bottom of the pane as a sibling, always visible regardless of
@@ -321,6 +376,10 @@
           hx-swap="outerHTML"
           hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose({{ import_next_id or 'null' }}); }">
     Dismiss
+  </button>
+  <button class="btn btn-sm btn-surface"
+          onclick="openImportEdit({{ _cid }}); return false;">
+    Edit
   </button>
   <button class="btn btn-sm btn-surface"
           onclick="['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); return false;">

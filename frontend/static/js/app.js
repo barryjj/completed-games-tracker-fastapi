@@ -432,15 +432,21 @@ var _sgdbModal = null;
 var _sgdbCurrentEntryId = null;
 var _sgdbCurrentImageType = null;
 var _sgdbCurrentDetailTarget = '#library-detail-content';
+var _sgdbCurrentDetailId = null;
 var _SGDB_LABELS = {v: 'vertical cover', h: 'horizontal cover', hero: 'hero image', logo: 'logo'};
 
-window.openSgdbPicker = function(entryId, imageType, detailTarget) {
+// detailId: the id to reload the pane with once a cover is applied —
+// entry.id for the library pane, but completion.id for the completion pane
+// (a different primary key from the entry.id also passed in as entryId).
+// Defaults to entryId for backward compat when omitted (library pane callers).
+window.openSgdbPicker = function(entryId, imageType, detailTarget, detailId) {
   if (!_sgdbModal) {
     _sgdbModal = new bootstrap.Modal(document.getElementById('sgdbPickerModal'));
   }
   _sgdbCurrentEntryId = entryId;
   _sgdbCurrentImageType = imageType;
   _sgdbCurrentDetailTarget = detailTarget || '#library-detail-content';
+  _sgdbCurrentDetailId = detailId || entryId;
   var label = _SGDB_LABELS[imageType] || imageType;
   document.getElementById('sgdbPickerModalLabel').textContent = 'Find ' + label;
   var grid = document.getElementById('sgdb-picker-grid');
@@ -463,19 +469,30 @@ window.rerunSgdbSearch = function(entryId, imageType) {
 // cgtAfterArtReset — called from hx-on::after-request on the Reset art buttons.
 // Reloads the detail pane (so the More menu and header visual update) and for
 // v/h types also refreshes the library grid card (so the cover reverts too).
-window.cgtAfterArtReset = function(entryId, imageType, detailTarget) {
+//
+// detailId: the id to reload the pane with — entry.id for the library pane,
+// but completion.id for the completion pane (a different primary key from
+// the entry.id also passed in for the cover-override POST). Defaults to
+// entryId for backward compat when omitted (library pane callers).
+window.cgtAfterArtReset = function(entryId, imageType, detailTarget, detailId) {
   var target = detailTarget || '#library-detail-content';
-  htmx.ajax('GET', '/library/entries/' + entryId + '/detail', {
+  var isCompletionPane = target === '#completion-detail-content';
+  var reloadId = detailId || entryId;
+  var detailUrl = isCompletionPane ? '/completions/' + reloadId + '/detail' : '/library/entries/' + reloadId + '/detail';
+  htmx.ajax('GET', detailUrl, {
     target: target,
     swap: 'innerHTML',
   });
   if (imageType === 'v' || imageType === 'h') {
-    var libraryContent = document.getElementById('library-content');
-    if (libraryContent) {
+    // v/h covers also appear in whichever list/grid is on the current page
+    // — #library-content on the Library page, #completions-content on the
+    // Completions page. Refresh whichever one actually exists.
+    var gridId = document.getElementById('library-content') ? 'library-content' : (document.getElementById('completions-content') ? 'completions-content' : null);
+    if (gridId) {
       htmx.ajax('GET', window.location.pathname + window.location.search, {
-        target: '#library-content',
+        target: '#' + gridId,
         swap: 'innerHTML',
-        select: '#library-content',
+        select: '#' + gridId,
       });
     }
   }
@@ -493,24 +510,26 @@ window.applySgdbCover = function(entryId, imageType, url) {
     if (!r.ok) return;
     if (_sgdbModal) _sgdbModal.hide();
     // Reload whichever detail pane opened the picker.
-    // completion pane uses #completion-detail-content and its own endpoint.
+    // completion pane uses #completion-detail-content and its own endpoint,
+    // keyed by completion.id (_sgdbCurrentDetailId), not entryId.
     var isCompletionPane = _sgdbCurrentDetailTarget === '#completion-detail-content';
     var detailUrl = isCompletionPane
-      ? '/completions/' + entryId + '/detail'
-      : '/library/entries/' + entryId + '/detail';
+      ? '/completions/' + _sgdbCurrentDetailId + '/detail'
+      : '/library/entries/' + _sgdbCurrentDetailId + '/detail';
     htmx.ajax('GET', detailUrl, {
       target: _sgdbCurrentDetailTarget,
       swap: 'innerHTML',
     });
     if (imageType !== 'hero' && imageType !== 'logo') {
-      // v/h covers also appear in the library grid — refresh it if present
-      // (not available on the completions page).
-      var libraryContent = document.getElementById('library-content');
-      if (libraryContent) {
+      // v/h covers also appear in whichever list/grid is on the current page
+      // — #library-content on the Library page, #completions-content on the
+      // Completions page. Refresh whichever one actually exists.
+      var gridId = document.getElementById('library-content') ? 'library-content' : (document.getElementById('completions-content') ? 'completions-content' : null);
+      if (gridId) {
         htmx.ajax('GET', window.location.pathname + window.location.search, {
-          target: '#library-content',
+          target: '#' + gridId,
           swap: 'innerHTML',
-          select: '#library-content',
+          select: '#' + gridId,
         });
       }
     }

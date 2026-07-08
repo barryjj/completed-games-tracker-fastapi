@@ -591,7 +591,17 @@ def _fetch_owned_appids(user: models.User) -> set[int]:
         timeout=30,
     )
     resp.raise_for_status()
-    return set(resp.json().get("rgOwnedApps", []))
+    owned = set(resp.json().get("rgOwnedApps", []))
+    # Steam returns 200 with well-formed but empty ownership data instead of
+    # an auth error when the session cookies are stale/expired — silently
+    # treating this as "0 apps owned" instead of a failure meant every DLC
+    # sync since cookies went stale quietly reported success while finding
+    # nothing (missed real, newly-added DLC with no error surfaced anywhere).
+    if not owned:
+        raise ValueError(
+            "Steam session cookies have expired — log in to Steam again and re-capture sessionid/steamLoginSecure, then retry."
+        )
+    return owned
 
 
 def sync_full_library(db: Session, user: models.User) -> dict:

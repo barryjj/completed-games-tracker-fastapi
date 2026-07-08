@@ -114,14 +114,35 @@
   </div>
 </div>
 
+{# Sticky back-to-top button — long candidate lists bury the tab/filter bar
+   at the top with no way back up otherwise. Same pattern as library.html. #}
+<div class="cgt-sticky-actions">
+  <button type="button" id="import-back-to-top"
+          class="btn btn-surface btn-sm"
+          onclick="window.scrollTo({top:0,behavior:'smooth'})"
+          hidden>↑</button>
+</div>
+
 <script>
-(function() {
+// Wrapped in DOMContentLoaded rather than an immediately-invoked function:
+// this inline script has no `src`, so `defer` has no effect on it — it runs
+// synchronously as the parser reaches it, which is BEFORE the deferred
+// htmx.org <script src> in base.html has executed. Anything here that calls
+// htmx.* immediately (restoreImportView -> importSetView -> htmx.trigger)
+// threw "htmx is not defined" and killed the rest of this script, including
+// the click-listener registration below — silently breaking "click a row to
+// preview" whenever a saved view preference differed from the server's
+// default render. DOMContentLoaded fires after deferred scripts have run,
+// so htmx is guaranteed to exist by the time any of this executes.
+document.addEventListener('DOMContentLoaded', function() {
 
 // Tab buttons carry their own hx-get/hx-vals/hx-include (see markup above) so
 // htmx handles the actual data fetch — this just gives instant visual
 // feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
 // a subsequent search/platform/year/sort change stays scoped correctly.
-// Card view only exists for "Add to existing" — switching away forces list.
+// Card view only exists for "Add to existing" — switching away forces list,
+// switching back restores whatever view was saved (was previously left
+// stuck on "list" with the toggle showing "card" as active — mismatched).
 window.importSwitchTab = function(button, tab) {
   document.querySelectorAll('#import-tabs button').forEach(function(b) {
     b.classList.toggle('active', b === button);
@@ -130,9 +151,15 @@ window.importSwitchTab = function(button, tab) {
   if (hiddenTab) hiddenTab.value = tab;
   var toggle = document.getElementById('import-view-toggle');
   if (toggle) toggle.hidden = tab !== 'add_to_existing';
+  var hiddenView = document.getElementById('import-view-field');
   if (tab !== 'add_to_existing') {
-    var hiddenView = document.getElementById('import-view-field');
     if (hiddenView) hiddenView.value = 'list';
+  } else if (hiddenView) {
+    var saved = localStorage.getItem(IMPORT_VIEW_KEY) || 'list';
+    hiddenView.value = saved;
+    document.querySelectorAll('#import-view-toggle button').forEach(function(b, i) {
+      b.classList.toggle('active', (i === 0 && saved === 'list') || (i === 1 && saved === 'card'));
+    });
   }
 };
 
@@ -154,18 +181,23 @@ let importCardIdx = 0;
 function importCards() { return Array.from(document.querySelectorAll('#import-stack .cgt-match-card')); }
 function importShowCard(idx) {
   const cards = importCards();
-  const dots = Array.from(document.querySelectorAll('#import-nav-dots .cgt-match-nav__dot'));
   if (!cards.length) return;
   importCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
   cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
-  dots.forEach(function(d, i) { d.classList.toggle('cgt-match-nav__dot--active', i === importCardIdx); });
+  var counter = document.getElementById('import-nav-counter');
+  if (counter) {
+    var nav = document.getElementById('import-nav');
+    var total = nav ? parseInt(nav.dataset.total, 10) : NaN;
+    counter.textContent = (importCardIdx + 1) + ' of ' + (isNaN(total) ? cards.length : total);
+  }
 }
 window.importCardNav = function(dir) { importShowCard(importCardIdx + dir); };
 
-// Rebuilds the dot nav from whatever cards currently exist in #import-stack.
+// Updates the card stack from whatever cards currently exist in #import-stack.
 // resetIndex=true (tab switch / filter change / fresh card set) jumps back
 // to the first card; omitted (load-more append) keeps the current card
-// visible while just adding dots for the newly-appended ones.
+// visible while the counter's "of N" total stays correct regardless, since
+// it reads the server-provided total rather than counting loaded cards.
 window.importRebuildNav = function(resetIndex) {
   var cards = importCards();
   var nav = document.getElementById('import-nav');
@@ -179,12 +211,6 @@ window.importRebuildNav = function(resetIndex) {
   }
   if (nav) nav.hidden = false;
   var idx = resetIndex ? 0 : Math.min(importCardIdx, cards.length - 1);
-  var dotsWrap = document.getElementById('import-nav-dots');
-  if (dotsWrap) {
-    dotsWrap.innerHTML = cards.map(function(_, i) {
-      return '<span class="cgt-match-nav__dot' + (i === idx ? ' cgt-match-nav__dot--active' : '') + '"></span>';
-    }).join('');
-  }
   importShowCard(idx);
 };
 
@@ -267,6 +293,17 @@ window.openImportEdit = function(candidateId) {
   });
 };
 
+// Back-to-top button: appears after scrolling 300px, smooth-scrolls to top.
+// Same pattern as library.html — long candidate lists bury the tab/filter
+// bar with no way back up otherwise.
+(function () {
+  var btn = document.getElementById('import-back-to-top');
+  if (!btn) return;
+  function onScroll() { btn.hidden = window.scrollY < 300; }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
 })();
+
+});
 </script>
 {% endblock %}
