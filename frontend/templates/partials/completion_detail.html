@@ -290,7 +290,11 @@
              data-notes="{{ (completion.notes or '') | e }}">Edit completion</a></li>
       <li><hr class="dropdown-divider"></li>
       {% if hero_url or fallback_hero_url %}{% if logo_url or fallback_logo_url or entry.logo_position == 'hidden' %}
-      <li><h6 class="dropdown-header">Logo position</h6></li>
+      <li class="cgt-dropdown-submenu">
+        <a class="dropdown-item d-flex align-items-center" href="#" onclick="return false;">
+          <span class="cgt-submenu-caret me-2">&#9666;</span><span>Logo position</span>
+        </a>
+        <ul class="dropdown-menu">
       {% for _val, _label in [('', 'Bottom left'), ('bottom-center', 'Bottom center'), ('bottom-right', 'Bottom right'),
                               ('top-left', 'Top left'), ('top-center', 'Top center'), ('top-right', 'Top right'),
                               ('center', 'Center'), ('hidden', 'Hidden')] %}
@@ -302,6 +306,8 @@
            {{ '✓' if (entry.logo_position or '') == _val else ' ' }} {{ _label }}
          </a></li>
       {% endfor %}
+        </ul>
+      </li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}{% endif %}
       {% if release.source == "steam" %}
