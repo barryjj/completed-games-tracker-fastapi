@@ -2227,3 +2227,21 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
 .cgt-detail-hero__logo--scale-small  { max-width: 24%; max-height: 34%; }
 .cgt-detail-hero__logo--scale-large  { max-width: 52%; max-height: 64%; }
 .cgt-detail-hero__logo--scale-xlarge { max-width: 68%; max-height: 80%; }
+
+/* Date chip — one completion per chip in import review rows. Filled and
+   rounded so it reads as a chip, not the bare left-accent slat. */
+.cgt-date-chip {
+  display: inline-block;
+  background: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface1);
+  border-left: 3px solid var(--ctp-surface2);
+  border-radius: 4px;
+  padding: 0.1em 0.55em;
+  white-space: nowrap;
+}
+
+/* Bulk-select mode (import review, add-to-existing list). The checkbox
+   column exists in the markup but only shows while the mode is toggled
+   on, so the table stays clean for normal review. */
+#import-table .import-select-cell { display: none; width: 1%; }
+#import-table.import-select-mode .import-select-cell { display: table-cell; }

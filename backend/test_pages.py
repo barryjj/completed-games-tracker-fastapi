@@ -1615,3 +1615,59 @@ def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
     r = client.get("/library/import/review?tab=confirmed", headers=_HX)
     assert r.status_code == 200
     assert f"/library/import/{cand.id}/reopen".encode() in r.content
+
+
+def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+
+    def make_pending(title, action="add_to_existing", entry_id=entry.id, row_number=1):
+        cand = models.ImportCandidate(
+            user_id=user.id,
+            raw_title=title,
+            raw_platform="SNES",
+            library_entry_id=entry_id if action == "add_to_existing" else None,
+            status="pending",
+            proposed_action=action,
+        )
+        db_session.add(cand)
+        db_session.flush()
+        db_session.add(
+            models.ImportRow(
+                candidate_id=cand.id,
+                raw_title=title,
+                raw_platform="SNES",
+                row_number=row_number,
+                completed_at=datetime.date(2010, 1, 1),
+                completed_at_precision="day",
+            )
+        )
+        db_session.commit()
+        return cand
+
+    a = make_pending("Bulk A", row_number=1)
+    # Distinct sheet row number — same entry+date+row_number would trip the
+    # intentional duplicate-skip guard (that's re-upload protection, not a bug)
+    b = make_pending("Bulk B", row_number=2)
+    c = make_pending("Not Matched", action="create_new")
+    ids = f"{a.id},{b.id},{c.id},99999"
+    a_id, b_id, c_id = a.id, b.id, c.id
+
+    r = client.post("/library/import/confirm-bulk", data={"ids": ids})
+    assert r.status_code == 200
+    assert b"Confirmed 2 candidates" in r.content
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, a_id).status == "confirmed"
+    assert db_session.get(models.ImportCandidate, b_id).status == "confirmed"
+    assert db_session.get(models.ImportCandidate, c_id).status == "pending"
+    comps = db_session.query(models.Completion).filter(models.Completion.library_entry_id == entry.id).all()
+    assert len(comps) == 2
+    # linkage stamped so these are reopen-able
+    rows = db_session.query(models.ImportRow).filter(models.ImportRow.created_completion_id.isnot(None)).count()
+    assert rows == 2
+
+
+def test_bulk_confirm_requires_ids(client):
+    _signup_and_login(client)
+    assert client.post("/library/import/confirm-bulk", data={"ids": ""}).status_code == 422

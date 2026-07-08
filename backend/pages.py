@@ -3376,6 +3376,79 @@ def import_dismiss(
     )
 
 
+def _confirm_add_to_existing(db: Session, current_user: models.User, candidate) -> None:
+    """Log the candidate's rows as completions against its matched library
+    entry (skipping exact duplicates) and mark it confirmed. Caller commits."""
+    for row in candidate.rows:
+        if not row.completed_at:
+            continue
+        already_exists = (
+            db.query(models.Completion)
+            .filter(
+                models.Completion.library_entry_id == candidate.library_entry_id,
+                models.Completion.completed_at == row.completed_at,
+                models.Completion.sort_order == row.row_number,
+            )
+            .first()
+        )
+        if already_exists:
+            continue
+        comp = models.Completion(
+            user_id=current_user.id,
+            library_entry_id=candidate.library_entry_id,
+            completed_at=row.completed_at,
+            completed_at_precision=row.completed_at_precision or "day",
+            playthroughs=row.playthroughs,
+            notes=row.raw_notes,
+            sort_order=row.row_number,
+        )
+        db.add(comp)
+        db.flush()
+        # Stamp the linkage so Reopen can delete exactly this one.
+        row.created_completion_id = comp.id
+    candidate.status = "confirmed"
+    candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+
+
+@router.post("/library/import/confirm-bulk")
+def confirm_import_bulk(
+    request: Request,
+    ids: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Confirm a batch of add_to_existing candidates in one shot (bulk-select
+    mode on the review list). Only pending, matched, user-owned candidates
+    in the id list are touched; anything else is silently skipped."""
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return Response(status_code=422)
+    candidates = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id.in_(id_list),
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == "add_to_existing",
+            models.ImportCandidate.library_entry_id.isnot(None),
+        )
+        .options(joinedload(models.ImportCandidate.rows))
+        .all()
+    )
+    for candidate in candidates:
+        _confirm_add_to_existing(db, current_user, candidate)
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+    toast = templates.get_template("partials/_toast.html").render(
+        kind="success", body=f"Confirmed {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
+    )
+    counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+    return Response(content=toast + counts, media_type="text/html")
+
+
 @router.post("/library/import/{candidate_id}/confirm")
 def import_confirm(
     candidate_id: int,
@@ -3395,36 +3468,7 @@ def import_confirm(
         return Response(status_code=404)
 
     if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
-        # Log all completions against the existing library entry, skipping exact duplicates
-        for row in candidate.rows:
-            if not row.completed_at:
-                continue
-            already_exists = (
-                db.query(models.Completion)
-                .filter(
-                    models.Completion.library_entry_id == candidate.library_entry_id,
-                    models.Completion.completed_at == row.completed_at,
-                    models.Completion.sort_order == row.row_number,
-                )
-                .first()
-            )
-            if already_exists:
-                continue
-            comp = models.Completion(
-                user_id=current_user.id,
-                library_entry_id=candidate.library_entry_id,
-                completed_at=row.completed_at,
-                completed_at_precision=row.completed_at_precision or "day",
-                playthroughs=row.playthroughs,
-                notes=row.raw_notes,
-                sort_order=row.row_number,
-            )
-            db.add(comp)
-            db.flush()
-            # Stamp the linkage so Reopen can delete exactly this one.
-            row.created_completion_id = comp.id
-        candidate.status = "confirmed"
-        candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+        _confirm_add_to_existing(db, current_user, candidate)
         db.commit()
         tab_counts = _import_tab_counts(db, current_user.id)
         pending = sum(tab_counts.values())
