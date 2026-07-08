@@ -272,7 +272,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 
 ## Near-term
 
-### IGDB / Twitch integration
+### IGDB / Twitch integration ✅ (shipped — see DESIGN.md "IGDB Integration" for the as-built reference)
 - Agreed priority: IGDB → Platforms → PSN → Historical import
 - Twitch Client Credentials OAuth (Client ID + Secret stored per-user on the integrations page, same pattern as SGDB)
 - Access token fetched and cached (expires hourly); auto-refreshed on use
@@ -282,14 +282,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Platform data from IGDB `/platforms` used to seed the platforms table (see below)
 - Enrichment path: background worker can fill `igdb_id` on existing manual entries by title-matching (optional, user-triggered)
 
-### Platforms table (after IGDB)
+### Platforms table ✅ (shipped — platforms/aliases/families with Catppuccin badge colors, managed under Settings → Platforms)
 - `platforms` table: `internal_name`, `display_name` (user-editable), `color_key`, `sort_order`, `is_system`, **`igdb_id`** (nullable int)
 - Seeded from IGDB's `/platforms` endpoint so our IDs align with IGDB from day one — no reconciliation needed when IGDB integration lands
 - Platform taxonomy is complex (Xbox naming, handheld generations, backward-compat edge cases); IGDB has already solved it, so we don't invent our own
 - When this lands: `GameRelease.platform` free-text replaced by `platform_id` FK; `_platform_color_class` regex replaced by a table lookup; manual add modal gets a platform dropdown instead of free text
 - All current releases are Steam so the backfill migration is a trivial one-row update
 
-### Sync match review (after platforms)
+### Sync match review ✅ (shipped as PR #114 — full detail in the "Sync match review" entry under In progress/next up)
 - When a Steam (or later PSN) sync finds a game that looks like an existing manual entry on the same platform, queue it for review rather than silently creating a duplicate
 - Dedicated review page: side-by-side per match — manual entry vs. detected game; user picks Merge / Keep Separate / Always Separate
 - Merge: the manual `UserLibraryEntry` survives (preserving logged completions), `release` row gets the platform's `external_id` + `raw_data` + artwork, `source` flips from `"manual"` to `"steam"` / `"psn"`; `display_name_user_set=True` protects the user's display name
@@ -343,7 +343,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   - **Still open:** collection-match pre-check idea — when a collection is matched but no child game found (→ create_new), carry that info forward so the add-game modal can pre-check "in a collection" and prepopulate it (not built yet)
   - **Still open:** Pinball FX2's DLC-style table entries ("Pinball FX2 - Deadpool Table" etc.) are all top-level unparented games rather than linked via `parent_id` to a "Pinball FX2" base — same shape as the SEGA Mega Drive/Genesis Classics situation. Left alone deliberately; they should still be individually matchable by title via normal (non-collection) matching, just unconfirmed whether that actually works end-to-end for this specific naming pattern
   - **Still open:** layout polish — tabs currently styled as a `btn-group`, inconsistent with the existing settings-page tab component; long lists bury the tab/filter bar with no way back to the top
-  - **Still open, worth doing:** "Reopen" action for confirmed import candidates — currently a wrongly-matched confirm (e.g. matched to the wrong sequel) has to be fixed by manually deleting the Completion via the Completions page and there's no way to get the candidate back into the review queue at all. A Reopen action would delete the Completion(s) it created and flip the candidate back to `pending`. No UI or endpoint for this exists yet. Worth having regardless of how good the matcher gets — some future bug will produce a wrong confirm eventually, and manual DB surgery isn't a real workflow
+  - ~~Still open, worth doing: "Reopen" action for confirmed import candidates~~ ✅ shipped 2026-07-08: Confirmed tab on import review lists confirmed candidates; Reopen deletes the completions the confirm created (exact linkage via `ImportRow.created_completion_id`, stamped at confirm; legacy confirms matched by entry+date+sheet-row sort_order) and flips the candidate back to pending. A reopened create_new keeps its library entry and becomes add_to_existing so re-confirm can't duplicate it
   - Real matcher bug fixed this session: SQL-level candidate narrowing (`_search_pool`) did a literal contiguous-phrase `ILIKE`, which failed outright when the library title had stray characters the spreadsheet text didn't (e.g. "Golden Axe™ II" vs spreadsheet "Golden Axe II") — the correct entry was silently excluded before Python-side normalization ever ran. Combined with "III" containing "II" as a literal substring, this caused "Golden Axe II" to wrongly match "Golden Axe III"'s library entry. Fixed by tokenizing the search phrase (same punctuation-stripping as `_normalize_title`) and requiring each word to independently appear in `title` OR `display_name`, falling back to the old literal-phrase search only if the tokenized pass finds nothing
   - Not yet confirmed whether sync match review's `_score()` has a similar subtitle-insertion blind spot to what the importer had — untested there, not confirmed-safe
 

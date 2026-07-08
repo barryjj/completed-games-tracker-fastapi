@@ -676,6 +676,12 @@ class ImportRow(Base):
     # raw_date by rematch_pending_candidates-adjacent tooling.
     completed_at_precision: Mapped[str | None] = mapped_column(String, nullable=True)
     playthroughs: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Completion this row created when its candidate was confirmed — lets
+    # Reopen delete exactly what confirm made. Plain int (no FK DDL; SQLite
+    # ALTER can't add enforced constraints and doesn't enforce them anyway).
+    # NULL for rows confirmed before this column existed; Reopen falls back
+    # to matching entry + date + sort_order for those.
+    created_completion_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
 

@@ -1624,20 +1624,25 @@ def add_game(
             .first()
         )
         if candidate and candidate.status == "pending":
+            created: list = []
             for row in candidate.rows:
                 if not row.completed_at:
                     continue
-                db.add(
-                    models.Completion(
-                        user_id=current_user.id,
-                        library_entry_id=entry.id,
-                        completed_at=row.completed_at,
-                        completed_at_precision=row.completed_at_precision or "day",
-                        playthroughs=row.playthroughs,
-                        notes=row.raw_notes,
-                        sort_order=row.row_number,
-                    )
+                comp = models.Completion(
+                    user_id=current_user.id,
+                    library_entry_id=entry.id,
+                    completed_at=row.completed_at,
+                    completed_at_precision=row.completed_at_precision or "day",
+                    playthroughs=row.playthroughs,
+                    notes=row.raw_notes,
+                    sort_order=row.row_number,
                 )
+                db.add(comp)
+                created.append((row, comp))
+            db.flush()
+            # Stamp the linkage so Reopen can delete exactly these.
+            for row, comp in created:
+                row.created_completion_id = comp.id
             candidate.library_entry_id = entry.id
             candidate.status = "confirmed"
             candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
@@ -2919,6 +2924,14 @@ def import_status(
 _IMPORT_TABS = ("add_to_existing", "create_new", "needs_review")
 
 
+def _import_confirmed_count(db: Session, user_id: int) -> int:
+    return (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "confirmed")
+        .count()
+    )
+
+
 def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
     counts = dict.fromkeys(_IMPORT_TABS, 0)
     rows = (
@@ -3010,7 +3023,7 @@ def import_review_page(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    if tab not in _IMPORT_TABS:
+    if tab not in _IMPORT_TABS and tab != "confirmed":
         tab = "add_to_existing"
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
@@ -3020,11 +3033,19 @@ def import_review_page(
     tab_counts = _import_tab_counts(db, current_user.id)
     pending = sum(tab_counts.values())
 
-    filtered_q = db.query(models.ImportCandidate).filter(
-        models.ImportCandidate.user_id == current_user.id,
-        models.ImportCandidate.status == "pending",
-        models.ImportCandidate.proposed_action == tab,
-    )
+    if tab == "confirmed":
+        # Already-imported candidates, any proposed_action — surfaced so a
+        # wrong confirm can be reopened instead of fixed by DB surgery.
+        filtered_q = db.query(models.ImportCandidate).filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "confirmed",
+        )
+    else:
+        filtered_q = db.query(models.ImportCandidate).filter(
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+            models.ImportCandidate.proposed_action == tab,
+        )
 
     if q:
         filtered_q = filtered_q.filter(models.ImportCandidate.raw_title.ilike(f"%{q}%"))
@@ -3087,6 +3108,7 @@ def import_review_page(
     candidate_visuals = {c.id: _import_candidate_visuals(db, c) for c in candidates} if view == "card" else {}
 
     filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort, "view": view}
+    confirmed_count = _import_confirmed_count(db, current_user.id)
 
     if request.headers.get("HX-Request") and offset > 0:
         return templates.TemplateResponse(
@@ -3128,6 +3150,7 @@ def import_review_page(
             "current_user": current_user,
             "candidates": candidates,
             "pending": pending,
+            "confirmed_count": confirmed_count,
             "tab": tab,
             "tab_total": tab_total,
             "tab_counts": tab_counts,
@@ -3387,25 +3410,29 @@ def import_confirm(
             )
             if already_exists:
                 continue
-            db.add(
-                models.Completion(
-                    user_id=current_user.id,
-                    library_entry_id=candidate.library_entry_id,
-                    completed_at=row.completed_at,
-                    completed_at_precision=row.completed_at_precision or "day",
-                    playthroughs=row.playthroughs,
-                    notes=row.raw_notes,
-                    sort_order=row.row_number,
-                )
+            comp = models.Completion(
+                user_id=current_user.id,
+                library_entry_id=candidate.library_entry_id,
+                completed_at=row.completed_at,
+                completed_at_precision=row.completed_at_precision or "day",
+                playthroughs=row.playthroughs,
+                notes=row.raw_notes,
+                sort_order=row.row_number,
             )
+            db.add(comp)
+            db.flush()
+            # Stamp the linkage so Reopen can delete exactly this one.
+            row.created_completion_id = comp.id
         candidate.status = "confirmed"
         candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
         db.commit()
         tab_counts = _import_tab_counts(db, current_user.id)
+        pending = sum(tab_counts.values())
+        tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
         return templates.TemplateResponse(
             request=request,
             name="partials/_import_counts_oob.html",
-            context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+            context={"tab_counts": tab_counts, "pending": pending},
             headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
         )
 
@@ -3413,6 +3440,69 @@ def import_confirm(
     platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
     redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
     return Response(status_code=200, headers={"HX-Redirect": redirect_url})
+
+
+@router.post("/library/import/{candidate_id}/reopen")
+def reopen_import_candidate(
+    request: Request,
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Undo a confirm: delete the completions it created and put the
+    candidate back in the review queue. A reopened create_new keeps its
+    library entry and becomes add_to_existing so re-confirming logs against
+    that entry instead of creating a duplicate."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "confirmed",
+        )
+        .options(joinedload(models.ImportCandidate.rows))
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+
+    for row in candidate.rows:
+        comp = None
+        if row.created_completion_id:
+            comp = db.get(models.Completion, row.created_completion_id)
+        elif candidate.library_entry_id and row.completed_at:
+            # Rows confirmed before the linkage column existed: match on the
+            # exact fields confirm stamped (sort_order carries the sheet row
+            # number, which sync/manual completions never set).
+            comp = (
+                db.query(models.Completion)
+                .filter(
+                    models.Completion.user_id == current_user.id,
+                    models.Completion.library_entry_id == candidate.library_entry_id,
+                    models.Completion.completed_at == row.completed_at,
+                    models.Completion.sort_order == row.row_number,
+                )
+                .first()
+            )
+        if comp:
+            db.delete(comp)
+        row.created_completion_id = None
+
+    if candidate.library_entry_id:
+        candidate.proposed_action = "add_to_existing"
+    candidate.status = "pending"
+    candidate.reviewed_at = None
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_counts_oob.html",
+        context={"tab_counts": tab_counts, "pending": pending},
+        headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+    )
 
 
 @router.post("/library/import/fetch-thumbnails")

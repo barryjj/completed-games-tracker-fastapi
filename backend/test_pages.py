@@ -1513,3 +1513,105 @@ def test_set_logo_scale_persists_and_renders(client, db_session):
     assert client.post(f"/library/entries/{entry.id}/logo-scale", data={"scale": ""}).status_code == 204
     db_session.expire_all()
     assert db_session.get(models.UserLibraryEntry, entry.id).logo_scale is None
+
+
+# --- import candidate reopen ---
+
+
+def _make_confirmed_candidate(db, user_id, entry_id, link=True):
+    """Confirmed add_to_existing candidate with one row + the completion its
+    confirm would have created. link=False simulates a pre-linkage confirm."""
+    cand = models.ImportCandidate(
+        user_id=user_id,
+        raw_title="Old Game",
+        raw_platform="SNES",
+        library_entry_id=entry_id,
+        status="confirmed",
+        proposed_action="add_to_existing",
+    )
+    db.add(cand)
+    db.flush()
+    comp = models.Completion(
+        user_id=user_id,
+        library_entry_id=entry_id,
+        completed_at=datetime.date(2009, 6, 1),
+        completed_at_precision="month",
+        sort_order=7,
+    )
+    db.add(comp)
+    db.flush()
+    row = models.ImportRow(
+        candidate_id=cand.id,
+        raw_title="Old Game",
+        raw_platform="SNES",
+        row_number=7,
+        completed_at=datetime.date(2009, 6, 1),
+        completed_at_precision="month",
+        created_completion_id=comp.id if link else None,
+    )
+    db.add(row)
+    db.commit()
+    return cand, comp
+
+
+def _make_plain_entry(db, user_id):
+    g = models.Game(title="Old Game")
+    db.add(g)
+    db.flush()
+    rel = models.GameRelease(game_id=g.id, source="manual", platform="SNES")
+    db.add(rel)
+    db.flush()
+    entry = models.UserLibraryEntry(user_id=user_id, release_id=rel.id, import_source="manual")
+    db.add(entry)
+    db.commit()
+    return entry
+
+
+def test_reopen_deletes_linked_completion_and_flips_pending(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
+    comp_id, cand_id = comp.id, cand.id
+    r = client.post(f"/library/import/{cand_id}/reopen")
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.Completion, comp_id) is None
+    reopened = db_session.get(models.ImportCandidate, cand_id)
+    assert reopened.status == "pending"
+    assert reopened.reviewed_at is None
+
+
+def test_reopen_legacy_candidate_matches_by_row_fields(client, db_session):
+    """Rows confirmed before created_completion_id existed still reopen —
+    the completion is found by entry + date + sheet-row sort_order."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=False)
+    comp_id, cand_id = comp.id, cand.id
+    r = client.post(f"/library/import/{cand_id}/reopen")
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.Completion, comp_id) is None
+    assert db_session.get(models.ImportCandidate, cand_id).status == "pending"
+
+
+def test_reopen_rejects_pending_candidate(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
+    cand.status = "pending"
+    db_session.commit()
+    assert client.post(f"/library/import/{cand.id}/reopen").status_code == 404
+
+
+def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
+    r = client.get("/library/import/review?tab=confirmed", headers=_HX)
+    assert r.status_code == 200
+    assert f"/library/import/{cand.id}/reopen".encode() in r.content

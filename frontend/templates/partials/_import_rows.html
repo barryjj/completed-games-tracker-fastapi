@@ -1,6 +1,6 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
-    {% if c.proposed_action == "add_to_existing" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
+    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
   {# Every row is exactly one line — thumb, title, a small "≠" marker only
      when the sheet's title/platform differ from the match (full comparison
      is one click away in the preview pane's Library/Sheet table). Platform
@@ -55,7 +55,17 @@
     </span>
   </td>
   <td class="align-middle text-end text-nowrap row-actions">
-    {% if c.proposed_action != "add_to_existing" %}
+    {% if c.status == "confirmed" %}
+    <div class="cgt-row-actions-links">
+      <a href="#" class="cgt-row-actions-links__primary"
+         hx-post="/library/import/{{ c.id }}/reopen"
+         hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
+         hx-target="#import-row-{{ c.id }}"
+         hx-swap="outerHTML">
+        Reopen
+      </a>
+    </div>
+    {% elif c.proposed_action != "add_to_existing" %}
     <div class="cgt-row-actions-links">
       <a href="#" class="cgt-row-actions-links__primary"
          hx-post="/library/import/{{ c.id }}/confirm"

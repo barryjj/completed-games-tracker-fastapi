@@ -7,7 +7,9 @@
   <script>document.documentElement.dataset.bsTheme=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');</script>
   <link rel="stylesheet" href="/static/vendor/bootstrap.min.css?v={{ static_version }}">
   <link rel="stylesheet" href="/static/css/theme.css?v={{ static_version }}">
-  <script src="https://unpkg.com/htmx.org@2.0.3" defer></script>
+  {# htmx vendored (2.0.3) — same reason Bootstrap is: no CDN dependency,
+     works offline, and ready for the Tauri desktop build. #}
+  <script src="/static/vendor/htmx.min.js?v={{ static_version }}" defer></script>
   <script src="/static/vendor/bootstrap.bundle.min.js?v={{ static_version }}" defer></script>
   <script src="/static/js/app.js?v={{ static_version }}" defer></script>
   {# Toolbar drawer helpers defined inline (NOT deferred) so per-page script
