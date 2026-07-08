@@ -70,6 +70,16 @@
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}" onclick="importSetView('list')" title="List view">&equiv;</button>
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}" onclick="importSetView('card')" title="Card view">&#9638;</button>
     </div>
+    {# Bulk-select mode: checkboxes stay out of the table until toggled on. #}
+    <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
+            {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
+            onclick="importToggleSelect()">Select</button>
+    <div id="import-bulk-bar" class="d-flex align-items-center gap-2" hidden>
+      <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
+      <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
+      <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
+              onclick="importBulkConfirm()">Confirm selected</button>
+    </div>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
     <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
       <option value="">All platforms</option>
@@ -147,6 +157,59 @@ document.addEventListener('DOMContentLoaded', function() {
 // feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
 // a subsequent search/platform/year/sort change stays scoped correctly.
 // Card view only exists for "Add to existing" — switching away forces list,
+// ─── Bulk-select mode ──────────────────────────────────────────────────
+// Checkboxes live in the markup but only display while #import-table has
+// .import-select-mode; the Select button toggles it so normal review stays
+// checkbox-free. Confirm posts the checked ids, then refreshes the tab.
+window.importToggleSelect = function() {
+  var table = document.getElementById('import-table');
+  if (!table) return;
+  if (table.classList.contains('import-select-mode')) { importExitSelect(); return; }
+  table.classList.add('import-select-mode');
+  document.getElementById('import-select-toggle').classList.add('active');
+  document.getElementById('import-bulk-bar').hidden = false;
+  importBulkSync();
+};
+
+window.importExitSelect = function() {
+  var table = document.getElementById('import-table');
+  if (table) {
+    table.classList.remove('import-select-mode');
+    table.querySelectorAll('.import-bulk-check:checked').forEach(function(cb) { cb.checked = false; });
+  }
+  var btn = document.getElementById('import-select-toggle');
+  if (btn) btn.classList.remove('active');
+  var bar = document.getElementById('import-bulk-bar');
+  if (bar) bar.hidden = true;
+};
+
+window.importBulkSync = function() {
+  var n = document.querySelectorAll('#import-table .import-bulk-check:checked').length;
+  var count = document.getElementById('import-bulk-count');
+  if (count) count.textContent = n;
+  var confirmBtn = document.getElementById('import-bulk-confirm');
+  if (confirmBtn) confirmBtn.disabled = n === 0;
+};
+
+window.importSelectAllLoaded = function() {
+  document.querySelectorAll('#import-table .import-bulk-check').forEach(function(cb) { cb.checked = true; });
+  importBulkSync();
+};
+
+window.importBulkConfirm = function() {
+  var ids = Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
+                 .map(function(cb) { return cb.value; });
+  if (!ids.length) return;
+  if (!confirm('Confirm ' + ids.length + ' candidate' + (ids.length === 1 ? '' : 's') + '? Their completions will be logged against the matched library entries.')) return;
+  var btn = document.getElementById('import-bulk-confirm');
+  btn.disabled = true;
+  htmx.ajax('POST', '/library/import/confirm-bulk', { values: { ids: ids.join(',') }, swap: 'none' })
+      .then(function() {
+        importExitSelect();
+        htmx.trigger('#import-filters-form', 'submit-view');
+      });
+};
+
 // switching back restores whatever view was saved (was previously left
 // stuck on "list" with the toggle showing "card" as active — mismatched).
 window.importSwitchTab = function(button, tab) {
@@ -157,6 +220,9 @@ window.importSwitchTab = function(button, tab) {
   if (hiddenTab) hiddenTab.value = tab;
   var toggle = document.getElementById('import-view-toggle');
   if (toggle) toggle.hidden = tab !== 'add_to_existing';
+  var selectToggle = document.getElementById('import-select-toggle');
+  if (selectToggle) selectToggle.hidden = tab !== 'add_to_existing';
+  if (tab !== 'add_to_existing') importExitSelect();
   var hiddenView = document.getElementById('import-view-field');
   if (tab !== 'add_to_existing') {
     if (hiddenView) hiddenView.value = 'list';
@@ -173,6 +239,9 @@ const IMPORT_VIEW_KEY = 'cgt-import-view';
 
 window.importSetView = function(mode) {
   localStorage.setItem(IMPORT_VIEW_KEY, mode);
+  var selectToggle = document.getElementById('import-select-toggle');
+  if (selectToggle) selectToggle.hidden = mode !== 'list';
+  if (mode !== 'list') importExitSelect();
   var hiddenView = document.getElementById('import-view-field');
   if (hiddenView) hiddenView.value = mode;
   document.querySelectorAll('#import-view-toggle button').forEach(function(b, i) {
@@ -269,7 +338,7 @@ window.openImportPreview = function(candidateId) {
 // opens the preview — same delegated-click pattern as the Library page's
 // .row-actions exclusion, so it survives HTMX row swaps.
 document.addEventListener('click', function(e) {
-  if (e.target.closest('.row-actions')) return;
+  if (e.target.closest('.row-actions, .import-select-cell')) return;
   var row = e.target.closest('.import-row-clickable');
   if (!row) return;
   var candidateId = row.id.replace('import-row-', '');

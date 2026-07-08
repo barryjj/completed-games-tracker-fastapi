@@ -1,6 +1,14 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
     {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
+  {# Bulk-select cell — only rendered visible while select mode is on
+     (#import-table.import-select-mode); only confirmable rows get a box. #}
+  <td class="import-select-cell align-middle">
+    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}
+    <input class="form-check-input import-bulk-check" type="checkbox" value="{{ c.id }}"
+           onchange="importBulkSync()">
+    {% endif %}
+  </td>
   {# Every row is exactly one line — thumb, title, a small "≠" marker only
      when the sheet's title/platform differ from the match (full comparison
      is one click away in the preview pane's Library/Sheet table). Platform
@@ -53,7 +61,7 @@
     {% set _undated = c.rows | rejectattr("completed_at") | list %}
     <div class="d-flex align-items-center gap-2 flex-wrap">
       {% for r in _dated[:4] %}
-      <span class="cgt-completion-summary-slat small">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} · ×{{ r.playthroughs }}{% endif %}</span>
+      <span class="cgt-date-chip small">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} · ×{{ r.playthroughs }}{% endif %}</span>
       {% endfor %}
       {% if _dated | length > 4 %}
       <span class="small text-secondary">+{{ _dated | length - 4 }} more</span>
@@ -61,15 +69,26 @@
       {% if _undated %}
       <span class="small text-secondary">{{ _undated | length }} undated</span>
       {% endif %}
-      {% if c.status == "confirmed" and c.reviewed_at %}
-      {# The Confirmed tab's one distinguishing fact — parked at the right
-         end of the column where the dead space was. #}
-      <span class="small text-secondary ms-auto me-3">imported {{ c.reviewed_at.strftime("%b %-d, %Y") }}</span>
-      {% endif %}
     </div>
   </td>
   <td class="align-middle text-end text-nowrap row-actions">
-    {% if c.status == "confirmed" %}
+    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}
+    <div class="cgt-row-actions-links">
+      <a href="#" class="cgt-row-actions-links__primary"
+         hx-post="/library/import/{{ c.id }}/confirm"
+         hx-target="#import-row-{{ c.id }}"
+         hx-swap="outerHTML">
+        Confirm
+      </a>
+      <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
+      <a href="#"
+         hx-post="/library/import/{{ c.id }}/dismiss"
+         hx-target="#import-row-{{ c.id }}"
+         hx-swap="outerHTML">
+        Dismiss
+      </a>
+    </div>
+    {% elif c.status == "confirmed" %}
     <div class="cgt-row-actions-links">
       <a href="#" class="cgt-row-actions-links__primary"
          hx-post="/library/import/{{ c.id }}/reopen"
@@ -105,6 +124,6 @@
     hx-trigger="revealed"
     hx-target="#import-load-more"
     hx-swap="outerHTML">
-  <td colspan="4" class="text-center text-secondary small py-2">Loading more…</td>
+  <td colspan="5" class="text-center text-secondary small py-2">Loading more…</td>
 </tr>
 {% endif %}
