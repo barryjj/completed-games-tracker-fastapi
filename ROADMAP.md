@@ -372,7 +372,7 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 2. **Home v1** ✅ (this PR) — static default widget layout (completions-this-year vs. 52 goal, library totals, recently completed, needs-attention counts); `/` is the landing route after login. This is the minimal landing of the "Stats & dashboard" item below.
 3. **Customization** — pin/unpin persistence, widget picker, arrangement.
 
-### Detail-pane hero logo position / hide (agreed 2026-07-08)
+### Detail-pane hero logo position / hide ✅ (agreed + shipped 2026-07-08, this PR)
 - Steam-client-style logo placement over the hero image, per library entry: preset anchors
   (bottom-left default / top-left / top-center / center / bottom-center / bottom-right / hidden)
 - Some logos blend into their hero art or cover the focal point (e.g. Man of Medan) — moving

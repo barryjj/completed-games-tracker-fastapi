@@ -514,6 +514,10 @@ class UserLibraryEntry(Base):
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
     # must not touch this entry. Same pattern as the *_user_set flags on Game.
     is_hidden_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Detail-pane hero logo placement — preset anchor ('top-left', 'top-center',
+    # 'top-right', 'center', 'bottom-center', 'bottom-right') or 'hidden'.
+    # NULL = default bottom-left. Cosmetic, per entry.
+    logo_position: Mapped[str | None] = mapped_column(String, nullable=True)
     # "steam_import" | "psn_import" | "manual"
     import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry

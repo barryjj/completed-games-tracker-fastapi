@@ -2178,3 +2178,13 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   color: var(--ctp-red);
   background: color-mix(in srgb, var(--ctp-red) 8%, transparent);
 }
+
+/* Hero-logo preset anchors (per-entry entry.logo_position; base rule above
+   is the bottom-left default). The drop-shadow keeps logos readable at the
+   top positions where the bottom gradient doesn't reach. */
+.cgt-detail-hero__logo--top-left      { top: 10px; bottom: auto; }
+.cgt-detail-hero__logo--top-center    { top: 10px; bottom: auto; left: 50%; transform: translateX(-50%); }
+.cgt-detail-hero__logo--top-right     { top: 10px; bottom: auto; left: auto; right: 14px; }
+.cgt-detail-hero__logo--center        { top: 50%; bottom: auto; left: 50%; transform: translate(-50%, -50%); }
+.cgt-detail-hero__logo--bottom-center { left: 50%; transform: translateX(-50%); }
+.cgt-detail-hero__logo--bottom-right  { left: auto; right: 14px; }

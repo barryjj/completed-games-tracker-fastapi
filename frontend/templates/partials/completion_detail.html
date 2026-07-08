@@ -47,8 +47,8 @@
          data-cgt-entry-id="{{ entry.id }}"
          data-cgt-fresh-open="{{ '1' if fresh_open else '' }}"
          onerror="cgtHeroFailed(this)">
-    {% if logo_url or fallback_logo_url %}
-    <img class="cgt-detail-hero__logo"
+    {% if (logo_url or fallback_logo_url) and entry.logo_position != 'hidden' %}
+    <img class="cgt-detail-hero__logo{% if entry.logo_position and entry.logo_position != 'hidden' %} cgt-detail-hero__logo--{{ entry.logo_position }}{% endif %}"
          src="{{ logo_url or fallback_logo_url }}"
          alt=""
          loading="lazy"

@@ -781,6 +781,33 @@ def tools_page(
     )
 
 
+# Preset anchors for the detail-pane hero logo. Empty/absent = default
+# (bottom-left); values outside this set are rejected.
+_LOGO_POSITIONS = {"top-left", "top-center", "top-right", "center", "bottom-center", "bottom-right", "hidden"}
+
+
+@router.post("/library/entries/{entry_id}/logo-position")
+def set_logo_position(
+    entry_id: int,
+    position: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Set (or clear) the hero-logo anchor for one library entry."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter(models.UserLibraryEntry.id == entry_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    if position and position not in _LOGO_POSITIONS:
+        return Response(status_code=422)
+    entry.logo_position = position or None
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/settings")
 def settings_page(
     request: Request,

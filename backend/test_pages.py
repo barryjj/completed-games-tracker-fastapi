@@ -1437,3 +1437,62 @@ def test_missing_art_user_artwork_satisfies_filter(client, db_session):
     r = client.get("/library?missing_art=true&view_mode=grid_v&view=all", headers=_HX)
     assert r.status_code == 200
     assert b"Override Game" not in r.content
+
+
+# --- hero logo position ---
+
+
+def _make_entry_with_hero_and_logo(db, user_id):
+    """Manual entry with hero + logo artwork so the detail pane renders both."""
+    g = models.Game(title="Logo Game")
+    db.add(g)
+    db.flush()
+    rel = models.GameRelease(game_id=g.id, source="manual", platform="PC")
+    db.add(rel)
+    db.flush()
+    db.add(models.GameArtwork(release_id=rel.id, artwork_type="hero", source="sgdb", url="https://example.com/hero.jpg", is_valid=True))
+    entry = models.UserLibraryEntry(user_id=user_id, release_id=rel.id, import_source="manual")
+    db.add(entry)
+    db.flush()
+    db.add(models.UserArtwork(user_id=user_id, entry_id=entry.id, artwork_type="logo", source="sgdb", url="https://example.com/logo.png"))
+    db.commit()
+    return entry
+
+
+def test_set_logo_position_persists(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_entry_with_hero_and_logo(db_session, user.id)
+    r = client.post(f"/library/entries/{entry.id}/logo-position", data={"position": "top-right"})
+    assert r.status_code == 204
+    db_session.expire_all()
+    assert db_session.get(models.UserLibraryEntry, entry.id).logo_position == "top-right"
+    # detail pane renders the anchor class
+    r = client.get(f"/library/entries/{entry.id}/detail", headers=_HX)
+    assert b"cgt-detail-hero__logo--top-right" in r.content
+    # clearing (empty value) returns to default — no modifier class
+    r = client.post(f"/library/entries/{entry.id}/logo-position", data={"position": ""})
+    assert r.status_code == 204
+    db_session.expire_all()
+    assert db_session.get(models.UserLibraryEntry, entry.id).logo_position is None
+
+
+def test_logo_position_hidden_removes_logo(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_entry_with_hero_and_logo(db_session, user.id)
+    r = client.get(f"/library/entries/{entry.id}/detail", headers=_HX)
+    assert b"cgt-detail-hero__logo" in r.content
+    client.post(f"/library/entries/{entry.id}/logo-position", data={"position": "hidden"})
+    r = client.get(f"/library/entries/{entry.id}/detail", headers=_HX)
+    assert b"cgt-detail-hero__logo" not in r.content
+
+
+def test_logo_position_rejects_unknown_value(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_entry_with_hero_and_logo(db_session, user.id)
+    r = client.post(f"/library/entries/{entry.id}/logo-position", data={"position": "upside-down"})
+    assert r.status_code == 422
+    db_session.expire_all()
+    assert db_session.get(models.UserLibraryEntry, entry.id).logo_position is None

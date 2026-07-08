@@ -62,8 +62,8 @@
          data-cgt-entry-id="{{ entry.id }}"
          data-cgt-fresh-open="{{ '1' if fresh_open else '' }}"
          onerror="cgtHeroFailed(this)">
-    {% if logo_url or fallback_logo_url %}
-    <img class="cgt-detail-hero__logo"
+    {% if (logo_url or fallback_logo_url) and entry.logo_position != 'hidden' %}
+    <img class="cgt-detail-hero__logo{% if entry.logo_position and entry.logo_position != 'hidden' %} cgt-detail-hero__logo--{{ entry.logo_position }}{% endif %}"
          src="{{ logo_url or fallback_logo_url }}"
          alt=""
          loading="lazy"
@@ -71,7 +71,7 @@
          {% if fresh_open %}data-cgt-logo-reload-url="/library/entries/{{ entry.id }}/hero-block"
          data-cgt-logo-reload-target="#detail-hero-{{ entry.id }}"{% endif %}
          onerror="this.style.display='none'; cgtHeroBlockCheck(this); {% if fresh_open %}cgtAutoFetchLogo(this, {{ entry.id }});{% endif %}">
-    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not logo_url %}
+    {% elif fresh_open and current_user and current_user.steamgriddb_api_key and not logo_url and entry.logo_position != 'hidden' %}
     {# No logo URL at all — fire a background SGDB fetch on pane open.
        Only rendered on fresh user-initiated opens (fresh_open=1). #}
     <div hx-post="/library/entries/{{ entry.id }}/auto-fetch-logo"
@@ -452,6 +452,21 @@
          </a></li>
       <li><hr class="dropdown-divider"></li>
       {% endif %}
+      {% if hero_url or fallback_hero_url %}{% if logo_url or fallback_logo_url or entry.logo_position == 'hidden' %}
+      <li><h6 class="dropdown-header">Logo position</h6></li>
+      {% for _val, _label in [('', 'Bottom left'), ('bottom-center', 'Bottom center'), ('bottom-right', 'Bottom right'),
+                              ('top-left', 'Top left'), ('top-center', 'Top center'), ('top-right', 'Top right'),
+                              ('center', 'Center'), ('hidden', 'Hidden')] %}
+      <li><a class="dropdown-item" href="#"
+             hx-post="/library/entries/{{ entry.id }}/logo-position"
+             hx-vals='{"position": "{{ _val }}"}'
+             hx-swap="none"
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+           {{ '✓' if (entry.logo_position or '') == _val else ' ' }} {{ _label }}
+         </a></li>
+      {% endfor %}
+      <li><hr class="dropdown-divider"></li>
+      {% endif %}{% endif %}
       {% set _ua_types = entry.user_artwork | map(attribute='artwork_type') | list %}
       {% set _has_overrides = _ua_types | length > 0 %}
       {% if _has_overrides %}
