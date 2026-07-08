@@ -635,6 +635,36 @@ def account_page(
     )
 
 
+# Temporary IA mockups for the settings/navigation restructure (see
+# ROADMAP.md "Settings / navigation restructure"). Static pages — delete
+# these routes plus mockup1.html / mockup2.html and the base.html nav links
+# once a direction is picked.
+@router.get("/mockup1")
+def mockup1_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="mockup1.html",
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
+    )
+
+
+@router.get("/mockup2")
+def mockup2_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="mockup2.html",
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
+    )
+
+
 @router.get("/account/platforms/{platform_id}/cancel")
 def cancel_platform_edit(
     request: Request,

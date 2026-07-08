@@ -348,7 +348,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Do after PR #115 merges so the import module boundary is stable
 
 ### Home / Tools / Settings restructure (direction agreed 2026-07-07 via in-app mockups)
-Replaces the old "Settings / navigation restructure" item. The current Integrations page conflated third-party integrations with function cards (import, match review), and Import lived in the user dropdown next to Settings — inconsistent and clunky. Direction settled with static mockup pages (`/mockup1`, `/mockup2` — temporary uncommitted templates/routes/nav-links, delete when phase 1 lands); **mockup 2 rev 2 approved**.
+Replaces the old "Settings / navigation restructure" item. The current Integrations page conflated third-party integrations with function cards (import, match review), and Import lived in the user dropdown next to Settings — inconsistent and clunky. Direction settled with static mockup pages (`/mockup1`, `/mockup2` — temporary templates/routes/nav-links, delete when phase 1 lands); **mockup 2 rev 2 approved**.
 
 **Target IA — navbar becomes Home / Library / Completions / Tools + gear (Settings):**
 - **Home** — new default landing page after login. Widget grid mixing stats (completions this year vs. 52-game goal, library counts, recently completed) with tool cards pinned from the Tools page. User-customizable eventually (see phases).

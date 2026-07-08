@@ -53,6 +53,9 @@
         <a class="nav-link px-3 {% if _path.startswith('/library') %}cgt-nav-active{% endif %}" href="/library">Library</a>
         <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
         <a class="nav-link px-3 {% if _path.startswith('/integrations') %}cgt-nav-active{% endif %}" href="/integrations">Integrations</a>
+        {# Temporary links for the settings-restructure IA mockups — remove with the /mockup* routes. #}
+        <a class="nav-link px-3 {% if _path.startswith('/mockup1') %}cgt-nav-active{% endif %}" href="/mockup1">Mockup 1</a>
+        <a class="nav-link px-3 {% if _path.startswith('/mockup2') %}cgt-nav-active{% endif %}" href="/mockup2">Mockup 2</a>
       </div>
         <div class="dropdown">
           <button class="nav-link px-3 dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
