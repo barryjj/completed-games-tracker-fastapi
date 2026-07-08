@@ -296,6 +296,16 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
 
+### Desktop packaging (Tauri) — promoted from Later, 2026-07-08
+- Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
+- **Why now: it gates the sign-in story for both platform integrations.** A WebView we
+  control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
+  at login time — one "Sign in" click replaces manual cookie paste for both
+- Bundles into a single .app / .exe; target Mac first (user's primary machine), Windows second
+- **Explicitly does NOT change image loading.** The backend already runs locally; Tauri just
+  swaps browser for WebView. Cover-art speed comes from the "Local artwork cache" item
+  (Medium-term), which is independent, backend-only, and carries into Tauri unchanged.
+
 ### PSN integration (after sync match review)
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
@@ -438,12 +448,6 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 ---
 
 ## Later
-
-### Desktop packaging (Tauri)
-- Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
-- Enables proper OAuth/cookie capture flows for Steam and PSN without manual copy-paste
-- Bundles into a single .app / .exe
-- Target Mac first (user's primary machine), Windows second
 
 ### Platform preferences
 - User settings: check/uncheck platforms you own or want to track
