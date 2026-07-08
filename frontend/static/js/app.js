@@ -535,3 +535,27 @@ window.applySgdbCover = function(entryId, imageType, url) {
     }
   });
 };
+
+// ─── Dropdown fly-out submenu: flip up when there's no room below ─────────
+// The Logo position submenu anchors to its trigger's top and grows downward;
+// with the More menu living in the pane's pinned footer, the trigger is
+// usually near the viewport bottom and the fly-out would clip. On hover,
+// measure and flip to bottom-anchored when the space below can't fit it.
+// Delegated on document so it survives HTMX pane swaps.
+document.addEventListener('pointerover', function (e) {
+  var li = e.target.closest ? e.target.closest('.cgt-dropdown-submenu') : null;
+  if (!li) return;
+  var menu = li.querySelector(':scope > .dropdown-menu');
+  if (!menu) return;
+  menu.classList.remove('cgt-submenu-up');
+  var rect = li.getBoundingClientRect();
+  var prev = menu.style.display;
+  menu.style.display = 'block';
+  var h = menu.offsetHeight;
+  menu.style.display = prev;
+  var spaceBelow = window.innerHeight - rect.top;
+  var spaceAbove = rect.bottom;
+  if (h + 8 > spaceBelow && spaceAbove > spaceBelow) {
+    menu.classList.add('cgt-submenu-up');
+  }
+});

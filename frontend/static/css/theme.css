@@ -2203,3 +2203,11 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   color: var(--ctp-overlay0);
   line-height: 1;
 }
+
+/* Flipped variant of the fly-out submenu: anchored to the trigger's bottom
+   edge, growing upward. Applied by app.js when the space below the trigger
+   can't fit the menu. */
+.cgt-dropdown-submenu > .dropdown-menu.cgt-submenu-up {
+  top: auto;
+  bottom: 0;
+}
