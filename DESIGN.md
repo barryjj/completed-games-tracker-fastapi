@@ -15,6 +15,25 @@ Both palettes are defined in `frontend/static/css/theme.css`.
 
 ---
 
+## Navigation & Page Layout
+
+Navbar: **Library · Completions · Tools** on the left; **gear (Settings) + user dropdown** on the right.
+
+- **Tools** (`/tools`) — recurring operations as `.cgt-tool-card` cards: Steam sync, match
+  review, spreadsheet import, artwork. The yellow pending-matches badge lives on the Tools
+  nav link. Anything the user *does* on a schedule belongs here.
+- **Settings** (`/settings`) — gear icon. Grouped left nav (`.cgt-settings-nav`, NOT tabs):
+  *Account* (Profile / Security / Appearance) + *Configuration* (Platforms, Integrations).
+  Section switching is client-side with `?section=` URL persistence. The Integrations
+  section shows `.cgt-service-row` rows (status + Configure) — configuration only; actions
+  live on Tools. Per-service configure pages stay at `/integrations/steam` etc. and light
+  up the gear in the navbar.
+- Old URLs redirect: `/account[?tab=X]` → `/settings[?section=X]`, `/integrations` → `/tools`.
+- Page headings: `<h4>` + small muted subtitle (see `/tools`, Import Review). Library and
+  Completions deliberately have no heading — the nav underline is the page indicator.
+
+---
+
 ## Catppuccin CSS Variables
 
 These are the vars actually used in templates and CSS. All resolve correctly in both Mocha and Latte.
@@ -157,6 +176,43 @@ Appear below the platform input after selecting an IGDB game.
 Single platform → auto-fill the input, no chips.
 Multiple → clickable `btn btn-sm btn-outline-secondary rounded-pill` chips.
 Selected chip gets `btn-primary` / loses `btn-outline-secondary`.
+
+### Tool card (Tools page)
+```html
+<div class="cgt-tool-card">
+  <div class="cgt-tool-card__title">Steam sync <span class="badge bg-success">Connected</span></div>
+  <div class="small text-secondary">Status line…</div>
+  <div class="cgt-tool-card__actions">
+    <button class="btn btn-primary btn-sm" hx-post="…" hx-swap="none" hx-disabled-elt="this">Sync</button>
+    <a href="…" class="btn btn-surface btn-sm">Configure</a>
+  </div>
+</div>
+```
+Title strip is uppercase small-caps with badges inline; actions row pins to the card
+bottom via `margin-top: auto`. Action buttons use `hx-swap="none"` — results arrive as
+OOB toasts. Muted placeholder cards add `.cgt-tool-card--muted`.
+
+### Settings left-nav item
+```html
+<div class="cgt-settings-nav__group">Configuration</div>
+<a class="cgt-settings-nav__item" data-section="platforms" href="?section=platforms">Platforms</a>
+```
+`.active` gets mauve text + tinted bg + 2px left accent. Sections are `.settings-section`
+divs toggled by JS; the content column flips `.cgt-settings-content--wide` for the
+platforms table.
+
+### Integration service row (Settings → Integrations)
+```html
+<div class="cgt-service-row">
+  <div class="cgt-service-row__body">
+    <div class="d-flex align-items-center gap-2">
+      <span class="fw-semibold small">Steam</span> <span class="badge bg-success">Connected</span>
+    </div>
+    <div class="small text-secondary">status one-liner</div>
+  </div>
+  <a href="/integrations/steam" class="btn btn-surface btn-sm">Configure</a>
+</div>
+```
 
 ### Metacritic score chip
 ```html

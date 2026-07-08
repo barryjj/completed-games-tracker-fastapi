@@ -863,14 +863,6 @@ html[data-bs-theme="light"] .cgt-detail-list-row:hover { background-color: var(-
   padding: .2em .45em;
 }
 
-.cgt-pending-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-left: 3px solid var(--ctp-yellow);
-  padding-left: calc(var(--bs-dropdown-item-padding-x) - 3px);
-}
-
 
 /* ─── Library grid view ─────────────────────────────────────────────────── */
 /* Cover-art mosaic. Three CSS variables drive the layout:
@@ -1942,3 +1934,116 @@ body:has(.cgt-match-nav--sticky) {
   border-radius: .4rem;
   font-size: .82rem;
 }
+
+/* ─── Tools page ────────────────────────────────────────────────────────── */
+/* Card grid for recurring operations (sync, match review, import, artwork).
+   Each card: uppercase title strip with status badges, body text, action row
+   pinned to the bottom so buttons align across cards of different heights. */
+.cgt-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+.cgt-tool-card {
+  background: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 6px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.cgt-tool-card--muted { opacity: .6; }
+.cgt-tool-card__title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-subtext);
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--ctp-surface0);
+}
+.cgt-tool-card__actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 0.4rem;
+}
+
+/* ─── Settings area ─────────────────────────────────────────────────────── */
+/* Grouped left nav + content pane. Replaces the old account page's
+   horizontal nav-tabs. Section switching is client-side (settings.html JS)
+   with ?section= URL persistence. */
+.cgt-settings-wrap {
+  display: flex;
+  gap: 2.25rem;
+  align-items: flex-start;
+}
+.cgt-settings-nav {
+  width: 215px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 4.5rem;
+}
+.cgt-settings-nav__group {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ctp-overlay0);
+  margin: 1.1rem 0 0.35rem 0.6rem;
+}
+.cgt-settings-nav__group:first-child { margin-top: 0; }
+.cgt-settings-nav__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.32rem 0.6rem;
+  border-radius: 4px;
+  border-left: 2px solid transparent;
+  font-size: 0.88rem;
+  color: var(--ctp-subtext);
+  text-decoration: none;
+  cursor: pointer;
+}
+.cgt-settings-nav__item:hover {
+  background: var(--ctp-surface0);
+  color: var(--ctp-text);
+}
+.cgt-settings-nav__item.active {
+  color: var(--ctp-mauve);
+  background: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
+  border-left-color: var(--ctp-mauve);
+  border-radius: 0 4px 4px 0;
+}
+/* Forms read best narrow; the platforms table needs the full width.
+   settings.html JS flips the modifier per active section. */
+.cgt-settings-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 660px;
+}
+.cgt-settings-content--wide { max-width: none; }
+
+/* Integration service row (Settings → Integrations): status at a glance +
+   Configure link. Tighter than the old hub's card grid. */
+.cgt-service-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 6px;
+  background: var(--ctp-mantle);
+}
+.cgt-service-row + .cgt-service-row { margin-top: 0.5rem; }
+.cgt-service-row--muted { opacity: .6; }
+.cgt-service-row__body { min-width: 0; flex: 1 1 auto; }
+
+/* Gear icon nav link — same underline treatment as text nav links. */
+.cgt-nav-gear svg { display: block; }

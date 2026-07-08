@@ -60,15 +60,26 @@ def test_login_page_links_to_signup(client):
 # --- account page ---
 
 
-def test_account_page_loads(client):
+def test_settings_page_loads(client):
     _signup_and_login(client)
-    r = client.get("/account")
+    r = client.get("/settings")
     assert r.status_code == 200
-    assert b"tab-profile" in r.content
+    assert b"section-profile" in r.content
+    assert b"section-integrations" in r.content
 
 
-def test_account_requires_auth(client):
+def test_account_redirects_to_settings(client):
+    """Old /account URL (and its ?tab= deep links) forward to /settings."""
+    _signup_and_login(client)
     r = client.get("/account", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/settings"
+    r = client.get("/account?tab=platforms", follow_redirects=False)
+    assert r.headers["location"] == "/settings?section=platforms"
+
+
+def test_settings_requires_auth(client):
+    r = client.get("/settings", follow_redirects=False)
     assert r.status_code == 302
     assert "/login" in r.headers["location"]
 

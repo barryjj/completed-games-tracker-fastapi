@@ -614,17 +614,64 @@ def _annotate_platforms_in_library(
     return platforms, bool(used_ids)
 
 
-@router.get("/account")
-def account_page(
+def _steam_counts(db: Session, user: models.User) -> dict | None:
+    """Return {'games': N, 'dlc': N, 'total': N} for the user's Steam library, or None
+    if Steam isn't connected. Used by the Tools page's Steam sync card."""
+    if not user.steam_id64:
+        return None
+    rows = (
+        db.query(models.Game.is_dlc, func.count(models.UserLibraryEntry.id))
+        .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.source == "steam",
+        )
+        .group_by(models.Game.is_dlc)
+        .all()
+    )
+    games = sum(count for is_dlc, count in rows if not is_dlc)
+    dlc = sum(count for is_dlc, count in rows if is_dlc)
+    return {"games": games, "dlc": dlc, "total": games + dlc}
+
+
+@router.get("/tools")
+def tools_page(
     request: Request,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Operations hub: recurring actions on the library (sync, match review,
+    import, artwork) as cards. Replaces the action half of the old
+    /integrations hub; configuration lives under /settings."""
+    import_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="tools.html",
+        context={
+            "current_user": current_user,
+            "steam_counts": _steam_counts(db, current_user),
+            "import_counts": import_counts,
+            "import_pending": sum(import_counts.values()),
+            **_base_ctx(db, current_user),
+        },
+    )
+
+
+@router.get("/settings")
+def settings_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Settings area with grouped left nav: Account (profile/security/appearance)
+    + Configuration (platforms, integrations). Section switching is client-side
+    via ?section=, same pattern the old account tabs used."""
     platforms = _get_all_platforms(db)
     platforms, has_library_platforms = _annotate_platforms_in_library(db, current_user, platforms)
     return templates.TemplateResponse(
         request=request,
-        name="account.html",
+        name="settings.html",
         context={
             "current_user": current_user,
             "platforms": platforms,
@@ -635,34 +682,12 @@ def account_page(
     )
 
 
-# Temporary IA mockups for the settings/navigation restructure (see
-# ROADMAP.md "Settings / navigation restructure"). Static pages — delete
-# these routes plus mockup1.html / mockup2.html and the base.html nav links
-# once a direction is picked.
-@router.get("/mockup1")
-def mockup1_page(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    return templates.TemplateResponse(
-        request=request,
-        name="mockup1.html",
-        context={"current_user": current_user, **_base_ctx(db, current_user)},
-    )
-
-
-@router.get("/mockup2")
-def mockup2_page(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    return templates.TemplateResponse(
-        request=request,
-        name="mockup2.html",
-        context={"current_user": current_user, **_base_ctx(db, current_user)},
-    )
+@router.get("/account")
+def account_page(request: Request, tab: str = ""):
+    """Old account page — content moved to /settings. Tab names map 1:1 to
+    settings sections, so deep links keep working."""
+    target = f"/settings?section={tab}" if tab else "/settings"
+    return RedirectResponse(target, status_code=302)
 
 
 @router.get("/account/platforms/{platform_id}/cancel")

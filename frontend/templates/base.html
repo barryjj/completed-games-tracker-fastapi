@@ -52,33 +52,34 @@
       <div class="d-flex align-items-center gap-1 me-auto">
         <a class="nav-link px-3 {% if _path.startswith('/library') %}cgt-nav-active{% endif %}" href="/library">Library</a>
         <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
-        <a class="nav-link px-3 {% if _path.startswith('/integrations') %}cgt-nav-active{% endif %}" href="/integrations">Integrations</a>
-        {# Temporary links for the settings-restructure IA mockups — remove with the /mockup* routes. #}
-        <a class="nav-link px-3 {% if _path.startswith('/mockup1') %}cgt-nav-active{% endif %}" href="/mockup1">Mockup 1</a>
-        <a class="nav-link px-3 {% if _path.startswith('/mockup2') %}cgt-nav-active{% endif %}" href="/mockup2">Mockup 2</a>
+        <a class="nav-link px-3 d-flex align-items-center gap-2 {% if _path.startswith('/tools') %}cgt-nav-active{% endif %}" href="/tools">
+          Tools
+          {% if pending_matches %}
+          <span class="badge rounded-pill cgt-pending-badge" title="{{ pending_matches }} match{{ 'es' if pending_matches != 1 else '' }} pending review">{{ pending_matches }}</span>
+          {% endif %}
+        </a>
       </div>
+      <div class="d-flex align-items-center">
+        {# Gear = Settings. Also lights up on the per-service configure pages
+           (/integrations/steam etc.) since those are settings surfaces. #}
+        <a class="nav-link px-3 cgt-nav-gear {% if _path.startswith('/settings') or _path.startswith('/integrations') or _path.startswith('/account') %}cgt-nav-active{% endif %}"
+           href="/settings" title="Settings" aria-label="Settings">
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+            <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+          </svg>
+        </a>
         <div class="dropdown">
-          <button class="nav-link px-3 dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <button class="nav-link px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
             {{ current_user.name }}
-            {% if pending_matches %}
-            <span class="badge rounded-pill cgt-pending-badge" title="{{ pending_matches }} match{{ 'es' if pending_matches != 1 else '' }} pending review">{{ pending_matches }}</span>
-            {% endif %}
           </button>
           <ul class="dropdown-menu dropdown-menu-end">
-            {% if pending_matches %}
-            <li>
-              <a class="dropdown-item cgt-pending-item" href="/library/match-review">
-                Review matches
-              </a>
-            </li>
-            <li><hr class="dropdown-divider"></li>
-            {% endif %}
-            <li><a class="dropdown-item" href="/library/import">Import</a></li>
-            <li><a class="dropdown-item" href="/account">Settings</a></li>
+            <li><a class="dropdown-item" href="/settings">Settings</a></li>
             <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="/logout">Sign out</a></li>
           </ul>
         </div>
+      </div>
     </div>
   </nav>
   <main class="container py-4">

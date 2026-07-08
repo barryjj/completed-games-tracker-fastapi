@@ -8,7 +8,6 @@ import httpx as _httpx
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
@@ -16,7 +15,7 @@ from . import jobs, models, steam, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
-from .pages import _base_ctx, get_web_user
+from .pages import _base_ctx, _steam_counts, get_web_user
 
 _logger = logging.getLogger(__name__)
 
@@ -26,42 +25,12 @@ TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
-def _steam_counts(db: Session, user: models.User) -> dict | None:
-    """Return {'games': N, 'dlc': N, 'total': N} for the user's Steam library, or None
-    if Steam isn't connected."""
-    if not user.steam_id64:
-        return None
-    rows = (
-        db.query(models.Game.is_dlc, func.count(models.UserLibraryEntry.id))
-        .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
-        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
-        .filter(
-            models.UserLibraryEntry.user_id == user.id,
-            models.GameRelease.source == "steam",
-        )
-        .group_by(models.Game.is_dlc)
-        .all()
-    )
-    games = sum(count for is_dlc, count in rows if not is_dlc)
-    dlc = sum(count for is_dlc, count in rows if is_dlc)
-    return {"games": games, "dlc": dlc, "total": games + dlc}
-
-
 @router.get("")
-def integrations_hub(
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    return templates.TemplateResponse(
-        request=request,
-        name="integrations.html",
-        context={
-            "current_user": current_user,
-            "steam_counts": _steam_counts(db, current_user),
-            **_base_ctx(db, current_user),
-        },
-    )
+def integrations_hub():
+    """The old integrations hub — its action cards moved to /tools, its
+    configuration surface to /settings?section=integrations. Sync actions
+    were the hub's main use, so /tools gets the redirect."""
+    return RedirectResponse("/tools", status_code=302)
 
 
 @router.get("/steam")
