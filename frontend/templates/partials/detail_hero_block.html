@@ -10,7 +10,7 @@
        data-cgt-entry-id="{{ entry.id }}"
        onerror="cgtHeroFailed(this)">
   {% if (logo_url or fallback_logo_url) and entry.logo_position != 'hidden' %}
-  <img class="cgt-detail-hero__logo{% if entry.logo_position and entry.logo_position != 'hidden' %} cgt-detail-hero__logo--{{ entry.logo_position }}{% endif %}"
+  <img class="cgt-detail-hero__logo{% if entry.logo_position and entry.logo_position != 'hidden' %} cgt-detail-hero__logo--{{ entry.logo_position }}{% endif %}{% if entry.logo_scale %} cgt-detail-hero__logo--scale-{{ entry.logo_scale }}{% endif %}"
        src="{{ logo_url or fallback_logo_url }}"
        alt=""
        loading="lazy"

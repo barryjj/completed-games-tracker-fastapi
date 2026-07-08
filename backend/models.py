@@ -518,6 +518,8 @@ class UserLibraryEntry(Base):
     # 'top-right', 'center', 'bottom-center', 'bottom-right') or 'hidden'.
     # NULL = default bottom-left. Cosmetic, per entry.
     logo_position: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Hero-logo size preset: 'small' | 'large' | 'xlarge'; NULL = default.
+    logo_scale: Mapped[str | None] = mapped_column(String, nullable=True)
     # "steam_import" | "psn_import" | "manual"
     import_source: Mapped[str] = mapped_column(String, nullable=False, default="manual", index=True)
     # if access comes from owning a parent collection, points to that collection's library entry

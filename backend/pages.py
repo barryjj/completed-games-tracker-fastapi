@@ -808,6 +808,32 @@ def set_logo_position(
     return Response(status_code=204)
 
 
+# Size presets for the detail-pane hero logo. Empty/absent = default size.
+_LOGO_SCALES = {"small", "large", "xlarge"}
+
+
+@router.post("/library/entries/{entry_id}/logo-scale")
+def set_logo_scale(
+    entry_id: int,
+    scale: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Set (or clear) the hero-logo size preset for one library entry."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter(models.UserLibraryEntry.id == entry_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+    if scale and scale not in _LOGO_SCALES:
+        return Response(status_code=422)
+    entry.logo_scale = scale or None
+    db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/settings")
 def settings_page(
     request: Request,

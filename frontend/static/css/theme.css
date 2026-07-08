@@ -2211,3 +2211,19 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   top: auto;
   bottom: 0;
 }
+
+/* Submenu caret sits absolutely in the item's padding gutter so the label
+   text aligns with sibling dropdown items instead of being indented. */
+.cgt-dropdown-submenu > .dropdown-item { position: relative; }
+.cgt-dropdown-submenu > .dropdown-item > .cgt-submenu-caret {
+  position: absolute;
+  left: 0.35rem;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Hero-logo size presets (entry.logo_scale) — scale the max box the logo
+   fits inside; default is 38% x 50% on the base rule. */
+.cgt-detail-hero__logo--scale-small  { max-width: 24%; max-height: 34%; }
+.cgt-detail-hero__logo--scale-large  { max-width: 52%; max-height: 64%; }
+.cgt-detail-hero__logo--scale-xlarge { max-width: 68%; max-height: 80%; }

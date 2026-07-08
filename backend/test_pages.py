@@ -1496,3 +1496,20 @@ def test_logo_position_rejects_unknown_value(client, db_session):
     assert r.status_code == 422
     db_session.expire_all()
     assert db_session.get(models.UserLibraryEntry, entry.id).logo_position is None
+
+
+def test_set_logo_scale_persists_and_renders(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_entry_with_hero_and_logo(db_session, user.id)
+    r = client.post(f"/library/entries/{entry.id}/logo-scale", data={"scale": "xlarge"})
+    assert r.status_code == 204
+    db_session.expire_all()
+    assert db_session.get(models.UserLibraryEntry, entry.id).logo_scale == "xlarge"
+    r = client.get(f"/library/entries/{entry.id}/detail", headers=_HX)
+    assert b"cgt-detail-hero__logo--scale-xlarge" in r.content
+    # invalid value rejected, empty clears
+    assert client.post(f"/library/entries/{entry.id}/logo-scale", data={"scale": "gigantic"}).status_code == 422
+    assert client.post(f"/library/entries/{entry.id}/logo-scale", data={"scale": ""}).status_code == 204
+    db_session.expire_all()
+    assert db_session.get(models.UserLibraryEntry, entry.id).logo_scale is None

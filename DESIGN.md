@@ -370,6 +370,9 @@ hero + logo exist) → Reset overrides → Delete
 ### Hero logo position
 `entry.logo_position` (nullable) anchors the logo overlay: `top-left` / `top-center` /
 `top-right` / `center` / `bottom-center` / `bottom-right` / `hidden`; NULL = bottom-left
-default. CSS modifiers `cgt-detail-hero__logo--{anchor}`. Applies in the library pane,
-completion pane, and the hero-block refresh partial; `hidden` also suppresses the SGDB
-logo auto-fetch. Set via `POST /library/entries/{id}/logo-position` (allowlisted values).
+default. `entry.logo_scale` sizes it: `small` / `large` / `xlarge`; NULL = default
+(38% x 50% box). CSS modifiers `cgt-detail-hero__logo--{anchor}` and `--scale-{size}`.
+Applies on all five hero+logo surfaces (library pane, completion pane, hero-block refresh
+partial, import-review cards, match-review preview); `hidden` also suppresses the SGDB
+logo auto-fetch. Set via `POST /library/entries/{id}/logo-position` / `/logo-scale`
+(allowlisted values), surfaced as hover fly-out submenus in both panes' More dropdowns.

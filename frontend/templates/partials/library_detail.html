@@ -63,7 +63,7 @@
          data-cgt-fresh-open="{{ '1' if fresh_open else '' }}"
          onerror="cgtHeroFailed(this)">
     {% if (logo_url or fallback_logo_url) and entry.logo_position != 'hidden' %}
-    <img class="cgt-detail-hero__logo{% if entry.logo_position and entry.logo_position != 'hidden' %} cgt-detail-hero__logo--{{ entry.logo_position }}{% endif %}"
+    <img class="cgt-detail-hero__logo{% if entry.logo_position and entry.logo_position != 'hidden' %} cgt-detail-hero__logo--{{ entry.logo_position }}{% endif %}{% if entry.logo_scale %} cgt-detail-hero__logo--scale-{{ entry.logo_scale }}{% endif %}"
          src="{{ logo_url or fallback_logo_url }}"
          alt=""
          loading="lazy"
@@ -454,9 +454,7 @@
       {% endif %}
       {% if hero_url or fallback_hero_url %}{% if logo_url or fallback_logo_url or entry.logo_position == 'hidden' %}
       <li class="cgt-dropdown-submenu">
-        <a class="dropdown-item d-flex align-items-center" href="#" onclick="return false;">
-          <span class="cgt-submenu-caret me-2">&#9666;</span><span>Logo position</span>
-        </a>
+        <a class="dropdown-item" href="#" onclick="return false;"><span class="cgt-submenu-caret">&#9666;</span>Logo position</a>
         <ul class="dropdown-menu">
       {% for _val, _label in [('', 'Bottom left'), ('bottom-center', 'Bottom center'), ('bottom-right', 'Bottom right'),
                               ('top-left', 'Top left'), ('top-center', 'Top center'), ('top-right', 'Top right'),
@@ -467,6 +465,20 @@
              hx-swap="none"
              hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
            {{ '✓' if (entry.logo_position or '') == _val else ' ' }} {{ _label }}
+         </a></li>
+      {% endfor %}
+        </ul>
+      </li>
+      <li class="cgt-dropdown-submenu">
+        <a class="dropdown-item" href="#" onclick="return false;"><span class="cgt-submenu-caret">&#9666;</span>Logo size</a>
+        <ul class="dropdown-menu">
+      {% for _val, _label in [('', 'Default'), ('small', 'Small'), ('large', 'Large'), ('xlarge', 'Extra large')] %}
+      <li><a class="dropdown-item" href="#"
+             hx-post="/library/entries/{{ entry.id }}/logo-scale"
+             hx-vals='{"scale": "{{ _val }}"}'
+             hx-swap="none"
+             hx-on::after-request="if(event.detail.successful){ htmx.ajax('GET', '/library/entries/{{ entry.id }}/detail', {target: '#library-detail-content', swap: 'innerHTML'}); }">
+           {{ '✓' if (entry.logo_scale or '') == _val else ' ' }} {{ _label }}
          </a></li>
       {% endfor %}
         </ul>
