@@ -1,0 +1,395 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="cgt-settings-wrap">
+
+  <nav class="cgt-settings-nav" id="settings-nav">
+    <div class="cgt-settings-nav__group">Account</div>
+    <a class="cgt-settings-nav__item" data-section="profile" href="?section=profile">Profile</a>
+    <a class="cgt-settings-nav__item" data-section="security" href="?section=security">Security</a>
+    <a class="cgt-settings-nav__item" data-section="appearance" href="?section=appearance">Appearance</a>
+
+    <div class="cgt-settings-nav__group">Configuration</div>
+    <a class="cgt-settings-nav__item" data-section="platforms" href="?section=platforms">Platforms</a>
+    <a class="cgt-settings-nav__item" data-section="integrations" href="?section=integrations">Integrations</a>
+  </nav>
+
+  <div class="cgt-settings-content" id="settings-content">
+
+    <!-- Profile -->
+    <div id="section-profile" class="settings-section" hidden>
+      <p class="section-heading">Display Name</p>
+      <form hx-post="/account/display-name" hx-target="#flash-display-name" hx-swap="innerHTML">
+        <div class="input-group mb-1">
+          <input type="text" class="form-control" name="name" value="{{ current_user.name }}" required>
+          <button type="submit" class="btn btn-surface">Save</button>
+        </div>
+        <div id="flash-display-name" class="flash-slot"></div>
+      </form>
+    </div>
+
+    <!-- Security -->
+    <div id="section-security" class="settings-section" hidden>
+      <p class="section-heading">Username</p>
+      <form hx-post="/account/username" hx-target="#flash-username" hx-swap="innerHTML">
+        <div class="mb-3">
+          <label class="form-label">New username</label>
+          <input type="text" class="form-control" name="new_username" value="{{ current_user.username }}" autocomplete="username" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Current password</label>
+          <input type="password" class="form-control" name="current_password" autocomplete="current-password" required>
+        </div>
+        <div id="flash-username" class="flash-slot mb-2"></div>
+        <button type="submit" class="btn btn-surface" style="width: auto;">Save</button>
+      </form>
+
+      <hr>
+
+      <p class="section-heading">Password</p>
+      <form
+        hx-post="/account/password"
+        hx-target="#flash-password"
+        hx-swap="innerHTML"
+        hx-on::after-request="if(event.detail.successful) this.reset()"
+      >
+        <div class="mb-3">
+          <label class="form-label">Current password</label>
+          <input type="password" class="form-control" name="current_password" autocomplete="current-password" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">New password</label>
+          <input type="password" class="form-control" name="new_password" autocomplete="new-password" required>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Confirm new password</label>
+          <input type="password" class="form-control" name="new_password_confirm" autocomplete="new-password" required>
+        </div>
+        <div id="flash-password" class="flash-slot mb-2"></div>
+        <button type="submit" class="btn btn-surface" style="width: auto;">Change Password</button>
+      </form>
+
+      <hr>
+
+      <p class="section-heading" style="color: var(--ctp-red);">Delete Account</p>
+      <p class="text-secondary"><small>Permanently deletes your account, library, and all completions. Type your username to confirm.</small></p>
+      <form
+        hx-post="/account/delete"
+        hx-target="#flash-delete"
+        hx-swap="innerHTML"
+        hx-confirm="Are you absolutely sure? This cannot be undone."
+      >
+        <div class="input-group mb-1">
+          <input type="text" class="form-control" name="confirm_username" placeholder="{{ current_user.username }}" autocomplete="off" required>
+          <button type="submit" class="btn btn-danger" style="white-space: nowrap;">Delete Account</button>
+        </div>
+        <div id="flash-delete" class="flash-slot"></div>
+      </form>
+    </div>
+
+    <!-- Appearance -->
+    <div id="section-appearance" class="settings-section" hidden>
+      <p class="section-heading">Color Theme</p>
+      <div class="theme-picker" id="theme-picker">
+        <button type="button" class="theme-picker-trigger" aria-haspopup="listbox" aria-expanded="false">
+          System default
+        </button>
+        <ul class="theme-picker-menu" role="listbox" hidden>
+          <li role="option"><button type="button" data-value="system">System default</button></li>
+          <li role="option"><button type="button" data-value="dark">Dark (Catppuccin Mocha)</button></li>
+          <li role="option"><button type="button" data-value="light">Light (Catppuccin Latte)</button></li>
+        </ul>
+      </div>
+      <script>
+        (function () {
+          var labels = { system: 'System default', dark: 'Dark (Catppuccin Mocha)', light: 'Light (Catppuccin Latte)' };
+          var picker  = document.getElementById('theme-picker');
+          var trigger = picker.querySelector('.theme-picker-trigger');
+          var menu    = picker.querySelector('.theme-picker-menu');
+          var current = localStorage.getItem('theme') || 'system';
+
+          function applyTheme(val) {
+            if (val === 'system') {
+              localStorage.removeItem('theme');
+              document.documentElement.dataset.bsTheme =
+                matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            } else {
+              document.documentElement.dataset.bsTheme = val;
+              localStorage.setItem('theme', val);
+            }
+            trigger.textContent = labels[val];
+            menu.querySelectorAll('button').forEach(function (b) {
+              b.setAttribute('aria-selected', b.dataset.value === val ? 'true' : 'false');
+            });
+            current = val;
+          }
+
+          applyTheme(current);
+
+          trigger.addEventListener('click', function () {
+            var open = !menu.hidden;
+            menu.hidden = open;
+            trigger.setAttribute('aria-expanded', !open);
+          });
+
+          menu.querySelectorAll('button').forEach(function (b) {
+            b.addEventListener('click', function () {
+              applyTheme(b.dataset.value);
+              menu.hidden = true;
+              trigger.setAttribute('aria-expanded', 'false');
+            });
+          });
+
+          document.addEventListener('click', function (e) {
+            if (!picker.contains(e.target)) {
+              menu.hidden = true;
+              trigger.setAttribute('aria-expanded', 'false');
+            }
+          });
+        })();
+      </script>
+    </div>
+
+    <!-- Platforms -->
+    <div id="section-platforms" class="settings-section" hidden>
+      <p class="section-heading">Platforms</p>
+      <p class="text-secondary small mb-3">
+        Rename the display name shown in the library and pick a badge color.
+        The canonical name (shown in grey) is used for sync matching and cannot be changed.
+      </p>
+      <div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+        <input type="text" id="platform-name-filter"
+               class="form-control form-control-sm"
+               style="max-width: 200px;"
+               placeholder="Filter by name...">
+        <div class="form-check mb-0">
+          <input class="form-check-input" type="checkbox" id="platform-library-only"
+                 {% if has_library_platforms %}checked{% endif %}>
+          <label class="form-check-label small text-secondary" for="platform-library-only">
+            Show only in library
+          </label>
+        </div>
+        <span id="platform-visible-count" class="text-secondary small"></span>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle" id="platform-table" style="font-size:.85rem;">
+          <thead>
+            <tr>
+              <th>Badge</th>
+              <th>Name / Family</th>
+              <th>Aliases</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for platform in platforms %}
+            {% include "partials/platform_row.html" with context %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p id="platform-no-results" class="text-secondary small" hidden>No platforms match.</p>
+    </div>
+
+    <!-- Integrations -->
+    <div id="section-integrations" class="settings-section" hidden>
+      <p class="section-heading">Connected Services</p>
+      <p class="text-secondary small mb-3">
+        Credentials and connection state. Sync and review actions live on the
+        <a href="/tools">Tools</a> page.
+      </p>
+
+      <div class="cgt-service-row">
+        <div class="cgt-service-row__body">
+          <div class="d-flex align-items-center gap-2">
+            {% if current_user.steam_avatar_url %}
+            <img src="{{ current_user.steam_avatar_url }}" alt="" width="24" height="24"
+                 style="border-radius: 3px; flex-shrink: 0;">
+            {% endif %}
+            <span class="fw-semibold small">Steam</span>
+            {% if current_user.steam_id64 %}
+            <span class="badge bg-success">Connected</span>
+            {% else %}
+            <span class="badge bg-secondary">Not connected</span>
+            {% endif %}
+          </div>
+          <div class="small text-secondary">
+            {% if current_user.steam_id64 %}
+            {{ current_user.steam_persona_name or current_user.steam_id64 }}
+            · API key {{ "saved" if current_user.steam_api_key else "missing" }}
+            · cookies {{ "saved" if current_user.steam_session_id and current_user.steam_login_secure else "missing" }}
+            {% else %}
+            Library and playtime sync via Steam sign-in
+            {% endif %}
+          </div>
+        </div>
+        <a href="/integrations/steam" class="btn btn-surface btn-sm">Configure</a>
+      </div>
+
+      <div class="cgt-service-row">
+        <div class="cgt-service-row__body">
+          <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold small">IGDB / Twitch</span>
+            {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+            <span class="badge bg-success">Connected</span>
+            {% else %}
+            <span class="badge bg-secondary">Not connected</span>
+            {% endif %}
+          </div>
+          <div class="small text-secondary">Game metadata, cover art, and typeahead search for manual adds</div>
+        </div>
+        <a href="/integrations/igdb" class="btn btn-surface btn-sm">Configure</a>
+      </div>
+
+      <div class="cgt-service-row">
+        <div class="cgt-service-row__body">
+          <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold small">SteamGridDB</span>
+            {% if current_user.steamgriddb_api_key %}
+            <span class="badge bg-success">Connected</span>
+            {% else %}
+            <span class="badge bg-secondary">Not connected</span>
+            {% endif %}
+          </div>
+          <div class="small text-secondary">Cover-art fallback and custom artwork picker</div>
+        </div>
+        <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">Configure</a>
+      </div>
+
+      <div class="cgt-service-row cgt-service-row--muted">
+        <div class="cgt-service-row__body">
+          <div class="d-flex align-items-center gap-2">
+            <span class="fw-semibold small">PlayStation Network</span>
+            <span class="badge bg-secondary">Coming soon</span>
+          </div>
+          <div class="small text-secondary">Library and trophy sync</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  function selectPlatformSwatch(el) {
+    var form = el.closest('form');
+    form.querySelectorAll('.cgt-color-swatch').forEach(function(s) { s.classList.remove('selected'); });
+    el.classList.add('selected');
+    form.querySelector('.platform-color-input').value = el.dataset.color;
+  }
+
+  // Live preview — updates the badge chip and alias chips when color or
+  // display name changes. No DB write until Save.
+  var _CTP_VARS = {
+    rosewater:'--ctp-rosewater', flamingo:'--ctp-flamingo', pink:'--ctp-pink',
+    mauve:'--ctp-mauve', red:'--ctp-red', maroon:'--ctp-maroon', peach:'--ctp-peach',
+    yellow:'--ctp-yellow', green:'--ctp-green', teal:'--ctp-teal', sky:'--ctp-sky',
+    sapphire:'--ctp-sapphire', blue:'--ctp-blue', lavender:'--ctp-lavender'
+  };
+  // Re-apply live colors after any alias HTMX swap
+  document.addEventListener('htmx:afterSwap', function(e) {
+    var aliasDiv = e.target;
+    if (aliasDiv && aliasDiv.id && aliasDiv.id.startsWith('platform-aliases-')) {
+      var pid = aliasDiv.id.replace('platform-aliases-', '');
+      cgtUpdatePlatformPreview(pid);
+    }
+  });
+
+  function cgtUpdatePlatformPreview(pid) {
+    var badge = document.getElementById('preview-badge-' + pid);
+    var colorInput = document.getElementById('edit-color-' + pid);
+    var nameInput  = document.getElementById('edit-display-name-' + pid);
+    if (!badge || !colorInput) return;
+
+    // Update label
+    var label = (nameInput && nameInput.value.trim()) || badge.dataset.label;
+    badge.textContent = label;
+
+    // Update badge color
+    var accent = colorInput.value;
+    // Strip all tag-platform-* classes first
+    badge.className = badge.className.replace(/\btag-platform-\S+/g, '').trim();
+    if (accent && _CTP_VARS[accent]) {
+      badge.classList.add('tag-platform-' + accent);
+    }
+
+    // Update alias chip colors to match — chips use tag-badge classes
+    var chips = document.querySelectorAll('#alias-chips-' + pid + ' .cgt-alias-chip');
+    chips.forEach(function(chip) {
+      chip.className = chip.className.replace(/\btag-platform-\S+/g, '').trim();
+      if (accent && _CTP_VARS[accent]) {
+        chip.classList.add('tag-platform-' + accent);
+      }
+    });
+  }
+
+  (function () {
+    var items    = document.querySelectorAll('#settings-nav .cgt-settings-nav__item');
+    var sections = document.querySelectorAll('.settings-section');
+    var content  = document.getElementById('settings-content');
+
+    function activateSection(name) {
+      var item = document.querySelector('#settings-nav [data-section="' + name + '"]');
+      if (!item) { name = 'profile'; item = document.querySelector('#settings-nav [data-section="profile"]'); }
+      items.forEach(function(i) { i.classList.remove('active'); });
+      sections.forEach(function(s) { s.hidden = true; });
+      item.classList.add('active');
+      var section = document.getElementById('section-' + name);
+      if (section) section.hidden = false;
+      // Platforms table wants the full width; forms read best narrow.
+      content.classList.toggle('cgt-settings-content--wide', name === 'platforms');
+    }
+
+    items.forEach(function (item) {
+      item.addEventListener('click', function (e) {
+        e.preventDefault();
+        var name = item.dataset.section;
+        activateSection(name);
+        // Push section into URL so refresh/back/linking works
+        var url = new URL(window.location);
+        url.searchParams.set('section', name);
+        history.pushState({section: name}, '', url);
+      });
+    });
+
+    window.addEventListener('popstate', function (e) {
+      activateSection((e.state && e.state.section) ||
+        new URLSearchParams(window.location.search).get('section') || 'profile');
+    });
+
+    // Restore section from URL param, default to 'profile'. Old /account
+    // tab names map 1:1 so redirected deep links land on the right section.
+    activateSection(new URLSearchParams(window.location.search).get('section') || 'profile');
+  })();
+
+  (function () {
+    var filterInput  = document.getElementById('platform-name-filter');
+    var libraryCheck = document.getElementById('platform-library-only');
+    var countEl      = document.getElementById('platform-visible-count');
+    var noResults    = document.getElementById('platform-no-results');
+
+    function applyFilter() {
+      var text        = filterInput.value.toLowerCase().trim();
+      var libraryOnly = libraryCheck.checked;
+      var rows        = document.querySelectorAll('#platform-table tbody tr');
+      var visible     = 0;
+
+      rows.forEach(function (row) {
+        var name      = row.dataset.platformName || '';
+        var inLibrary = row.dataset.inLibrary === 'true';
+        var show      = (!text || name.includes(text)) && (!libraryOnly || inLibrary);
+        row.hidden    = !show;
+        if (show) visible++;
+      });
+
+      countEl.textContent = visible + ' platform' + (visible === 1 ? '' : 's');
+      noResults.hidden    = visible > 0;
+    }
+
+    filterInput.addEventListener('input', applyFilter);
+    libraryCheck.addEventListener('change', applyFilter);
+    applyFilter();
+  })();
+</script>
+{% endblock %}

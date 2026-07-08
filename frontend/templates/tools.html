@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Tools{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <h4 class="mb-0">Tools</h4>
+  <p class="text-secondary small mb-0">Sync, import, and review operations on your library.</p>
+</div>
+
+<div class="cgt-tool-grid">
+
+  {# ── Steam sync ─────────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">
+      Steam sync
+      {% if current_user.steam_id64 %}
+      <span class="badge bg-success">Connected</span>
+      {% else %}
+      <span class="badge bg-secondary">Not connected</span>
+      {% endif %}
+    </div>
+    {% if current_user.steam_id64 %}
+    <div class="d-flex align-items-center gap-2">
+      {% if current_user.steam_avatar_url %}
+      <img src="{{ current_user.steam_avatar_url }}" alt="" width="32" height="32"
+           style="border-radius: 3px; flex-shrink: 0;">
+      {% endif %}
+      <div class="small">
+        <div class="fw-semibold">{{ current_user.steam_persona_name or "Steam user" }}</div>
+        <div class="text-secondary">
+          {% if current_user.steam_last_synced_at %}
+          Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
+          {% else %}
+          Never synced
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% if steam_counts is not none %}
+    <div class="small text-secondary">
+      {{ "{:,}".format(steam_counts.games) }} game{{ 's' if steam_counts.games != 1 }} ·
+      {{ "{:,}".format(steam_counts.dlc) }} DLC ·
+      {{ "{:,}".format(steam_counts.total) }} total
+    </div>
+    {% endif %}
+    {# Enrichment status — renders nothing when the queue is idle. #}
+    <div hx-get="/integrations/steam/enrichment-status"
+         hx-trigger="load"
+         hx-swap="outerHTML"></div>
+    {% else %}
+    <div class="small text-secondary">Import your Steam library and playtime. Set up your Steam sign-in and credentials first.</div>
+    {% endif %}
+    <div class="cgt-tool-card__actions">
+      {% if current_user.steam_id64 and current_user.steam_api_key %}
+      {# Full sync when cookies are present, games-only otherwise — same rule
+         the old hub and the configure page use. Toast arrives via OOB swap. #}
+      {% if current_user.steam_session_id and current_user.steam_login_secure %}
+      <button class="btn btn-primary btn-sm"
+              hx-post="/integrations/steam/sync-all"
+              hx-swap="none"
+              hx-disabled-elt="this">Sync</button>
+      {% else %}
+      <button class="btn btn-primary btn-sm"
+              hx-post="/integrations/steam/sync"
+              hx-swap="none"
+              hx-disabled-elt="this">Sync Games</button>
+      {% endif %}
+      {% endif %}
+      <a href="/integrations/steam" class="btn btn-surface btn-sm">Configure</a>
+    </div>
+  </div>
+
+  {# ── Match review ───────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">
+      Match review
+      {% if pending_matches %}
+      <span class="badge rounded-pill cgt-pending-badge">{{ pending_matches }}</span>
+      {% endif %}
+    </div>
+    <div class="small text-secondary">
+      Synced games that look like existing manual entries.
+      {% if pending_matches %}{{ pending_matches }} pending your review.{% else %}All caught up.{% endif %}
+    </div>
+    <div class="cgt-tool-card__actions">
+      <a href="/library/match-review" class="btn btn-primary btn-sm">Open review</a>
+      <button class="btn btn-surface btn-sm"
+              hx-post="/integrations/match-review/scan"
+              hx-swap="none"
+              hx-disabled-elt="this">Re-scan</button>
+    </div>
+  </div>
+
+  {# ── Spreadsheet import ─────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">
+      Spreadsheet import
+      {% if import_pending %}
+      <span class="badge rounded-pill cgt-pending-badge">{{ import_pending }}</span>
+      {% endif %}
+    </div>
+    <div class="small text-secondary">
+      {% if import_pending %}
+      Add to existing {{ import_counts.add_to_existing }} ·
+      Create new {{ import_counts.create_new }} ·
+      Needs review {{ import_counts.needs_review }}
+      {% else %}
+      Bring in historical completions from a CSV or spreadsheet. Nothing writes to the library without review.
+      {% endif %}
+    </div>
+    <div class="cgt-tool-card__actions">
+      {% if import_pending %}
+      <a href="/library/import/review" class="btn btn-primary btn-sm">Open review</a>
+      <a href="/library/import" class="btn btn-surface btn-sm">Upload sheet</a>
+      {% else %}
+      <a href="/library/import" class="btn btn-primary btn-sm">Upload sheet</a>
+      <a href="/library/import/review" class="btn btn-surface btn-sm">Open review</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── Artwork ────────────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Artwork</div>
+    <div class="small text-secondary">
+      {% if current_user.steamgriddb_api_key %}
+      Bulk-fill missing covers, heroes, and logos from SteamGridDB, or re-verify stored artwork URLs.
+      {% else %}
+      Bulk artwork tools need a SteamGridDB API key — add one under Settings → Integrations.
+      {% endif %}
+    </div>
+    <div class="cgt-tool-card__actions">
+      <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">
+        {% if current_user.steamgriddb_api_key %}Open artwork tools{% else %}Configure{% endif %}
+      </a>
+    </div>
+  </div>
+
+  {# ── PSN (future) ───────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card cgt-tool-card--muted">
+    <div class="cgt-tool-card__title">PSN sync <span class="badge bg-secondary">Coming soon</span></div>
+    <div class="small text-secondary">Library and trophy sync will land here alongside Steam.</div>
+  </div>
+
+</div>
+{% endblock %}

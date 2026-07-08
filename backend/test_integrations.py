@@ -24,11 +24,21 @@ def _setup_steam_connected(client, db_session, api_key="FAKEKEY", steam_id="7656
     return user
 
 
-def test_integrations_hub_loads(client):
+def test_integrations_hub_redirects_to_tools(client):
+    """The old hub's action cards moved to /tools; the URL redirects there."""
     _signup_and_login(client)
-    r = client.get("/integrations")
+    r = client.get("/integrations", follow_redirects=False)
+    assert r.status_code == 302
+    assert r.headers["location"] == "/tools"
+
+
+def test_tools_page_loads(client):
+    _signup_and_login(client)
+    r = client.get("/tools")
     assert r.status_code == 200
-    assert b"Steam" in r.content
+    assert b"Steam sync" in r.content
+    assert b"Match review" in r.content
+    assert b"Spreadsheet import" in r.content
 
 
 def test_steam_page_loads(client):

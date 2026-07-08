@@ -348,7 +348,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Do after PR #115 merges so the import module boundary is stable
 
 ### Home / Tools / Settings restructure (direction agreed 2026-07-07 via in-app mockups)
-Replaces the old "Settings / navigation restructure" item. The current Integrations page conflated third-party integrations with function cards (import, match review), and Import lived in the user dropdown next to Settings — inconsistent and clunky. Direction settled with static mockup pages (`/mockup1`, `/mockup2` — temporary templates/routes/nav-links, delete when phase 1 lands); **mockup 2 rev 2 approved**.
+Replaces the old "Settings / navigation restructure" item. The current Integrations page conflated third-party integrations with function cards (import, match review), and Import lived in the user dropdown next to Settings — inconsistent and clunky. Direction settled with static mockup pages (mockup 2 rev 2 approved; the temporary mockup templates/routes/nav-links were deleted when phase 1 landed — see git history).
 
 **Target IA — navbar becomes Home / Library / Completions / Tools + gear (Settings):**
 - **Home** — new default landing page after login. Widget grid mixing stats (completions this year vs. 52-game goal, library counts, recently completed) with tool cards pinned from the Tools page. User-customizable eventually (see phases).
@@ -358,7 +358,7 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 - Library and Completions pages are untouched by this restructure.
 
 **Phases:**
-1. **Restructure PR** — real Tools page, Settings shell with grouped left nav, navbar/redirect cleanup, Integrations hub retired. No widget system yet.
+1. **Restructure PR** ✅ (this PR) — real Tools page, Settings shell with grouped left nav, navbar/redirect cleanup, Integrations hub retired. No widget system yet.
 2. **Home v1** — static default widget layout (hardcoded stat widgets + needs-attention tool cards); `/` becomes the landing route. This is the minimal landing of the "Stats & dashboard" item below.
 3. **Customization** — pin/unpin persistence, widget picker, arrangement.
 
