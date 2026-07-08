@@ -60,7 +60,13 @@
           {% endif %}
         </a>
       </div>
-      <div class="d-flex align-items-center">
+      <div class="d-flex align-items-center gap-1">
+        {# Identity label — not a control. Sign out lives at the bottom of the
+           Settings left nav; the gear is the only interactive element here. #}
+        <span class="cgt-nav-user" title="Signed in as {{ current_user.username }}">
+          <span class="cgt-nav-user__badge">{{ current_user.name[0] | upper }}</span>
+          <span class="cgt-nav-user__name">{{ current_user.name }}</span>
+        </span>
         {# Gear = Settings. Also lights up on the per-service configure pages
            (/integrations/steam etc.) since those are settings surfaces. #}
         <a class="nav-link px-3 cgt-nav-gear {% if _path.startswith('/settings') or _path.startswith('/integrations') or _path.startswith('/account') %}cgt-nav-active{% endif %}"
@@ -73,16 +79,6 @@
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
         </a>
-        <div class="dropdown">
-          <button class="nav-link px-3 dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-            {{ current_user.name }}
-          </button>
-          <ul class="dropdown-menu dropdown-menu-end">
-            <li><a class="dropdown-item" href="/settings">Settings</a></li>
-            <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="/logout">Sign out</a></li>
-          </ul>
-        </div>
       </div>
     </div>
   </nav>
