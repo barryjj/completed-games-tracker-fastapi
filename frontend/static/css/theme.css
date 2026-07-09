@@ -2261,3 +2261,11 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   border-left-color: var(--ctp-surface1);
   color: var(--ctp-overlay0);
 }
+
+/* Split-button seam: both segments are the same mauve, so without a divider
+   the control reads as one oversized primary button with a stray caret —
+   unlike every other (single-block) mauve button in the app. A crust-tinted
+   left edge on the chevron segment makes the split legible on purpose. */
+.btn-group > .btn-primary.dropdown-toggle-split {
+  border-left: 1px solid color-mix(in srgb, var(--ctp-crust) 35%, var(--ctp-mauve));
+}
