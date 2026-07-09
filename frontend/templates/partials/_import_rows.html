@@ -79,48 +79,37 @@
   </td>
   <td class="align-middle text-end text-nowrap">
     <div class="row-actions">
-    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}
-    <div class="cgt-row-actions-links">
-      <a href="#" class="cgt-row-actions-links__primary"
-         hx-post="/library/import/{{ c.id }}/confirm"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Confirm
-      </a>
-      <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
-      <a href="#"
-         hx-post="/library/import/{{ c.id }}/dismiss"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Dismiss
-      </a>
+    {# Split button: the primary action visible, Edit/Dismiss behind the
+       chevron. Fixed-strategy popper so the menu escapes .table-responsive's
+       overflow clipping instead of being cut off. #}
+    {% if c.status == "pending" %}
+    <div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-surface"
+              hx-post="/library/import/{{ c.id }}/confirm"
+              hx-target="#import-row-{{ c.id }}"
+              hx-swap="outerHTML">
+        {{ "Confirm" if c.proposed_action == "add_to_existing" else "Add new" }}
+      </button>
+      <button type="button" class="btn btn-surface dropdown-toggle dropdown-toggle-split"
+              data-bs-toggle="dropdown"
+              data-bs-popper-config='{"strategy":"fixed"}'
+              aria-expanded="false">
+        <span class="visually-hidden">More actions</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a></li>
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/import/{{ c.id }}/dismiss"
+               hx-target="#import-row-{{ c.id }}"
+               hx-swap="outerHTML">Dismiss</a></li>
+      </ul>
     </div>
     {% elif c.status == "confirmed" %}
-    <div class="cgt-row-actions-links">
-      <a href="#" class="cgt-row-actions-links__primary"
-         hx-post="/library/import/{{ c.id }}/reopen"
-         hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Reopen
-      </a>
-    </div>
-    {% elif c.proposed_action != "add_to_existing" %}
-    <div class="cgt-row-actions-links">
-      <a href="#" class="cgt-row-actions-links__primary"
-         hx-post="/library/import/{{ c.id }}/confirm"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Add new
-      </a>
-      <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
-      <a href="#"
-         hx-post="/library/import/{{ c.id }}/dismiss"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Dismiss
-      </a>
-    </div>
+    <button type="button" class="btn btn-sm btn-surface"
+            hx-post="/library/import/{{ c.id }}/reopen"
+            hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML">Reopen</button>
     {% endif %}
     </div>
   </td>
