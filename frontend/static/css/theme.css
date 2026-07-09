@@ -634,16 +634,6 @@ tr:focus-within .row-actions {
   opacity: 1;
   transform: translateX(0);
 }
-/* Import review's Confirm/Edit/Dismiss are the whole point of the page,
-   not secondary clutter to hide until hover — with large, tall rows the
-   constant appear/disappear as the cursor moved down the list read as
-   janky. Always visible here; the fade-in-on-hover pattern above still
-   applies to library/completions rows where it works fine. */
-#import-table .row-actions {
-  opacity: 1;
-  transform: none;
-  transition: none;
-}
 
 /* Row actions as small text links instead of stacked buttons — three full
    buttons per row were visually heavy next to the sparser title column.
@@ -2228,16 +2218,31 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
 .cgt-detail-hero__logo--scale-large  { max-width: 52%; max-height: 64%; }
 .cgt-detail-hero__logo--scale-xlarge { max-width: 68%; max-height: 80%; }
 
-/* Date chip — one completion per chip in import review rows. Filled and
-   rounded so it reads as a chip, not the bare left-accent slat. */
+/* Date chip — one completion per chip in import review rows. The original
+   slat treatment (transparent, left accent) with a full hairline border so
+   it reads as a contained chip instead of a floating left edge. */
 .cgt-date-chip {
   display: inline-block;
-  background: var(--ctp-surface0);
   border: 1px solid var(--ctp-surface1);
   border-left: 3px solid var(--ctp-surface2);
-  border-radius: 4px;
-  padding: 0.1em 0.55em;
+  border-radius: 3px;
+  padding: 2px 8px;
   white-space: nowrap;
+}
+
+/* Import list title — a notch smaller than default body so dense rows read
+   as a list, not a stack of headings. */
+.cgt-import-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Single-line variant of the stacked action links — used by import rows so
+   actions fit inside thumbnail-height rows. */
+.cgt-row-actions-links--inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.9rem;
 }
 
 /* Bulk-select mode (import review, add-to-existing list). The checkbox

@@ -3449,6 +3449,41 @@ def confirm_import_bulk(
     return Response(content=toast + counts, media_type="text/html")
 
 
+@router.post("/library/import/dismiss-bulk")
+def dismiss_import_bulk(
+    request: Request,
+    ids: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Dismiss a batch of pending candidates (bulk-select mode)."""
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return Response(status_code=422)
+    candidates = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id.in_(id_list),
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .all()
+    )
+    now = datetime.datetime.now(datetime.UTC)
+    for candidate in candidates:
+        candidate.status = "dismissed"
+        candidate.reviewed_at = now
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    toast = templates.get_template("partials/_toast.html").render(
+        kind="success", body=f"Dismissed {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
+    )
+    counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+    return Response(content=toast + counts, media_type="text/html")
+
+
 @router.post("/library/import/{candidate_id}/confirm")
 def import_confirm(
     candidate_id: int,

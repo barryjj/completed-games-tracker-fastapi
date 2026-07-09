@@ -1671,3 +1671,25 @@ def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
 def test_bulk_confirm_requires_ids(client):
     _signup_and_login(client)
     assert client.post("/library/import/confirm-bulk", data={"ids": ""}).status_code == 422
+
+
+def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Bulk Dismiss Me",
+        raw_platform="SNES",
+        library_entry_id=entry.id,
+        status="pending",
+        proposed_action="add_to_existing",
+    )
+    db_session.add(cand)
+    db_session.commit()
+    cand_id = cand.id
+    r = client.post("/library/import/dismiss-bulk", data={"ids": str(cand_id)})
+    assert r.status_code == 200
+    assert b"Dismissed 1 candidate" in r.content
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "dismissed"

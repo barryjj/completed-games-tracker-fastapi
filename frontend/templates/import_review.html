@@ -70,16 +70,6 @@
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}" onclick="importSetView('list')" title="List view">&equiv;</button>
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}" onclick="importSetView('card')" title="Card view">&#9638;</button>
     </div>
-    {# Bulk-select mode: checkboxes stay out of the table until toggled on. #}
-    <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
-            {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
-            onclick="importToggleSelect()">Select</button>
-    <div id="import-bulk-bar" class="d-flex align-items-center gap-2" hidden>
-      <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
-      <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
-      <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
-              onclick="importBulkConfirm()">Confirm selected</button>
-    </div>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
     <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
       <option value="">All platforms</option>
@@ -133,6 +123,19 @@
 {# Sticky back-to-top button — long candidate lists bury the tab/filter bar
    at the top with no way back up otherwise. Same pattern as library.html. #}
 <div class="cgt-sticky-actions">
+  {# Bulk-select mode controls — actions for the current tab live down here
+     (library/completions footer pattern) so rows stay thumbnail-height. #}
+  <div id="import-bulk-bar" class="d-flex align-items-center gap-2 me-auto" hidden>
+    <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
+    <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
+    <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
+            onclick="importBulkConfirm()">Confirm selected</button>
+    <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
+            onclick="importBulkDismiss()">Dismiss selected</button>
+  </div>
+  <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
+          {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
+          onclick="importToggleSelect()">Select</button>
   <button type="button" id="import-back-to-top"
           class="btn btn-surface btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"
@@ -187,8 +190,10 @@ window.importBulkSync = function() {
   var n = document.querySelectorAll('#import-table .import-bulk-check:checked').length;
   var count = document.getElementById('import-bulk-count');
   if (count) count.textContent = n;
-  var confirmBtn = document.getElementById('import-bulk-confirm');
-  if (confirmBtn) confirmBtn.disabled = n === 0;
+  ['import-bulk-confirm', 'import-bulk-dismiss'].forEach(function(id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.disabled = n === 0;
+  });
 };
 
 window.importSelectAllLoaded = function() {
@@ -196,18 +201,29 @@ window.importSelectAllLoaded = function() {
   importBulkSync();
 };
 
-window.importBulkConfirm = function() {
+function importBulkSubmit(url, prompt, btnId) {
   var ids = Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
                  .map(function(cb) { return cb.value; });
   if (!ids.length) return;
-  if (!confirm('Confirm ' + ids.length + ' candidate' + (ids.length === 1 ? '' : 's') + '? Their completions will be logged against the matched library entries.')) return;
-  var btn = document.getElementById('import-bulk-confirm');
-  btn.disabled = true;
-  htmx.ajax('POST', '/library/import/confirm-bulk', { values: { ids: ids.join(',') }, swap: 'none' })
+  if (!confirm(prompt.replace('{n}', ids.length + ' candidate' + (ids.length === 1 ? '' : 's')))) return;
+  document.getElementById(btnId).disabled = true;
+  htmx.ajax('POST', url, { values: { ids: ids.join(',') }, swap: 'none' })
       .then(function() {
         importExitSelect();
         htmx.trigger('#import-filters-form', 'submit-view');
       });
+}
+
+window.importBulkConfirm = function() {
+  importBulkSubmit('/library/import/confirm-bulk',
+    'Confirm {n}? Their completions will be logged against the matched library entries.',
+    'import-bulk-confirm');
+};
+
+window.importBulkDismiss = function() {
+  importBulkSubmit('/library/import/dismiss-bulk',
+    'Dismiss {n}? They can be re-detected by a future re-upload after Clear dismissed.',
+    'import-bulk-dismiss');
 };
 
 // switching back restores whatever view was saved (was previously left
