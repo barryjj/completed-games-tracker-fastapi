@@ -59,9 +59,9 @@
        Playthroughs tag along when they're more than a plain single run. #}
     {% set _dated = c.rows | selectattr("completed_at") | sort(attribute="completed_at") | list %}
     {% set _undated = c.rows | rejectattr("completed_at") | list %}
-    <div class="d-flex align-items-center gap-2 flex-wrap">
+    <div class="d-flex align-items-center column-gap-3 row-gap-1 flex-wrap small">
       {% for r in _dated[:4] %}
-      <span class="cgt-date-chip small">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} · ×{{ r.playthroughs }}{% endif %}</span>
+      <span class="text-nowrap">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} <span class="text-secondary">· ×{{ r.playthroughs }}</span>{% endif %}</span>
       {% endfor %}
       {% if _dated | length > 4 %}
       <span class="small text-secondary">+{{ _dated | length - 4 }} more</span>

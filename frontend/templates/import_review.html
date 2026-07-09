@@ -9,22 +9,6 @@
   </div>
   <div class="d-flex align-items-center gap-2">
     <span class="badge bg-secondary"><span id="import-pending-count">{{ pending }}</span> pending</span>
-    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-            hx-post="/library/import/recheck"
-            hx-confirm="Re-check all pending candidates against your current library? This may take a moment."
-            hx-swap="none"
-            hx-disabled-elt="this">
-      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
-      Recheck matches
-    </button>
-    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-            hx-post="/library/import/clear"
-            hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
-            hx-swap="none"
-            hx-disabled-elt="this">
-      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
-      Clear all
-    </button>
   </div>
 </div>
 
@@ -70,6 +54,11 @@
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}" onclick="importSetView('list')" title="List view">&equiv;</button>
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}" onclick="importSetView('card')" title="Card view">&#9638;</button>
     </div>
+    {# Bulk mode: reveals row checkboxes; the footer holds the actions that
+       operate on the selection. #}
+    <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
+            {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
+            onclick="importToggleSelect()">Bulk mode</button>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
     <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
       <option value="">All platforms</option>
@@ -123,8 +112,7 @@
 {# Sticky back-to-top button — long candidate lists bury the tab/filter bar
    at the top with no way back up otherwise. Same pattern as library.html. #}
 <div class="cgt-sticky-actions">
-  {# Bulk-select mode controls — actions for the current tab live down here
-     (library/completions footer pattern) so rows stay thumbnail-height. #}
+  {# Bulk-mode selection actions — appear when Bulk mode is toggled on. #}
   <div id="import-bulk-bar" class="d-flex align-items-center gap-2 me-auto" hidden>
     <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
     <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
@@ -133,9 +121,24 @@
     <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
             onclick="importBulkDismiss()">Dismiss selected</button>
   </div>
-  <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
-          {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
-          onclick="importToggleSelect()">Select</button>
+  {# Page-level operations — used rarely, so they live down here instead of
+     hovering in the header. #}
+  <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+          hx-post="/library/import/recheck"
+          hx-confirm="Re-check all pending candidates against your current library? This may take a moment."
+          hx-swap="none"
+          hx-disabled-elt="this">
+    <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+    Recheck matches
+  </button>
+  <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+          hx-post="/library/import/clear"
+          hx-confirm="Clear all pending candidates? This cannot be undone."
+          hx-swap="none"
+          hx-disabled-elt="this">
+    <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+    Clear all
+  </button>
   <button type="button" id="import-back-to-top"
           class="btn btn-surface btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"

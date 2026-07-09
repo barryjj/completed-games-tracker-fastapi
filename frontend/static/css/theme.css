@@ -2218,18 +2218,6 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
 .cgt-detail-hero__logo--scale-large  { max-width: 52%; max-height: 64%; }
 .cgt-detail-hero__logo--scale-xlarge { max-width: 68%; max-height: 80%; }
 
-/* Date chip — one completion per chip in import review rows. The original
-   slat treatment (transparent, left accent) with a full hairline border so
-   it reads as a contained chip instead of a floating left edge. */
-.cgt-date-chip {
-  display: inline-block;
-  border: 1px solid var(--ctp-surface1);
-  border-left: 3px solid var(--ctp-surface2);
-  border-radius: 3px;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-
 /* Import list title — a notch smaller than default body so dense rows read
    as a list, not a stack of headings. */
 .cgt-import-title {
@@ -2243,6 +2231,14 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   flex-direction: row;
   align-items: center;
   gap: 0.9rem;
+}
+/* Import rows: actions stay visible (hover-reveal appeared floating and
+   misaligned in these tall-ish thumbnail rows). The single-line variant
+   keeps them from costing any row height. */
+#import-table .row-actions {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 /* Bulk-select mode (import review, add-to-existing list). The checkbox
