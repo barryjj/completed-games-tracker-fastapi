@@ -71,9 +71,10 @@
       {% endif %}
     </div>
   </td>
-  <td class="align-middle text-end text-nowrap row-actions">
+  <td class="align-middle text-end text-nowrap">
+    <div class="row-actions">
     {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}
-    <div class="cgt-row-actions-links cgt-row-actions-links--inline">
+    <div class="cgt-row-actions-links">
       <a href="#" class="cgt-row-actions-links__primary"
          hx-post="/library/import/{{ c.id }}/confirm"
          hx-target="#import-row-{{ c.id }}"
@@ -89,7 +90,7 @@
       </a>
     </div>
     {% elif c.status == "confirmed" %}
-    <div class="cgt-row-actions-links cgt-row-actions-links--inline">
+    <div class="cgt-row-actions-links">
       <a href="#" class="cgt-row-actions-links__primary"
          hx-post="/library/import/{{ c.id }}/reopen"
          hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
@@ -99,7 +100,7 @@
       </a>
     </div>
     {% elif c.proposed_action != "add_to_existing" %}
-    <div class="cgt-row-actions-links cgt-row-actions-links--inline">
+    <div class="cgt-row-actions-links">
       <a href="#" class="cgt-row-actions-links__primary"
          hx-post="/library/import/{{ c.id }}/confirm"
          hx-target="#import-row-{{ c.id }}"
@@ -115,6 +116,7 @@
       </a>
     </div>
     {% endif %}
+    </div>
   </td>
 </tr>
 {% endfor %}

@@ -2225,16 +2225,11 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
   font-weight: 500;
 }
 
-/* Single-line variant of the stacked action links — used by import rows so
-   actions fit inside thumbnail-height rows. */
-.cgt-row-actions-links--inline {
-  flex-direction: row;
-  align-items: center;
-  gap: 0.9rem;
-}
-/* Import rows: actions stay visible (hover-reveal appeared floating and
-   misaligned in these tall-ish thumbnail rows). The single-line variant
-   keeps them from costing any row height. */
+/* Import rows: actions always visible (they're the point of the page) and
+   stacked — the thumbnail fixes the row height anyway, so the vertical
+   stack fills it instead of floating in it. NB: .row-actions must be an
+   inner div here, never on the <td> — display:flex on a table cell breaks
+   vertical centering (that was the misaligned-actions bug). */
 #import-table .row-actions {
   opacity: 1;
   transform: none;
