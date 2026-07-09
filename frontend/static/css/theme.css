@@ -2241,3 +2241,23 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
    on, so the table stays clean for normal review. */
 #import-table .import-select-cell { display: none; width: 1%; }
 #import-table.import-select-mode .import-select-cell { display: table-cell; }
+
+/* Import review completion slats — the completion-record left-accent
+   treatment shrunk to list scale: one hairline slat per distinct month,
+   stacked so 2-3 fit within the thumbnail-fixed row height. */
+.cgt-import-dates {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cgt-import-dates__row {
+  border-left: 3px solid var(--ctp-surface2);
+  padding: 0 8px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.cgt-import-dates__row--muted {
+  border-left-color: var(--ctp-surface1);
+  color: var(--ctp-overlay0);
+}

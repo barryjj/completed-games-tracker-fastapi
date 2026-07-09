@@ -53,21 +53,27 @@
     {% endif %}
   </td>
   <td class="align-middle">
-    {# One slat chip per completion date (precision-aware) instead of a
-       "N completions · latest X" sentence — the actual dates fit fine for
-       the common 1-2 row case and use the column's width for real data.
-       Playthroughs tag along when they're more than a plain single run. #}
-    {% set _dated = c.rows | selectattr("completed_at") | sort(attribute="completed_at") | list %}
+    {# Mini slat stack — the completions-metabox left-accent treatment at
+       list scale. One tiny line per distinct month (newest first, ballpark
+       month+year precision, playthroughs deliberately omitted here); 2-3
+       lines fill the thumbnail-fixed row height instead of floating in it. #}
+    {% set _dated = c.rows | selectattr("completed_at") | sort(attribute="completed_at", reverse=True) | list %}
     {% set _undated = c.rows | rejectattr("completed_at") | list %}
-    <div class="d-flex align-items-center column-gap-3 row-gap-1 flex-wrap small">
-      {% for r in _dated[:4] %}
-      <span class="text-nowrap">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} <span class="text-secondary">· ×{{ r.playthroughs }}</span>{% endif %}</span>
+    {% set _labels = [] %}
+    {% for r in _dated %}{% set _l = r | completion_month %}{% if _l not in _labels %}{% set _ = _labels.append(_l) %}{% endif %}{% endfor %}
+    <div class="cgt-import-dates">
+      {% if _labels | length > 3 %}
+      {% for l in _labels[:2] %}
+      <div class="cgt-import-dates__row">{{ l }}</div>
       {% endfor %}
-      {% if _dated | length > 4 %}
-      <span class="small text-secondary">+{{ _dated | length - 4 }} more</span>
+      <div class="cgt-import-dates__row cgt-import-dates__row--muted">+{{ _labels | length - 2 }} more</div>
+      {% else %}
+      {% for l in _labels %}
+      <div class="cgt-import-dates__row">{{ l }}</div>
+      {% endfor %}
       {% endif %}
       {% if _undated %}
-      <span class="small text-secondary">{{ _undated | length }} undated</span>
+      <div class="cgt-import-dates__row cgt-import-dates__row--muted">{{ _undated | length }} undated</div>
       {% endif %}
     </div>
   </td>

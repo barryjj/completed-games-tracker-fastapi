@@ -134,6 +134,21 @@ def _completion_date(obj) -> str:
 
 templates.env.filters["completion_date"] = _completion_date
 
+
+def _completion_month(obj) -> str:
+    """Ballpark variant of completion_date: month + year (or bare year for
+    year-precision rows). Used where a list only needs 'a sense of the
+    years', e.g. the import review completion slats."""
+    d = getattr(obj, "completed_at", None)
+    if not d:
+        return "Unknown"
+    if (getattr(obj, "completed_at_precision", None) or "day") == "year":
+        return str(d.year)
+    return d.strftime("%B %Y")
+
+
+templates.env.filters["completion_month"] = _completion_month
+
 _URL_RE = re.compile(r"https?://[^\s<]+")
 
 
