@@ -83,14 +83,14 @@
        chevron. Fixed-strategy popper so the menu escapes .table-responsive's
        overflow clipping instead of being cut off. #}
     {% if c.status == "pending" %}
-    <div class="btn-group btn-group-sm">
-      <button type="button" class="btn btn-surface"
+    <div class="btn-group">
+      <button type="button" class="btn btn-primary btn-sm"
               hx-post="/library/import/{{ c.id }}/confirm"
               hx-target="#import-row-{{ c.id }}"
               hx-swap="outerHTML">
         {{ "Confirm" if c.proposed_action == "add_to_existing" else "Add new" }}
       </button>
-      <button type="button" class="btn btn-surface dropdown-toggle dropdown-toggle-split"
+      <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
               data-bs-toggle="dropdown"
               data-bs-popper-config='{"strategy":"fixed"}'
               aria-expanded="false">
