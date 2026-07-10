@@ -367,14 +367,14 @@
           hx-post="/library/import/{{ _cid }}/confirm"
           hx-target="#import-row-{{ _cid }}"
           hx-swap="outerHTML"
-          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose({{ import_next_id or 'null' }}); }">
+          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose(null); }">
     Confirm
   </button>
   <button class="btn btn-sm btn-surface"
           hx-post="/library/import/{{ _cid }}/dismiss"
           hx-target="#import-row-{{ _cid }}"
           hx-swap="outerHTML"
-          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose({{ import_next_id or 'null' }}); }">
+          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose(null); }">
     Dismiss
   </button>
   <button class="btn btn-sm btn-surface"

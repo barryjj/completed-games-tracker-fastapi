@@ -3202,18 +3202,6 @@ def import_candidate_preview(
     if not candidate or not candidate.library_entry_id:
         return Response(status_code=404)
 
-    next_candidate = (
-        db.query(models.ImportCandidate.id)
-        .filter(
-            models.ImportCandidate.user_id == current_user.id,
-            models.ImportCandidate.status == "pending",
-            models.ImportCandidate.proposed_action == "add_to_existing",
-            models.ImportCandidate.id > candidate.id,
-        )
-        .order_by(models.ImportCandidate.id)
-        .first()
-    )
-
     entry = (
         db.query(models.UserLibraryEntry)
         .options(
@@ -3270,7 +3258,6 @@ def import_candidate_preview(
             "fresh_open": False,
             "candidate": candidate,
             "import_rows": sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True),
-            "import_next_id": next_candidate.id if next_candidate else None,
             **visuals,
         },
     )
@@ -3292,7 +3279,11 @@ def import_candidate_edit_form(
             models.ImportCandidate.user_id == current_user.id,
             models.ImportCandidate.status == "pending",
         )
-        .options(joinedload(models.ImportCandidate.platform), joinedload(models.ImportCandidate.library_entry))
+        .options(
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+            joinedload(models.ImportCandidate.rows),
+        )
         .first()
     )
     if not candidate:
@@ -3310,8 +3301,15 @@ def import_candidate_edit(
     candidate_id: int,
     request: Request,
     raw_title: str = Form(...),
-    raw_platform: str = Form(...),
+    # Empty string counts as "missing" for a required Form field, so a
+    # cleared platform box silently 422'd — platform is legitimately
+    # optional here (unmatched platforms are the needs_review case).
+    raw_platform: str = Form(""),
     library_entry_id: int | None = Form(None),
+    row_id: list[int] = Form([]),
+    row_date: list[str] = Form([]),
+    row_playthroughs: list[str] = Form([]),
+    row_notes: list[str] = Form([]),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -3322,6 +3320,7 @@ def import_candidate_edit(
             models.ImportCandidate.user_id == current_user.id,
             models.ImportCandidate.status == "pending",
         )
+        .options(joinedload(models.ImportCandidate.rows))
         .first()
     )
     if not candidate:
@@ -3331,8 +3330,32 @@ def import_candidate_edit(
     candidate.raw_platform = raw_platform.strip()
     candidate.platform_id = models.resolve_platform_id(db, candidate.raw_platform) if candidate.raw_platform else None
 
+    # Per-row completion edits (date / playthroughs / notes). Parallel lists,
+    # one slot per rendered row; an edited date becomes day-precision, an
+    # untouched one round-trips equal and keeps its original precision.
+    rows_by_id = {r.id: r for r in candidate.rows}
+    for rid, dstr, plays, notes in zip(row_id, row_date, row_playthroughs, row_notes, strict=False):
+        row = rows_by_id.get(rid)
+        if not row:
+            continue
+        if dstr:
+            try:
+                d = datetime.date.fromisoformat(dstr)
+            except ValueError:
+                d = row.completed_at
+            if d != row.completed_at:
+                row.completed_at = d
+                row.completed_at_precision = "day"
+        else:
+            row.completed_at = None
+            row.completed_at_precision = None
+        row.playthroughs = plays.strip() or None
+        row.raw_notes = notes.strip() or None
+
     if library_entry_id:
-        # Manual override — user picked a specific entry directly, skip the matcher.
+        # Manual pick IS the decision — link and confirm in one step instead
+        # of parking the candidate back in the review queue to approve the
+        # user's own choice. Reopen (Confirmed tab) is the undo.
         entry = (
             db.query(models.UserLibraryEntry)
             .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
@@ -3342,6 +3365,21 @@ def import_candidate_edit(
             return Response(status_code=404)
         candidate.library_entry_id = entry.id
         candidate.proposed_action = "add_to_existing"
+        _confirm_add_to_existing(db, current_user, candidate)
+        db.commit()
+        tab_counts = _import_tab_counts(db, current_user.id)
+        pending = sum(tab_counts.values())
+        tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+        toast = templates.get_template("partials/_toast.html").render(
+            kind="success",
+            body=f"Confirmed against {entry.release.game.display_title} — completions logged.",
+        )
+        counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+        return Response(
+            content=toast + counts,
+            media_type="text/html",
+            headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+        )
     else:
         candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
         best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)

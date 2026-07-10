@@ -1693,3 +1693,100 @@ def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
     assert b"Dismissed 1 candidate" in r.content
     db_session.expire_all()
     assert db_session.get(models.ImportCandidate, cand_id).status == "dismissed"
+
+
+def test_edit_with_manual_link_confirms_immediately(client, db_session):
+    """Picking a library entry in the edit modal IS the decision — the
+    candidate confirms against it in the same save, rows edits included."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Ninja Gaiden Sigma B",
+        raw_platform="Steam",
+        status="pending",
+        proposed_action="create_new",
+    )
+    db_session.add(cand)
+    db_session.flush()
+    row = models.ImportRow(
+        candidate_id=cand.id,
+        raw_title="Ninja Gaiden Sigma B",
+        raw_platform="Steam",
+        row_number=3,
+        completed_at=datetime.date(2026, 7, 1),
+        completed_at_precision="day",
+    )
+    db_session.add(row)
+    db_session.commit()
+    cand_id, row_id, entry_id = cand.id, row.id, entry.id
+
+    r = client.post(
+        f"/library/import/{cand_id}/edit",
+        data={
+            "raw_title": "Ninja Gaiden Sigma B",
+            "raw_platform": "Steam",
+            "library_entry_id": str(entry_id),
+            "row_id": str(row_id),
+            "row_date": "2026-07-02",
+            "row_playthroughs": "2",
+            "row_notes": "Played with Ninja Gaiden Sigma Black mod.\nSecond line.",
+        },
+    )
+    assert r.status_code == 200
+    assert b"Confirmed against" in r.content
+    db_session.expire_all()
+    cand = db_session.get(models.ImportCandidate, cand_id)
+    assert cand.status == "confirmed"
+    assert cand.library_entry_id == entry_id
+    comp = db_session.query(models.Completion).filter(models.Completion.library_entry_id == entry_id).one()
+    assert comp.completed_at == datetime.date(2026, 7, 2)
+    assert comp.playthroughs == "2"
+    assert "Sigma Black mod" in comp.notes
+    # linkage stamped -> reopenable
+    assert db_session.get(models.ImportRow, row_id).created_completion_id == comp.id
+
+
+def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Some Unmatched Game",
+        raw_platform="",
+        status="pending",
+        proposed_action="needs_review",
+    )
+    db_session.add(cand)
+    db_session.flush()
+    row = models.ImportRow(
+        candidate_id=cand.id,
+        raw_title="Some Unmatched Game",
+        raw_platform="",
+        row_number=1,
+        completed_at=datetime.date(2020, 5, 5),
+        completed_at_precision="day",
+    )
+    db_session.add(row)
+    db_session.commit()
+    cand_id, row_id = cand.id, row.id
+
+    r = client.post(
+        f"/library/import/{cand_id}/edit",
+        data={
+            "raw_title": "Some Unmatched Game",
+            "raw_platform": "",
+            "row_id": str(row_id),
+            "row_date": "",
+            "row_playthroughs": "1+",
+            "row_notes": "note here",
+        },
+    )
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "pending"
+    row = db_session.get(models.ImportRow, row_id)
+    assert row.completed_at is None
+    assert row.playthroughs == "1+"
+    assert row.raw_notes == "note here"

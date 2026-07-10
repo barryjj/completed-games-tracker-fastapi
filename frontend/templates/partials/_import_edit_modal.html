@@ -9,7 +9,8 @@
   <p class="text-secondary small">
     The fields below are the raw values parsed from your spreadsheet, not your library. Saving re-runs automatic
     matching against your library using the edited values — unless you search and link to a specific entry below,
-    which skips matching entirely and uses exactly what you pick.
+    in which case saving <strong>confirms the import against that entry immediately</strong> (your pick is the
+    decision; Reopen on the Confirmed tab is the undo).
   </p>
   <div class="mb-3">
     <label class="form-label">Title <span class="text-secondary fw-normal">(from spreadsheet)</span></label>
@@ -25,6 +26,31 @@
       {% endfor %}
     </datalist>
   </div>
+
+  {% if candidate.rows %}
+  <div class="mb-3">
+    <label class="form-label mb-1">Completions <span class="text-secondary fw-normal">(from spreadsheet — saved with the rest)</span></label>
+    {% for row in candidate.rows %}
+    <div class="cgt-detail-block mb-2">
+      <input type="hidden" name="row_id" value="{{ row.id }}">
+      <div class="row g-2 mb-2">
+        <div class="col-6">
+          <label class="form-label small mb-0">Date</label>
+          <input type="date" class="form-control form-control-sm" name="row_date"
+                 value="{{ row.completed_at.isoformat() if row.completed_at else '' }}">
+        </div>
+        <div class="col-6">
+          <label class="form-label small mb-0">Playthroughs</label>
+          <input type="text" class="form-control form-control-sm" name="row_playthroughs"
+                 value="{{ row.playthroughs or '' }}" placeholder="1, 1+, 2…">
+        </div>
+      </div>
+      <label class="form-label small mb-0">Notes</label>
+      <textarea class="form-control form-control-sm" name="row_notes" rows="2">{{ row.raw_notes or '' }}</textarea>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <div class="mb-2">
     <label class="form-label mb-1">Link to a specific library entry <span class="text-secondary fw-normal">(optional — skips automatic matching, uses this exact entry)</span></label>
