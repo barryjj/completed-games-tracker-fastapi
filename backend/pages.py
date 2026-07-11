@@ -3036,6 +3036,7 @@ def import_review_page(
     year: str = "",
     sort: str = "id",
     view: str = "list",
+    rows_only: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -3126,7 +3127,11 @@ def import_review_page(
     filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort, "view": view}
     confirmed_count = _import_confirmed_count(db, current_user.id)
 
-    if request.headers.get("HX-Request") and offset > 0:
+    # rows_only is the explicit ask from the infinite-scroll sentinel — its
+    # client-corrected offset can legitimately be 0 (a fully-confirmed first
+    # page), so "offset > 0" alone would fall through and nest a whole tab
+    # (header row and all) inside the table.
+    if request.headers.get("HX-Request") and (rows_only or offset > 0):
         return templates.TemplateResponse(
             request=request,
             name="partials/_import_card_load_more.html" if view == "card" else "partials/_import_rows.html",
