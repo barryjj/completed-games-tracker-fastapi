@@ -2073,27 +2073,27 @@ body:has(.cgt-match-nav--sticky) {
   color: var(--ctp-overlay1);
   white-space: nowrap;
 }
-.cgt-tool-stat--teal     .cgt-tool-stat__value { color: var(--ctp-teal); }
-.cgt-tool-stat--peach    .cgt-tool-stat__value { color: var(--ctp-peach); }
-.cgt-tool-stat--lavender .cgt-tool-stat__value { color: var(--ctp-lavender); }
-.cgt-tool-stat--yellow   .cgt-tool-stat__value { color: var(--ctp-yellow); }
-.cgt-tool-stat--green    .cgt-tool-stat__value { color: var(--ctp-green); }
-.cgt-tool-stat--blue     .cgt-tool-stat__value { color: var(--ctp-blue); }
-.cgt-tool-stat--pink     .cgt-tool-stat__value { color: var(--ctp-pink); }
-.cgt-tool-stat--maroon   .cgt-tool-stat__value { color: var(--ctp-maroon); }
-.cgt-tool-stat--flamingo .cgt-tool-stat__value { color: var(--ctp-flamingo); }
-.cgt-tool-stat--muted    .cgt-tool-stat__value { color: var(--ctp-overlay0); }
+:is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: var(--ctp-teal); }
+:is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--ctp-peach); }
+:is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: var(--ctp-lavender); }
+:is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: var(--ctp-yellow); }
+:is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: var(--ctp-green); }
+:is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: var(--ctp-blue); }
+:is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: var(--ctp-pink); }
+:is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: var(--ctp-maroon); }
+:is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: var(--ctp-flamingo); }
+:is(.cgt-tool-stat--muted    .cgt-tool-stat__value, .cgt-breakdown__num--muted) { color: var(--ctp-overlay0); }
 /* Latte's accents miss 3:1 contrast for large text on the card surface —
    mix each toward text ink (same spirit as the light-mode button shades). */
-html[data-bs-theme="light"] .cgt-tool-stat--teal     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--peach    .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--lavender .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--yellow   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--green    .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--blue     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--pink     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--maroon   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
 
 /* Small generic thumbnail (Home rows, anywhere a 64x30 header-art chip is
    needed outside a table). Same shape as the match-review row thumb. */
@@ -2269,3 +2269,20 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
 .btn-group > .btn-primary.dropdown-toggle-split {
   border-left: 1px solid color-mix(in srgb, var(--ctp-crust) 35%, var(--ctp-mauve));
 }
+
+
+/* Breakdown list — stacked count-first lines ("534  add to existing"),
+   numbers right-aligned in their own column and colored with the same
+   semantic accents as the stat row (shared :is() selectors above).
+   Used by the Tools import card and Home's needs-attention widget. */
+.cgt-breakdown {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+}
+.cgt-breakdown__num {
+  text-align: right;
+  font-weight: 700;
+}
+.cgt-breakdown__label { color: var(--ctp-subtext); }

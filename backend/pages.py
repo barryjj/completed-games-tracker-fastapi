@@ -763,6 +763,7 @@ def home_page(
             "recent_completions": recent_completions,
             "library_total": library_total,
             "platform_breakdown": platform_breakdown,
+            "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             **_base_ctx(db, current_user),
         },

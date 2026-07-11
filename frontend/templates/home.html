@@ -96,15 +96,18 @@
   {# ── Needs attention ────────────────────────────────────────────────── #}
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">Needs attention</div>
-    <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if pending_matches else 'cgt-tool-stat--muted' }}">
-        <div class="cgt-tool-stat__value">{{ pending_matches or 0 }}</div>
-        <div class="cgt-tool-stat__label">Matches</div>
-      </div>
-      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if import_pending else 'cgt-tool-stat--muted' }}">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_pending) }}</div>
-        <div class="cgt-tool-stat__label">Import candidates</div>
-      </div>
+    {# Per-bucket breakdown, not totals — same reading as the review page's
+       tabs so the widget tells you where the work actually is. Zeros go
+       muted so quiet buckets don't beg for attention. #}
+    <div class="cgt-breakdown small">
+      <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if pending_matches else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(pending_matches or 0) }}</span>
+      <span class="cgt-breakdown__label">sync matches</span>
+      <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--green' if import_counts.add_to_existing else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
+      <span class="cgt-breakdown__label">imports · add to existing</span>
+      <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--blue' if import_counts.create_new else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.create_new) }}</span>
+      <span class="cgt-breakdown__label">imports · create new</span>
+      <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--pink' if import_counts.needs_review else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.needs_review) }}</span>
+      <span class="cgt-breakdown__label">imports · needs review</span>
     </div>
     {% if not pending_matches and not import_pending %}
     <div class="small text-secondary">All caught up.</div>

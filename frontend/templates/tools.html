@@ -115,18 +115,18 @@
     </div>
     {% if import_pending %}
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--green">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.add_to_existing) }}</div>
-        <div class="cgt-tool-stat__label">Add to existing</div>
+      <div class="cgt-tool-stat cgt-tool-stat--yellow">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_pending) }}</div>
+        <div class="cgt-tool-stat__label">Imports to review</div>
       </div>
-      <div class="cgt-tool-stat cgt-tool-stat--blue">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.create_new) }}</div>
-        <div class="cgt-tool-stat__label">Create new</div>
-      </div>
-      <div class="cgt-tool-stat cgt-tool-stat--pink">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.needs_review) }}</div>
-        <div class="cgt-tool-stat__label">Needs review</div>
-      </div>
+    </div>
+    <div class="cgt-breakdown small">
+      <span class="cgt-breakdown__num cgt-breakdown__num--green">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
+      <span class="cgt-breakdown__label">add to existing</span>
+      <span class="cgt-breakdown__num cgt-breakdown__num--blue">{{ "{:,}".format(import_counts.create_new) }}</span>
+      <span class="cgt-breakdown__label">create new</span>
+      <span class="cgt-breakdown__num cgt-breakdown__num--pink">{{ "{:,}".format(import_counts.needs_review) }}</span>
+      <span class="cgt-breakdown__label">needs review</span>
     </div>
     {% else %}
     <div class="small text-secondary">
