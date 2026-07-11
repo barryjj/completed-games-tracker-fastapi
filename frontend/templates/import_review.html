@@ -99,7 +99,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Edit candidate</h5>
+        <h5 class="modal-title" id="import-edit-modal-title">Edit candidate</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="import-edit-modal-body">
@@ -371,14 +371,23 @@ window.importAdvanceOrClose = function(nextId) {
 };
 
 // Edit modal
-window.openImportEdit = function(candidateId) {
+function importOpenModal(candidateId, action, title) {
   var body = document.getElementById('import-edit-modal-body');
   body.innerHTML = '<p class="text-secondary small mb-0">Loading…</p>';
+  document.getElementById('import-edit-modal-title').textContent = title;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('importEditModal')).show();
-  htmx.ajax('GET', '/library/import/' + candidateId + '/edit', {
+  htmx.ajax('GET', '/library/import/' + candidateId + '/' + action, {
     target: '#import-edit-modal-body',
     swap: 'innerHTML'
   });
+}
+
+window.openImportEdit = function(candidateId) {
+  importOpenModal(candidateId, 'edit', 'Edit candidate');
+};
+
+window.openImportLink = function(candidateId) {
+  importOpenModal(candidateId, 'link', 'Link to library');
 };
 
 // Back-to-top button: appears after scrolling 300px, smooth-scrolls to top.

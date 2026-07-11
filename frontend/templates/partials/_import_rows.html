@@ -98,6 +98,7 @@
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
         <li><a class="dropdown-item" href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a></li>
+        <li><a class="dropdown-item" href="#" onclick="openImportLink({{ c.id }}); return false;">Link to library…</a></li>
         <li><a class="dropdown-item" href="#"
                hx-post="/library/import/{{ c.id }}/dismiss"
                hx-target="#import-row-{{ c.id }}"

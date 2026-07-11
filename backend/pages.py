@@ -3296,6 +3296,79 @@ def import_candidate_edit_form(
     )
 
 
+@router.get("/library/import/{candidate_id}/link")
+def import_candidate_link_form(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Modal content for manually linking a pending candidate to a specific
+    library entry (search-only; saving confirms immediately)."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_link_modal.html",
+        context={"candidate": candidate},
+    )
+
+
+@router.post("/library/import/{candidate_id}/link")
+def import_candidate_link(
+    candidate_id: int,
+    request: Request,
+    library_entry_id: int = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Manual pick IS the decision: link the candidate to the chosen entry
+    and confirm it in the same step. Reopen (Confirmed tab) is the undo."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .options(joinedload(models.ImportCandidate.rows))
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    candidate.library_entry_id = entry.id
+    candidate.proposed_action = "add_to_existing"
+    _confirm_add_to_existing(db, current_user, candidate)
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+    toast = templates.get_template("partials/_toast.html").render(
+        kind="success",
+        body=f"Confirmed against {entry.release.game.display_title} — completions logged.",
+    )
+    counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+    return Response(content=toast + counts, media_type="text/html")
+
+
 @router.post("/library/import/{candidate_id}/edit")
 def import_candidate_edit(
     candidate_id: int,
@@ -3305,7 +3378,6 @@ def import_candidate_edit(
     # cleared platform box silently 422'd — platform is legitimately
     # optional here (unmatched platforms are the needs_review case).
     raw_platform: str = Form(""),
-    library_entry_id: int | None = Form(None),
     row_id: list[int] = Form([]),
     row_date: list[str] = Form([]),
     row_playthroughs: list[str] = Form([]),
@@ -3352,46 +3424,17 @@ def import_candidate_edit(
         row.playthroughs = plays.strip() or None
         row.raw_notes = notes.strip() or None
 
-    if library_entry_id:
-        # Manual pick IS the decision — link and confirm in one step instead
-        # of parking the candidate back in the review queue to approve the
-        # user's own choice. Reopen (Confirmed tab) is the undo.
-        entry = (
-            db.query(models.UserLibraryEntry)
-            .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
-            .first()
-        )
-        if not entry:
-            return Response(status_code=404)
-        candidate.library_entry_id = entry.id
+    candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
+    best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)
+    if best_entry:
+        candidate.library_entry_id = best_entry.id
         candidate.proposed_action = "add_to_existing"
-        _confirm_add_to_existing(db, current_user, candidate)
-        db.commit()
-        tab_counts = _import_tab_counts(db, current_user.id)
-        pending = sum(tab_counts.values())
-        tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
-        toast = templates.get_template("partials/_toast.html").render(
-            kind="success",
-            body=f"Confirmed against {entry.release.game.display_title} — completions logged.",
-        )
-        counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
-        return Response(
-            content=toast + counts,
-            media_type="text/html",
-            headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
-        )
+    elif candidate.platform_id is None:
+        candidate.library_entry_id = None
+        candidate.proposed_action = "needs_review"
     else:
-        candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
-        best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)
-        if best_entry:
-            candidate.library_entry_id = best_entry.id
-            candidate.proposed_action = "add_to_existing"
-        elif candidate.platform_id is None:
-            candidate.library_entry_id = None
-            candidate.proposed_action = "needs_review"
-        else:
-            candidate.library_entry_id = None
-            candidate.proposed_action = "create_new"
+        candidate.library_entry_id = None
+        candidate.proposed_action = "create_new"
 
     db.commit()
     tab_counts = _import_tab_counts(db, current_user.id)

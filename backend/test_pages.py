@@ -1695,9 +1695,9 @@ def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
     assert db_session.get(models.ImportCandidate, cand_id).status == "dismissed"
 
 
-def test_edit_with_manual_link_confirms_immediately(client, db_session):
-    """Picking a library entry in the edit modal IS the decision — the
-    candidate confirms against it in the same save, rows edits included."""
+def test_link_confirms_immediately(client, db_session):
+    """Picking a library entry in the Link modal IS the decision — the
+    candidate confirms against it in the same save."""
     _signup_and_login(client)
     user = db_session.query(models.User).first()
     entry = _make_plain_entry(db_session, user.id)
@@ -1717,23 +1717,13 @@ def test_edit_with_manual_link_confirms_immediately(client, db_session):
         row_number=3,
         completed_at=datetime.date(2026, 7, 1),
         completed_at_precision="day",
+        raw_notes="Played with Ninja Gaiden Sigma Black mod.",
     )
     db_session.add(row)
     db_session.commit()
     cand_id, row_id, entry_id = cand.id, row.id, entry.id
 
-    r = client.post(
-        f"/library/import/{cand_id}/edit",
-        data={
-            "raw_title": "Ninja Gaiden Sigma B",
-            "raw_platform": "Steam",
-            "library_entry_id": str(entry_id),
-            "row_id": str(row_id),
-            "row_date": "2026-07-02",
-            "row_playthroughs": "2",
-            "row_notes": "Played with Ninja Gaiden Sigma Black mod.\nSecond line.",
-        },
-    )
+    r = client.post(f"/library/import/{cand_id}/link", data={"library_entry_id": str(entry_id)})
     assert r.status_code == 200
     assert b"Confirmed against" in r.content
     db_session.expire_all()
@@ -1741,11 +1731,11 @@ def test_edit_with_manual_link_confirms_immediately(client, db_session):
     assert cand.status == "confirmed"
     assert cand.library_entry_id == entry_id
     comp = db_session.query(models.Completion).filter(models.Completion.library_entry_id == entry_id).one()
-    assert comp.completed_at == datetime.date(2026, 7, 2)
-    assert comp.playthroughs == "2"
     assert "Sigma Black mod" in comp.notes
     # linkage stamped -> reopenable
     assert db_session.get(models.ImportRow, row_id).created_completion_id == comp.id
+    # link modal only offered for pending candidates
+    assert client.get(f"/library/import/{cand_id}/link").status_code == 404
 
 
 def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
