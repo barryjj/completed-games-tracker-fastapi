@@ -409,7 +409,8 @@ document.addEventListener('htmx:afterSwap', function(e) {
   if (t.id.indexOf('import-row-') === 0) {
     window._importRemoved++;
     var s = document.getElementById('import-load-more');
-    if (s && s.getBoundingClientRect().top <= window.innerHeight + 100) {
+    if (s && !s.classList.contains('htmx-request') &&
+        s.getBoundingClientRect().top <= window.innerHeight + 100) {
       htmx.trigger(s, 'revealed');
     }
   }

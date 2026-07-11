@@ -3466,9 +3466,13 @@ def import_dismiss(
     )
     if not candidate:
         return Response(status_code=404)
-    candidate.status = "dismissed"
-    candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
-    db.commit()
+    if candidate.status == "pending":
+        # Only pending candidates can be dismissed — a stale duplicate row of
+        # an already-confirmed candidate must not flip it to dismissed (that
+        # would orphan its logged completions from the Reopen path).
+        candidate.status = "dismissed"
+        candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
     tab_counts = _import_tab_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
@@ -3603,6 +3607,17 @@ def import_confirm(
     )
     if not candidate:
         return Response(status_code=404)
+
+    if candidate.status != "pending":
+        # Stale duplicate row (candidate already handled elsewhere) — don't
+        # re-process; just remove the row and refresh the counts.
+        tab_counts = _import_tab_counts(db, current_user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_counts_oob.html",
+            context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+            headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+        )
 
     if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
         _confirm_add_to_existing(db, current_user, candidate)

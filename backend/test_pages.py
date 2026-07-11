@@ -1780,3 +1780,25 @@ def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
     assert row.completed_at is None
     assert row.playthroughs == "1+"
     assert row.raw_notes == "note here"
+
+
+def test_confirm_and_dismiss_are_noops_on_confirmed_candidate(client, db_session):
+    """Stale duplicate rows (from overlapping infinite-scroll fetches) must
+    not re-process or dismiss an already-confirmed candidate."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
+    cand_id, comp_id = cand.id, comp.id
+
+    r = client.post(f"/library/import/{cand_id}/confirm")
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
+    assert db_session.query(models.Completion).count() == 1
+
+    r = client.post(f"/library/import/{cand_id}/dismiss")
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
+    assert db_session.get(models.Completion, comp_id) is not None
