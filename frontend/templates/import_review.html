@@ -116,10 +116,23 @@
   <div id="import-bulk-bar" class="d-flex align-items-center gap-2 me-auto" hidden>
     <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
     <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
+    {# Native hx attributes, not htmx.ajax() — the JS API's promise doesn't
+       reliably settle on swap-none/OOB responses, which froze the buttons
+       mid-flight. hx-vals js: reads the checked ids at click time. #}
     <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
-            onclick="importBulkConfirm()">Confirm selected</button>
+            hx-post="/library/import/confirm-bulk"
+            hx-vals='js:{ids: importCheckedIds()}'
+            hx-confirm="Confirm the selected candidates? Their completions will be logged against the matched library entries."
+            hx-swap="none"
+            hx-disabled-elt="this"
+            hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Confirm selected</button>
     <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
-            onclick="importBulkDismiss()">Dismiss selected</button>
+            hx-post="/library/import/dismiss-bulk"
+            hx-vals='js:{ids: importCheckedIds()}'
+            hx-confirm="Dismiss the selected candidates? They can be re-detected by a future re-upload after Clear dismissed."
+            hx-swap="none"
+            hx-disabled-elt="this"
+            hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Dismiss selected</button>
   </div>
   {# Page-level operations — used rarely, so they live down here instead of
      hovering in the header. #}
@@ -204,29 +217,10 @@ window.importSelectAllLoaded = function() {
   importBulkSync();
 };
 
-function importBulkSubmit(url, prompt, btnId) {
-  var ids = Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
-                 .map(function(cb) { return cb.value; });
-  if (!ids.length) return;
-  if (!confirm(prompt.replace('{n}', ids.length + ' candidate' + (ids.length === 1 ? '' : 's')))) return;
-  document.getElementById(btnId).disabled = true;
-  htmx.ajax('POST', url, { values: { ids: ids.join(',') }, swap: 'none' })
-      .then(function() {
-        importExitSelect();
-        htmx.trigger('#import-filters-form', 'submit-view');
-      });
-}
-
-window.importBulkConfirm = function() {
-  importBulkSubmit('/library/import/confirm-bulk',
-    'Confirm {n}? Their completions will be logged against the matched library entries.',
-    'import-bulk-confirm');
-};
-
-window.importBulkDismiss = function() {
-  importBulkSubmit('/library/import/dismiss-bulk',
-    'Dismiss {n}? They can be re-detected by a future re-upload after Clear dismissed.',
-    'import-bulk-dismiss');
+window.importCheckedIds = function() {
+  return Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
+              .map(function(cb) { return cb.value; })
+              .join(',');
 };
 
 // switching back restores whatever view was saved (was previously left
