@@ -117,8 +117,13 @@
 </tr>
 {% endfor %}
 {% if has_more %}
+{# Offset is computed at request time: confirmed/dismissed rows leave the
+   pending query, so the baked next_offset would skip that many unseen
+   candidates. window._importRemoved counts removals since this sentinel
+   rendered (reset when it's replaced). #}
 <tr id="import-load-more"
-    hx-get="/library/import/review?tab={{ tab }}&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+    hx-get="/library/import/review?tab={{ tab }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+    hx-vals='js:{offset: Math.max({{ next_offset }} - (window._importRemoved || 0), 0)}'
     hx-trigger="revealed"
     hx-target="#import-load-more"
     hx-swap="outerHTML">

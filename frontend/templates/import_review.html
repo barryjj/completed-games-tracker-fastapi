@@ -390,6 +390,31 @@ window.openImportLink = function(candidateId) {
   importOpenModal(candidateId, 'link', 'Link to library');
 };
 
+// ─── Infinite-scroll bookkeeping for a mutating list ──────────────────────
+// Confirm/dismiss removes rows without scrolling, which breaks the load-more
+// sentinel two ways: htmx only re-checks 'revealed' on scroll (so a sentinel
+// pulled into view by row removal never fires), and the sentinel's baked
+// offset skips one unseen candidate per removed row. Track removals and
+// kick the sentinel manually when it's on screen.
+window._importRemoved = 0;
+document.addEventListener('htmx:afterSwap', function(e) {
+  var t = e.detail && e.detail.target;
+  if (!t || !t.id) return;
+  if (t.id === 'import-tab-content' || t.id === 'import-load-more') {
+    // Fresh tab content or a fresh sentinel — its offset is correct for the
+    // pending set as of now, so the removal counter starts over.
+    window._importRemoved = 0;
+    return;
+  }
+  if (t.id.indexOf('import-row-') === 0) {
+    window._importRemoved++;
+    var s = document.getElementById('import-load-more');
+    if (s && s.getBoundingClientRect().top <= window.innerHeight + 100) {
+      htmx.trigger(s, 'revealed');
+    }
+  }
+});
+
 // Back-to-top button: appears after scrolling 300px, smooth-scrolls to top.
 // Same pattern as library.html — long candidate lists bury the tab/filter
 // bar with no way back up otherwise.
