@@ -3614,7 +3614,10 @@ def import_confirm(
 
     # create_new / needs_review — redirect to library with modal pre-filled
     platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
-    redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
+    redirect_url = (
+        f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}"
+        f"&prefill_platform={platform_name}&return_tab={candidate.proposed_action}"
+    )
     return Response(status_code=200, headers={"HX-Redirect": redirect_url})
 
 

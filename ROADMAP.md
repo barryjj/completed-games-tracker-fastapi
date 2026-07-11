@@ -352,6 +352,17 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Added a real sort filter (date newest/oldest, title A–Z/Z–A); date sorts order by `completed_at` first, `sort_order` (nulls last) as tiebreaker, so same-month import rows stay in their original 1-2-3 order regardless of sort direction
 - Filters/View toggle-button drawers removed to match `library.html`'s already-flat, always-visible layout (library dropped the collapsible drawers a while back; completions never got the same treatment)
 
+### Import "Add new" without leaving the review page
+- Today confirming a create_new/needs_review candidate redirects to /library to use the
+  add-game modal there (prefilled), then bounces back to the review tab after submit
+  (bounce-back shipped 2026-07-11) — functional but two page loads per candidate
+- Proper fix: extract the add-game modal (markup + its substantial JS: IGDB tabs/typeahead,
+  platform chips, DLC/collection parent search, display-name sync) into a shared partial
+  included by both library.html and import_review.html, then open it in place on the
+  review page. The modal was stabilized over several sessions (PR #101 etc.) — move it
+  verbatim, don't rewrite it
+- Do alongside/after the pages.py split below, as part of the same modularization pass
+
 ### pages.py refactor — split by domain
 - At 3100+ lines `pages.py` is getting unwieldy; split into domain modules: `pages_library.py`, `pages_import.py`, `pages_match_review.py`, `pages_completions.py`, `pages_account.py`
 - `pages.py` becomes a thin aggregator; shared helpers (`_base_ctx`, auth wrappers, template setup) move to `pages_common.py`

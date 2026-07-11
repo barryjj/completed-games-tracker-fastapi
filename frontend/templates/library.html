@@ -581,9 +581,17 @@ var _libraryDetailOffcanvas = null;
 // so we use a JS listener instead and gate on event.target === the form element.
 document.getElementById('add-game-form').addEventListener('htmx:afterRequest', function(event) {
   if (event.detail.successful && event.target === this) {
+    // Came from the import review queue? Bounce straight back to the tab
+    // the candidate lived on so the review flow continues uninterrupted.
+    var fromImport = document.getElementById('add-import-candidate-id').value;
+    var returnTab = this.dataset.importReturnTab || 'create_new';
     this.reset();
     resetAddGameForm();
     if (_addGameModal) _addGameModal.hide();
+    if (fromImport) {
+      window.location = '/library/import/review?tab=' + encodeURIComponent(returnTab);
+      return;
+    }
     // Reload library content so the new entry appears (or not) according to
     // current filters and sort, rather than blindly prepending to the grid.
     htmx.ajax('GET', window.location.pathname + window.location.search, {
@@ -662,6 +670,11 @@ function closeDetailAndEdit(ds) {
   function prefill() {
     openAddGameModal();
     document.getElementById('add-import-candidate-id').value = candidateId;
+    // Remember where to bounce back to after a successful add — confirming
+    // an import candidate shouldn't strand the user on the library page
+    // mid-review-flow.
+    document.getElementById('add-game-form').dataset.importReturnTab =
+      params.get('return_tab') || 'create_new';
     var titleInput = document.getElementById('add-title-input');
     if (titleInput) {
       titleInput.value = title;
