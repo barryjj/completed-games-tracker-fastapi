@@ -149,6 +149,17 @@ def _completion_month(obj) -> str:
 
 templates.env.filters["completion_month"] = _completion_month
 
+
+def _titles_differ(a, b) -> bool:
+    """Whether two titles are meaningfully different — judged by the same
+    normalization the import matcher uses, so typographic noise (curly vs
+    straight apostrophes, ™, dash styles) never flags an 'uncertain match'
+    the matcher itself considered exact."""
+    return importer._normalize_title(str(a or "")) != importer._normalize_title(str(b or ""))
+
+
+templates.env.filters["titles_differ"] = _titles_differ
+
 _URL_RE = re.compile(r"https?://[^\s<]+")
 
 
