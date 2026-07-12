@@ -185,8 +185,10 @@ def _numeral_tokens(normalized_title: str) -> set[str]:
 
 
 # Number words → digits, so "Episode Two" == "Episode 2" (Steam loves
-# spelling them out; spreadsheets love digits). Roman numerals are
-# deliberately NOT mapped: Mega Man X is not Mega Man 10.
+# spelling them out; spreadsheets love digits). Multi-character Roman
+# numerals map too ("Blasphemous II" == "Blasphemous 2") — unambiguous as
+# title tokens. Single-letter Roman numerals (I, V, X) are deliberately
+# NOT mapped: Mega Man X is not Mega Man 10, I is a pronoun, V is a title.
 _WORD_NUMBERS = {
     "zero": "0",
     "one": "1",
@@ -201,6 +203,23 @@ _WORD_NUMBERS = {
     "ten": "10",
     "eleven": "11",
     "twelve": "12",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "xi": "11",
+    "xii": "12",
+    "xiii": "13",
+    "xiv": "14",
+    "xv": "15",
+    "xvi": "16",
+    "xvii": "17",
+    "xviii": "18",
+    "xix": "19",
+    "xx": "20",
 }
 
 
