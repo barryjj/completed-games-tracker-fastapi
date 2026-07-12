@@ -182,12 +182,33 @@ def _numeral_tokens(normalized_title: str) -> set[str]:
     return {t for t in normalized_title.split() if _NUMERAL_RE.fullmatch(t)}
 
 
+# Number words → digits, so "Episode Two" == "Episode 2" (Steam loves
+# spelling them out; spreadsheets love digits). Roman numerals are
+# deliberately NOT mapped: Mega Man X is not Mega Man 10.
+_WORD_NUMBERS = {
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+    "eleven": "11",
+    "twelve": "12",
+}
+
+
 def _normalize_title(title: str) -> str:
-    """Strip punctuation and collapse whitespace for fuzzy matching and grouping."""
+    """Strip punctuation, collapse whitespace, and canonicalize number words
+    to digits for fuzzy matching and grouping."""
     t = title.lower()
     t = re.sub(r"[^\w\s]", " ", t)  # punctuation → space
     t = re.sub(r"\s+", " ", t).strip()
-    return t
+    return " ".join(_WORD_NUMBERS.get(w, w) for w in t.split())
 
 
 def _group_key(title: str, platform_id: int | None, raw_platform: str) -> str:

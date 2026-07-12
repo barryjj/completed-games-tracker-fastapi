@@ -1850,3 +1850,13 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     make_entry("Mass Effect")
     hit = importer._best_matching_entry(db_session, user.id, "Mass Defect", plat.id)
     assert hit is None or hit.release.game.title != "Mass Effect"
+
+    # number words == digits: sheet "Episode 2" matches Steam's "Episode Two"
+    ep2 = make_entry("BioShock Infinite: Burial at Sea - Episode Two")
+    hit = importer._best_matching_entry(db_session, user.id, "Bioshock Infinite: Burial at Sea Episode 2", plat.id)
+    assert hit is not None and hit.id == ep2.id
+    # ...and Roman numerals deliberately do NOT map to digits
+    mmx = make_entry("Mega Man X")
+    make_entry("Mega Man 10")
+    hit = importer._best_matching_entry(db_session, user.id, "Mega Man X", plat.id)
+    assert hit is not None and hit.id == mmx.id

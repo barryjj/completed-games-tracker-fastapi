@@ -2302,3 +2302,9 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
   font-weight: 700;
 }
 .cgt-breakdown__label { color: var(--ctp-subtext); }
+
+
+/* Import row dropdowns must clear the sticky footer (z-index 1030) — the
+   split-button menu opens near the bottom of the list and was sliding
+   underneath it. Below modals (1050) on purpose. */
+#import-table .dropdown-menu { z-index: 1040; }
