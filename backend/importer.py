@@ -711,17 +711,24 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     pool_strict = list(_search_pool(db, user_id, platform_id, phrase, base_only=True))
     pool = _widened_pool(db, user_id, platform_id, phrase, base_only=True)
 
-    # Containment tier (works on multi-candidate pools): every sheet word
-    # appears IN ORDER inside the candidate title, sheet numerals are a
-    # subset of the candidate's, and the winner has strictly the fewest
-    # leftover tokens. "resident evil 7" ⊂ "resident evil 7 biohazard"
-    # (1 extra) beats the Teaser (3 extras) and Season Pass; RE2 original
-    # vs remake tie at 0 extras and correctly refuse. A human reads these
-    # instantly — requiring an exactly-one pool made the machine dumber
-    # than the person reviewing its output.
+    # Containment tier (works on multi-candidate pools) — deliberately
+    # TIGHT after a loose first version mis-matched half a review page:
+    #   - forward only: the sheet title inside the candidate, never the
+    #     reverse (reverse collapsed every DLC row onto its base game)
+    #   - contiguous word run, not subsequence ("mega man 2" must not bind
+    #     to "mega man legacy collection 2")
+    #   - strict numeral equality (bare "Mega Man" must not match "11")
+    #   - at most ONE extra token ("resident evil 7 biohazard" yes,
+    #     "mega man legacy collection" no)
+    #   - strictly unique winner, ties refuse
     needle = _normalize_title(raw_title)
     nwords = needle.split()
     nnums = _numeral_tokens(needle)
+
+    def _contiguous(sub: list[str], hay: list[str]) -> bool:
+        n = len(sub)
+        return any(hay[i : i + n] == sub for i in range(len(hay) - n + 1))
+
     scored: list[tuple[int, models.UserLibraryEntry]] = []
     for cand in pool:
         game = cand.release.game if cand.release and cand.release.game else None
@@ -733,13 +740,14 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
                 continue
             c = _normalize_title(cand_title)
             cwords = c.split()
-            cnums = _numeral_tokens(c)
-            extras: int | None = None
-            if len(cwords) >= len(nwords) and nnums <= cnums and _is_subsequence(nwords, cwords):
-                extras = len(cwords) - len(nwords)
-            elif len(nwords) > len(cwords) and cnums <= nnums and _is_subsequence(cwords, nwords):
-                extras = len(nwords) - len(cwords)
-            if extras is not None and (best_extras is None or extras < best_extras):
+            extras = len(cwords) - len(nwords)
+            if extras < 0 or extras > 1:
+                continue
+            if _numeral_tokens(c) != nnums:
+                continue
+            if not _contiguous(nwords, cwords):
+                continue
+            if best_extras is None or extras < best_extras:
                 best_extras = extras
         if best_extras is not None:
             scored.append((best_extras, cand))
@@ -755,27 +763,20 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     game_title = entry.release.game.title if entry.release and entry.release.game else ""
     if not game_title:
         return None
-    # Sanity floor — even with a single candidate, require some real
-    # similarity so a coincidental substring match doesn't get accepted
-    # blindly (e.g. a short phrase that happens to appear inside an
-    # otherwise-unrelated title).
-    # Sequel guard: SQL substring narrowing lets "ii" match inside "III",
-    # so a lone wrong-sequel entry can end up as the "unambiguous" pool of
-    # one (confirmed live: sheet "Golden Axe II" with only Golden Axe III
-    # in the library). Numeral tokens must match exactly.
-    needle = _normalize_title(raw_title)
+    # Reverse of the containment rule, same tightness: the LIBRARY title as a
+    # contiguous prefix-run of the sheet title with at most one extra sheet
+    # token and equal numerals ("resident evil 7 biohazard" in the sheet vs
+    # a plain "Resident Evil 7" entry). The old _score >= 0.5 acceptance is
+    # gone — it waved "Mega Man 2" into "Mega Man Legacy Collection 2" and
+    # was the same rogue class the containment tier's tie rule refuses.
     cand = _normalize_title(game_title)
     if _numeral_tokens(needle) != _numeral_tokens(cand):
         return None
-    # Word-boundary prefix containment (either direction) counts as real
-    # similarity: "resident evil 7" vs "resident evil 7 biohazard" — the
-    # decorative suffix has no colon/dash for the structural passes to
-    # split on, and it drags raw-string _score below the floor. Singleton
-    # pool + matching numerals make this safe.
-    if cand.startswith(needle + " ") or needle.startswith(cand + " "):
+    cwords = cand.split()
+    extras = len(nwords) - len(cwords)
+    if 0 <= extras <= 1 and _contiguous(cwords, nwords):
         return entry
-    score = match_review._score(raw_title, game_title)
-    return entry if score >= 0.5 else None
+    return None
 
 
 def _best_matching_entry(

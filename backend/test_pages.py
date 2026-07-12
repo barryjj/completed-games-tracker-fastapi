@@ -1887,6 +1887,19 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     hit = importer._best_matching_entry(db_session, user.id, "Silent Hill 2", plat.id)
     assert hit is None
 
+    # rogue-match regressions (live 2026-07-12): bare title must not bind a
+    # numbered sequel, numbers must not jump structures, and DLC sheet rows
+    # must not collapse onto their base game (forward-only containment)
+    make_entry("Mega Man 11")
+    make_entry("Mega Man Legacy Collection 2")
+    hit = importer._best_matching_entry(db_session, user.id, "Mega Man", plat.id)
+    assert hit is None
+    hit = importer._best_matching_entry(db_session, user.id, "Mega Man 2", plat.id)
+    assert hit is None
+    make_entry("Alan Wake")
+    hit = importer._best_matching_entry(db_session, user.id, "Alan Wake: The Signal", plat.id)
+    assert hit is None
+
     # accented characters normalize to their plain forms: Abzu == ABZÛ
     abzu = make_entry("ABZ\u00db")
     hit = importer._best_matching_entry(db_session, user.id, "Abzu", plat.id)
