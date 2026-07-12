@@ -164,6 +164,22 @@ def _titles_differ(a, b) -> bool:
 
 templates.env.filters["titles_differ"] = _titles_differ
 
+
+def _release_year(release) -> str | None:
+    """Best-effort release year for disambiguating identically-titled
+    entries (the two Preys, both 'Prey (Steam)'). Steam appdetails first,
+    IGDB metadata as fallback; None renders as nothing."""
+    raw = getattr(release, "raw_data", None) or {}
+    date_str = (((raw.get("appdetails") or {}).get("release_date")) or {}).get("date") or ""
+    m = re.search(r"(?:19|20)\d{2}", date_str)
+    if m:
+        return m.group(0)
+    year = (raw.get("igdb") or {}).get("year")
+    return str(year) if year else None
+
+
+templates.env.filters["release_year"] = _release_year
+
 _URL_RE = re.compile(r"https?://[^\s<]+")
 
 

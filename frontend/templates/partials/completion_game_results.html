@@ -8,7 +8,8 @@
     data-cgt-label="{{ entry.release.game.display_title | e }} ({{ entry.release.display_platform | e }})"
     onclick="selectCompletionGame(this.dataset.cgtId, this.dataset.cgtLabel); return false;"
   >
-    {{ entry.release.game.display_title }} <span class="text-secondary">{{ entry.release.display_platform }}</span>
+    {% set _yr = entry.release | release_year %}
+    {{ entry.release.game.display_title }} <span class="text-secondary">{{ entry.release.display_platform }}{% if _yr %} · {{ _yr }}{% endif %}</span>
   </li>
   {% endfor %}
 </ul>
