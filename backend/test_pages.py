@@ -1874,12 +1874,18 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     hit = importer._best_matching_entry(db_session, user.id, "Blasphemous II", plat.id)
     assert hit is not None and hit.id == blas2.id
 
-    # suffix-decorated library titles: sheet "Resident Evil VII" matches
-    # "RESIDENT EVIL 7 biohazard" — VII→7 via normalization, "biohazard"
-    # bridged by word-boundary prefix containment in the pool fallback
-    re7 = make_entry("RESIDENT EVIL 7 biohazard")
+    # containment tier: multi-candidate pools resolve to the entry with
+    # strictly fewest leftover tokens — RE VII picks Biohazard over the
+    # Teaser demo; identical-leftover ties (RE2 original vs remake) refuse
+    re7b = make_entry("Resident Evil 7 Biohazard")
+    make_entry("Resident Evil 7 Teaser: Beginning Hour")
     hit = importer._best_matching_entry(db_session, user.id, "Resident Evil VII", plat.id)
-    assert hit is not None and hit.id == re7.id
+    assert hit is not None and hit.id == re7b.id
+    # tie at equal leftovers → genuinely ambiguous → refuse
+    make_entry("Silent Hill 2 Remake")
+    make_entry("Silent Hill 2 Classic")
+    hit = importer._best_matching_entry(db_session, user.id, "Silent Hill 2", plat.id)
+    assert hit is None
 
     # accented characters normalize to their plain forms: Abzu == ABZÛ
     abzu = make_entry("ABZ\u00db")

@@ -453,6 +453,28 @@ def _single_numeral_variant_entry(db: Session, user_id: int, raw_title: str, pla
     return None
 
 
+def _widened_pool(db: Session, user_id: int, platform_id: int, raw_title: str, *, base_only: bool) -> list[models.UserLibraryEntry]:
+    """_search_pool, retried dropping one word at a time when empty — a
+    typo'd or differently-abbreviated word defeats the SQL word filter
+    outright, so widen before giving up."""
+    pool = list(_search_pool(db, user_id, platform_id, raw_title, base_only=base_only))
+    words = _normalize_title(raw_title).split()
+    if not pool and 1 < len(words) <= 8:
+        seen_ids: set[int] = set()
+        for skip in range(len(words)):
+            sub = " ".join(words[:skip] + words[skip + 1 :])
+            for e in _search_pool(db, user_id, platform_id, sub, base_only=base_only):
+                if e.id not in seen_ids:
+                    seen_ids.add(e.id)
+                    pool.append(e)
+    return pool
+
+
+def _is_subsequence(needle: list[str], hay: list[str]) -> bool:
+    it = iter(hay)
+    return all(w in it for w in needle)
+
+
 def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
     """Near-exact whole-title match for sheet typos ("Fasion Police Squad" →
     "Fashion Police Squad"). Runs after exact, before the structural passes,
@@ -465,18 +487,9 @@ def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: i
     A typo'd word also defeats the SQL word filter, so when the pool comes
     back empty the search retries dropping one word at a time."""
     needle = _normalize_title(raw_title)
-    words = needle.split()
     if len(needle.replace(" ", "")) < 8:
         return None
-    pool = list(_search_pool(db, user_id, platform_id, raw_title, base_only=False))
-    if not pool and 1 < len(words) <= 8:
-        seen_ids: set[int] = set()
-        for skip in range(len(words)):
-            sub = " ".join(words[:skip] + words[skip + 1 :])
-            for e in _search_pool(db, user_id, platform_id, sub, base_only=False):
-                if e.id not in seen_ids:
-                    seen_ids.add(e.id)
-                    pool.append(e)
+    pool = _widened_pool(db, user_id, platform_id, raw_title, base_only=False)
     needle_numerals = _numeral_tokens(needle)
     winners: dict[int, models.UserLibraryEntry] = {}
     for entry in pool:
@@ -690,10 +703,55 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     create_new instead, where Edit/manual-link can resolve it deliberately.
     """
     phrase = _search_phrase(raw_title)
-    pool = _search_pool(db, user_id, platform_id, phrase, base_only=True)
-    if len(pool) != 1:
+    # Strict pool for the legacy singleton path below — its whole premise is
+    # "the full phrase narrowed the library to exactly one", so it must not
+    # see word-drop-widened candidates. The containment tier scans the wide
+    # pool: its own guards (in-order subsequence + numeral subset + unique
+    # minimum) do the confirming.
+    pool_strict = list(_search_pool(db, user_id, platform_id, phrase, base_only=True))
+    pool = _widened_pool(db, user_id, platform_id, phrase, base_only=True)
+
+    # Containment tier (works on multi-candidate pools): every sheet word
+    # appears IN ORDER inside the candidate title, sheet numerals are a
+    # subset of the candidate's, and the winner has strictly the fewest
+    # leftover tokens. "resident evil 7" ⊂ "resident evil 7 biohazard"
+    # (1 extra) beats the Teaser (3 extras) and Season Pass; RE2 original
+    # vs remake tie at 0 extras and correctly refuse. A human reads these
+    # instantly — requiring an exactly-one pool made the machine dumber
+    # than the person reviewing its output.
+    needle = _normalize_title(raw_title)
+    nwords = needle.split()
+    nnums = _numeral_tokens(needle)
+    scored: list[tuple[int, models.UserLibraryEntry]] = []
+    for cand in pool:
+        game = cand.release.game if cand.release and cand.release.game else None
+        if not game:
+            continue
+        best_extras: int | None = None
+        for cand_title in (game.title, game.display_name):
+            if not cand_title:
+                continue
+            c = _normalize_title(cand_title)
+            cwords = c.split()
+            cnums = _numeral_tokens(c)
+            extras: int | None = None
+            if len(cwords) >= len(nwords) and nnums <= cnums and _is_subsequence(nwords, cwords):
+                extras = len(cwords) - len(nwords)
+            elif len(nwords) > len(cwords) and cnums <= nnums and _is_subsequence(cwords, nwords):
+                extras = len(nwords) - len(cwords)
+            if extras is not None and (best_extras is None or extras < best_extras):
+                best_extras = extras
+        if best_extras is not None:
+            scored.append((best_extras, cand))
+    if scored:
+        scored.sort(key=lambda t: t[0])
+        if len(scored) == 1 or scored[0][0] < scored[1][0]:
+            return scored[0][1]
+        return None  # tie — genuinely ambiguous, a human must pick
+
+    if len(pool_strict) != 1:
         return None
-    entry = pool[0]
+    entry = pool_strict[0]
     game_title = entry.release.game.title if entry.release and entry.release.game else ""
     if not game_title:
         return None
