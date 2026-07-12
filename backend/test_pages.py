@@ -1861,6 +1861,14 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     hit = importer._best_matching_entry(db_session, user.id, "Mega Man X", plat.id)
     assert hit is not None and hit.id == mmx.id
 
+    # single-letter numeral fallback: X↔10 converts ONLY when the literal
+    # has no exact match — library with just "Final Fantasy 10" catches a
+    # sheet "Final Fantasy X" (and Mega Man X above still prefers its
+    # literal because exact runs first)
+    ff10 = make_entry("Final Fantasy 10")
+    hit = importer._best_matching_entry(db_session, user.id, "Final Fantasy X", plat.id)
+    assert hit is not None and hit.id == ff10.id
+
     # multi-char Roman numerals == digits: Blasphemous II matches 2
     blas2 = make_entry("Blasphemous 2")
     hit = importer._best_matching_entry(db_session, user.id, "Blasphemous II", plat.id)

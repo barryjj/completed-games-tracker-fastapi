@@ -428,6 +428,31 @@ def _collection_match_entry(db: Session, user_id: int, raw_title: str, raw_colle
     return None
 
 
+# Single-letter Roman numerals and their digit twins — used only by the
+# variant fallback below, never mapped unconditionally in normalization.
+_SINGLE_NUMERAL_EQUIV = {"i": "1", "v": "5", "x": "10", "1": "i", "5": "v", "10": "x"}
+
+
+def _single_numeral_variant_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Sheet says "Final Fantasy X", library has "Final Fantasy 10" (or the
+    reverse). Single-letter numerals can't be mapped unconditionally — Mega
+    Man X is not Mega Man 10 — but ordering makes the guess safe enough:
+    the literal exact pass has already run and found nothing, so try each
+    single-token conversion (X↔10, V↔5, I↔1) and require an EXACT hit on
+    the variant. The raw titles still differ, so a hit lands flagged as an
+    uncertain match and gets human eyes during review."""
+    words = _normalize_title(raw_title).split()
+    for idx, word in enumerate(words):
+        alt = _SINGLE_NUMERAL_EQUIV.get(word)
+        if not alt:
+            continue
+        variant = " ".join(words[:idx] + [alt] + words[idx + 1 :])
+        entry = _exact_match_entry(db, user_id, variant, platform_id)
+        if entry:
+            return entry
+    return None
+
+
 def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
     """Near-exact whole-title match for sheet typos ("Fasion Police Squad" →
     "Fashion Police Squad"). Runs after exact, before the structural passes,
@@ -714,6 +739,7 @@ def _best_matching_entry(
         return None
     direct = (
         _exact_match_entry(db, user_id, raw_title, platform_id)
+        or _single_numeral_variant_entry(db, user_id, raw_title, platform_id)
         or _fuzzy_match_entry(db, user_id, raw_title, platform_id)
         or _prefix_match_entry(db, user_id, raw_title, platform_id)
         or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
