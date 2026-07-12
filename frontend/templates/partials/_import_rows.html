@@ -124,7 +124,7 @@
    freshly swapped sentinels and produced duplicate fetch windows. #}
 <tr id="import-load-more"
     hx-get="/library/import/review?tab={{ tab }}&rows_only=1&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
-    hx-vals='js:{offset: document.querySelectorAll("#import-table tbody tr[id^=\'import-row-\']").length}'
+    hx-vals='js:{offset: document.querySelectorAll("#import-table tbody tr[id^=import-row-]").length}'
     hx-trigger="revealed"
     hx-sync="this:drop"
     hx-target="#import-load-more"
