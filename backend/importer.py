@@ -705,8 +705,17 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     # so a lone wrong-sequel entry can end up as the "unambiguous" pool of
     # one (confirmed live: sheet "Golden Axe II" with only Golden Axe III
     # in the library). Numeral tokens must match exactly.
-    if _numeral_tokens(_normalize_title(raw_title)) != _numeral_tokens(_normalize_title(game_title)):
+    needle = _normalize_title(raw_title)
+    cand = _normalize_title(game_title)
+    if _numeral_tokens(needle) != _numeral_tokens(cand):
         return None
+    # Word-boundary prefix containment (either direction) counts as real
+    # similarity: "resident evil 7" vs "resident evil 7 biohazard" — the
+    # decorative suffix has no colon/dash for the structural passes to
+    # split on, and it drags raw-string _score below the floor. Singleton
+    # pool + matching numerals make this safe.
+    if cand.startswith(needle + " ") or needle.startswith(cand + " "):
+        return entry
     score = match_review._score(raw_title, game_title)
     return entry if score >= 0.5 else None
 
