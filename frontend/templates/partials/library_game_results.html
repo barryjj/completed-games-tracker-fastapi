@@ -13,7 +13,7 @@
     <small class="text-secondary">({{ entry.release.display_platform }})</small>
     {# Year + appid disambiguate identically-titled entries (both Preys). #}
     {% if _yr %}<small class="text-secondary">· {{ _yr }}</small>{% endif %}
-    {% if entry.release.external_id %}<small class="text-secondary">· #{{ entry.release.external_id }}</small>{% endif %}
+    {% if entry.release.external_id %}<small class="text-secondary">· app {{ entry.release.external_id }}</small>{% endif %}
   </button>
   {% endfor %}
 </div>
