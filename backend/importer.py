@@ -171,6 +171,16 @@ def _cell(row: tuple, col_map: dict, *keys: str) -> str | None:
     return None
 
 
+_NUMERAL_RE = re.compile(r"^(?:\d+|[ivxlcdm]+)$")
+
+
+def _numeral_tokens(normalized_title: str) -> set[str]:
+    """Tokens that are digits or Roman numerals — the sequel-identity part
+    of a title. Two titles whose numeral tokens differ are different games
+    no matter how similar the rest looks ("Golden Axe II" vs "III")."""
+    return {t for t in normalized_title.split() if _NUMERAL_RE.fullmatch(t)}
+
+
 def _normalize_title(title: str) -> str:
     """Strip punctuation and collapse whitespace for fuzzy matching and grouping."""
     t = title.lower()
@@ -510,6 +520,12 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     # similarity so a coincidental substring match doesn't get accepted
     # blindly (e.g. a short phrase that happens to appear inside an
     # otherwise-unrelated title).
+    # Sequel guard: SQL substring narrowing lets "ii" match inside "III",
+    # so a lone wrong-sequel entry can end up as the "unambiguous" pool of
+    # one (confirmed live: sheet "Golden Axe II" with only Golden Axe III
+    # in the library). Numeral tokens must match exactly.
+    if _numeral_tokens(_normalize_title(raw_title)) != _numeral_tokens(_normalize_title(game_title)):
+        return None
     score = match_review._score(raw_title, game_title)
     return entry if score >= 0.5 else None
 
