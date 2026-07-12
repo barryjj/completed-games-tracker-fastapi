@@ -2278,12 +2278,26 @@ html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, 
    semantic accents as the stat row (shared :is() selectors above).
    Used by the Tools import card and Home's needs-attention widget. */
 .cgt-breakdown {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 2px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Each line is an <a> to its destination (review tab, match review) —
+   flex rows with a fixed-width right-aligned number column instead of a
+   grid, so a whole line can be one anchor. */
+.cgt-breakdown__row {
+  display: flex;
   align-items: baseline;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+a.cgt-breakdown__row:hover .cgt-breakdown__label {
+  color: var(--ctp-text);
+  text-decoration: underline;
 }
 .cgt-breakdown__num {
+  min-width: 3.2em;
   text-align: right;
   font-weight: 700;
 }
