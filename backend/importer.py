@@ -11,6 +11,7 @@ Tabs: one per year; tab name is the fallback year for blank/month-only dates.
 """
 
 import datetime
+import difflib
 import re
 from io import BytesIO
 
@@ -378,6 +379,50 @@ def _collection_match_entry(db: Session, user_id: int, raw_title: str, raw_colle
     return None
 
 
+def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Near-exact whole-title match for sheet typos ("Fasion Police Squad" →
+    "Fashion Police Squad"). Runs after exact, before the structural passes,
+    so a one-letter slip doesn't fall through to a prefix match or die in
+    create_new. Deliberately strict:
+      - similarity >= 0.92 over the full normalized title (difflib)
+      - numeral tokens must match exactly (sequels can never fuzzy-match)
+      - exactly ONE library entry may clear the bar, else ambiguous → None
+      - short titles (< 8 chars spaceless) never fuzzy-match
+    A typo'd word also defeats the SQL word filter, so when the pool comes
+    back empty the search retries dropping one word at a time."""
+    needle = _normalize_title(raw_title)
+    words = needle.split()
+    if len(needle.replace(" ", "")) < 8:
+        return None
+    pool = list(_search_pool(db, user_id, platform_id, raw_title, base_only=False))
+    if not pool and 1 < len(words) <= 8:
+        seen_ids: set[int] = set()
+        for skip in range(len(words)):
+            sub = " ".join(words[:skip] + words[skip + 1 :])
+            for e in _search_pool(db, user_id, platform_id, sub, base_only=False):
+                if e.id not in seen_ids:
+                    seen_ids.add(e.id)
+                    pool.append(e)
+    needle_numerals = _numeral_tokens(needle)
+    winners: dict[int, models.UserLibraryEntry] = {}
+    for entry in pool:
+        game = entry.release.game if entry.release and entry.release.game else None
+        if not game:
+            continue
+        for cand_title in (game.title, game.display_name):
+            if not cand_title:
+                continue
+            norm = _normalize_title(cand_title)
+            if _numeral_tokens(norm) != needle_numerals:
+                continue
+            if difflib.SequenceMatcher(None, needle, norm).ratio() >= 0.92:
+                winners[entry.id] = entry
+                break
+    if len(winners) == 1:
+        return next(iter(winners.values()))
+    return None
+
+
 def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
     """Structural match, tried before the general fallback: split the
     spreadsheet title on a colon/dash subtitle separator, search the library
@@ -558,6 +603,7 @@ def _best_matching_entry(
         return None
     direct = (
         _exact_match_entry(db, user_id, raw_title, platform_id)
+        or _fuzzy_match_entry(db, user_id, raw_title, platform_id)
         or _prefix_match_entry(db, user_id, raw_title, platform_id)
         or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
         or _pool_fallback_entry(db, user_id, raw_title, platform_id)

@@ -1841,3 +1841,12 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     make_entry("Golden Axe III")
     hit = importer._best_matching_entry(db_session, user.id, "Golden Axe II", plat.id)
     assert hit is None or "III" not in hit.release.game.title
+
+    # fuzzy pass: single-letter sheet typo still matches...
+    fashion = make_entry("Fashion Police Squad")
+    hit = importer._best_matching_entry(db_session, user.id, "Fasion Police Squad", plat.id)
+    assert hit is not None and hit.id == fashion.id
+    # ...but near-miss DIFFERENT titles stay unmatched (ratio below bar)
+    make_entry("Mass Effect")
+    hit = importer._best_matching_entry(db_session, user.id, "Mass Defect", plat.id)
+    assert hit is None or hit.release.game.title != "Mass Effect"
