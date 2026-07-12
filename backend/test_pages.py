@@ -1899,6 +1899,10 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     make_entry("Alan Wake")
     hit = importer._best_matching_entry(db_session, user.id, "Alan Wake: The Signal", plat.id)
     assert hit is None
+    # a LEADING extra word is a different game, not a decorated title
+    make_entry("LEGO MARVEL Super Heroes")
+    hit = importer._best_matching_entry(db_session, user.id, "Marvel Super Heroes", plat.id)
+    assert hit is None
 
     # accented characters normalize to their plain forms: Abzu == ABZÛ
     abzu = make_entry("ABZ\u00db")

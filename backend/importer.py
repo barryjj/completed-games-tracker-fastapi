@@ -715,8 +715,10 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     # TIGHT after a loose first version mis-matched half a review page:
     #   - forward only: the sheet title inside the candidate, never the
     #     reverse (reverse collapsed every DLC row onto its base game)
-    #   - contiguous word run, not subsequence ("mega man 2" must not bind
-    #     to "mega man legacy collection 2")
+    #   - prefix-anchored: the sheet title must be the START of the
+    #     candidate, extras only trail ("resident evil 7 biohazard" yes;
+    #     "LEGO marvel super heroes" is a different game than "marvel
+    #     super heroes", not a decorated one)
     #   - strict numeral equality (bare "Mega Man" must not match "11")
     #   - at most ONE extra token ("resident evil 7 biohazard" yes,
     #     "mega man legacy collection" no)
@@ -724,10 +726,6 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     needle = _normalize_title(raw_title)
     nwords = needle.split()
     nnums = _numeral_tokens(needle)
-
-    def _contiguous(sub: list[str], hay: list[str]) -> bool:
-        n = len(sub)
-        return any(hay[i : i + n] == sub for i in range(len(hay) - n + 1))
 
     scored: list[tuple[int, models.UserLibraryEntry]] = []
     for cand in pool:
@@ -745,7 +743,7 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
                 continue
             if _numeral_tokens(c) != nnums:
                 continue
-            if not _contiguous(nwords, cwords):
+            if cwords[: len(nwords)] != nwords:
                 continue
             if best_extras is None or extras < best_extras:
                 best_extras = extras
@@ -774,7 +772,7 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
         return None
     cwords = cand.split()
     extras = len(nwords) - len(cwords)
-    if 0 <= extras <= 1 and _contiguous(cwords, nwords):
+    if 0 <= extras <= 1 and nwords[: len(cwords)] == cwords:
         return entry
     return None
 
