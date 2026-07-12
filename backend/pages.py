@@ -3071,6 +3071,19 @@ def import_review_page(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    # Sticky filters: plain navigation (no query params) restores the last
+    # used tab/sort/platform/year from cookies — same idea as the library
+    # and completions view-mode cookies. JS writes them on change; explicit
+    # params (tab clicks, filter form) always win.
+    qp = request.query_params
+    if "tab" not in qp:
+        tab = request.cookies.get("cgt-import-tab", tab)
+    if "sort" not in qp:
+        sort = request.cookies.get("cgt-import-sort", sort)
+    if "platform" not in qp:
+        platform = request.cookies.get("cgt-import-platform", platform)
+    if "year" not in qp:
+        year = request.cookies.get("cgt-import-year", year)
     if tab not in _IMPORT_TABS and tab != "confirmed":
         tab = "add_to_existing"
     if sort not in ("id", "date_desc", "date_asc"):

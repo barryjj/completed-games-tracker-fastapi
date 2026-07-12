@@ -217,6 +217,18 @@ window.importSelectAllLoaded = function() {
   importBulkSync();
 };
 
+// Sticky filters: remember tab/sort/platform/year across visits (server
+// reads these cookies when the page is opened without query params).
+function cgtImportRemember(name, value) {
+  document.cookie = 'cgt-import-' + name + '=' + encodeURIComponent(value) + ';path=/;max-age=31536000;samesite=lax';
+}
+document.addEventListener('DOMContentLoaded', function() {
+  [['import-sort', 'sort'], ['import-platform-filter', 'platform'], ['import-year-filter', 'year']].forEach(function(pair) {
+    var el = document.getElementById(pair[0]);
+    if (el) el.addEventListener('change', function() { cgtImportRemember(pair[1], el.value); });
+  });
+});
+
 window.importCheckedIds = function() {
   return Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
               .map(function(cb) { return cb.value; })
@@ -231,6 +243,7 @@ window.importSwitchTab = function(button, tab) {
   });
   var hiddenTab = document.querySelector('#import-filters-form input[name="tab"]');
   if (hiddenTab) hiddenTab.value = tab;
+  cgtImportRemember('tab', tab);
   var toggle = document.getElementById('import-view-toggle');
   if (toggle) toggle.hidden = tab !== 'add_to_existing';
   var selectToggle = document.getElementById('import-select-toggle');
