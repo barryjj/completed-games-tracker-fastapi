@@ -1860,3 +1860,8 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     make_entry("Mega Man 10")
     hit = importer._best_matching_entry(db_session, user.id, "Mega Man X", plat.id)
     assert hit is not None and hit.id == mmx.id
+
+    # accented characters normalize to their plain forms: Abzu == ABZÛ
+    abzu = make_entry("ABZ\u00db")
+    hit = importer._best_matching_entry(db_session, user.id, "Abzu", plat.id)
+    assert hit is not None and hit.id == abzu.id

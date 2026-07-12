@@ -13,6 +13,8 @@ Tabs: one per year; tab name is the fallback year for blank/month-only dates.
 import datetime
 import difflib
 import re
+import time
+import unicodedata
 from io import BytesIO
 
 import openpyxl
@@ -206,6 +208,13 @@ def _normalize_title(title: str) -> str:
     """Strip punctuation, collapse whitespace, and canonicalize number words
     to digits for fuzzy matching and grouping."""
     t = title.lower()
+    # Decompose accents and drop the combining marks (ABZÛ → abzu,
+    # Pokémon → pokemon) — \w keeps accented letters, so they'd otherwise
+    # survive normalization and never match their plain-ASCII sheet
+    # spellings. Non-Latin scripts pass through untouched (no combining
+    # marks to drop), so Japanese titles don't normalize to nothing.
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(c for c in t if not unicodedata.combining(c))
     t = re.sub(r"[^\w\s]", " ", t)  # punctuation → space
     t = re.sub(r"\s+", " ", t).strip()
     return " ".join(_WORD_NUMBERS.get(w, w) for w in t.split())
@@ -529,6 +538,58 @@ def _library_prefix_match_entry(db: Session, user_id: int, raw_title: str, platf
     return None
 
 
+# Titles containing non-ASCII (ABZÛ, Pokémon...) are invisible to the SQL
+# pool search — SQLite LIKE only case-folds ASCII, so '%abzu%' never matches
+# ABZÛ and Python-side normalization never gets a candidate to compare.
+# This tiny index maps normalized forms of the (few) accented titles to
+# their entries. TTL-cached per user+platform so a recheck over hundreds of
+# candidates does the library scan once, not per candidate.
+_ACCENT_INDEX_TTL = 60.0
+_accent_index_cache: dict[tuple[int, int, int], tuple[float, dict[str, int]]] = {}
+
+
+def _accented_title_index(db: Session, user_id: int, platform_id: int) -> dict[str, int]:
+    # Entry count in the key invalidates the cache the moment anything is
+    # added (sync mid-recheck, test fixtures, manual adds); the TTL covers
+    # renames of existing titles.
+    entry_count = (
+        db.query(models.UserLibraryEntry.id)
+        .join(models.UserLibraryEntry.release)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+        )
+        .count()
+    )
+    key = (user_id, platform_id, entry_count)
+    cached = _accent_index_cache.get(key)
+    now = time.monotonic()
+    if cached and now - cached[0] < _ACCENT_INDEX_TTL:
+        return cached[1]
+    rows = (
+        db.query(models.UserLibraryEntry.id, models.Game.title, models.Game.display_name)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+        )
+        .all()
+    )
+    index: dict[str, int] = {}
+    for entry_id, title, display_name in rows:
+        for t in (title, display_name):
+            if not t or t.isascii():
+                continue
+            norm = _normalize_title(t)
+            index.setdefault(norm, entry_id)
+            tight = norm.replace(" ", "")
+            if len(tight) >= 6:
+                index.setdefault(tight, entry_id)
+    _accent_index_cache[key] = (now, index)
+    return index
+
+
 def _exact_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
     """Direct normalized-title equality against every entry on the platform
     (base games and DLC alike). Tried before any of the colon-splitting
@@ -559,6 +620,16 @@ def _exact_match_entry(db: Session, user_id: int, raw_title: str, platform_id: i
                 return entry
             if needle_tight and norm.replace(" ", "") == needle_tight:
                 return entry
+    # Pool came up empty-handed — check the accented-title index (entries
+    # the SQL narrowing structurally cannot find for an ASCII needle).
+    accent_index = _accented_title_index(db, user_id, platform_id)
+    entry_id = accent_index.get(needle) or (accent_index.get(needle_tight) if needle_tight else None)
+    if entry_id:
+        return (
+            db.query(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.id == entry_id, models.UserLibraryEntry.user_id == user_id)
+            .first()
+        )
     return None
 
 
