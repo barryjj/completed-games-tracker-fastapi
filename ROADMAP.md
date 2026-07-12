@@ -296,7 +296,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
 
-### Desktop packaging (Tauri) — promoted from Later, 2026-07-08
+### Desktop packaging (Tauri) — promoted from Later 2026-07-08; agreed 2026-07-12 as next up, then PSN, then achievements
 - Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
 - **Why now: it gates the sign-in story for both platform integrations.** A WebView we
   control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
@@ -310,6 +310,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
+
+### Achievements / trophies (promoted 2026-07-12 — third in the agreed Tauri → PSN → achievements sequence)
+- Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
+- New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
+- New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
+- Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
+- Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
+- Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
+- Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
+- **List view**: the "Added" date column was removed as low-value; the vacated column slot is the natural home for an achievement/trophy progress cell (e.g. "23 / 47" or a small progress bar) once sync exists
+- Filter / sort by achievement progress (e.g. "show games close to 100%")
+- Phases TBD — at minimum: schema + Steam fetch, then UI surfaces, then PSN trophy mapping when PSN integration exists
 
 ### Historical import (next up)
 - **Source:** CSV / spreadsheet (Google Sheets export) with columns: title, platform, date completed, playthroughs, notes, collection
@@ -443,18 +455,6 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
 - User can pick which widgets are shown and arrange them (restructure phase 3 provides pin/unpin + arrangement plumbing)
 - Original "wait for non-Steam data" deferral is satisfied — historical import brought in the 2006+ spreadsheet era, so the stats are already interesting
-
-### Achievements / trophies
-- Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
-- New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
-- New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
-- Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
-- Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
-- Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
-- Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
-- **List view**: the "Added" date column was removed as low-value; the vacated column slot is the natural home for an achievement/trophy progress cell (e.g. "23 / 47" or a small progress bar) once sync exists
-- Filter / sort by achievement progress (e.g. "show games close to 100%")
-- Phases TBD — at minimum: schema + Steam fetch, then UI surfaces, then PSN trophy mapping when PSN integration exists
 
 ---
 
