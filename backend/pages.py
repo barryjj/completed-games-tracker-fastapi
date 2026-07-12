@@ -155,7 +155,11 @@ def _titles_differ(a, b) -> bool:
     normalization the import matcher uses, so typographic noise (curly vs
     straight apostrophes, ™, dash styles) never flags an 'uncertain match'
     the matcher itself considered exact."""
-    return importer._normalize_title(str(a or "")) != importer._normalize_title(str(b or ""))
+    na = importer._normalize_title(str(a or ""))
+    nb = importer._normalize_title(str(b or ""))
+    # Spaceless comparison mirrors the matcher's exact tier (BLADECHIMERA
+    # vs Blade Chimera) — if the matcher calls it exact, don't flag it.
+    return na != nb and na.replace(" ", "") != nb.replace(" ", "")
 
 
 templates.env.filters["titles_differ"] = _titles_differ

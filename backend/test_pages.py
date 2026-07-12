@@ -1802,3 +1802,42 @@ def test_confirm_and_dismiss_are_noops_on_confirmed_candidate(client, db_session
     db_session.expire_all()
     assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
     assert db_session.get(models.Completion, comp_id) is not None
+
+
+def test_matcher_spaceless_exact_and_display_name(client, db_session):
+    """'Blade Chimera' matches Steam's 'BLADECHIMERA' (spaceless tier), and
+    a user-corrected display name is matchable at the exact tier."""
+    from backend import importer
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    plat = models.Platform(name="Steam", display_name="Steam", is_custom=True)
+    db_session.add(plat)
+    db_session.flush()
+
+    def make_entry(title, display_name=None):
+        g = models.Game(title=title, display_name=display_name)
+        db_session.add(g)
+        db_session.flush()
+        rel = models.GameRelease(game_id=g.id, source="steam", platform="Steam", platform_id=plat.id)
+        db_session.add(rel)
+        db_session.flush()
+        e = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import")
+        db_session.add(e)
+        db_session.commit()
+        return e
+
+    chimera = make_entry("BLADECHIMERA")
+    renamed = make_entry("2", display_name="Dead Rising 3: Operation Broken Eagle")
+
+    hit = importer._best_matching_entry(db_session, user.id, "Blade Chimera", plat.id)
+    assert hit is not None and hit.id == chimera.id
+
+    hit = importer._best_matching_entry(db_session, user.id, "Dead Rising 3: Operation Broken Eagle", plat.id)
+    assert hit is not None and hit.id == renamed.id
+
+    # sequels must never spaceless-collide: II vs III differ spaceless too,
+    # but prove it end-to-end
+    make_entry("Golden Axe III")
+    hit = importer._best_matching_entry(db_session, user.id, "Golden Axe II", plat.id)
+    assert hit is None or "III" not in hit.release.game.title

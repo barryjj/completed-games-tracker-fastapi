@@ -462,11 +462,27 @@ def _exact_match_entry(db: Session, user_id: int, raw_title: str, platform_id: i
     colon-stripped-matched against the unrelated "Killing Floor: Incursion"
     just because that title happens to start with the same prefix."""
     needle = _normalize_title(raw_title)
+    # Spaceless tier: "Blade Chimera" == "BLADECHIMERA". Same-game titles
+    # differing only in spacing are effectively exact; distinct games that
+    # collide spacelessly would have to collide on every other character
+    # too (sequel numerals included), so this can't cross-match sequels.
+    # Length floor keeps trivial titles from coincidental collisions.
+    needle_tight = needle.replace(" ", "") if len(needle.replace(" ", "")) >= 6 else None
     pool = _search_pool(db, user_id, platform_id, raw_title, base_only=False)
     for entry in pool:
-        game_title = entry.release.game.title if entry.release and entry.release.game else ""
-        if game_title and _normalize_title(game_title) == needle:
-            return entry
+        game = entry.release.game if entry.release and entry.release.game else None
+        if not game:
+            continue
+        # display_name counts too — a user-corrected display name (e.g. the
+        # Capcom "2" DLCs renamed to real titles) should be matchable.
+        for cand_title in (game.title, game.display_name):
+            if not cand_title:
+                continue
+            norm = _normalize_title(cand_title)
+            if norm == needle:
+                return entry
+            if needle_tight and norm.replace(" ", "") == needle_tight:
+                return entry
     return None
 
 
