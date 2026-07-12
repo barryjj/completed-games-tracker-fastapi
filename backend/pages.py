@@ -3107,6 +3107,9 @@ def import_review_page(
         joinedload(models.ImportCandidate.library_entry)
         .joinedload(models.UserLibraryEntry.release)
         .joinedload(models.GameRelease.platform_obj),
+        # game is needed in list view too — rows display and diff-check
+        # against game.display_title (the entry itself has no display name).
+        joinedload(models.ImportCandidate.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
     ]
     if view == "card":
         candidate_opts += [

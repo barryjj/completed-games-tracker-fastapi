@@ -752,7 +752,9 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
    another competing line right next to the heading's own border-bottom —
    drop it here and keep only the max-height/scroll behavior. */
 .cgt-detail-scroll-list--padded {
-  padding: 6px;
+  /* Vertical breathing room only — horizontal padding indented the record
+     boxes relative to sibling blocks (e.g. the uncertain-match warning). */
+  padding: 6px 0;
   border: none;
   border-radius: 0;
 }

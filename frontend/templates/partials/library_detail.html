@@ -163,9 +163,20 @@
       </div>
       {% endif %}
       {% if _title_diff %}
+      {# Stacked Sheet/Library comparison — the canonical .cgt-source-table
+         component. The old inline "a → b" line turned to soup once titles
+         got long enough to wrap. #}
       <div class="cgt-completion-record cgt-completion-record--peach">
-        <span class="cgt-slat__label">Title</span>
-        <span>{{ candidate.raw_title }} <span class="text-secondary">&rarr;</span> {{ game.display_title }}</span>
+        <table class="cgt-source-table"><tbody>
+          <tr>
+            <td class="cgt-source-table__label"><span class="tag-badge tag-source">Sheet</span></td>
+            <td class="cgt-source-table__title"><span class="cgt-source-table__sheet-title">{{ candidate.raw_title }}</span></td>
+          </tr>
+          <tr>
+            <td class="cgt-source-table__label"><span class="tag-badge tag-source">Library</span></td>
+            <td class="cgt-source-table__title">{{ game.display_title }}</td>
+          </tr>
+        </tbody></table>
       </div>
       {% endif %}
     </div>

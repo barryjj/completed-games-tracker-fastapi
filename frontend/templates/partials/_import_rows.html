@@ -18,8 +18,8 @@
      wrapped line for diff rows), which is why nothing aligned. #}
   <td class="align-middle">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
-    {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
-    {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+    {% set _lib_title = _lib_release.game.display_title if _lib_release else None %}
+    {% set _title_diff = _lib_title and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
     {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
     {% set _has_diff = _title_diff or _plat_diff %}
     <div class="d-flex align-items-center gap-2">
