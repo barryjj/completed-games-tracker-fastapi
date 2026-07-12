@@ -7,7 +7,13 @@
   <p class="text-secondary small mb-0">Sync, import, and review operations on your library.</p>
 </div>
 
-<div class="cgt-tool-grid">
+{# Refetches itself when the job poller reports any finished job, so the
+   sync/match/import/artwork numbers update without a manual refresh. #}
+<div class="cgt-tool-grid" id="tools-cards"
+     hx-get="/tools"
+     hx-select="#tools-cards"
+     hx-swap="outerHTML"
+     hx-trigger="cgt:jobsDone from:body">
 
   {# ── Steam sync ─────────────────────────────────────────────────────── #}
   <div class="cgt-tool-card">

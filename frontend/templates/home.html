@@ -7,7 +7,13 @@
   <p class="text-secondary small mb-0">Your library and completions at a glance.</p>
 </div>
 
-<div class="cgt-tool-grid">
+{# Same refetch-on-jobs-done as the Tools grid — sync results and pending
+   counts stay live on the landing page. #}
+<div class="cgt-tool-grid" id="home-widgets"
+     hx-get="/"
+     hx-select="#home-widgets"
+     hx-swap="outerHTML"
+     hx-trigger="cgt:jobsDone from:body">
 
   {# ── Completions this year ──────────────────────────────────────────── #}
   <div class="cgt-tool-card">
