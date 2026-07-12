@@ -2308,3 +2308,17 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
    split-button menu opens near the bottom of the list and was sliding
    underneath it. Below modals (1050) on purpose. */
 #import-table .dropdown-menu { z-index: 1040; }
+
+/* Search-result pickers (link modal, add/edit parent search, log-completion
+   game search): compact rows. Default list-group sizing rendered these as
+   chunky full-size slabs, and the year/appid meta wrapped mid-token. */
+.cgt-search-results .list-group-item {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.cgt-search-results .list-group-item small,
+.cgt-search-results .list-group-item .text-secondary {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
