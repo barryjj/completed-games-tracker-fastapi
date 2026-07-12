@@ -117,13 +117,14 @@
 </tr>
 {% endfor %}
 {% if has_more %}
-{# Offset is computed at request time: confirmed/dismissed rows leave the
-   pending query, so the baked next_offset would skip that many unseen
-   candidates. window._importRemoved counts removals since this sentinel
-   rendered (reset when it's replaced). #}
+{# Offset is computed at request time as the number of candidate rows
+   currently in the DOM — always exact for a list that mutates by removal
+   (displayed rows ARE pending[0..N-1]). No baked offset, no counters:
+   counter bookkeeping raced htmx's immediate 'revealed' activation on
+   freshly swapped sentinels and produced duplicate fetch windows. #}
 <tr id="import-load-more"
     hx-get="/library/import/review?tab={{ tab }}&rows_only=1&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
-    hx-vals='js:{offset: Math.max({{ next_offset }} - (window._importRemoved || 0), 0)}'
+    hx-vals='js:{offset: document.querySelectorAll("#import-table tbody tr[id^=\'import-row-\']").length}'
     hx-trigger="revealed"
     hx-sync="this:drop"
     hx-target="#import-load-more"
