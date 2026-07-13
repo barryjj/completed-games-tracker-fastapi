@@ -1646,7 +1646,9 @@ def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_sess
     _make_import_candidate(db_session, user.id, "Other Steam", steam, action="needs_review")
     db_session.commit()
 
-    client.cookies.set("cgt-import-create_new-platform", f"pid:{steam.id}")
+    # Stored the way the browser actually writes it: encodeURIComponent turns
+    # the ":" into "%3A", so the server must decode before matching.
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
 
     # create_new: cookie applies, no query param needed — server renders filtered
     r = client.get("/library/import/review?tab=create_new", headers=_HX)

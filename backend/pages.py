@@ -4,7 +4,7 @@ import html as _html
 import logging
 import os
 import re
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -3084,12 +3084,15 @@ def import_review_page(
         tab = request.cookies.get("cgt-import-tab", tab)
     if tab not in _IMPORT_TABS and tab != "confirmed":
         tab = "add_to_existing"
+    # unquote: the client writes these cookies with encodeURIComponent (raw
+    # platform names can contain spaces), so a value like "pid:5" is stored as
+    # "pid%3A5" — decode it back before the startswith("pid:")/option matching.
     if "platform" not in qp:
-        platform = request.cookies.get(f"cgt-import-{tab}-platform", platform)
+        platform = unquote(request.cookies.get(f"cgt-import-{tab}-platform", platform))
     if "year" not in qp:
-        year = request.cookies.get(f"cgt-import-{tab}-year", year)
+        year = unquote(request.cookies.get(f"cgt-import-{tab}-year", year))
     if "sort" not in qp:
-        sort = request.cookies.get(f"cgt-import-{tab}-sort", sort)
+        sort = unquote(request.cookies.get(f"cgt-import-{tab}-sort", sort))
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
     if view not in ("list", "card") or tab != "add_to_existing":
