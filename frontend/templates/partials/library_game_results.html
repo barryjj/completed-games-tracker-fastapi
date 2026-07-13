@@ -1,10 +1,19 @@
 {% if entries %}
-<div class="list-group">
+<div class="list-group cgt-search-results">
   {% for entry in entries %}
   <button type="button" class="list-group-item list-group-item-action text-start"
-          onclick="{{ callback | default('selectLibraryParent') }}({{ entry.id if id_field == 'entry' else entry.release.id }}, '{{ entry.release.game.display_title | e }} ({{ entry.release.display_platform | e }})')">
+          {# Label rides in a data attribute — HTML-escaping is correct there,
+             whereas inside a JS string literal an apostrophe in the title
+             (STREET FIGHTER II') decodes and shatters the onclick. #}
+          data-cgt-id="{{ entry.id if id_field == 'entry' else entry.release.id }}"
+          {% set _yr = entry.release | release_year %}
+          data-cgt-label="{{ entry.release.game.display_title | e }} ({{ entry.release.display_platform | e }}{% if _yr %}, {{ _yr }}{% endif %})"
+          onclick="{{ callback | default('selectLibraryParent') }}(this.dataset.cgtId, this.dataset.cgtLabel); return false;">
     {{ entry.release.game.display_title }}
     <small class="text-secondary">({{ entry.release.display_platform }})</small>
+    {# Year + appid disambiguate identically-titled entries (both Preys). #}
+    {% if _yr %}<small class="text-secondary">· {{ _yr }}</small>{% endif %}
+    {% if entry.release.external_id %}<small class="text-secondary">· app {{ entry.release.external_id }}</small>{% endif %}
   </button>
   {% endfor %}
 </div>

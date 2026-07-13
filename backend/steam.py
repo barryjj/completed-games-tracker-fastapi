@@ -763,7 +763,9 @@ def _fetch_appdetails(appid: int) -> dict | None:
     """
     resp = httpx.get(
         "https://store.steampowered.com/api/appdetails",
-        params={"appids": appid},
+        # l/cc pinned: without them Steam localizes per request (geo/CDN
+        # guess), which cached Portuguese genres/descriptions for some apps.
+        params={"appids": appid, "l": "english", "cc": "us"},
         headers=_HEADERS,
         timeout=10,
     )

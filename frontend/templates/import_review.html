@@ -9,47 +9,31 @@
   </div>
   <div class="d-flex align-items-center gap-2">
     <span class="badge bg-secondary"><span id="import-pending-count">{{ pending }}</span> pending</span>
-    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-            hx-post="/library/import/recheck"
-            hx-confirm="Re-check all pending candidates against your current library? This may take a moment."
-            hx-swap="none"
-            hx-disabled-elt="this">
-      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
-      Recheck matches
-    </button>
-    <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-            hx-post="/library/import/clear"
-            hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
-            hx-swap="none"
-            hx-disabled-elt="this">
-      <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
-      Clear all
-    </button>
   </div>
 </div>
 
 <div class="btn-group btn-group-sm mb-3" role="group" id="import-tabs">
   <button type="button" class="btn btn-surface{% if tab == 'add_to_existing' %} active{% endif %}" data-tab="add_to_existing"
           onclick="importSwitchTab(this, 'add_to_existing')"
-          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Add to existing <span class="badge bg-secondary ms-1" id="import-tab-count-add_to_existing">{{ tab_counts.add_to_existing }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'create_new' %} active{% endif %}" data-tab="create_new"
           onclick="importSwitchTab(this, 'create_new')"
-          hx-get="/library/import/review" hx-vals='{"tab":"create_new"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"create_new","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Create new <span class="badge bg-secondary ms-1" id="import-tab-count-create_new">{{ tab_counts.create_new }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'needs_review' %} active{% endif %}" data-tab="needs_review"
           onclick="importSwitchTab(this, 'needs_review')"
-          hx-get="/library/import/review" hx-vals='{"tab":"needs_review"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"needs_review","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Needs review <span class="badge bg-secondary ms-1" id="import-tab-count-needs_review">{{ tab_counts.needs_review }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'confirmed' %} active{% endif %}" data-tab="confirmed"
           onclick="importSwitchTab(this, 'confirmed')"
-          hx-get="/library/import/review" hx-vals='{"tab":"confirmed"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"confirmed","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Confirmed <span class="badge bg-secondary ms-1" id="import-tab-count-confirmed">{{ confirmed_count }}</span>
   </button>
@@ -61,7 +45,7 @@
   hx-target="#import-tab-content"
   hx-swap="innerHTML"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#import-search, change from:#import-platform-filter, change from:#import-year-filter, change from:#import-sort, submit-view"
+  hx-trigger="input changed delay:300ms from:#import-search, submit-view"
 >
   <input type="hidden" name="tab" value="{{ tab }}">
   <input type="hidden" name="view" id="import-view-field" value="{{ view }}">
@@ -70,34 +54,13 @@
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}" onclick="importSetView('list')" title="List view">&equiv;</button>
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}" onclick="importSetView('card')" title="Card view">&#9638;</button>
     </div>
-    {# Bulk-select mode: checkboxes stay out of the table until toggled on. #}
+    {# Bulk mode: reveals row checkboxes; the footer holds the actions that
+       operate on the selection. #}
     <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
             {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
-            onclick="importToggleSelect()">Select</button>
-    <div id="import-bulk-bar" class="d-flex align-items-center gap-2" hidden>
-      <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
-      <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
-      <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
-              onclick="importBulkConfirm()">Confirm selected</button>
-    </div>
+            onclick="importToggleSelect()">Bulk mode</button>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
-    <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
-      <option value="">All platforms</option>
-      {% for opt in platform_options %}
-      <option value="{{ opt.value }}" {% if opt.value == platform %}selected{% endif %}>{{ opt.label }}</option>
-      {% endfor %}
-    </select>
-    <select id="import-year-filter" name="year" class="form-select form-select-sm" style="max-width:140px">
-      <option value="">All years</option>
-      {% for y in year_options %}
-      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
-      {% endfor %}
-    </select>
-    <select id="import-sort" name="sort" class="form-select form-select-sm" style="max-width:180px">
-      <option value="id" {% if sort == 'id' %}selected{% endif %}>Upload order</option>
-      <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Completion date (newest)</option>
-      <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Completion date (oldest)</option>
-    </select>
+    {% include "partials/_import_filter_selects.html" %}
   </div>
 </form>
 
@@ -120,7 +83,7 @@
   <div class="modal-dialog">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Edit candidate</h5>
+        <h5 class="modal-title" id="import-edit-modal-title">Edit candidate</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="import-edit-modal-body">
@@ -133,6 +96,46 @@
 {# Sticky back-to-top button — long candidate lists bury the tab/filter bar
    at the top with no way back up otherwise. Same pattern as library.html. #}
 <div class="cgt-sticky-actions">
+  {# Bulk-mode selection actions — appear when Bulk mode is toggled on. #}
+  <div id="import-bulk-bar" class="d-flex align-items-center gap-2 me-auto" hidden>
+    <span class="small text-secondary"><span id="import-bulk-count">0</span> selected</span>
+    <button type="button" class="btn btn-sm btn-surface" onclick="importSelectAllLoaded()">Select all loaded</button>
+    {# Native hx attributes, not htmx.ajax() — the JS API's promise doesn't
+       reliably settle on swap-none/OOB responses, which froze the buttons
+       mid-flight. hx-vals js: reads the checked ids at click time. #}
+    <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
+            hx-post="/library/import/confirm-bulk"
+            hx-vals='js:{ids: importCheckedIds()}'
+            hx-confirm="Confirm the selected candidates? Their completions will be logged against the matched library entries."
+            hx-swap="none"
+            hx-disabled-elt="this"
+            hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Confirm selected</button>
+    <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
+            hx-post="/library/import/dismiss-bulk"
+            hx-vals='js:{ids: importCheckedIds()}'
+            hx-confirm="Dismiss the selected candidates? They can be re-detected by a future re-upload after Clear dismissed."
+            hx-swap="none"
+            hx-disabled-elt="this"
+            hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Dismiss selected</button>
+  </div>
+  {# Page-level operations — used rarely, so they live down here instead of
+     hovering in the header. #}
+  <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+          hx-post="/library/import/recheck"
+          hx-confirm="Re-check all pending candidates against your current library? This may take a moment."
+          hx-swap="none"
+          hx-disabled-elt="this">
+    <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+    Recheck matches
+  </button>
+  <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
+          hx-post="/library/import/clear"
+          hx-confirm="Clear all pending candidates? This cannot be undone."
+          hx-swap="none"
+          hx-disabled-elt="this">
+    <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+    Clear all
+  </button>
   <button type="button" id="import-back-to-top"
           class="btn btn-surface btn-sm"
           onclick="window.scrollTo({top:0,behavior:'smooth'})"
@@ -187,8 +190,10 @@ window.importBulkSync = function() {
   var n = document.querySelectorAll('#import-table .import-bulk-check:checked').length;
   var count = document.getElementById('import-bulk-count');
   if (count) count.textContent = n;
-  var confirmBtn = document.getElementById('import-bulk-confirm');
-  if (confirmBtn) confirmBtn.disabled = n === 0;
+  ['import-bulk-confirm', 'import-bulk-dismiss'].forEach(function(id) {
+    var btn = document.getElementById(id);
+    if (btn) btn.disabled = n === 0;
+  });
 };
 
 window.importSelectAllLoaded = function() {
@@ -196,18 +201,35 @@ window.importSelectAllLoaded = function() {
   importBulkSync();
 };
 
-window.importBulkConfirm = function() {
-  var ids = Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
-                 .map(function(cb) { return cb.value; });
-  if (!ids.length) return;
-  if (!confirm('Confirm ' + ids.length + ' candidate' + (ids.length === 1 ? '' : 's') + '? Their completions will be logged against the matched library entries.')) return;
-  var btn = document.getElementById('import-bulk-confirm');
-  btn.disabled = true;
-  htmx.ajax('POST', '/library/import/confirm-bulk', { values: { ids: ids.join(',') }, swap: 'none' })
-      .then(function() {
-        importExitSelect();
-        htmx.trigger('#import-filters-form', 'submit-view');
-      });
+// Both the active tab and the per-tab filter values are remembered as cookies
+// so the SERVER can bind them into the initial render (no client re-fetch).
+// Filters are keyed per tab (cgt-import-<tab>-<filter>) because each tab has
+// its own candidate pool and option lists — a platform chosen on "create new"
+// must never bleed onto "add to existing". cgtImportRemember writes the tab
+// cookie; importRememberFilter (below) writes the per-tab filter cookies.
+function cgtImportRemember(name, value) {
+  document.cookie = 'cgt-import-' + name + '=' + encodeURIComponent(value) + ';path=/;max-age=31536000;samesite=lax';
+}
+function importCurrentTab() {
+  var el = document.querySelector('#import-filters-form input[name="tab"]');
+  return el ? el.value : 'add_to_existing';
+}
+// onchange for each filter select (see _import_filter_selects.html): remember
+// the chosen value in a PER-TAB cookie so the server can bind it into the next
+// full render / tab switch and paint the list already filtered (no client
+// re-fetch). The "all"/default option clears the cookie so an empty filter is
+// never remembered as a value. sort's default ("id") is treated as unset.
+window.importRememberFilter = function(el) {
+  var name = 'cgt-import-' + importCurrentTab() + '-' + el.dataset.filter;
+  var keep = el.value && el.value !== 'id';
+  document.cookie = name + '=' + encodeURIComponent(keep ? el.value : '') +
+    ';path=/;max-age=' + (keep ? 31536000 : 0) + ';samesite=lax';
+};
+
+window.importCheckedIds = function() {
+  return Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
+              .map(function(cb) { return cb.value; })
+              .join(',');
 };
 
 // switching back restores whatever view was saved (was previously left
@@ -218,6 +240,7 @@ window.importSwitchTab = function(button, tab) {
   });
   var hiddenTab = document.querySelector('#import-filters-form input[name="tab"]');
   if (hiddenTab) hiddenTab.value = tab;
+  cgtImportRemember('tab', tab);
   var toggle = document.getElementById('import-view-toggle');
   if (toggle) toggle.hidden = tab !== 'add_to_existing';
   var selectToggle = document.getElementById('import-select-toggle');
@@ -318,6 +341,12 @@ document.addEventListener('htmx:afterSwap', function(e) {
   }
 })();
 
+// On load: if the landing tab has remembered filters that differ from what the
+// server rendered (a bare visit with no query params), apply them to the
+// selects and re-fetch. A reload whose URL already carried the filter params is
+// a no-op — the server rendered it and the selects already match. Only values
+// the tab actually offers are applied (pools differ per tab).
+
 // Unconditional fallback: whatever got us here (server already rendered
 // card view, or the localStorage restore above didn't need to fire a
 // swap), initialize the card stack directly if one exists in the DOM.
@@ -358,15 +387,52 @@ window.importAdvanceOrClose = function(nextId) {
 };
 
 // Edit modal
-window.openImportEdit = function(candidateId) {
+function importOpenModal(candidateId, action, title) {
   var body = document.getElementById('import-edit-modal-body');
   body.innerHTML = '<p class="text-secondary small mb-0">Loading…</p>';
+  document.getElementById('import-edit-modal-title').textContent = title;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('importEditModal')).show();
-  htmx.ajax('GET', '/library/import/' + candidateId + '/edit', {
+  htmx.ajax('GET', '/library/import/' + candidateId + '/' + action, {
     target: '#import-edit-modal-body',
     swap: 'innerHTML'
   });
+}
+
+window.openImportEdit = function(candidateId) {
+  importOpenModal(candidateId, 'edit', 'Edit candidate');
 };
+
+window.openImportLink = function(candidateId) {
+  importOpenModal(candidateId, 'link', 'Link to library');
+};
+
+// ─── Infinite-scroll upkeep for a mutating list ────────────────────────────
+// The sentinel computes its offset live from the DOM row count (see
+// _import_rows.html), so no removal bookkeeping is needed. Two jobs remain:
+// kick the sentinel when row removals pull it into view (htmx only
+// re-checks 'revealed' on scroll), and drop any duplicate rows if fetch
+// windows ever overlap anyway (defense in depth — the id wins once).
+function importDedupeRows() {
+  var seen = {};
+  document.querySelectorAll('#import-table tbody tr[id^="import-row-"]').forEach(function(tr) {
+    if (seen[tr.id]) { tr.remove(); } else { seen[tr.id] = true; }
+  });
+}
+document.addEventListener('htmx:afterSwap', function(e) {
+  var t = e.detail && e.detail.target;
+  if (!t || !t.id) return;
+  if (t.id === 'import-load-more') {
+    importDedupeRows();
+    return;
+  }
+  if (t.id.indexOf('import-row-') === 0) {
+    var s = document.getElementById('import-load-more');
+    if (s && !s.classList.contains('htmx-request') &&
+        s.getBoundingClientRect().top <= window.innerHeight + 100) {
+      htmx.trigger(s, 'revealed');
+    }
+  }
+});
 
 // Back-to-top button: appears after scrolling 300px, smooth-scrolls to top.
 // Same pattern as library.html — long candidate lists bury the tab/filter

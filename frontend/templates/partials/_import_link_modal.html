@@ -1,0 +1,66 @@
+{# Link modal body — search-only. Picking an entry and saving confirms the
+   candidate against it immediately (the pick IS the decision; Reopen on the
+   Confirmed tab is the undo). Editing spreadsheet data lives in the separate
+   Edit modal. #}
+<form id="import-link-form"
+      hx-post="/library/import/{{ candidate.id }}/link"
+      hx-swap="none"
+      hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('importEditModal')).hide(); htmx.trigger('#import-filters-form', 'submit-view'); }">
+  <p class="text-secondary small">
+    Search your library and pick the entry this spreadsheet row belongs to.
+    Saving confirms the import against it immediately and logs its completions.
+  </p>
+  <div class="mb-3">
+    <div class="small text-secondary mb-2">
+      Sheet says: <span class="text-body">{{ candidate.raw_title }}</span>
+      {% if candidate.raw_platform %}<span class="text-body">({{ candidate.raw_platform }})</span>{% endif %}
+    </div>
+    <input type="text" class="form-control form-control-sm mb-2" id="import-link-search" placeholder="Search your library…" autocomplete="off">
+    <div id="import-link-results"></div>
+    <div id="import-link-selected" class="small text-secondary mt-1" hidden>
+      Linking to: <span id="import-link-selected-label" class="text-body"></span>
+      <button type="button" class="btn btn-link btn-sm p-0 ms-1" onclick="clearImportLink()">Clear</button>
+    </div>
+    <input type="hidden" name="library_entry_id" id="import-link-id" required>
+  </div>
+  <div class="d-flex justify-content-end gap-2">
+    <button type="button" class="btn btn-surface" data-bs-dismiss="modal">Cancel</button>
+    <button type="submit" class="btn btn-primary" id="import-link-save" disabled>Link &amp; confirm</button>
+  </div>
+</form>
+
+<script>
+(function() {
+  var searchInput = document.getElementById('import-link-search');
+  var resultsDiv = document.getElementById('import-link-results');
+  if (!searchInput || !resultsDiv) return;
+  var timer = null;
+  searchInput.addEventListener('input', function() {
+    var q = this.value.trim();
+    clearTimeout(timer);
+    resultsDiv.innerHTML = '';
+    if (!q) return;
+    timer = setTimeout(function() {
+      htmx.ajax('GET', '/library/games/search?id_field=entry&callback=selectImportLink&q=' + encodeURIComponent(q), {
+        target: '#import-link-results',
+        swap: 'innerHTML',
+      });
+    }, 300);
+  });
+})();
+
+window.selectImportLink = function(entryId, label) {
+  document.getElementById('import-link-id').value = entryId;
+  document.getElementById('import-link-selected-label').textContent = label;
+  document.getElementById('import-link-selected').hidden = false;
+  document.getElementById('import-link-search').value = '';
+  document.getElementById('import-link-results').innerHTML = '';
+  document.getElementById('import-link-save').disabled = false;
+};
+
+window.clearImportLink = function() {
+  document.getElementById('import-link-id').value = '';
+  document.getElementById('import-link-selected').hidden = true;
+  document.getElementById('import-link-save').disabled = true;
+};
+</script>

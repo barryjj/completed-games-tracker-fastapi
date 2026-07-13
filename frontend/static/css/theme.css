@@ -634,16 +634,6 @@ tr:focus-within .row-actions {
   opacity: 1;
   transform: translateX(0);
 }
-/* Import review's Confirm/Edit/Dismiss are the whole point of the page,
-   not secondary clutter to hide until hover — with large, tall rows the
-   constant appear/disappear as the cursor moved down the list read as
-   janky. Always visible here; the fade-in-on-hover pattern above still
-   applies to library/completions rows where it works fine. */
-#import-table .row-actions {
-  opacity: 1;
-  transform: none;
-  transition: none;
-}
 
 /* Row actions as small text links instead of stacked buttons — three full
    buttons per row were visually heavy next to the sparser title column.
@@ -762,7 +752,9 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
    another competing line right next to the heading's own border-bottom —
    drop it here and keep only the max-height/scroll behavior. */
 .cgt-detail-scroll-list--padded {
-  padding: 6px;
+  /* Vertical breathing room only — horizontal padding indented the record
+     boxes relative to sibling blocks (e.g. the uncertain-match warning). */
+  padding: 6px 0;
   border: none;
   border-radius: 0;
 }
@@ -2083,27 +2075,27 @@ body:has(.cgt-match-nav--sticky) {
   color: var(--ctp-overlay1);
   white-space: nowrap;
 }
-.cgt-tool-stat--teal     .cgt-tool-stat__value { color: var(--ctp-teal); }
-.cgt-tool-stat--peach    .cgt-tool-stat__value { color: var(--ctp-peach); }
-.cgt-tool-stat--lavender .cgt-tool-stat__value { color: var(--ctp-lavender); }
-.cgt-tool-stat--yellow   .cgt-tool-stat__value { color: var(--ctp-yellow); }
-.cgt-tool-stat--green    .cgt-tool-stat__value { color: var(--ctp-green); }
-.cgt-tool-stat--blue     .cgt-tool-stat__value { color: var(--ctp-blue); }
-.cgt-tool-stat--pink     .cgt-tool-stat__value { color: var(--ctp-pink); }
-.cgt-tool-stat--maroon   .cgt-tool-stat__value { color: var(--ctp-maroon); }
-.cgt-tool-stat--flamingo .cgt-tool-stat__value { color: var(--ctp-flamingo); }
-.cgt-tool-stat--muted    .cgt-tool-stat__value { color: var(--ctp-overlay0); }
+:is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: var(--ctp-teal); }
+:is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--ctp-peach); }
+:is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: var(--ctp-lavender); }
+:is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: var(--ctp-yellow); }
+:is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: var(--ctp-green); }
+:is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: var(--ctp-blue); }
+:is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: var(--ctp-pink); }
+:is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: var(--ctp-maroon); }
+:is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: var(--ctp-flamingo); }
+:is(.cgt-tool-stat--muted    .cgt-tool-stat__value, .cgt-breakdown__num--muted) { color: var(--ctp-overlay0); }
 /* Latte's accents miss 3:1 contrast for large text on the card surface —
    mix each toward text ink (same spirit as the light-mode button shades). */
-html[data-bs-theme="light"] .cgt-tool-stat--teal     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--peach    .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--lavender .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--yellow   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--green    .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--blue     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--pink     .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--maroon   .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
 
 /* Small generic thumbnail (Home rows, anywhere a 64x30 header-art chip is
    needed outside a table). Same shape as the match-review row thumb. */
@@ -2228,16 +2220,22 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
 .cgt-detail-hero__logo--scale-large  { max-width: 52%; max-height: 64%; }
 .cgt-detail-hero__logo--scale-xlarge { max-width: 68%; max-height: 80%; }
 
-/* Date chip — one completion per chip in import review rows. Filled and
-   rounded so it reads as a chip, not the bare left-accent slat. */
-.cgt-date-chip {
-  display: inline-block;
-  background: var(--ctp-surface0);
-  border: 1px solid var(--ctp-surface1);
-  border-left: 3px solid var(--ctp-surface2);
-  border-radius: 4px;
-  padding: 0.1em 0.55em;
-  white-space: nowrap;
+/* Import list title — a notch smaller than default body so dense rows read
+   as a list, not a stack of headings. */
+.cgt-import-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Import rows: actions always visible (they're the point of the page) and
+   stacked — the thumbnail fixes the row height anyway, so the vertical
+   stack fills it instead of floating in it. NB: .row-actions must be an
+   inner div here, never on the <td> — display:flex on a table cell breaks
+   vertical centering (that was the misaligned-actions bug). */
+#import-table .row-actions {
+  opacity: 1;
+  transform: none;
+  transition: none;
 }
 
 /* Bulk-select mode (import review, add-to-existing list). The checkbox
@@ -2245,3 +2243,82 @@ html[data-bs-theme="light"] .cgt-tool-stat--flamingo .cgt-tool-stat__value { col
    on, so the table stays clean for normal review. */
 #import-table .import-select-cell { display: none; width: 1%; }
 #import-table.import-select-mode .import-select-cell { display: table-cell; }
+
+/* Import review completion slats — the completion-record left-accent
+   treatment shrunk to list scale: one hairline slat per distinct month,
+   stacked so 2-3 fit within the thumbnail-fixed row height. */
+.cgt-import-dates {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cgt-import-dates__row {
+  border-left: 3px solid var(--ctp-surface2);
+  padding: 0 8px;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+.cgt-import-dates__row--muted {
+  border-left-color: var(--ctp-surface1);
+  color: var(--ctp-overlay0);
+}
+
+/* Split-button seam: both segments are the same mauve, so without a divider
+   the control reads as one oversized primary button with a stray caret —
+   unlike every other (single-block) mauve button in the app. A crust-tinted
+   left edge on the chevron segment makes the split legible on purpose. */
+.btn-group > .btn-primary.dropdown-toggle-split {
+  border-left: 1px solid color-mix(in srgb, var(--ctp-crust) 35%, var(--ctp-mauve));
+}
+
+
+/* Breakdown list — stacked count-first lines ("534  add to existing"),
+   numbers right-aligned in their own column and colored with the same
+   semantic accents as the stat row (shared :is() selectors above).
+   Used by the Tools import card and Home's needs-attention widget. */
+.cgt-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+/* Each line is an <a> to its destination (review tab, match review) —
+   flex rows with a fixed-width right-aligned number column instead of a
+   grid, so a whole line can be one anchor. */
+.cgt-breakdown__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+}
+a.cgt-breakdown__row:hover .cgt-breakdown__label {
+  color: var(--ctp-text);
+  text-decoration: underline;
+}
+.cgt-breakdown__num {
+  min-width: 3.2em;
+  text-align: right;
+  font-weight: 700;
+}
+.cgt-breakdown__label { color: var(--ctp-subtext); }
+
+
+/* Import row dropdowns must clear the sticky footer (z-index 1030) — the
+   split-button menu opens near the bottom of the list and was sliding
+   underneath it. Below modals (1050) on purpose. */
+#import-table .dropdown-menu { z-index: 1040; }
+
+/* Search-result pickers (link modal, add/edit parent search, log-completion
+   game search): compact rows. Default list-group sizing rendered these as
+   chunky full-size slabs, and the year/appid meta wrapped mid-token. */
+.cgt-search-results .list-group-item {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+.cgt-search-results .list-group-item small,
+.cgt-search-results .list-group-item .text-secondary {
+  font-size: 0.72rem;
+  white-space: nowrap;
+}

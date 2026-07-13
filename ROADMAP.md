@@ -296,7 +296,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
 
-### Desktop packaging (Tauri) — promoted from Later, 2026-07-08
+### Desktop packaging (Tauri) — promoted from Later 2026-07-08; agreed 2026-07-12 as next up, then PSN, then achievements
 - Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
 - **Why now: it gates the sign-in story for both platform integrations.** A WebView we
   control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
@@ -310,6 +310,18 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
+
+### Achievements / trophies (promoted 2026-07-12 — third in the agreed Tauri → PSN → achievements sequence)
+- Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
+- New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
+- New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
+- Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
+- Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
+- Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
+- Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
+- **List view**: the "Added" date column was removed as low-value; the vacated column slot is the natural home for an achievement/trophy progress cell (e.g. "23 / 47" or a small progress bar) once sync exists
+- Filter / sort by achievement progress (e.g. "show games close to 100%")
+- Phases TBD — at minimum: schema + Steam fetch, then UI surfaces, then PSN trophy mapping when PSN integration exists
 
 ### Historical import (next up)
 - **Source:** CSV / spreadsheet (Google Sheets export) with columns: title, platform, date completed, playthroughs, notes, collection
@@ -338,7 +350,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   - Card view's side metadata panel now falls back to IGDB release year/genre (`igdb_meta`) when there's no Steam metadata, instead of rendering blank for non-Steam matches
   - Card/list "Library vs Sheet" comparison (when the spreadsheet's raw title/platform differs from the matched library entry) renders as a real 3-column `<table>` (`.cgt-source-table`) — CSS grid/flex repeatedly almost-but-not-quite kept the two rows' columns aligned; a real table guarantees it. Label column right-aligned, title/platform left-aligned
   - Completions list inside each candidate card/row now reuses the exact pattern `library_detail.html` already established for "these are new/pending rows": yellow left-border + labeled `dt`/`dl`, inside a `.cgt-detail-block` — don't reinvent this again, it's the canonical component
-  - **Still open, explicitly deferred:** Edit modal redesign — splitting "Edit" (spreadsheet-row-style inline editable title/platform) from "Find in library" (search-only) into separate flows. Paused pending a broader design pass, not to be started without new instruction
+  - ~~Edit modal redesign~~ ✅ shipped 2026-07-11: Edit is a pure spreadsheet-data editor (title/platform/completion rows incl. notes textarea; save re-matches), and "Link to library…" is its own dropdown action with a search-only modal where saving confirms the candidate immediately
   - **Still open, deferred:** RE4 Separate Ways card layout — flagged as needing a revisit, not yet addressed
   - **Still open:** collection-match pre-check idea — when a collection is matched but no child game found (→ create_new), carry that info forward so the add-game modal can pre-check "in a collection" and prepopulate it (not built yet)
   - **Still open:** Pinball FX2's DLC-style table entries ("Pinball FX2 - Deadpool Table" etc.) are all top-level unparented games rather than linked via `parent_id` to a "Pinball FX2" base — same shape as the SEGA Mega Drive/Genesis Classics situation. Left alone deliberately; they should still be individually matchable by title via normal (non-collection) matching, just unconfirmed whether that actually works end-to-end for this specific naming pattern
@@ -351,6 +363,25 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - `completions_page` sorted by `Completion.id.desc()` only — completely unrelated to `completed_at`, hence dates appearing scrambled. `Completion.sort_order` already existed (populated from the spreadsheet row number specifically as a same-date tiebreaker) but nothing used it.
 - Added a real sort filter (date newest/oldest, title A–Z/Z–A); date sorts order by `completed_at` first, `sort_order` (nulls last) as tiebreaker, so same-month import rows stay in their original 1-2-3 order regardless of sort direction
 - Filters/View toggle-button drawers removed to match `library.html`'s already-flat, always-visible layout (library dropped the collapsible drawers a while back; completions never got the same treatment)
+
+### Shared-partial modals + "Add new" without leaving the review page (NEXT LIFT — agreed 2026-07-13)
+- **Next active work item** while Tauri waits for Fable access. Establishes a broader
+  standard: reusable UI (modals especially) lives in ONE shared partial included wherever
+  it's needed, opened in place — never duplicated per page, never reached by warping the
+  user to another page and back. Make shared partials the default going forward.
+- Today confirming a create_new/needs_review candidate redirects to /library to use the
+  add-game modal there (prefilled), then bounces back to the review tab after submit
+  (bounce-back shipped 2026-07-11) — functional but two page loads per candidate
+- Proper fix: extract the add-game modal (markup + its substantial JS: IGDB tabs/typeahead,
+  platform chips, DLC/collection parent search, display-name sync) into a shared partial
+  included by both library.html and import_review.html, then open it in place on the
+  review page. The modal was stabilized over several sessions (PR #101 etc.) — move it
+  verbatim, don't rewrite it. **Caution:** the add-game modal JS is tangled with the
+  edit-modal via shared element IDs/functions; extract carefully to avoid breaking the
+  edit side.
+- First instance of the shared-partial standard; the import-review filter selects
+  (`_import_filter_selects.html`, PR #123) are a smaller precedent for the same idea.
+- Do alongside/after the pages.py split below, as part of the same modularization pass
 
 ### pages.py refactor — split by domain
 - At 3100+ lines `pages.py` is getting unwieldy; split into domain modules: `pages_library.py`, `pages_import.py`, `pages_match_review.py`, `pages_completions.py`, `pages_account.py`
@@ -432,18 +463,12 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 - Widgets: completions per year chart, playtime breakdown, games added this year, completion streak, 52-games-a-year challenge tracker
 - User can pick which widgets are shown and arrange them (restructure phase 3 provides pin/unpin + arrangement plumbing)
 - Original "wait for non-Steam data" deferral is satisfied — historical import brought in the 2006+ spreadsheet era, so the stats are already interesting
-
-### Achievements / trophies
-- Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
-- New `Achievement` table keyed by `(game_id, source, api_name)` storing name, description, icon URL, hidden flag
-- New `UserAchievement` linking user × achievement with unlock timestamp + percent (some platforms expose global unlock rate)
-- Steam fetch: `GetSchemaForGame` (per game, once) for the achievement list + icons; `GetPlayerAchievements` (per user × game) for unlock state. Both go through the existing enrichment worker / job system.
-- Note: `achievements.total` is already present in the `appdetails` payload we already fetch — but showing a bare "Achievement Count: 27" without earned count is not useful. Display as "X / 27" once player sync exists.
-- Detail pane: "Achievements" section showing earned / total + recent unlocks with icons
-- Library + completion list/grid: optional badge like "✓ 100%" or "23/47"
-- **List view**: the "Added" date column was removed as low-value; the vacated column slot is the natural home for an achievement/trophy progress cell (e.g. "23 / 47" or a small progress bar) once sync exists
-- Filter / sort by achievement progress (e.g. "show games close to 100%")
-- Phases TBD — at minimum: schema + Steam fetch, then UI surfaces, then PSN trophy mapping when PSN integration exists
+- **Widget sizing / layout system (noted 2026-07-13, from live use once more platforms existed).** Widgets currently grow to fit their content, which unbalances the row once one has a lot to show (e.g. the platform breakdown grew and shoved the others). Introduce an explicit size concept — small / medium / large, or a grid-unit (N-square) system — so each widget's footprint is deliberate rather than content-driven:
+  - **This Year (52-goal / month bars)** — fixed small; doesn't need to grow (it grew only because it was the first widget built).
+  - **Needs Attention (import/todo counts)** — fixed small; no need to grow either. Stack it with This Year (both small) in one column to free vertical space for a taller platform widget.
+  - **Library platform breakdown** — the one that legitimately wants to be taller/longer. Either let it be a larger tile, or show only platforms above a threshold (e.g. > N games) and lump the rest into the existing "…and X more".
+  - **Recently completed** — currently a static count of rows; let it grow to fit more when it has the space.
+- Depends on the sizing plumbing landing before / with the phase-3 customization work.
 
 ---
 
@@ -460,3 +485,27 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 ### Collections / sub-games view
 - "What's in this collection" view from detail pane
 - Bulk-complete sub-games
+
+### User tags → collections + "now playing" / "in progress" (noted 2026-07-13, convo-for-later)
+- Larger idea: let users put arbitrary tags on games, and build views/collections from them
+- A "now playing" / "in progress" status is one instance of this — a tag (or dedicated flag)
+  surfaced as a Home widget and/or a library filter
+- User-defined collections would be tag-driven rather than only the current parent/child
+  `is_collection` hierarchy — worth reconciling with that existing structure when scoped
+- Purely exploratory for now; no design yet
+
+### Collection membership + hierarchy fixes (noted 2026-07-13, from real import cases)
+- **Membership granularity — a game can't be both in a collection AND standalone.**
+  `Game.parent_id` / `Game.is_collection` are Game-level, but platform `GameRelease` rows
+  hang off one Game, so all releases share one membership. Real case: NDS *Dawn of Sorrow*
+  (beat ~2007, manual entry) vs. the same game inside a Steam Castlevania collection (beat
+  2025) — no way to have the NDS release standalone while the Steam release sits in the
+  collection. Proper fix is a design question: membership likely needs to be per-release or
+  per-library-entry, not per-Game (touches model + hierarchy UI + migration). User's current
+  workaround: put the native-platform entries in the collection too.
+- **Adding a child requires the parent to already be marked `is_collection`.** The parent
+  picker filters candidates to `is_collection == True` (backend/pages.py ~1398), so you must
+  separately flip a game's collection flag before you can attach a child. Real case: *Shovel
+  Knight → Treasure Trove*. Fix option (more tractable than the above): auto-promote the
+  chosen parent to `is_collection` when a child is attached, or offer it inline in the add
+  flow, instead of requiring a separate pre-step.

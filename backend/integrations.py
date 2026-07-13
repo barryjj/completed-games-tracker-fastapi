@@ -491,6 +491,11 @@ def jobs_poll(
         context={"completed_jobs": pending, "active_jobs": active, "completed_import": completed_import},
     )
     triggers = []
+    if pending:
+        # Generic "something finished" — stat widgets (Tools cards, Home)
+        # listen for this and refetch themselves so counts update without
+        # a manual page refresh.
+        triggers.append("cgt:jobsDone")
     if any(j.kind == "match_scan" for j in pending):
         triggers.append("cgt:matchScanDone")
     if any(j.kind == "import_xlsx" for j in pending):

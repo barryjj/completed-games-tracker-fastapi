@@ -11,7 +11,10 @@ Tabs: one per year; tab name is the fallback year for blank/month-only dates.
 """
 
 import datetime
+import difflib
 import re
+import time
+import unicodedata
 from io import BytesIO
 
 import openpyxl
@@ -171,12 +174,69 @@ def _cell(row: tuple, col_map: dict, *keys: str) -> str | None:
     return None
 
 
+_NUMERAL_RE = re.compile(r"^(?:\d+|[ivxlcdm]+)$")
+
+
+def _numeral_tokens(normalized_title: str) -> set[str]:
+    """Tokens that are digits or Roman numerals — the sequel-identity part
+    of a title. Two titles whose numeral tokens differ are different games
+    no matter how similar the rest looks ("Golden Axe II" vs "III")."""
+    return {t for t in normalized_title.split() if _NUMERAL_RE.fullmatch(t)}
+
+
+# Number words → digits, so "Episode Two" == "Episode 2" (Steam loves
+# spelling them out; spreadsheets love digits). Multi-character Roman
+# numerals map too ("Blasphemous II" == "Blasphemous 2") — unambiguous as
+# title tokens. Single-letter Roman numerals (I, V, X) are deliberately
+# NOT mapped: Mega Man X is not Mega Man 10, I is a pronoun, V is a title.
+_WORD_NUMBERS = {
+    "zero": "0",
+    "one": "1",
+    "two": "2",
+    "three": "3",
+    "four": "4",
+    "five": "5",
+    "six": "6",
+    "seven": "7",
+    "eight": "8",
+    "nine": "9",
+    "ten": "10",
+    "eleven": "11",
+    "twelve": "12",
+    "ii": "2",
+    "iii": "3",
+    "iv": "4",
+    "vi": "6",
+    "vii": "7",
+    "viii": "8",
+    "ix": "9",
+    "xi": "11",
+    "xii": "12",
+    "xiii": "13",
+    "xiv": "14",
+    "xv": "15",
+    "xvi": "16",
+    "xvii": "17",
+    "xviii": "18",
+    "xix": "19",
+    "xx": "20",
+}
+
+
 def _normalize_title(title: str) -> str:
-    """Strip punctuation and collapse whitespace for fuzzy matching and grouping."""
+    """Strip punctuation, collapse whitespace, and canonicalize number words
+    to digits for fuzzy matching and grouping."""
     t = title.lower()
+    # Decompose accents and drop the combining marks (ABZÛ → abzu,
+    # Pokémon → pokemon) — \w keeps accented letters, so they'd otherwise
+    # survive normalization and never match their plain-ASCII sheet
+    # spellings. Non-Latin scripts pass through untouched (no combining
+    # marks to drop), so Japanese titles don't normalize to nothing.
+    t = unicodedata.normalize("NFKD", t)
+    t = "".join(c for c in t if not unicodedata.combining(c))
     t = re.sub(r"[^\w\s]", " ", t)  # punctuation → space
     t = re.sub(r"\s+", " ", t).strip()
-    return t
+    return " ".join(_WORD_NUMBERS.get(w, w) for w in t.split())
 
 
 def _group_key(title: str, platform_id: int | None, raw_platform: str) -> str:
@@ -368,6 +428,88 @@ def _collection_match_entry(db: Session, user_id: int, raw_title: str, raw_colle
     return None
 
 
+# Single-letter Roman numerals and their digit twins — used only by the
+# variant fallback below, never mapped unconditionally in normalization.
+_SINGLE_NUMERAL_EQUIV = {"i": "1", "v": "5", "x": "10", "1": "i", "5": "v", "10": "x"}
+
+
+def _single_numeral_variant_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Sheet says "Final Fantasy X", library has "Final Fantasy 10" (or the
+    reverse). Single-letter numerals can't be mapped unconditionally — Mega
+    Man X is not Mega Man 10 — but ordering makes the guess safe enough:
+    the literal exact pass has already run and found nothing, so try each
+    single-token conversion (X↔10, V↔5, I↔1) and require an EXACT hit on
+    the variant. The raw titles still differ, so a hit lands flagged as an
+    uncertain match and gets human eyes during review."""
+    words = _normalize_title(raw_title).split()
+    for idx, word in enumerate(words):
+        alt = _SINGLE_NUMERAL_EQUIV.get(word)
+        if not alt:
+            continue
+        variant = " ".join(words[:idx] + [alt] + words[idx + 1 :])
+        entry = _exact_match_entry(db, user_id, variant, platform_id)
+        if entry:
+            return entry
+    return None
+
+
+def _widened_pool(db: Session, user_id: int, platform_id: int, raw_title: str, *, base_only: bool) -> list[models.UserLibraryEntry]:
+    """_search_pool, retried dropping one word at a time when empty — a
+    typo'd or differently-abbreviated word defeats the SQL word filter
+    outright, so widen before giving up."""
+    pool = list(_search_pool(db, user_id, platform_id, raw_title, base_only=base_only))
+    words = _normalize_title(raw_title).split()
+    if not pool and 1 < len(words) <= 8:
+        seen_ids: set[int] = set()
+        for skip in range(len(words)):
+            sub = " ".join(words[:skip] + words[skip + 1 :])
+            for e in _search_pool(db, user_id, platform_id, sub, base_only=base_only):
+                if e.id not in seen_ids:
+                    seen_ids.add(e.id)
+                    pool.append(e)
+    return pool
+
+
+def _is_subsequence(needle: list[str], hay: list[str]) -> bool:
+    it = iter(hay)
+    return all(w in it for w in needle)
+
+
+def _fuzzy_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """Near-exact whole-title match for sheet typos ("Fasion Police Squad" →
+    "Fashion Police Squad"). Runs after exact, before the structural passes,
+    so a one-letter slip doesn't fall through to a prefix match or die in
+    create_new. Deliberately strict:
+      - similarity >= 0.92 over the full normalized title (difflib)
+      - numeral tokens must match exactly (sequels can never fuzzy-match)
+      - exactly ONE library entry may clear the bar, else ambiguous → None
+      - short titles (< 8 chars spaceless) never fuzzy-match
+    A typo'd word also defeats the SQL word filter, so when the pool comes
+    back empty the search retries dropping one word at a time."""
+    needle = _normalize_title(raw_title)
+    if len(needle.replace(" ", "")) < 8:
+        return None
+    pool = _widened_pool(db, user_id, platform_id, raw_title, base_only=False)
+    needle_numerals = _numeral_tokens(needle)
+    winners: dict[int, models.UserLibraryEntry] = {}
+    for entry in pool:
+        game = entry.release.game if entry.release and entry.release.game else None
+        if not game:
+            continue
+        for cand_title in (game.title, game.display_name):
+            if not cand_title:
+                continue
+            norm = _normalize_title(cand_title)
+            if _numeral_tokens(norm) != needle_numerals:
+                continue
+            if difflib.SequenceMatcher(None, needle, norm).ratio() >= 0.92:
+                winners[entry.id] = entry
+                break
+    if len(winners) == 1:
+        return next(iter(winners.values()))
+    return None
+
+
 def _prefix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
     """Structural match, tried before the general fallback: split the
     spreadsheet title on a colon/dash subtitle separator, search the library
@@ -453,6 +595,58 @@ def _library_prefix_match_entry(db: Session, user_id: int, raw_title: str, platf
     return None
 
 
+# Titles containing non-ASCII (ABZÛ, Pokémon...) are invisible to the SQL
+# pool search — SQLite LIKE only case-folds ASCII, so '%abzu%' never matches
+# ABZÛ and Python-side normalization never gets a candidate to compare.
+# This tiny index maps normalized forms of the (few) accented titles to
+# their entries. TTL-cached per user+platform so a recheck over hundreds of
+# candidates does the library scan once, not per candidate.
+_ACCENT_INDEX_TTL = 60.0
+_accent_index_cache: dict[tuple[int, int, int], tuple[float, dict[str, int]]] = {}
+
+
+def _accented_title_index(db: Session, user_id: int, platform_id: int) -> dict[str, int]:
+    # Entry count in the key invalidates the cache the moment anything is
+    # added (sync mid-recheck, test fixtures, manual adds); the TTL covers
+    # renames of existing titles.
+    entry_count = (
+        db.query(models.UserLibraryEntry.id)
+        .join(models.UserLibraryEntry.release)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+        )
+        .count()
+    )
+    key = (user_id, platform_id, entry_count)
+    cached = _accent_index_cache.get(key)
+    now = time.monotonic()
+    if cached and now - cached[0] < _ACCENT_INDEX_TTL:
+        return cached[1]
+    rows = (
+        db.query(models.UserLibraryEntry.id, models.Game.title, models.Game.display_name)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.platform_id == platform_id,
+        )
+        .all()
+    )
+    index: dict[str, int] = {}
+    for entry_id, title, display_name in rows:
+        for t in (title, display_name):
+            if not t or t.isascii():
+                continue
+            norm = _normalize_title(t)
+            index.setdefault(norm, entry_id)
+            tight = norm.replace(" ", "")
+            if len(tight) >= 6:
+                index.setdefault(tight, entry_id)
+    _accent_index_cache[key] = (now, index)
+    return index
+
+
 def _exact_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
     """Direct normalized-title equality against every entry on the platform
     (base games and DLC alike). Tried before any of the colon-splitting
@@ -462,11 +656,37 @@ def _exact_match_entry(db: Session, user_id: int, raw_title: str, platform_id: i
     colon-stripped-matched against the unrelated "Killing Floor: Incursion"
     just because that title happens to start with the same prefix."""
     needle = _normalize_title(raw_title)
+    # Spaceless tier: "Blade Chimera" == "BLADECHIMERA". Same-game titles
+    # differing only in spacing are effectively exact; distinct games that
+    # collide spacelessly would have to collide on every other character
+    # too (sequel numerals included), so this can't cross-match sequels.
+    # Length floor keeps trivial titles from coincidental collisions.
+    needle_tight = needle.replace(" ", "") if len(needle.replace(" ", "")) >= 6 else None
     pool = _search_pool(db, user_id, platform_id, raw_title, base_only=False)
     for entry in pool:
-        game_title = entry.release.game.title if entry.release and entry.release.game else ""
-        if game_title and _normalize_title(game_title) == needle:
-            return entry
+        game = entry.release.game if entry.release and entry.release.game else None
+        if not game:
+            continue
+        # display_name counts too — a user-corrected display name (e.g. the
+        # Capcom "2" DLCs renamed to real titles) should be matchable.
+        for cand_title in (game.title, game.display_name):
+            if not cand_title:
+                continue
+            norm = _normalize_title(cand_title)
+            if norm == needle:
+                return entry
+            if needle_tight and norm.replace(" ", "") == needle_tight:
+                return entry
+    # Pool came up empty-handed — check the accented-title index (entries
+    # the SQL narrowing structurally cannot find for an ASCII needle).
+    accent_index = _accented_title_index(db, user_id, platform_id)
+    entry_id = accent_index.get(needle) or (accent_index.get(needle_tight) if needle_tight else None)
+    if entry_id:
+        return (
+            db.query(models.UserLibraryEntry)
+            .filter(models.UserLibraryEntry.id == entry_id, models.UserLibraryEntry.user_id == user_id)
+            .first()
+        )
     return None
 
 
@@ -483,19 +703,78 @@ def _pool_fallback_entry(db: Session, user_id: int, raw_title: str, platform_id:
     create_new instead, where Edit/manual-link can resolve it deliberately.
     """
     phrase = _search_phrase(raw_title)
-    pool = _search_pool(db, user_id, platform_id, phrase, base_only=True)
-    if len(pool) != 1:
+    # Strict pool for the legacy singleton path below — its whole premise is
+    # "the full phrase narrowed the library to exactly one", so it must not
+    # see word-drop-widened candidates. The containment tier scans the wide
+    # pool: its own guards (in-order subsequence + numeral subset + unique
+    # minimum) do the confirming.
+    pool_strict = list(_search_pool(db, user_id, platform_id, phrase, base_only=True))
+    pool = _widened_pool(db, user_id, platform_id, phrase, base_only=True)
+
+    # Containment tier (works on multi-candidate pools) — deliberately
+    # TIGHT after a loose first version mis-matched half a review page:
+    #   - forward only: the sheet title inside the candidate, never the
+    #     reverse (reverse collapsed every DLC row onto its base game)
+    #   - prefix-anchored: the sheet title must be the START of the
+    #     candidate, extras only trail ("resident evil 7 biohazard" yes;
+    #     "LEGO marvel super heroes" is a different game than "marvel
+    #     super heroes", not a decorated one)
+    #   - strict numeral equality (bare "Mega Man" must not match "11")
+    #   - at most ONE extra token ("resident evil 7 biohazard" yes,
+    #     "mega man legacy collection" no)
+    #   - strictly unique winner, ties refuse
+    needle = _normalize_title(raw_title)
+    nwords = needle.split()
+    nnums = _numeral_tokens(needle)
+
+    scored: list[tuple[int, models.UserLibraryEntry]] = []
+    for cand in pool:
+        game = cand.release.game if cand.release and cand.release.game else None
+        if not game:
+            continue
+        best_extras: int | None = None
+        for cand_title in (game.title, game.display_name):
+            if not cand_title:
+                continue
+            c = _normalize_title(cand_title)
+            cwords = c.split()
+            extras = len(cwords) - len(nwords)
+            if extras < 0 or extras > 1:
+                continue
+            if _numeral_tokens(c) != nnums:
+                continue
+            if cwords[: len(nwords)] != nwords:
+                continue
+            if best_extras is None or extras < best_extras:
+                best_extras = extras
+        if best_extras is not None:
+            scored.append((best_extras, cand))
+    if scored:
+        scored.sort(key=lambda t: t[0])
+        if len(scored) == 1 or scored[0][0] < scored[1][0]:
+            return scored[0][1]
+        return None  # tie — genuinely ambiguous, a human must pick
+
+    if len(pool_strict) != 1:
         return None
-    entry = pool[0]
+    entry = pool_strict[0]
     game_title = entry.release.game.title if entry.release and entry.release.game else ""
     if not game_title:
         return None
-    # Sanity floor — even with a single candidate, require some real
-    # similarity so a coincidental substring match doesn't get accepted
-    # blindly (e.g. a short phrase that happens to appear inside an
-    # otherwise-unrelated title).
-    score = match_review._score(raw_title, game_title)
-    return entry if score >= 0.5 else None
+    # Reverse of the containment rule, same tightness: the LIBRARY title as a
+    # contiguous prefix-run of the sheet title with at most one extra sheet
+    # token and equal numerals ("resident evil 7 biohazard" in the sheet vs
+    # a plain "Resident Evil 7" entry). The old _score >= 0.5 acceptance is
+    # gone — it waved "Mega Man 2" into "Mega Man Legacy Collection 2" and
+    # was the same rogue class the containment tier's tie rule refuses.
+    cand = _normalize_title(game_title)
+    if _numeral_tokens(needle) != _numeral_tokens(cand):
+        return None
+    cwords = cand.split()
+    extras = len(nwords) - len(cwords)
+    if 0 <= extras <= 1 and nwords[: len(cwords)] == cwords:
+        return entry
+    return None
 
 
 def _best_matching_entry(
@@ -526,6 +805,8 @@ def _best_matching_entry(
         return None
     direct = (
         _exact_match_entry(db, user_id, raw_title, platform_id)
+        or _single_numeral_variant_entry(db, user_id, raw_title, platform_id)
+        or _fuzzy_match_entry(db, user_id, raw_title, platform_id)
         or _prefix_match_entry(db, user_id, raw_title, platform_id)
         or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
         or _pool_fallback_entry(db, user_id, raw_title, platform_id)

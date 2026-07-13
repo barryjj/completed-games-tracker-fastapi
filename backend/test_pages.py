@@ -1617,6 +1617,138 @@ def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
     assert f"/library/import/{cand.id}/reopen".encode() in r.content
 
 
+def _make_import_candidate(db, user_id, title, platform_obj, action="create_new"):
+    cand = models.ImportCandidate(
+        user_id=user_id,
+        raw_title=title,
+        raw_platform=platform_obj.name,
+        platform_id=platform_obj.id,
+        status="pending",
+        proposed_action=action,
+    )
+    db.add(cand)
+    db.flush()
+    return cand
+
+
+def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_session):
+    """A per-tab filter cookie binds into the initial SQL query (no query param,
+    no client re-fetch) — and only for its own tab. This is the whole point of
+    using cookies over localStorage: the server can render already filtered."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam, action="create_new")
+    _make_import_candidate(db_session, user.id, "Switch Game", switch, action="create_new")
+    _make_import_candidate(db_session, user.id, "Other Steam", steam, action="needs_review")
+    db_session.commit()
+
+    # Stored the way the browser actually writes it: encodeURIComponent turns
+    # the ":" into "%3A", so the server must decode before matching.
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
+
+    # create_new: cookie applies, no query param needed — server renders filtered
+    r = client.get("/library/import/review?tab=create_new", headers=_HX)
+    assert "Steam Game" in r.text
+    assert "Switch Game" not in r.text
+
+    # needs_review: the create_new cookie must NOT leak here
+    r2 = client.get("/library/import/review?tab=needs_review", headers=_HX)
+    assert "Other Steam" in r2.text
+
+
+def test_platform_filter_narrows_results_and_marks_selection(client, db_session):
+    """The platform filter actually filters (only matching rows) and marks the
+    chosen option selected — regression for the swap that showed every platform
+    unfiltered."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    # HX filter-change response: only the filtered rows (selects are not
+    # re-emitted on a plain filter change — see the OOB test below).
+    r = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}", headers=_HX)
+    assert r.status_code == 200
+    assert "Steam Game" in r.text
+    assert "Switch Game" not in r.text
+
+    # Full page render carries the selects inline, with the chosen option marked.
+    full = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}")
+    assert "Steam Game" in full.text
+    assert "Switch Game" not in full.text
+    assert f'value="pid:{steam.id}" selected' in full.text
+
+
+def test_filter_selects_self_trigger_so_oob_replacement_keeps_them_working(client, db_session):
+    """Each filter select must carry its own hx-get. The form used to listen via
+    `change from:#import-platform-filter`, which binds to the element at load
+    time — a tab switch replaces the selects out-of-band and orphaned that
+    listener, silently killing filtering. Self-contained triggers get re-bound
+    on every swap. Guard so nobody moves the trigger back onto the form."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    full = client.get("/library/import/review?tab=create_new")
+    body = full.text
+    # the platform select block itself carries hx-get (self-triggering)
+    seg = body[body.index('id="import-platform-filter"') :]
+    seg = seg[: seg.index("</select>")]
+    assert "hx-get=" in seg
+    # and the form no longer re-declares a change-from listener for the selects
+    assert "change from:#import-platform-filter" not in body
+
+
+def test_tab_switch_refreshes_selects_oob_but_filter_change_does_not(client, db_session):
+    """refresh_filters=1 (tab buttons) re-emits the selects out-of-band; a plain
+    filter-change request must NOT — otherwise it repaints the select the user
+    is mid-interaction with, which broke live filtering before."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    with_refresh = client.get("/library/import/review?tab=create_new&refresh_filters=1", headers=_HX)
+    assert 'hx-swap-oob="true"' in with_refresh.text
+
+    without = client.get("/library/import/review?tab=create_new", headers=_HX)
+    assert 'hx-swap-oob="true"' not in without.text
+
+
+def test_full_page_load_never_duplicates_selects_even_with_refresh_flag(client, db_session):
+    """A pushed tab-switch URL can carry refresh_filters=1; reloading it does a
+    full (non-HX) render. That must not emit a second, OOB copy of the selects
+    inside the content div (duplicate ids)."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    r = client.get("/library/import/review?tab=create_new&refresh_filters=1")
+    assert r.status_code == 200
+    assert 'hx-swap-oob="true"' not in r.text
+    assert r.text.count('id="import-platform-filter"') == 1
+
+
 def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
     _signup_and_login(client)
     user = db_session.query(models.User).first()
@@ -1671,3 +1803,240 @@ def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
 def test_bulk_confirm_requires_ids(client):
     _signup_and_login(client)
     assert client.post("/library/import/confirm-bulk", data={"ids": ""}).status_code == 422
+
+
+def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Bulk Dismiss Me",
+        raw_platform="SNES",
+        library_entry_id=entry.id,
+        status="pending",
+        proposed_action="add_to_existing",
+    )
+    db_session.add(cand)
+    db_session.commit()
+    cand_id = cand.id
+    r = client.post("/library/import/dismiss-bulk", data={"ids": str(cand_id)})
+    assert r.status_code == 200
+    assert b"Dismissed 1 candidate" in r.content
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "dismissed"
+
+
+def test_link_confirms_immediately(client, db_session):
+    """Picking a library entry in the Link modal IS the decision — the
+    candidate confirms against it in the same save."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Ninja Gaiden Sigma B",
+        raw_platform="Steam",
+        status="pending",
+        proposed_action="create_new",
+    )
+    db_session.add(cand)
+    db_session.flush()
+    row = models.ImportRow(
+        candidate_id=cand.id,
+        raw_title="Ninja Gaiden Sigma B",
+        raw_platform="Steam",
+        row_number=3,
+        completed_at=datetime.date(2026, 7, 1),
+        completed_at_precision="day",
+        raw_notes="Played with Ninja Gaiden Sigma Black mod.",
+    )
+    db_session.add(row)
+    db_session.commit()
+    cand_id, row_id, entry_id = cand.id, row.id, entry.id
+
+    r = client.post(f"/library/import/{cand_id}/link", data={"library_entry_id": str(entry_id)})
+    assert r.status_code == 200
+    assert b"Confirmed against" in r.content
+    db_session.expire_all()
+    cand = db_session.get(models.ImportCandidate, cand_id)
+    assert cand.status == "confirmed"
+    assert cand.library_entry_id == entry_id
+    comp = db_session.query(models.Completion).filter(models.Completion.library_entry_id == entry_id).one()
+    assert "Sigma Black mod" in comp.notes
+    # linkage stamped -> reopenable
+    assert db_session.get(models.ImportRow, row_id).created_completion_id == comp.id
+    # link modal only offered for pending candidates
+    assert client.get(f"/library/import/{cand_id}/link").status_code == 404
+
+
+def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Some Unmatched Game",
+        raw_platform="",
+        status="pending",
+        proposed_action="needs_review",
+    )
+    db_session.add(cand)
+    db_session.flush()
+    row = models.ImportRow(
+        candidate_id=cand.id,
+        raw_title="Some Unmatched Game",
+        raw_platform="",
+        row_number=1,
+        completed_at=datetime.date(2020, 5, 5),
+        completed_at_precision="day",
+    )
+    db_session.add(row)
+    db_session.commit()
+    cand_id, row_id = cand.id, row.id
+
+    r = client.post(
+        f"/library/import/{cand_id}/edit",
+        data={
+            "raw_title": "Some Unmatched Game",
+            "raw_platform": "",
+            "row_id": str(row_id),
+            "row_date": "",
+            "row_playthroughs": "1+",
+            "row_notes": "note here",
+        },
+    )
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "pending"
+    row = db_session.get(models.ImportRow, row_id)
+    assert row.completed_at is None
+    assert row.playthroughs == "1+"
+    assert row.raw_notes == "note here"
+
+
+def test_confirm_and_dismiss_are_noops_on_confirmed_candidate(client, db_session):
+    """Stale duplicate rows (from overlapping infinite-scroll fetches) must
+    not re-process or dismiss an already-confirmed candidate."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
+    cand_id, comp_id = cand.id, comp.id
+
+    r = client.post(f"/library/import/{cand_id}/confirm")
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
+    assert db_session.query(models.Completion).count() == 1
+
+    r = client.post(f"/library/import/{cand_id}/dismiss")
+    assert r.status_code == 200
+    db_session.expire_all()
+    assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
+    assert db_session.get(models.Completion, comp_id) is not None
+
+
+def test_matcher_spaceless_exact_and_display_name(client, db_session):
+    """'Blade Chimera' matches Steam's 'BLADECHIMERA' (spaceless tier), and
+    a user-corrected display name is matchable at the exact tier."""
+    from backend import importer
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    plat = models.Platform(name="Steam", display_name="Steam", is_custom=True)
+    db_session.add(plat)
+    db_session.flush()
+
+    def make_entry(title, display_name=None):
+        g = models.Game(title=title, display_name=display_name)
+        db_session.add(g)
+        db_session.flush()
+        rel = models.GameRelease(game_id=g.id, source="steam", platform="Steam", platform_id=plat.id)
+        db_session.add(rel)
+        db_session.flush()
+        e = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import")
+        db_session.add(e)
+        db_session.commit()
+        return e
+
+    chimera = make_entry("BLADECHIMERA")
+    renamed = make_entry("2", display_name="Dead Rising 3: Operation Broken Eagle")
+
+    hit = importer._best_matching_entry(db_session, user.id, "Blade Chimera", plat.id)
+    assert hit is not None and hit.id == chimera.id
+
+    hit = importer._best_matching_entry(db_session, user.id, "Dead Rising 3: Operation Broken Eagle", plat.id)
+    assert hit is not None and hit.id == renamed.id
+
+    # sequels must never spaceless-collide: II vs III differ spaceless too,
+    # but prove it end-to-end
+    make_entry("Golden Axe III")
+    hit = importer._best_matching_entry(db_session, user.id, "Golden Axe II", plat.id)
+    assert hit is None or "III" not in hit.release.game.title
+
+    # fuzzy pass: single-letter sheet typo still matches...
+    fashion = make_entry("Fashion Police Squad")
+    hit = importer._best_matching_entry(db_session, user.id, "Fasion Police Squad", plat.id)
+    assert hit is not None and hit.id == fashion.id
+    # ...but near-miss DIFFERENT titles stay unmatched (ratio below bar)
+    make_entry("Mass Effect")
+    hit = importer._best_matching_entry(db_session, user.id, "Mass Defect", plat.id)
+    assert hit is None or hit.release.game.title != "Mass Effect"
+
+    # number words == digits: sheet "Episode 2" matches Steam's "Episode Two"
+    ep2 = make_entry("BioShock Infinite: Burial at Sea - Episode Two")
+    hit = importer._best_matching_entry(db_session, user.id, "Bioshock Infinite: Burial at Sea Episode 2", plat.id)
+    assert hit is not None and hit.id == ep2.id
+    # ...and Roman numerals deliberately do NOT map to digits
+    mmx = make_entry("Mega Man X")
+    make_entry("Mega Man 10")
+    hit = importer._best_matching_entry(db_session, user.id, "Mega Man X", plat.id)
+    assert hit is not None and hit.id == mmx.id
+
+    # single-letter numeral fallback: X↔10 converts ONLY when the literal
+    # has no exact match — library with just "Final Fantasy 10" catches a
+    # sheet "Final Fantasy X" (and Mega Man X above still prefers its
+    # literal because exact runs first)
+    ff10 = make_entry("Final Fantasy 10")
+    hit = importer._best_matching_entry(db_session, user.id, "Final Fantasy X", plat.id)
+    assert hit is not None and hit.id == ff10.id
+
+    # multi-char Roman numerals == digits: Blasphemous II matches 2
+    blas2 = make_entry("Blasphemous 2")
+    hit = importer._best_matching_entry(db_session, user.id, "Blasphemous II", plat.id)
+    assert hit is not None and hit.id == blas2.id
+
+    # containment tier: multi-candidate pools resolve to the entry with
+    # strictly fewest leftover tokens — RE VII picks Biohazard over the
+    # Teaser demo; identical-leftover ties (RE2 original vs remake) refuse
+    re7b = make_entry("Resident Evil 7 Biohazard")
+    make_entry("Resident Evil 7 Teaser: Beginning Hour")
+    hit = importer._best_matching_entry(db_session, user.id, "Resident Evil VII", plat.id)
+    assert hit is not None and hit.id == re7b.id
+    # tie at equal leftovers → genuinely ambiguous → refuse
+    make_entry("Silent Hill 2 Remake")
+    make_entry("Silent Hill 2 Classic")
+    hit = importer._best_matching_entry(db_session, user.id, "Silent Hill 2", plat.id)
+    assert hit is None
+
+    # rogue-match regressions (live 2026-07-12): bare title must not bind a
+    # numbered sequel, numbers must not jump structures, and DLC sheet rows
+    # must not collapse onto their base game (forward-only containment)
+    make_entry("Mega Man 11")
+    make_entry("Mega Man Legacy Collection 2")
+    hit = importer._best_matching_entry(db_session, user.id, "Mega Man", plat.id)
+    assert hit is None
+    hit = importer._best_matching_entry(db_session, user.id, "Mega Man 2", plat.id)
+    assert hit is None
+    make_entry("Alan Wake")
+    hit = importer._best_matching_entry(db_session, user.id, "Alan Wake: The Signal", plat.id)
+    assert hit is None
+    # a LEADING extra word is a different game, not a decorated title
+    make_entry("LEGO MARVEL Super Heroes")
+    hit = importer._best_matching_entry(db_session, user.id, "Marvel Super Heroes", plat.id)
+    assert hit is None
+
+    # accented characters normalize to their plain forms: Abzu == ABZÛ
+    abzu = make_entry("ABZ\u00db")
+    hit = importer._best_matching_entry(db_session, user.id, "Abzu", plat.id)
+    assert hit is not None and hit.id == abzu.id

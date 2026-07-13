@@ -1,3 +1,8 @@
+{# Tab switches ask for the filter selects to be repainted for the new tab
+   (its own option pool + its own remembered selection). Emitted out-of-band so
+   they land in the form above, which is outside this swap target. Gated on
+   refresh_filters so filter changes and load-more never repaint the selects. #}
+{% if refresh_filters %}{% set oob = True %}{% include "partials/_import_filter_selects.html" %}{% endif %}
 {% if not candidates %}
 <p class="text-secondary">Nothing matches these filters in this queue.</p>
 {% elif view == "card" %}

@@ -7,7 +7,13 @@
   <p class="text-secondary small mb-0">Sync, import, and review operations on your library.</p>
 </div>
 
-<div class="cgt-tool-grid">
+{# Refetches itself when the job poller reports any finished job, so the
+   sync/match/import/artwork numbers update without a manual refresh. #}
+<div class="cgt-tool-grid" id="tools-cards"
+     hx-get="/tools"
+     hx-select="#tools-cards"
+     hx-swap="outerHTML"
+     hx-trigger="cgt:jobsDone from:body">
 
   {# ── Steam sync ─────────────────────────────────────────────────────── #}
   <div class="cgt-tool-card">
@@ -56,6 +62,10 @@
     <div hx-get="/integrations/steam/enrichment-status"
          hx-trigger="load"
          hx-swap="outerHTML"></div>
+    {# Landing zone for the job poller's OOB "sync in progress" indicator —
+       lived on the old integrations hub; without this div the running-sync
+       spinner had nowhere to render since the hub was retired. #}
+    <div id="sync-indicator"></div>
     {% else %}
     <div class="small text-secondary">Import your Steam library and playtime. Set up your Steam sign-in and credentials first.</div>
     {% endif %}
@@ -115,18 +125,24 @@
     </div>
     {% if import_pending %}
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--green">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.add_to_existing) }}</div>
-        <div class="cgt-tool-stat__label">Add to existing</div>
+      <div class="cgt-tool-stat cgt-tool-stat--yellow">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_pending) }}</div>
+        <div class="cgt-tool-stat__label">Imports to review</div>
       </div>
-      <div class="cgt-tool-stat cgt-tool-stat--blue">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.create_new) }}</div>
-        <div class="cgt-tool-stat__label">Create new</div>
-      </div>
-      <div class="cgt-tool-stat cgt-tool-stat--pink">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(import_counts.needs_review) }}</div>
-        <div class="cgt-tool-stat__label">Needs review</div>
-      </div>
+    </div>
+    <div class="cgt-breakdown small">
+      <a class="cgt-breakdown__row" href="/library/import/review?tab=add_to_existing">
+        <span class="cgt-breakdown__num cgt-breakdown__num--green">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
+        <span class="cgt-breakdown__label">add to existing</span>
+      </a>
+      <a class="cgt-breakdown__row" href="/library/import/review?tab=create_new">
+        <span class="cgt-breakdown__num cgt-breakdown__num--blue">{{ "{:,}".format(import_counts.create_new) }}</span>
+        <span class="cgt-breakdown__label">create new</span>
+      </a>
+      <a class="cgt-breakdown__row" href="/library/import/review?tab=needs_review">
+        <span class="cgt-breakdown__num cgt-breakdown__num--pink">{{ "{:,}".format(import_counts.needs_review) }}</span>
+        <span class="cgt-breakdown__label">needs review</span>
+      </a>
     </div>
     {% else %}
     <div class="small text-secondary">

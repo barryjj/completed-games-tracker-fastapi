@@ -18,8 +18,8 @@
      wrapped line for diff rows), which is why nothing aligned. #}
   <td class="align-middle">
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
-    {% set _lib_title = c.library_entry.display_name or c.raw_title if c.library_entry else None %}
-    {% set _title_diff = c.library_entry and c.raw_title and c.raw_title.strip().lower() != _lib_title.strip().lower() %}
+    {% set _lib_title = _lib_release.game.display_title if _lib_release else None %}
+    {% set _title_diff = _lib_title and c.raw_title and (c.raw_title | titles_differ(_lib_title)) %}
     {% set _plat_diff = c.library_entry and c.raw_platform and _lib_release and _lib_release.display_platform and c.raw_platform.strip().lower() != _lib_release.display_platform.strip().lower() %}
     {% set _has_diff = _title_diff or _plat_diff %}
     <div class="d-flex align-items-center gap-2">
@@ -33,7 +33,7 @@
       {% else %}
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}
-      <span class="fw-medium">{{ _lib_title or c.raw_title }}</span>
+      <span class="cgt-import-title">{{ _lib_title or c.raw_title }}</span>
       {% if _has_diff %}
       {# Just a flag that something differs — the actual explanation lives
          in the preview pane's warning banner, opened by clicking the row,
@@ -53,75 +53,80 @@
     {% endif %}
   </td>
   <td class="align-middle">
-    {# One slat chip per completion date (precision-aware) instead of a
-       "N completions · latest X" sentence — the actual dates fit fine for
-       the common 1-2 row case and use the column's width for real data.
-       Playthroughs tag along when they're more than a plain single run. #}
-    {% set _dated = c.rows | selectattr("completed_at") | sort(attribute="completed_at") | list %}
+    {# Mini slat stack — the completions-metabox left-accent treatment at
+       list scale. One tiny line per distinct month (newest first, ballpark
+       month+year precision, playthroughs deliberately omitted here); 2-3
+       lines fill the thumbnail-fixed row height instead of floating in it. #}
+    {% set _dated = c.rows | selectattr("completed_at") | sort(attribute="completed_at", reverse=True) | list %}
     {% set _undated = c.rows | rejectattr("completed_at") | list %}
-    <div class="d-flex align-items-center gap-2 flex-wrap">
-      {% for r in _dated[:4] %}
-      <span class="cgt-date-chip small">{{ r | completion_date }}{% if r.playthroughs and r.playthroughs != '1' %} · ×{{ r.playthroughs }}{% endif %}</span>
+    {% set _labels = [] %}
+    {% for r in _dated %}{% set _l = r | completion_month %}{% if _l not in _labels %}{% set _ = _labels.append(_l) %}{% endif %}{% endfor %}
+    <div class="cgt-import-dates">
+      {% if _labels | length > 3 %}
+      {% for l in _labels[:2] %}
+      <div class="cgt-import-dates__row">{{ l }}</div>
       {% endfor %}
-      {% if _dated | length > 4 %}
-      <span class="small text-secondary">+{{ _dated | length - 4 }} more</span>
+      <div class="cgt-import-dates__row cgt-import-dates__row--muted">+{{ _labels | length - 2 }} more</div>
+      {% else %}
+      {% for l in _labels %}
+      <div class="cgt-import-dates__row">{{ l }}</div>
+      {% endfor %}
       {% endif %}
       {% if _undated %}
-      <span class="small text-secondary">{{ _undated | length }} undated</span>
+      <div class="cgt-import-dates__row cgt-import-dates__row--muted">{{ _undated | length }} undated</div>
       {% endif %}
     </div>
   </td>
-  <td class="align-middle text-end text-nowrap row-actions">
-    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}
-    <div class="cgt-row-actions-links">
-      <a href="#" class="cgt-row-actions-links__primary"
-         hx-post="/library/import/{{ c.id }}/confirm"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Confirm
-      </a>
-      <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
-      <a href="#"
-         hx-post="/library/import/{{ c.id }}/dismiss"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Dismiss
-      </a>
+  <td class="align-middle text-end text-nowrap">
+    <div class="row-actions">
+    {# Split button: the primary action visible, Edit/Dismiss behind the
+       chevron. Fixed-strategy popper so the menu escapes .table-responsive's
+       overflow clipping instead of being cut off. #}
+    {% if c.status == "pending" %}
+    <div class="btn-group">
+      <button type="button" class="btn btn-primary btn-sm"
+              hx-post="/library/import/{{ c.id }}/confirm"
+              hx-target="#import-row-{{ c.id }}"
+              hx-swap="outerHTML">
+        {{ "Confirm" if c.proposed_action == "add_to_existing" else "Add new" }}
+      </button>
+      <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
+              data-bs-toggle="dropdown"
+              data-bs-popper-config='{"strategy":"fixed"}'
+              aria-expanded="false">
+        <span class="visually-hidden">More actions</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a></li>
+        <li><a class="dropdown-item" href="#" onclick="openImportLink({{ c.id }}); return false;">Link to library…</a></li>
+        <li><a class="dropdown-item" href="#"
+               hx-post="/library/import/{{ c.id }}/dismiss"
+               hx-target="#import-row-{{ c.id }}"
+               hx-swap="outerHTML">Dismiss</a></li>
+      </ul>
     </div>
     {% elif c.status == "confirmed" %}
-    <div class="cgt-row-actions-links">
-      <a href="#" class="cgt-row-actions-links__primary"
-         hx-post="/library/import/{{ c.id }}/reopen"
-         hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Reopen
-      </a>
-    </div>
-    {% elif c.proposed_action != "add_to_existing" %}
-    <div class="cgt-row-actions-links">
-      <a href="#" class="cgt-row-actions-links__primary"
-         hx-post="/library/import/{{ c.id }}/confirm"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Add new
-      </a>
-      <a href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a>
-      <a href="#"
-         hx-post="/library/import/{{ c.id }}/dismiss"
-         hx-target="#import-row-{{ c.id }}"
-         hx-swap="outerHTML">
-        Dismiss
-      </a>
-    </div>
+    <button type="button" class="btn btn-sm btn-surface"
+            hx-post="/library/import/{{ c.id }}/reopen"
+            hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML">Reopen</button>
     {% endif %}
+    </div>
   </td>
 </tr>
 {% endfor %}
 {% if has_more %}
+{# Offset is computed at request time as the number of candidate rows
+   currently in the DOM — always exact for a list that mutates by removal
+   (displayed rows ARE pending[0..N-1]). No baked offset, no counters:
+   counter bookkeeping raced htmx's immediate 'revealed' activation on
+   freshly swapped sentinels and produced duplicate fetch windows. #}
 <tr id="import-load-more"
-    hx-get="/library/import/review?tab={{ tab }}&offset={{ next_offset }}&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+    hx-get="/library/import/review?tab={{ tab }}&rows_only=1&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+    hx-vals='js:{offset: document.querySelectorAll("#import-table tbody tr[id^=import-row-]").length}'
     hx-trigger="revealed"
+    hx-sync="this:drop"
     hx-target="#import-load-more"
     hx-swap="outerHTML">
   <td colspan="5" class="text-center text-secondary small py-2">Loading more…</td>

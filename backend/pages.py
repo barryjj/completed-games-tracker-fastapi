@@ -4,7 +4,7 @@ import html as _html
 import logging
 import os
 import re
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
@@ -133,6 +133,52 @@ def _completion_date(obj) -> str:
 
 
 templates.env.filters["completion_date"] = _completion_date
+
+
+def _completion_month(obj) -> str:
+    """Ballpark variant of completion_date: month + year (or bare year for
+    year-precision rows). Used where a list only needs 'a sense of the
+    years', e.g. the import review completion slats."""
+    d = getattr(obj, "completed_at", None)
+    if not d:
+        return "Unknown"
+    if (getattr(obj, "completed_at_precision", None) or "day") == "year":
+        return str(d.year)
+    return d.strftime("%B %Y")
+
+
+templates.env.filters["completion_month"] = _completion_month
+
+
+def _titles_differ(a, b) -> bool:
+    """Whether two titles are meaningfully different — judged by the same
+    normalization the import matcher uses, so typographic noise (curly vs
+    straight apostrophes, ™, dash styles) never flags an 'uncertain match'
+    the matcher itself considered exact."""
+    na = importer._normalize_title(str(a or ""))
+    nb = importer._normalize_title(str(b or ""))
+    # Spaceless comparison mirrors the matcher's exact tier (BLADECHIMERA
+    # vs Blade Chimera) — if the matcher calls it exact, don't flag it.
+    return na != nb and na.replace(" ", "") != nb.replace(" ", "")
+
+
+templates.env.filters["titles_differ"] = _titles_differ
+
+
+def _release_year(release) -> str | None:
+    """Best-effort release year for disambiguating identically-titled
+    entries (the two Preys, both 'Prey (Steam)'). Steam appdetails first,
+    IGDB metadata as fallback; None renders as nothing."""
+    raw = getattr(release, "raw_data", None) or {}
+    date_str = (((raw.get("appdetails") or {}).get("release_date")) or {}).get("date") or ""
+    m = re.search(r"(?:19|20)\d{2}", date_str)
+    if m:
+        return m.group(0)
+    year = (raw.get("igdb") or {}).get("year")
+    return str(year) if year else None
+
+
+templates.env.filters["release_year"] = _release_year
 
 _URL_RE = re.compile(r"https?://[^\s<]+")
 
@@ -748,6 +794,7 @@ def home_page(
             "recent_completions": recent_completions,
             "library_total": library_total,
             "platform_breakdown": platform_breakdown,
+            "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             **_base_ctx(db, current_user),
         },
@@ -3020,11 +3067,32 @@ def import_review_page(
     year: str = "",
     sort: str = "id",
     view: str = "list",
+    rows_only: bool = Query(False),
+    refresh_filters: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    # Sticky filters are remembered PER TAB as cookies — one key per tab so a
+    # platform chosen on "create new" never leaks onto "add to existing", and
+    # cookies (not localStorage) specifically so the server can bind them into
+    # this initial query and render the list already filtered, with no client
+    # re-fetch. The tab is resolved first, then that tab's own filter cookies
+    # fill in whatever the request didn't pass explicitly (explicit params —
+    # a live filter change — always win).
+    qp = request.query_params
+    if "tab" not in qp:
+        tab = request.cookies.get("cgt-import-tab", tab)
     if tab not in _IMPORT_TABS and tab != "confirmed":
         tab = "add_to_existing"
+    # unquote: the client writes these cookies with encodeURIComponent (raw
+    # platform names can contain spaces), so a value like "pid:5" is stored as
+    # "pid%3A5" — decode it back before the startswith("pid:")/option matching.
+    if "platform" not in qp:
+        platform = unquote(request.cookies.get(f"cgt-import-{tab}-platform", platform))
+    if "year" not in qp:
+        year = unquote(request.cookies.get(f"cgt-import-{tab}-year", year))
+    if "sort" not in qp:
+        sort = unquote(request.cookies.get(f"cgt-import-{tab}-sort", sort))
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
     if view not in ("list", "card") or tab != "add_to_existing":
@@ -3090,6 +3158,9 @@ def import_review_page(
         joinedload(models.ImportCandidate.library_entry)
         .joinedload(models.UserLibraryEntry.release)
         .joinedload(models.GameRelease.platform_obj),
+        # game is needed in list view too — rows display and diff-check
+        # against game.display_title (the entry itself has no display name).
+        joinedload(models.ImportCandidate.library_entry).joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
     ]
     if view == "card":
         candidate_opts += [
@@ -3110,7 +3181,11 @@ def import_review_page(
     filter_ctx = {"q": q, "platform": platform, "year": year, "sort": sort, "view": view}
     confirmed_count = _import_confirmed_count(db, current_user.id)
 
-    if request.headers.get("HX-Request") and offset > 0:
+    # rows_only is the explicit ask from the infinite-scroll sentinel — its
+    # client-corrected offset can legitimately be 0 (a fully-confirmed first
+    # page), so "offset > 0" alone would fall through and nest a whole tab
+    # (header row and all) inside the table.
+    if request.headers.get("HX-Request") and (rows_only or offset > 0):
         return templates.TemplateResponse(
             request=request,
             name="partials/_import_card_load_more.html" if view == "card" else "partials/_import_rows.html",
@@ -3139,6 +3214,9 @@ def import_review_page(
                 "candidate_visuals": candidate_visuals,
                 "platform_options": _import_platform_options(db, current_user.id, tab),
                 "year_options": _import_year_options(db, current_user.id, tab),
+                # Tab switches set this so the selects repaint OOB for the new
+                # tab; filter changes / load-more leave it False (no repaint).
+                "refresh_filters": refresh_filters,
                 **filter_ctx,
             },
         )
@@ -3186,18 +3264,6 @@ def import_candidate_preview(
     )
     if not candidate or not candidate.library_entry_id:
         return Response(status_code=404)
-
-    next_candidate = (
-        db.query(models.ImportCandidate.id)
-        .filter(
-            models.ImportCandidate.user_id == current_user.id,
-            models.ImportCandidate.status == "pending",
-            models.ImportCandidate.proposed_action == "add_to_existing",
-            models.ImportCandidate.id > candidate.id,
-        )
-        .order_by(models.ImportCandidate.id)
-        .first()
-    )
 
     entry = (
         db.query(models.UserLibraryEntry)
@@ -3255,7 +3321,6 @@ def import_candidate_preview(
             "fresh_open": False,
             "candidate": candidate,
             "import_rows": sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True),
-            "import_next_id": next_candidate.id if next_candidate else None,
             **visuals,
         },
     )
@@ -3277,7 +3342,11 @@ def import_candidate_edit_form(
             models.ImportCandidate.user_id == current_user.id,
             models.ImportCandidate.status == "pending",
         )
-        .options(joinedload(models.ImportCandidate.platform), joinedload(models.ImportCandidate.library_entry))
+        .options(
+            joinedload(models.ImportCandidate.platform),
+            joinedload(models.ImportCandidate.library_entry),
+            joinedload(models.ImportCandidate.rows),
+        )
         .first()
     )
     if not candidate:
@@ -3290,16 +3359,15 @@ def import_candidate_edit_form(
     )
 
 
-@router.post("/library/import/{candidate_id}/edit")
-def import_candidate_edit(
+@router.get("/library/import/{candidate_id}/link")
+def import_candidate_link_form(
     candidate_id: int,
     request: Request,
-    raw_title: str = Form(...),
-    raw_platform: str = Form(...),
-    library_entry_id: int | None = Form(None),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """Modal content for manually linking a pending candidate to a specific
+    library entry (search-only; saving confirms immediately)."""
     candidate = (
         db.query(models.ImportCandidate)
         .filter(
@@ -3311,34 +3379,125 @@ def import_candidate_edit(
     )
     if not candidate:
         return Response(status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_link_modal.html",
+        context={"candidate": candidate},
+    )
+
+
+@router.post("/library/import/{candidate_id}/link")
+def import_candidate_link(
+    candidate_id: int,
+    request: Request,
+    library_entry_id: int = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Manual pick IS the decision: link the candidate to the chosen entry
+    and confirm it in the same step. Reopen (Confirmed tab) is the undo."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .options(joinedload(models.ImportCandidate.rows))
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
+        .first()
+    )
+    if not entry:
+        return Response(status_code=404)
+
+    candidate.library_entry_id = entry.id
+    candidate.proposed_action = "add_to_existing"
+    _confirm_add_to_existing(db, current_user, candidate)
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+    toast = templates.get_template("partials/_toast.html").render(
+        kind="success",
+        body=f"Confirmed against {entry.release.game.display_title} — completions logged.",
+    )
+    counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+    return Response(content=toast + counts, media_type="text/html")
+
+
+@router.post("/library/import/{candidate_id}/edit")
+def import_candidate_edit(
+    candidate_id: int,
+    request: Request,
+    raw_title: str = Form(...),
+    # Empty string counts as "missing" for a required Form field, so a
+    # cleared platform box silently 422'd — platform is legitimately
+    # optional here (unmatched platforms are the needs_review case).
+    raw_platform: str = Form(""),
+    row_id: list[int] = Form([]),
+    row_date: list[str] = Form([]),
+    row_playthroughs: list[str] = Form([]),
+    row_notes: list[str] = Form([]),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id == candidate_id,
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .options(joinedload(models.ImportCandidate.rows))
+        .first()
+    )
+    if not candidate:
+        return Response(status_code=404)
 
     candidate.raw_title = raw_title.strip()
     candidate.raw_platform = raw_platform.strip()
     candidate.platform_id = models.resolve_platform_id(db, candidate.raw_platform) if candidate.raw_platform else None
 
-    if library_entry_id:
-        # Manual override — user picked a specific entry directly, skip the matcher.
-        entry = (
-            db.query(models.UserLibraryEntry)
-            .filter(models.UserLibraryEntry.id == library_entry_id, models.UserLibraryEntry.user_id == current_user.id)
-            .first()
-        )
-        if not entry:
-            return Response(status_code=404)
-        candidate.library_entry_id = entry.id
-        candidate.proposed_action = "add_to_existing"
-    else:
-        candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
-        best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)
-        if best_entry:
-            candidate.library_entry_id = best_entry.id
-            candidate.proposed_action = "add_to_existing"
-        elif candidate.platform_id is None:
-            candidate.library_entry_id = None
-            candidate.proposed_action = "needs_review"
+    # Per-row completion edits (date / playthroughs / notes). Parallel lists,
+    # one slot per rendered row; an edited date becomes day-precision, an
+    # untouched one round-trips equal and keeps its original precision.
+    rows_by_id = {r.id: r for r in candidate.rows}
+    for rid, dstr, plays, notes in zip(row_id, row_date, row_playthroughs, row_notes, strict=False):
+        row = rows_by_id.get(rid)
+        if not row:
+            continue
+        if dstr:
+            try:
+                d = datetime.date.fromisoformat(dstr)
+            except ValueError:
+                d = row.completed_at
+            if d != row.completed_at:
+                row.completed_at = d
+                row.completed_at_precision = "day"
         else:
-            candidate.library_entry_id = None
-            candidate.proposed_action = "create_new"
+            row.completed_at = None
+            row.completed_at_precision = None
+        row.playthroughs = plays.strip() or None
+        row.raw_notes = notes.strip() or None
+
+    candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
+    best_entry = importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, candidate_collection)
+    if best_entry:
+        candidate.library_entry_id = best_entry.id
+        candidate.proposed_action = "add_to_existing"
+    elif candidate.platform_id is None:
+        candidate.library_entry_id = None
+        candidate.proposed_action = "needs_review"
+    else:
+        candidate.library_entry_id = None
+        candidate.proposed_action = "create_new"
 
     db.commit()
     tab_counts = _import_tab_counts(db, current_user.id)
@@ -3364,9 +3523,13 @@ def import_dismiss(
     )
     if not candidate:
         return Response(status_code=404)
-    candidate.status = "dismissed"
-    candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
-    db.commit()
+    if candidate.status == "pending":
+        # Only pending candidates can be dismissed — a stale duplicate row of
+        # an already-confirmed candidate must not flip it to dismissed (that
+        # would orphan its logged completions from the Reopen path).
+        candidate.status = "dismissed"
+        candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
+        db.commit()
     tab_counts = _import_tab_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
@@ -3449,6 +3612,41 @@ def confirm_import_bulk(
     return Response(content=toast + counts, media_type="text/html")
 
 
+@router.post("/library/import/dismiss-bulk")
+def dismiss_import_bulk(
+    request: Request,
+    ids: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Dismiss a batch of pending candidates (bulk-select mode)."""
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return Response(status_code=422)
+    candidates = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id.in_(id_list),
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status == "pending",
+        )
+        .all()
+    )
+    now = datetime.datetime.now(datetime.UTC)
+    for candidate in candidates:
+        candidate.status = "dismissed"
+        candidate.reviewed_at = now
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    toast = templates.get_template("partials/_toast.html").render(
+        kind="success", body=f"Dismissed {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
+    )
+    counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+    return Response(content=toast + counts, media_type="text/html")
+
+
 @router.post("/library/import/{candidate_id}/confirm")
 def import_confirm(
     candidate_id: int,
@@ -3467,6 +3665,17 @@ def import_confirm(
     if not candidate:
         return Response(status_code=404)
 
+    if candidate.status != "pending":
+        # Stale duplicate row (candidate already handled elsewhere) — don't
+        # re-process; just remove the row and refresh the counts.
+        tab_counts = _import_tab_counts(db, current_user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_counts_oob.html",
+            context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+            headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+        )
+
     if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
         _confirm_add_to_existing(db, current_user, candidate)
         db.commit()
@@ -3482,7 +3691,10 @@ def import_confirm(
 
     # create_new / needs_review — redirect to library with modal pre-filled
     platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
-    redirect_url = f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}&prefill_platform={platform_name}"
+    redirect_url = (
+        f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}"
+        f"&prefill_platform={platform_name}&return_tab={candidate.proposed_action}"
+    )
     return Response(status_code=200, headers={"HX-Redirect": redirect_url})
 
 
