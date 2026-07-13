@@ -3068,24 +3068,28 @@ def import_review_page(
     sort: str = "id",
     view: str = "list",
     rows_only: bool = Query(False),
+    refresh_filters: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    # Sticky filters: plain navigation (no query params) restores the last
-    # used tab/sort/platform/year from cookies — same idea as the library
-    # and completions view-mode cookies. JS writes them on change; explicit
-    # params (tab clicks, filter form) always win.
+    # Sticky filters are remembered PER TAB as cookies — one key per tab so a
+    # platform chosen on "create new" never leaks onto "add to existing", and
+    # cookies (not localStorage) specifically so the server can bind them into
+    # this initial query and render the list already filtered, with no client
+    # re-fetch. The tab is resolved first, then that tab's own filter cookies
+    # fill in whatever the request didn't pass explicitly (explicit params —
+    # a live filter change — always win).
     qp = request.query_params
     if "tab" not in qp:
         tab = request.cookies.get("cgt-import-tab", tab)
-    if "sort" not in qp:
-        sort = request.cookies.get("cgt-import-sort", sort)
-    if "platform" not in qp:
-        platform = request.cookies.get("cgt-import-platform", platform)
-    if "year" not in qp:
-        year = request.cookies.get("cgt-import-year", year)
     if tab not in _IMPORT_TABS and tab != "confirmed":
         tab = "add_to_existing"
+    if "platform" not in qp:
+        platform = request.cookies.get(f"cgt-import-{tab}-platform", platform)
+    if "year" not in qp:
+        year = request.cookies.get(f"cgt-import-{tab}-year", year)
+    if "sort" not in qp:
+        sort = request.cookies.get(f"cgt-import-{tab}-sort", sort)
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
     if view not in ("list", "card") or tab != "add_to_existing":
@@ -3207,6 +3211,9 @@ def import_review_page(
                 "candidate_visuals": candidate_visuals,
                 "platform_options": _import_platform_options(db, current_user.id, tab),
                 "year_options": _import_year_options(db, current_user.id, tab),
+                # Tab switches set this so the selects repaint OOB for the new
+                # tab; filter changes / load-more leave it False (no repaint).
+                "refresh_filters": refresh_filters,
                 **filter_ctx,
             },
         )

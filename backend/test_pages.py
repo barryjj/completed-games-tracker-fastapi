@@ -1617,6 +1617,136 @@ def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
     assert f"/library/import/{cand.id}/reopen".encode() in r.content
 
 
+def _make_import_candidate(db, user_id, title, platform_obj, action="create_new"):
+    cand = models.ImportCandidate(
+        user_id=user_id,
+        raw_title=title,
+        raw_platform=platform_obj.name,
+        platform_id=platform_obj.id,
+        status="pending",
+        proposed_action=action,
+    )
+    db.add(cand)
+    db.flush()
+    return cand
+
+
+def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_session):
+    """A per-tab filter cookie binds into the initial SQL query (no query param,
+    no client re-fetch) — and only for its own tab. This is the whole point of
+    using cookies over localStorage: the server can render already filtered."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam, action="create_new")
+    _make_import_candidate(db_session, user.id, "Switch Game", switch, action="create_new")
+    _make_import_candidate(db_session, user.id, "Other Steam", steam, action="needs_review")
+    db_session.commit()
+
+    client.cookies.set("cgt-import-create_new-platform", f"pid:{steam.id}")
+
+    # create_new: cookie applies, no query param needed — server renders filtered
+    r = client.get("/library/import/review?tab=create_new", headers=_HX)
+    assert "Steam Game" in r.text
+    assert "Switch Game" not in r.text
+
+    # needs_review: the create_new cookie must NOT leak here
+    r2 = client.get("/library/import/review?tab=needs_review", headers=_HX)
+    assert "Other Steam" in r2.text
+
+
+def test_platform_filter_narrows_results_and_marks_selection(client, db_session):
+    """The platform filter actually filters (only matching rows) and marks the
+    chosen option selected — regression for the swap that showed every platform
+    unfiltered."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    # HX filter-change response: only the filtered rows (selects are not
+    # re-emitted on a plain filter change — see the OOB test below).
+    r = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}", headers=_HX)
+    assert r.status_code == 200
+    assert "Steam Game" in r.text
+    assert "Switch Game" not in r.text
+
+    # Full page render carries the selects inline, with the chosen option marked.
+    full = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}")
+    assert "Steam Game" in full.text
+    assert "Switch Game" not in full.text
+    assert f'value="pid:{steam.id}" selected' in full.text
+
+
+def test_filter_selects_self_trigger_so_oob_replacement_keeps_them_working(client, db_session):
+    """Each filter select must carry its own hx-get. The form used to listen via
+    `change from:#import-platform-filter`, which binds to the element at load
+    time — a tab switch replaces the selects out-of-band and orphaned that
+    listener, silently killing filtering. Self-contained triggers get re-bound
+    on every swap. Guard so nobody moves the trigger back onto the form."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    full = client.get("/library/import/review?tab=create_new")
+    body = full.text
+    # the platform select block itself carries hx-get (self-triggering)
+    seg = body[body.index('id="import-platform-filter"') :]
+    seg = seg[: seg.index("</select>")]
+    assert "hx-get=" in seg
+    # and the form no longer re-declares a change-from listener for the selects
+    assert "change from:#import-platform-filter" not in body
+
+
+def test_tab_switch_refreshes_selects_oob_but_filter_change_does_not(client, db_session):
+    """refresh_filters=1 (tab buttons) re-emits the selects out-of-band; a plain
+    filter-change request must NOT — otherwise it repaints the select the user
+    is mid-interaction with, which broke live filtering before."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    with_refresh = client.get("/library/import/review?tab=create_new&refresh_filters=1", headers=_HX)
+    assert 'hx-swap-oob="true"' in with_refresh.text
+
+    without = client.get("/library/import/review?tab=create_new", headers=_HX)
+    assert 'hx-swap-oob="true"' not in without.text
+
+
+def test_full_page_load_never_duplicates_selects_even_with_refresh_flag(client, db_session):
+    """A pushed tab-switch URL can carry refresh_filters=1; reloading it does a
+    full (non-HX) render. That must not emit a second, OOB copy of the selects
+    inside the content div (duplicate ids)."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    r = client.get("/library/import/review?tab=create_new&refresh_filters=1")
+    assert r.status_code == 200
+    assert 'hx-swap-oob="true"' not in r.text
+    assert r.text.count('id="import-platform-filter"') == 1
+
+
 def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
     _signup_and_login(client)
     user = db_session.query(models.User).first()

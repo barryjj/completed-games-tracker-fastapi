@@ -15,25 +15,25 @@
 <div class="btn-group btn-group-sm mb-3" role="group" id="import-tabs">
   <button type="button" class="btn btn-surface{% if tab == 'add_to_existing' %} active{% endif %}" data-tab="add_to_existing"
           onclick="importSwitchTab(this, 'add_to_existing')"
-          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Add to existing <span class="badge bg-secondary ms-1" id="import-tab-count-add_to_existing">{{ tab_counts.add_to_existing }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'create_new' %} active{% endif %}" data-tab="create_new"
           onclick="importSwitchTab(this, 'create_new')"
-          hx-get="/library/import/review" hx-vals='{"tab":"create_new"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"create_new","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Create new <span class="badge bg-secondary ms-1" id="import-tab-count-create_new">{{ tab_counts.create_new }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'needs_review' %} active{% endif %}" data-tab="needs_review"
           onclick="importSwitchTab(this, 'needs_review')"
-          hx-get="/library/import/review" hx-vals='{"tab":"needs_review"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"needs_review","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Needs review <span class="badge bg-secondary ms-1" id="import-tab-count-needs_review">{{ tab_counts.needs_review }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'confirmed' %} active{% endif %}" data-tab="confirmed"
           onclick="importSwitchTab(this, 'confirmed')"
-          hx-get="/library/import/review" hx-vals='{"tab":"confirmed"}' hx-include="#import-filters-form [name]"
+          hx-get="/library/import/review" hx-vals='{"tab":"confirmed","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Confirmed <span class="badge bg-secondary ms-1" id="import-tab-count-confirmed">{{ confirmed_count }}</span>
   </button>
@@ -45,7 +45,7 @@
   hx-target="#import-tab-content"
   hx-swap="innerHTML"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#import-search, change from:#import-platform-filter, change from:#import-year-filter, change from:#import-sort, submit-view"
+  hx-trigger="input changed delay:300ms from:#import-search, submit-view"
 >
   <input type="hidden" name="tab" value="{{ tab }}">
   <input type="hidden" name="view" id="import-view-field" value="{{ view }}">
@@ -60,23 +60,7 @@
             {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
             onclick="importToggleSelect()">Bulk mode</button>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
-    <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px">
-      <option value="">All platforms</option>
-      {% for opt in platform_options %}
-      <option value="{{ opt.value }}" {% if opt.value == platform %}selected{% endif %}>{{ opt.label }}</option>
-      {% endfor %}
-    </select>
-    <select id="import-year-filter" name="year" class="form-select form-select-sm" style="max-width:140px">
-      <option value="">All years</option>
-      {% for y in year_options %}
-      <option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>
-      {% endfor %}
-    </select>
-    <select id="import-sort" name="sort" class="form-select form-select-sm" style="max-width:180px">
-      <option value="id" {% if sort == 'id' %}selected{% endif %}>Upload order</option>
-      <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Completion date (newest)</option>
-      <option value="date_asc" {% if sort == 'date_asc' %}selected{% endif %}>Completion date (oldest)</option>
-    </select>
+    {% include "partials/_import_filter_selects.html" %}
   </div>
 </form>
 
@@ -217,17 +201,30 @@ window.importSelectAllLoaded = function() {
   importBulkSync();
 };
 
-// Sticky filters: remember tab/sort/platform/year across visits (server
-// reads these cookies when the page is opened without query params).
+// Both the active tab and the per-tab filter values are remembered as cookies
+// so the SERVER can bind them into the initial render (no client re-fetch).
+// Filters are keyed per tab (cgt-import-<tab>-<filter>) because each tab has
+// its own candidate pool and option lists — a platform chosen on "create new"
+// must never bleed onto "add to existing". cgtImportRemember writes the tab
+// cookie; importRememberFilter (below) writes the per-tab filter cookies.
 function cgtImportRemember(name, value) {
   document.cookie = 'cgt-import-' + name + '=' + encodeURIComponent(value) + ';path=/;max-age=31536000;samesite=lax';
 }
-document.addEventListener('DOMContentLoaded', function() {
-  [['import-sort', 'sort'], ['import-platform-filter', 'platform'], ['import-year-filter', 'year']].forEach(function(pair) {
-    var el = document.getElementById(pair[0]);
-    if (el) el.addEventListener('change', function() { cgtImportRemember(pair[1], el.value); });
-  });
-});
+function importCurrentTab() {
+  var el = document.querySelector('#import-filters-form input[name="tab"]');
+  return el ? el.value : 'add_to_existing';
+}
+// onchange for each filter select (see _import_filter_selects.html): remember
+// the chosen value in a PER-TAB cookie so the server can bind it into the next
+// full render / tab switch and paint the list already filtered (no client
+// re-fetch). The "all"/default option clears the cookie so an empty filter is
+// never remembered as a value. sort's default ("id") is treated as unset.
+window.importRememberFilter = function(el) {
+  var name = 'cgt-import-' + importCurrentTab() + '-' + el.dataset.filter;
+  var keep = el.value && el.value !== 'id';
+  document.cookie = name + '=' + encodeURIComponent(keep ? el.value : '') +
+    ';path=/;max-age=' + (keep ? 31536000 : 0) + ';samesite=lax';
+};
 
 window.importCheckedIds = function() {
   return Array.from(document.querySelectorAll('#import-table .import-bulk-check:checked'))
@@ -343,6 +340,12 @@ document.addEventListener('htmx:afterSwap', function(e) {
     importSetView(saved);
   }
 })();
+
+// On load: if the landing tab has remembered filters that differ from what the
+// server rendered (a bare visit with no query params), apply them to the
+// selects and re-fetch. A reload whose URL already carried the filter params is
+// a no-op — the server rendered it and the selects already match. Only values
+// the tab actually offers are applied (pools differ per tab).
 
 // Unconditional fallback: whatever got us here (server already rendered
 // card view, or the localStorage restore above didn't need to fire a
