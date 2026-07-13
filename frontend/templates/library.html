@@ -245,12 +245,13 @@
               <label class="form-check-label" for="edit-is-dlc">DLC</label>
             </div>
             <div class="form-check">
-              <input class="form-check-input" type="checkbox" name="is_collection" id="edit-is-collection" value="true">
+              <input class="form-check-input" type="checkbox" name="is_collection" id="edit-is-collection" value="true"
+                     onchange="cgtCollectionMutex('edit', 'is'); updateEditParentRows()">
               <label class="form-check-label" for="edit-is-collection">Is a collection</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="edit-part-of-collection" value="true"
-                     onchange="updateEditParentRows()">
+                     onchange="cgtCollectionMutex('edit', 'partof'); updateEditParentRows()">
               <label class="form-check-label" for="edit-part-of-collection">Part of a collection</label>
             </div>
           </div>

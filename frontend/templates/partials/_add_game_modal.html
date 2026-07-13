@@ -111,7 +111,7 @@
             </div>
             <div class="form-check">
               <input class="form-check-input" type="checkbox" id="add-part-of-collection" value="true"
-                     onchange="updateAddGameParentRow()">
+                     onchange="cgtCollectionMutex('add', 'partof'); updateAddGameParentRow()">
               <label class="form-check-label" for="add-part-of-collection">Part of a collection</label>
             </div>
           </div>
@@ -428,6 +428,18 @@ function toggleAddDisplaySame() {
   if (same) disp.value = document.getElementById('add-title-input').value;
 }
 
+// "Is a collection" and "Part of a collection" are mutually exclusive — a
+// game is either its own collection or a member of one, not both. Checking
+// one clears the other; callers re-run the parent-row update afterwards.
+// Shared by the add (this partial) and edit (library.html) modals.
+function cgtCollectionMutex(prefix, changed) {
+  var isCol = document.getElementById(prefix + '-is-collection');
+  var partOf = document.getElementById(prefix + '-part-of-collection');
+  if (!isCol || !partOf) return;
+  if (changed === 'is' && isCol.checked) partOf.checked = false;
+  if (changed === 'partof' && partOf.checked) isCol.checked = false;
+}
+
 function updateAddGameParentRow() {
   var isDlc = document.getElementById('add-is-dlc').checked;
   var isPartOf = document.getElementById('add-part-of-collection').checked;
@@ -462,5 +474,7 @@ function hintIsCollection() {
 
 document.getElementById('add-is-collection').addEventListener('change', function() {
   this.dataset.userSet = '1';
+  cgtCollectionMutex('add', 'is');
+  updateAddGameParentRow();
 });
 </script>
