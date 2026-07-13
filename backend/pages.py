@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import importer, jobs, match_review, models, users
@@ -2019,8 +2019,9 @@ def search_library_games(
         .filter(models.UserLibraryEntry.user_id == current_user.id)
     )
 
-    if q.strip():
-        query = query.filter(models.Game.title.ilike(f"%{q}%"))
+    qn = q.strip()
+    if qn:
+        query = query.filter(models.Game.title.ilike(f"%{qn}%"))
 
     if is_dlc is not None:
         query = query.filter(models.Game.is_dlc == is_dlc)
@@ -2028,7 +2029,23 @@ def search_library_games(
     if is_collection is not None:
         query = query.filter(models.Game.is_collection == is_collection)
 
-    entries = query.order_by(models.Game.title).limit(15).all()
+    # Rank by relevance, not just alphabetically: exact title, then titles that
+    # start with the query, then plain substring matches — alphabetical within
+    # each tier. A pure-alphabetical order + LIMIT silently dropped the exact
+    # match whenever enough longer titles contained the query (searching
+    # "Marvel Super Heroes" buried it under 15+ "LEGO Marvel Super Heroes …"
+    # rows). The cap is a safety valve, not the primary filter.
+    if qn:
+        relevance = case(
+            (func.lower(models.Game.title) == qn.lower(), 0),
+            (models.Game.title.ilike(f"{qn}%"), 1),
+            else_=2,
+        )
+        query = query.order_by(relevance, models.Game.title)
+    else:
+        query = query.order_by(models.Game.title)
+
+    entries = query.limit(25).all()
 
     return templates.TemplateResponse(
         request=request,
