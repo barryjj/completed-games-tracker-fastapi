@@ -1,0 +1,466 @@
+{# Shared add-game modal. Extracted from library.html so it can be opened in
+   place on any page (library, import review). Carries the add-modal markup,
+   the platform-suggestions datalist, and all add + SHARED modal JS
+   (selectIgdbGame dispatcher, lookupIgdbById, COLLECTION_KEYWORDS). The EDIT
+   modal stays in library.html and depends on this partial being included
+   there for those shared helpers. Requires `platforms` + `current_user` in
+   context. #}
+<div class="modal fade" id="addGameModal" tabindex="-1" aria-labelledby="addGameModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="addGameModalLabel">Add Game to Library</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      {# Title field + optional IGDB tabs in one unified block.
+         Text tab: title input drives IGDB typeahead as you type.
+         By ID tab: paste a known IGDB ID and click Lookup.
+         Selecting a game locks in a confirmation card; Change resets. #}
+      <form id="add-game-form"
+            hx-post="/library/games"
+            hx-swap="none"
+      >
+        <input type="hidden" name="igdb_game_id" id="add-igdb-game-id">
+        <input type="hidden" name="import_candidate_id" id="add-import-candidate-id">
+        <div class="modal-body">
+          <div class="mb-3" id="add-igdb-section">
+            <label class="form-label" for="add-title-input">Title
+              <span class="text-secondary fw-normal">(canonical / for lookups)</span>
+            </label>
+            {# Confirmation card — hidden until a game is picked from either tab. #}
+            <div id="add-igdb-linked-card" class="d-none rounded p-2 mb-1"
+                 style="border-left:3px solid var(--ctp-green);background:var(--ctp-surface1);">
+              <div class="d-flex align-items-center gap-2">
+                <span style="color:var(--ctp-green);line-height:1;">&#10003;</span>
+                <span id="add-igdb-linked-name" class="fw-medium small"></span>
+                <span id="add-igdb-linked-id" class="text-secondary small ms-1"></span>
+                <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-secondary"
+                        onclick="clearAddIgdbSelection()">Change</button>
+              </div>
+            </div>
+            {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+            {# Tabs + panel — hidden while confirmation card is showing. #}
+            <div id="add-igdb-tabs-wrap">
+              <ul class="nav nav-tabs mb-0" id="add-igdb-tabs" style="font-size:.85rem;">
+                <li class="nav-item">
+                  <button type="button" class="nav-link active px-3 py-1" id="add-igdb-tab-text"
+                          onclick="switchAddIgdbTab('text')">Text</button>
+                </li>
+                <li class="nav-item">
+                  <button type="button" class="nav-link px-3 py-1" id="add-igdb-tab-id"
+                          onclick="switchAddIgdbTab('id')">By ID</button>
+                </li>
+              </ul>
+              <div class="border border-top-0 rounded-bottom p-2" id="add-igdb-tab-panel">
+                <div id="add-igdb-pane-text">
+                  <input type="text" class="form-control form-control-sm" name="title" id="add-title-input"
+                         placeholder="e.g. Castlevania" required autocomplete="off"
+                         oninput="hintIsCollection(); syncAddDisplayFromTitle();">
+                  <div id="add-igdb-search-results" class="mt-1"
+                       style="max-height:200px;overflow-y:auto;"></div>
+                </div>
+                <div id="add-igdb-pane-id" hidden>
+                  <div class="input-group input-group-sm">
+                    <input type="number" class="form-control" id="add-igdb-id-input"
+                           placeholder="e.g. 1114" min="1">
+                    <button type="button" class="btn btn-surface"
+                            onclick="lookupIgdbById('add-igdb-id-input', 'add-igdb-id-results')">Lookup</button>
+                  </div>
+                  <div id="add-igdb-id-results" class="mt-1"
+                       style="max-height:200px;overflow-y:auto;"></div>
+                </div>
+              </div>
+            </div>
+            {% else %}
+            <input type="text" class="form-control" name="title" id="add-title-input"
+                   placeholder="e.g. Resident Evil Village" required autocomplete="off"
+                   oninput="hintIsCollection(); syncAddDisplayFromTitle();">
+            {% endif %}
+          </div>
+          <div class="mb-2 form-check">
+            <input class="form-check-input" type="checkbox" id="add-display-same" checked
+                   onchange="toggleAddDisplaySame()">
+            <label class="form-check-label text-secondary" for="add-display-same">
+              <small>Display name is the same as title</small>
+            </label>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Display name <span class="text-secondary fw-normal">(what shows in the library)</span></label>
+            <input type="text" class="form-control" name="display_name" id="add-display-name" placeholder="e.g. Resident Evil 8" autocomplete="off" disabled>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Platform</label>
+            <input type="text" class="form-control" name="platform" id="add-platform"
+                   list="platform-suggestions" placeholder="e.g. NES, PS2, Xbox 360" required>
+            <datalist id="platform-suggestions">
+              {% for p in platforms %}
+              <option value="{{ p.display_title | e }}">
+              {% endfor %}
+            </datalist>
+            <div id="igdb-platform-chips" class="mt-2"></div>
+          </div>
+          <div class="mb-3">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_dlc" id="add-is-dlc" value="true"
+                     onchange="updateAddGameParentRow()">
+              <label class="form-check-label" for="add-is-dlc">DLC</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_collection" id="add-is-collection" value="true">
+              <label class="form-check-label" for="add-is-collection">Is a collection</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="add-part-of-collection" value="true"
+                     onchange="updateAddGameParentRow()">
+              <label class="form-check-label" for="add-part-of-collection">Part of a collection</label>
+            </div>
+          </div>
+          <div class="mb-3" id="add-parent-row" hidden>
+            <div id="add-parent-dlc-col">
+              <label class="form-label">Base game</label>
+              <input type="text" class="form-control form-control-sm mb-2" id="add-dlc-search" placeholder="Search for base game…" autocomplete="off">
+              <div id="add-dlc-results"></div>
+            </div>
+            <div id="add-parent-collection-col" hidden>
+              <label class="form-label">Collection</label>
+              <input type="text" class="form-control form-control-sm mb-2" id="add-collection-search" placeholder="Search for collection…" autocomplete="off">
+              <div id="add-collection-results"></div>
+            </div>
+            <input type="hidden" name="parent_game_id" id="add-parent-game-id">
+            <p id="add-parent-selected" class="text-secondary mb-0 mt-1" hidden><small>Selected: <span id="add-parent-selected-label"></span></small></p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-surface" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add to Library</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+var COLLECTION_KEYWORDS = ["anthology","trilogy","compilation","complete edition","complete pack"];
+
+var _addGameModal = null;
+
+// Cache the server-rendered platform suggestions so resetAddGameForm can
+// restore them after selectIgdbGame replaces them with game-specific options.
+var _platformSuggestionsDefault = (function() {
+  var dl = document.getElementById('platform-suggestions');
+  return dl ? dl.innerHTML : '';
+})();
+
+// Close the add-game modal only when the form's OWN POST succeeds.
+// hx-on::after-request on the form fires for all htmx:afterRequest events
+// that bubble up from child elements (e.g. the collection/DLC search inputs),
+// so we use a JS listener instead and gate on event.target === the form element.
+document.getElementById('add-game-form').addEventListener('htmx:afterRequest', function(event) {
+  if (event.detail.successful && event.target === this) {
+    // Came from the import review queue? Bounce straight back to the tab
+    // the candidate lived on so the review flow continues uninterrupted.
+    var fromImport = document.getElementById('add-import-candidate-id').value;
+    var returnTab = this.dataset.importReturnTab || 'create_new';
+    this.reset();
+    resetAddGameForm();
+    if (_addGameModal) _addGameModal.hide();
+    if (fromImport) {
+      window.location = '/library/import/review?tab=' + encodeURIComponent(returnTab);
+      return;
+    }
+    // Reload library content so the new entry appears (or not) according to
+    // current filters and sort, rather than blindly prepending to the grid.
+    htmx.ajax('GET', window.location.pathname + window.location.search, {
+      target: '#library-content',
+      select: '#library-content',
+    });
+  }
+});
+
+function openAddGameModal() {
+  if (!_addGameModal) {
+    _addGameModal = new bootstrap.Modal(document.getElementById('addGameModal'));
+  }
+  resetAddGameForm();
+  _addGameModal.show();
+}
+
+function resetAddGameForm() {
+  document.getElementById('add-game-form').reset();
+  document.getElementById('add-parent-row').hidden = true;
+  document.getElementById('add-parent-dlc-col').hidden = false;
+  document.getElementById('add-parent-collection-col').hidden = true;
+  document.getElementById('add-dlc-results').innerHTML = '';
+  document.getElementById('add-collection-results').innerHTML = '';
+  document.getElementById('add-parent-game-id').value = '';
+  document.getElementById('add-parent-selected').hidden = true;
+  document.getElementById('add-parent-selected-label').textContent = '';
+  document.getElementById('add-display-same').checked = true;
+  document.getElementById('add-display-name').disabled = true;
+  document.getElementById('add-display-name').value = '';
+  // form.reset() clears form inputs but not divs or display state.
+  // Reset IGDB section explicitly.
+  var chips = document.getElementById('igdb-platform-chips');
+  if (chips) chips.innerHTML = '';
+  // Restore the default platform datalist (library platforms, not IGDB game platforms).
+  var dl = document.getElementById('platform-suggestions');
+  if (dl) dl.innerHTML = _platformSuggestionsDefault;
+  // Clear IGDB result divs and the By ID number input.
+  ['add-igdb-search-results', 'add-igdb-id-results'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.innerHTML = '';
+  });
+  var di = document.getElementById('add-igdb-id-input');
+  if (di) di.value = '';
+  // Reset locked card and show the tabs wrap.
+  var card = document.getElementById('add-igdb-linked-card');
+  if (card) { card.classList.add('d-none'); card.style.display = ''; }
+  var wrap = document.getElementById('add-igdb-tabs-wrap');
+  if (wrap) wrap.hidden = false;
+  switchAddIgdbTab('text');
+}
+
+{% if current_user.twitch_client_id and current_user.twitch_client_secret %}
+
+// IGDB typeahead for the add modal Text tab — the title input drives the
+// search with a short debounce; results render inline inside the tab panel.
+(function() {
+  var input = document.getElementById('add-title-input');
+  var resultsDiv = document.getElementById('add-igdb-search-results');
+  if (!input || !resultsDiv) return;
+  var timer = null;
+
+  input.addEventListener('input', function() {
+    var q = this.value.trim();
+    clearTimeout(timer);
+    resultsDiv.innerHTML = '';
+    if (!q) return;
+    timer = setTimeout(function() {
+      fetch('/integrations/igdb/search?q=' + encodeURIComponent(q))
+        .then(function(r) { return r.text(); })
+        .then(function(html) { resultsDiv.innerHTML = html; })
+        .catch(function() {
+          resultsDiv.innerHTML = '<div class="text-secondary p-2"><small>Search failed — check IGDB credentials.</small></div>';
+        });
+    }, 350);
+  });
+})();
+
+{% endif %}
+
+// Collection and DLC parent searches inside add-game-form — same reason as
+// above: plain fetch() so HTMX 2 can't interfere.
+(function() {
+  function addSearchListener(inputId, resultsId, url) {
+    var input = document.getElementById(inputId);
+    var results = document.getElementById(resultsId);
+    if (!input || !results) return;
+    var timer = null;
+    input.addEventListener('input', function() {
+      var q = this.value.trim();
+      clearTimeout(timer);
+      results.innerHTML = '';
+      if (!q) return;
+      timer = setTimeout(function() {
+        fetch(url + encodeURIComponent(q))
+          .then(function(r) { return r.text(); })
+          .then(function(html) { results.innerHTML = html; });
+      }, 300);
+    });
+  }
+  addSearchListener('add-dlc-search',        'add-dlc-results',        '/library/games/search?is_dlc=false&q=');
+  addSearchListener('add-collection-search', 'add-collection-results', '/library/games/search?is_collection=true&q=');
+})();
+
+// Called when the user picks an IGDB result (via inline onclick="selectIgdbGame(this)").
+// Reads ALL dataset values before any DOM mutation (clearing the results detaches el).
+function selectIgdbGame(el) {
+  // Route to the edit-modal handler when the edit modal is the active context.
+  var editModal = document.getElementById('editEntryModal');
+  if (editModal && editModal.classList.contains('show')) {
+    selectEditIgdbGame(el);
+    return;
+  }
+
+  var igdbId   = el.dataset.igdbId || '';
+  var name     = el.dataset.name   || '';
+  var platforms;
+  try { platforms = JSON.parse(el.dataset.platforms || '[]'); } catch (e) { platforms = []; }
+
+  // Safe to mutate DOM now.
+  document.getElementById('add-igdb-game-id').value = igdbId;
+
+  // Clear result divs.
+  ['add-igdb-search-results', 'add-igdb-id-results'].forEach(function(id) {
+    var d = document.getElementById(id); if (d) d.innerHTML = '';
+  });
+
+  // Show locked confirmation card, collapse the tabs/panel wrapper.
+  var card = document.getElementById('add-igdb-linked-card');
+  if (card) {
+    var nameEl = document.getElementById('add-igdb-linked-name');
+    var idEl   = document.getElementById('add-igdb-linked-id');
+    if (nameEl) nameEl.textContent = name;
+    if (idEl)   idEl.textContent   = '· IGDB #' + igdbId;
+    card.classList.remove('d-none');
+    card.style.display = 'flex';
+  }
+  var wrap = document.getElementById('add-igdb-tabs-wrap');
+  if (wrap) wrap.hidden = true;
+
+  // Fill title. Call helpers directly — dispatching 'input' would re-trigger
+  // the search listener and flash the dropdown open again.
+  var titleInput = document.getElementById('add-title-input');
+  titleInput.value = name;
+  hintIsCollection();
+  syncAddDisplayFromTitle();
+
+  // Platform: update datalist with IGDB platforms.
+  // Auto-fill if exactly one; otherwise clear the field and show clickable chips.
+  var datalist = document.getElementById('platform-suggestions');
+  var chipsDiv = document.getElementById('igdb-platform-chips');
+  if (platforms.length > 0) {
+    if (datalist) {
+      datalist.innerHTML = platforms.map(function(p) {
+        return '<option value="' + p.replace(/"/g, '&quot;') + '">';
+      }).join('');
+    }
+    if (platforms.length === 1) {
+      document.getElementById('add-platform').value = platforms[0];
+      if (chipsDiv) chipsDiv.innerHTML = '';
+    } else {
+      document.getElementById('add-platform').value = '';
+      if (chipsDiv) {
+        var chipButtons = platforms.map(function(p) {
+          var safe = p.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+          return '<button type="button" class="btn btn-sm btn-surface rounded-pill"'
+               + ' onclick="selectPlatformChip(this)" data-platform="' + safe + '">'
+               + safe + '</button>';
+        }).join('');
+        chipsDiv.innerHTML =
+          '<div class="d-flex flex-wrap gap-1 align-items-center">'
+          + '<small class="text-secondary me-1">IGDB platforms:</small>'
+          + chipButtons
+          + '</div>'
+          + '<small class="form-text">or type any platform in the field above</small>';
+      }
+    }
+  }
+}
+
+// Called when the user clicks a platform chip after an IGDB selection.
+function selectPlatformChip(el) {
+  document.getElementById('add-platform').value = el.dataset.platform;
+  document.querySelectorAll('#igdb-platform-chips .btn').forEach(function(b) {
+    b.classList.remove('btn-primary');
+    b.classList.add('btn-surface');
+  });
+  el.classList.remove('btn-surface');
+  el.classList.add('btn-primary');
+}
+
+// Shared ID-lookup helper used by both modals.
+// Fires GET /integrations/igdb/game/{id} and injects the result card into
+// the given results div so the user can confirm before clicking to link.
+function lookupIgdbById(idInputId, resultsDivId) {
+  var input = document.getElementById(idInputId);
+  var val = input ? input.value.trim() : '';
+  var id = parseInt(val, 10);
+  if (!val || isNaN(id) || id < 1) return;
+  var resultsDiv = document.getElementById(resultsDivId);
+  if (!resultsDiv) return;
+  resultsDiv.innerHTML = '<div class="text-secondary p-2"><small>Looking up…</small></div>';
+  fetch('/integrations/igdb/game/' + id)
+    .then(function(r) { return r.text(); })
+    .then(function(html) { resultsDiv.innerHTML = html; })
+    .catch(function() {
+      resultsDiv.innerHTML = '<div class="text-secondary p-2"><small>Lookup failed — check IGDB credentials.</small></div>';
+    });
+}
+
+// Toggle the Text / By ID tab in the add modal.
+function switchAddIgdbTab(tab) {
+  var isText = (tab === 'text');
+  var tp = document.getElementById('add-igdb-pane-text');
+  var ip = document.getElementById('add-igdb-pane-id');
+  var tt = document.getElementById('add-igdb-tab-text');
+  var ti = document.getElementById('add-igdb-tab-id');
+  if (tp) tp.hidden = !isText;
+  if (ip) ip.hidden = isText;
+  if (tt) tt.classList.toggle('active', isText);
+  if (ti) ti.classList.toggle('active', !isText);
+}
+
+// "Change" button on the add modal locked card — resets to the Text tab.
+function clearAddIgdbSelection() {
+  document.getElementById('add-igdb-game-id').value = '';
+  var card = document.getElementById('add-igdb-linked-card');
+  if (card) { card.classList.add('d-none'); card.style.display = ''; }
+  var wrap = document.getElementById('add-igdb-tabs-wrap');
+  if (wrap) wrap.hidden = false;
+  // Clear platform chips and reset platform field.
+  var chips = document.getElementById('igdb-platform-chips');
+  if (chips) chips.innerHTML = '';
+  var dl = document.getElementById('platform-suggestions');
+  if (dl) dl.innerHTML = _platformSuggestionsDefault;
+  document.getElementById('add-platform').value = '';
+  // Clear result divs and number input.
+  ['add-igdb-search-results', 'add-igdb-id-results'].forEach(function(id) {
+    var el = document.getElementById(id); if (el) el.innerHTML = '';
+  });
+  var di = document.getElementById('add-igdb-id-input');
+  if (di) di.value = '';
+  switchAddIgdbTab('text');
+}
+
+
+// When "Display name is the same as title" is checked on the Add modal,
+// display_name mirrors title as the user types and the display field is disabled.
+// Unchecking lets the user enter a separate value.
+function syncAddDisplayFromTitle() {
+  if (document.getElementById('add-display-same').checked) {
+    document.getElementById('add-display-name').value = document.getElementById('add-title-input').value;
+  }
+}
+function toggleAddDisplaySame() {
+  var same = document.getElementById('add-display-same').checked;
+  var disp = document.getElementById('add-display-name');
+  disp.disabled = same;
+  if (same) disp.value = document.getElementById('add-title-input').value;
+}
+
+function updateAddGameParentRow() {
+  var isDlc = document.getElementById('add-is-dlc').checked;
+  var isPartOf = document.getElementById('add-part-of-collection').checked;
+  document.getElementById('add-parent-row').hidden = !(isDlc || isPartOf);
+  document.getElementById('add-parent-dlc-col').hidden = !isDlc;
+  document.getElementById('add-parent-collection-col').hidden = !isPartOf;
+}
+
+function selectLibraryParent(releaseId, label) {
+  document.getElementById('add-parent-game-id').value = releaseId;
+  document.getElementById('add-dlc-results').innerHTML = '';
+  document.getElementById('add-collection-results').innerHTML = '';
+  // Write the selected name back into whichever search box is active so
+  // there's clear visual feedback without a separate "Selected:" line.
+  // Setting .value programmatically does not fire the input event, so HTMX
+  // won't re-trigger the search.
+  if (!document.getElementById('add-parent-collection-col').hidden) {
+    document.getElementById('add-collection-search').value = label;
+  } else {
+    document.getElementById('add-dlc-search').value = label;
+  }
+  document.getElementById('add-parent-selected').hidden = true;
+}
+
+function hintIsCollection() {
+  var title = document.getElementById('add-title-input').value.toLowerCase();
+  var matches = COLLECTION_KEYWORDS.some(function(kw) { return title.includes(kw); });
+  var cb = document.getElementById('add-is-collection');
+  if (matches && !cb.dataset.userSet) cb.checked = true;
+  else if (!matches && !cb.dataset.userSet) cb.checked = false;
+}
+
+document.getElementById('add-is-collection').addEventListener('change', function() {
+  this.dataset.userSet = '1';
+});
+</script>
