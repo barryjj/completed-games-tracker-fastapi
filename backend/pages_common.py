@@ -6,7 +6,6 @@ completions, account) can import the shared pieces without importing every other
 domain's routes. Moved verbatim — no behaviour changes.
 """
 
-import asyncio
 import datetime
 import html as _html
 import logging
@@ -22,16 +21,6 @@ from . import importer, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
-
-_import_upload_lock: asyncio.Lock | None = None
-
-
-def _get_import_lock() -> asyncio.Lock:
-    global _import_upload_lock
-    if _import_upload_lock is None:
-        _import_upload_lock = asyncio.Lock()
-    return _import_upload_lock
-
 
 TEMPLATES_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "frontend", "templates"))
 templates = Jinja2Templates(directory=TEMPLATES_DIR)
@@ -531,27 +520,6 @@ def _get_all_platforms(db: Session) -> list[models.Platform]:
         .order_by(models.Platform.name)
         .all()
     )
-
-
-COLLECTION_KEYWORDS = [
-    "collection",
-    "anthology",
-    "trilogy",
-    "compilation",
-    "complete edition",
-    "complete pack",
-    "bundle",
-    "chronicles",
-    "archives",
-    "legacy",
-    "origins",
-]
-
-
-def infer_is_collection(title: str) -> bool:
-    """Auto-detect collections by title keyword — for import-time use only."""
-    t = title.lower()
-    return any(kw in t for kw in COLLECTION_KEYWORDS)
 
 
 def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User:
