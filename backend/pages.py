@@ -1695,6 +1695,20 @@ def add_game(
             candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
             db.commit()
 
+        # Confirmed from the import review page's in-place add modal: return the
+        # OOB count refresh (same partial the Confirm button uses) so the tab
+        # badges + pending update without a reload. The page ignores
+        # library_row.html and drops the confirmed row client-side.
+        tab_counts = _import_tab_counts(db, current_user.id)
+        pending = sum(tab_counts.values())
+        tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_counts_oob.html",
+            context={"tab_counts": tab_counts, "pending": pending},
+            headers={"HX-Reswap": "none"},
+        )
+
     return templates.TemplateResponse(
         request=request,
         name="partials/library_row.html",
@@ -3254,6 +3268,8 @@ def import_review_page(
             "candidate_visuals": candidate_visuals,
             "platform_options": _import_platform_options(db, current_user.id, tab),
             "year_options": _import_year_options(db, current_user.id, tab),
+            # for the shared add-game modal's platform datalist (in-place "Add new")
+            "platforms": _get_all_platforms(db),
             **filter_ctx,
             **_base_ctx(db, current_user),
         },

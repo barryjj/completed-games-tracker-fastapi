@@ -84,12 +84,20 @@
        overflow clipping instead of being cut off. #}
     {% if c.status == "pending" %}
     <div class="btn-group">
+      {% if c.proposed_action == "add_to_existing" %}
       <button type="button" class="btn btn-primary btn-sm"
               hx-post="/library/import/{{ c.id }}/confirm"
               hx-target="#import-row-{{ c.id }}"
-              hx-swap="outerHTML">
-        {{ "Confirm" if c.proposed_action == "add_to_existing" else "Add new" }}
-      </button>
+              hx-swap="outerHTML">Confirm</button>
+      {% else %}
+      {# Add new: open the shared add-game modal in place (prefilled), rather
+         than redirecting to the library page and bouncing back. #}
+      <button type="button" class="btn btn-primary btn-sm"
+              data-candidate-id="{{ c.id }}"
+              data-title="{{ c.raw_title | e }}"
+              data-platform="{{ (c.platform.name if c.platform else c.raw_platform) | e }}"
+              onclick="importOpenAddNew(this)">Add new</button>
+      {% endif %}
       <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
               data-bs-toggle="dropdown"
               data-bs-popper-config='{"strategy":"fixed"}'

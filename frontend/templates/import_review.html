@@ -142,6 +142,10 @@
           hidden>↑</button>
 </div>
 
+{# Shared add-game modal — opened in place for "Add new" (create_new /
+   needs_review) instead of warping to the library page. #}
+{% include "partials/_add_game_modal.html" %}
+
 <script>
 // Wrapped in DOMContentLoaded rather than an immediately-invoked function:
 // this inline script has no `src`, so `defer` has no effect on it — it runs
@@ -404,6 +408,26 @@ window.openImportEdit = function(candidateId) {
 
 window.openImportLink = function(candidateId) {
   importOpenModal(candidateId, 'link', 'Link to library');
+};
+
+// "Add new" on a create_new / needs_review row: open the SHARED add-game modal
+// in place, prefilled from the candidate, instead of redirecting to /library.
+// On submit the candidate is confirmed server-side (add_game logs its
+// completions) and the modal's afterRequest handler drops this row + the
+// response's OOB counts update the badges — no navigation.
+window.importOpenAddNew = function(btn) {
+  if (typeof openAddGameModal !== 'function') return;
+  openAddGameModal();
+  document.getElementById('add-import-candidate-id').value = btn.dataset.candidateId;
+  document.getElementById('add-game-form').dataset.importInPlace = btn.dataset.candidateId;
+  var titleInput = document.getElementById('add-title-input');
+  if (titleInput) {
+    titleInput.value = btn.dataset.title || '';
+    titleInput.dispatchEvent(new Event('input', {bubbles: true}));
+  }
+  var platformInput = document.getElementById('add-platform');
+  if (platformInput) platformInput.value = btn.dataset.platform || '';
+  if (typeof syncAddDisplayFromTitle === 'function') syncAddDisplayFromTitle();
 };
 
 // ─── Infinite-scroll upkeep for a mutating list ────────────────────────────

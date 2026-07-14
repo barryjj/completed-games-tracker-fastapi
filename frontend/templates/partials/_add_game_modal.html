@@ -156,25 +156,34 @@ var _platformSuggestionsDefault = (function() {
 // that bubble up from child elements (e.g. the collection/DLC search inputs),
 // so we use a JS listener instead and gate on event.target === the form element.
 document.getElementById('add-game-form').addEventListener('htmx:afterRequest', function(event) {
-  if (event.detail.successful && event.target === this) {
-    // Came from the import review queue? Bounce straight back to the tab
-    // the candidate lived on so the review flow continues uninterrupted.
-    var fromImport = document.getElementById('add-import-candidate-id').value;
-    var returnTab = this.dataset.importReturnTab || 'create_new';
-    this.reset();
-    resetAddGameForm();
-    if (_addGameModal) _addGameModal.hide();
-    if (fromImport) {
-      window.location = '/library/import/review?tab=' + encodeURIComponent(returnTab);
-      return;
-    }
-    // Reload library content so the new entry appears (or not) according to
-    // current filters and sort, rather than blindly prepending to the grid.
-    htmx.ajax('GET', window.location.pathname + window.location.search, {
-      target: '#library-content',
-      select: '#library-content',
-    });
+  if (!(event.detail.successful && event.target === this)) return;
+  // Read the context flags BEFORE reset() clears the form.
+  var inPlaceId = this.dataset.importInPlace;        // opened in place on import review
+  var fromImport = document.getElementById('add-import-candidate-id').value;  // legacy library deep-link
+  var returnTab = this.dataset.importReturnTab || 'create_new';
+  this.reset();
+  resetAddGameForm();
+  if (_addGameModal) _addGameModal.hide();
+
+  if (inPlaceId) {
+    // In place on the import review page: the candidate is confirmed server-side
+    // and the response carried the OOB count refresh, so just drop its row and
+    // nudge the infinite-scroll sentinel. No navigation, no reload.
+    var row = document.getElementById('import-row-' + inPlaceId);
+    if (row) row.remove();
+    var sentinel = document.getElementById('import-load-more');
+    if (sentinel && typeof htmx !== 'undefined') { try { htmx.trigger(sentinel, 'revealed'); } catch (e) {} }
+    return;
   }
+  if (fromImport) {
+    window.location = '/library/import/review?tab=' + encodeURIComponent(returnTab);
+    return;
+  }
+  // Library page: reload content so the new entry appears (or not) per filters.
+  htmx.ajax('GET', window.location.pathname + window.location.search, {
+    target: '#library-content',
+    select: '#library-content',
+  });
 });
 
 function openAddGameModal() {
@@ -186,7 +195,9 @@ function openAddGameModal() {
 }
 
 function resetAddGameForm() {
-  document.getElementById('add-game-form').reset();
+  var f = document.getElementById('add-game-form');
+  f.reset();
+  f.removeAttribute('data-import-in-place');
   document.getElementById('add-parent-row').hidden = true;
   document.getElementById('add-parent-dlc-col').hidden = false;
   document.getElementById('add-parent-collection-col').hidden = true;

@@ -1668,6 +1668,56 @@ def test_library_search_ranks_exact_over_substring_and_survives_cap(client, db_s
     assert body.index(marker) < body.index("LEGO Marvel Super Heroes")
 
 
+def test_inplace_add_confirms_candidate_and_returns_oob_counts(client, db_session):
+    """Adding a game with an import_candidate_id (the import page's in-place
+    "Add new" modal) confirms the candidate, logs its completions, and returns
+    the OOB count refresh — not a library row — so the page updates without a
+    reload."""
+    import datetime as _dt
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Chibi-Robo",
+        raw_platform="GameCube",
+        status="pending",
+        proposed_action="create_new",
+    )
+    db_session.add(cand)
+    db_session.flush()
+    db_session.add(
+        models.ImportRow(
+            candidate_id=cand.id,
+            raw_title="Chibi-Robo",
+            raw_platform="GameCube",
+            row_number=1,
+            completed_at=_dt.date(2007, 12, 1),
+            completed_at_precision="month",
+            playthroughs=1,
+        )
+    )
+    db_session.commit()
+    cand_id = cand.id
+
+    r = client.post(
+        "/library/games",
+        data={"title": "Chibi-Robo", "platform": "GameCube", "import_candidate_id": str(cand_id)},
+    )
+    assert r.status_code == 200
+    # OOB count refresh, not a library row
+    assert 'id="import-pending-count"' in r.text
+    assert 'hx-swap-oob="true"' in r.text
+
+    db_session.expire_all()
+    reloaded = db_session.get(models.ImportCandidate, cand_id)
+    assert reloaded.status == "confirmed"
+    assert reloaded.library_entry_id is not None
+    # completion logged from the sheet row, linkage stamped for Reopen
+    row = db_session.query(models.ImportRow).filter_by(candidate_id=cand_id).first()
+    assert row.created_completion_id is not None
+
+
 def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_session):
     """A per-tab filter cookie binds into the initial SQL query (no query param,
     no client re-fetch) — and only for its own tab. This is the whole point of
