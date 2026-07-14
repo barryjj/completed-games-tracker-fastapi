@@ -561,7 +561,7 @@ def test_extract_steam_meta_happy_path():
 
 def test_normalize_steam_date():
     """_normalize_steam_date handles all known Steam date format variants."""
-    from backend.pages import _normalize_steam_date
+    from backend.pages_common import _normalize_steam_date
 
     # Standard US format — normalized to full month name
     assert _normalize_steam_date("Aug 12, 2016") == "August 12, 2016"
