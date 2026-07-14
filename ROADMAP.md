@@ -364,24 +364,27 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Added a real sort filter (date newest/oldest, title A–Z/Z–A); date sorts order by `completed_at` first, `sort_order` (nulls last) as tiebreaker, so same-month import rows stay in their original 1-2-3 order regardless of sort direction
 - Filters/View toggle-button drawers removed to match `library.html`'s already-flat, always-visible layout (library dropped the collapsible drawers a while back; completions never got the same treatment)
 
-### Shared-partial modals + "Add new" without leaving the review page (NEXT LIFT — agreed 2026-07-13)
-- **Next active work item** while Tauri waits for Fable access. Establishes a broader
-  standard: reusable UI (modals especially) lives in ONE shared partial included wherever
-  it's needed, opened in place — never duplicated per page, never reached by warping the
-  user to another page and back. Make shared partials the default going forward.
-- Today confirming a create_new/needs_review candidate redirects to /library to use the
-  add-game modal there (prefilled), then bounces back to the review tab after submit
-  (bounce-back shipped 2026-07-11) — functional but two page loads per candidate
-- Proper fix: extract the add-game modal (markup + its substantial JS: IGDB tabs/typeahead,
-  platform chips, DLC/collection parent search, display-name sync) into a shared partial
-  included by both library.html and import_review.html, then open it in place on the
-  review page. The modal was stabilized over several sessions (PR #101 etc.) — move it
-  verbatim, don't rewrite it. **Caution:** the add-game modal JS is tangled with the
-  edit-modal via shared element IDs/functions; extract carefully to avoid breaking the
-  edit side.
-- First instance of the shared-partial standard; the import-review filter selects
-  (`_import_filter_selects.html`, PR #123) are a smaller precedent for the same idea.
-- Do alongside/after the pages.py split below, as part of the same modularization pass
+### Shared-partial modals + "Add new" without leaving the review page ✅ (feature/shared-add-game-modal)
+- Establishes a broader standard: reusable UI (modals especially) lives in ONE shared
+  partial included wherever it's needed, opened in place — never duplicated per page,
+  never reached by warping the user to another page and back. Shared partials are the
+  default going forward.
+- **Shipped:** add-game modal (markup + its JS: IGDB tabs/typeahead, platform chips,
+  DLC/collection parent search, display-name sync) extracted to
+  `partials/_add_game_modal.html`, included by both library.html and import_review.html.
+  The edit modal stays in library.html and leans on the partial for the shared helpers
+  (`selectIgdbGame` dispatcher, `lookupIgdbById`, platform datalist) — it never needed to
+  move (import has its own candidate editor). "Add new" on a create_new/needs_review row
+  opens the modal in place, prefilled; on submit the candidate is confirmed server-side,
+  the row is dropped, and an OOB count refresh updates the badges — no redirect, no double
+  page load.
+- Also shipped alongside: "Is a collection" / "Part of a collection" made mutually
+  exclusive in both modals; `/library/games/search` re-ranked by relevance (exact → prefix
+  → substring) so exact matches survive the result cap.
+- **Follow-up (not done):** the old confirm-redirect branch and the library
+  `?import_candidate=` deep-link opener (`autoOpenAddFromImportCandidate`) are now dead
+  code; prune them. First instance of the shared-partial standard; the import-review
+  filter selects (`_import_filter_selects.html`, PR #123) were a smaller precedent.
 
 ### pages.py refactor — split by domain
 - At 3100+ lines `pages.py` is getting unwieldy; split into domain modules: `pages_library.py`, `pages_import.py`, `pages_match_review.py`, `pages_completions.py`, `pages_account.py`
