@@ -3722,13 +3722,10 @@ def import_confirm(
             headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
         )
 
-    # create_new / needs_review — redirect to library with modal pre-filled
-    platform_name = candidate.platform.name if candidate.platform else candidate.raw_platform
-    redirect_url = (
-        f"/library?import_candidate={candidate_id}&prefill_title={candidate.raw_title}"
-        f"&prefill_platform={platform_name}&return_tab={candidate.proposed_action}"
-    )
-    return Response(status_code=200, headers={"HX-Redirect": redirect_url})
+    # create_new / needs_review candidates are confirmed via the in-place
+    # add-game modal (POST /library/games with import_candidate_id), not this
+    # endpoint — reaching here would be an unexpected call.
+    return Response(status_code=400)
 
 
 @router.post("/library/import/{candidate_id}/reopen")

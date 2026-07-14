@@ -1668,6 +1668,21 @@ def test_library_search_ranks_exact_over_substring_and_survives_cap(client, db_s
     assert body.index(marker) < body.index("LEGO Marvel Super Heroes")
 
 
+def test_confirm_endpoint_rejects_non_add_to_existing(client, db_session):
+    """create_new / needs_review candidates are confirmed via the in-place add
+    modal (POST /library/games), so the confirm endpoint only handles
+    add_to_existing and 400s otherwise (dead redirect branch removed)."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    plat = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(plat)
+    db_session.flush()
+    cand = _make_import_candidate(db_session, user.id, "Some Game", plat, action="create_new")
+    db_session.commit()
+    r = client.post(f"/library/import/{cand.id}/confirm")
+    assert r.status_code == 400
+
+
 def test_inplace_add_confirms_candidate_and_returns_oob_counts(client, db_session):
     """Adding a game with an import_candidate_id (the import page's in-place
     "Add new" modal) confirms the candidate, logs its completions, and returns

@@ -157,10 +157,8 @@ var _platformSuggestionsDefault = (function() {
 // so we use a JS listener instead and gate on event.target === the form element.
 document.getElementById('add-game-form').addEventListener('htmx:afterRequest', function(event) {
   if (!(event.detail.successful && event.target === this)) return;
-  // Read the context flags BEFORE reset() clears the form.
-  var inPlaceId = this.dataset.importInPlace;        // opened in place on import review
-  var fromImport = document.getElementById('add-import-candidate-id').value;  // legacy library deep-link
-  var returnTab = this.dataset.importReturnTab || 'create_new';
+  // Read the in-place flag BEFORE reset() clears the form.
+  var inPlaceId = this.dataset.importInPlace;   // set when opened on import review
   this.reset();
   resetAddGameForm();
   if (_addGameModal) _addGameModal.hide();
@@ -173,10 +171,6 @@ document.getElementById('add-game-form').addEventListener('htmx:afterRequest', f
     if (row) row.remove();
     var sentinel = document.getElementById('import-load-more');
     if (sentinel && typeof htmx !== 'undefined') { try { htmx.trigger(sentinel, 'revealed'); } catch (e) {} }
-    return;
-  }
-  if (fromImport) {
-    window.location = '/library/import/review?tab=' + encodeURIComponent(returnTab);
     return;
   }
   // Library page: reload content so the new entry appears (or not) per filters.
