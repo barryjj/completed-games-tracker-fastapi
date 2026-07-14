@@ -1631,6 +1631,93 @@ def _make_import_candidate(db, user_id, title, platform_obj, action="create_new"
     return cand
 
 
+def _make_named_entry(db, user_id, title, platform="Steam"):
+    g = models.Game(title=title, display_name=title)
+    db.add(g)
+    db.flush()
+    rel = models.GameRelease(game_id=g.id, source="manual", platform=platform)
+    db.add(rel)
+    db.flush()
+    entry = models.UserLibraryEntry(user_id=user_id, release_id=rel.id, import_source="manual")
+    db.add(entry)
+    db.flush()
+    return entry
+
+
+def test_library_search_ranks_exact_over_substring_and_survives_cap(client, db_session):
+    """Searching an exact title must return (and rank first) that entry even
+    when many longer titles contain the query. Regression: alphabetical order +
+    LIMIT dropped "Marvel Super Heroes" under 15+ "LEGO Marvel Super Heroes …"."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    exact = _make_named_entry(db_session, user.id, "Marvel Super Heroes")
+    # 30 substring decoys that sort BEFORE the exact title alphabetically and
+    # would fill the old 15-cap (and even the new 25-cap) on their own.
+    for i in range(30):
+        _make_named_entry(db_session, user.id, f"LEGO Marvel Super Heroes {i:02d}")
+    db_session.commit()
+    exact_id = exact.id
+
+    r = client.get("/library/games/search?q=Marvel+Super+Heroes&id_field=entry")
+    assert r.status_code == 200
+    body = r.text
+    # the exact entry is present despite 30 substring matches sorting ahead of it
+    marker = f'data-cgt-id="{exact_id}"'
+    assert marker in body
+    # and it ranks first — before any LEGO row
+    assert body.index(marker) < body.index("LEGO Marvel Super Heroes")
+
+
+def test_inplace_add_confirms_candidate_and_returns_oob_counts(client, db_session):
+    """Adding a game with an import_candidate_id (the import page's in-place
+    "Add new" modal) confirms the candidate, logs its completions, and returns
+    the OOB count refresh — not a library row — so the page updates without a
+    reload."""
+    import datetime as _dt
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    cand = models.ImportCandidate(
+        user_id=user.id,
+        raw_title="Chibi-Robo",
+        raw_platform="GameCube",
+        status="pending",
+        proposed_action="create_new",
+    )
+    db_session.add(cand)
+    db_session.flush()
+    db_session.add(
+        models.ImportRow(
+            candidate_id=cand.id,
+            raw_title="Chibi-Robo",
+            raw_platform="GameCube",
+            row_number=1,
+            completed_at=_dt.date(2007, 12, 1),
+            completed_at_precision="month",
+            playthroughs=1,
+        )
+    )
+    db_session.commit()
+    cand_id = cand.id
+
+    r = client.post(
+        "/library/games",
+        data={"title": "Chibi-Robo", "platform": "GameCube", "import_candidate_id": str(cand_id)},
+    )
+    assert r.status_code == 200
+    # OOB count refresh, not a library row
+    assert 'id="import-pending-count"' in r.text
+    assert 'hx-swap-oob="true"' in r.text
+
+    db_session.expire_all()
+    reloaded = db_session.get(models.ImportCandidate, cand_id)
+    assert reloaded.status == "confirmed"
+    assert reloaded.library_entry_id is not None
+    # completion logged from the sheet row, linkage stamped for Reopen
+    row = db_session.query(models.ImportRow).filter_by(candidate_id=cand_id).first()
+    assert row.created_completion_id is not None
+
+
 def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_session):
     """A per-tab filter cookie binds into the initial SQL query (no query param,
     no client re-fetch) — and only for its own tab. This is the whole point of

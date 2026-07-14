@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
-from sqlalchemy import func, or_
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import importer, jobs, match_review, models, users
@@ -1695,6 +1695,20 @@ def add_game(
             candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
             db.commit()
 
+        # Confirmed from the import review page's in-place add modal: return the
+        # OOB count refresh (same partial the Confirm button uses) so the tab
+        # badges + pending update without a reload. The page ignores
+        # library_row.html and drops the confirmed row client-side.
+        tab_counts = _import_tab_counts(db, current_user.id)
+        pending = sum(tab_counts.values())
+        tab_counts["confirmed"] = _import_confirmed_count(db, current_user.id)
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_import_counts_oob.html",
+            context={"tab_counts": tab_counts, "pending": pending},
+            headers={"HX-Reswap": "none"},
+        )
+
     return templates.TemplateResponse(
         request=request,
         name="partials/library_row.html",
@@ -2019,8 +2033,9 @@ def search_library_games(
         .filter(models.UserLibraryEntry.user_id == current_user.id)
     )
 
-    if q.strip():
-        query = query.filter(models.Game.title.ilike(f"%{q}%"))
+    qn = q.strip()
+    if qn:
+        query = query.filter(models.Game.title.ilike(f"%{qn}%"))
 
     if is_dlc is not None:
         query = query.filter(models.Game.is_dlc == is_dlc)
@@ -2028,7 +2043,23 @@ def search_library_games(
     if is_collection is not None:
         query = query.filter(models.Game.is_collection == is_collection)
 
-    entries = query.order_by(models.Game.title).limit(15).all()
+    # Rank by relevance, not just alphabetically: exact title, then titles that
+    # start with the query, then plain substring matches — alphabetical within
+    # each tier. A pure-alphabetical order + LIMIT silently dropped the exact
+    # match whenever enough longer titles contained the query (searching
+    # "Marvel Super Heroes" buried it under 15+ "LEGO Marvel Super Heroes …"
+    # rows). The cap is a safety valve, not the primary filter.
+    if qn:
+        relevance = case(
+            (func.lower(models.Game.title) == qn.lower(), 0),
+            (models.Game.title.ilike(f"{qn}%"), 1),
+            else_=2,
+        )
+        query = query.order_by(relevance, models.Game.title)
+    else:
+        query = query.order_by(models.Game.title)
+
+    entries = query.limit(25).all()
 
     return templates.TemplateResponse(
         request=request,
@@ -3237,6 +3268,8 @@ def import_review_page(
             "candidate_visuals": candidate_visuals,
             "platform_options": _import_platform_options(db, current_user.id, tab),
             "year_options": _import_year_options(db, current_user.id, tab),
+            # for the shared add-game modal's platform datalist (in-place "Add new")
+            "platforms": _get_all_platforms(db),
             **filter_ctx,
             **_base_ctx(db, current_user),
         },
