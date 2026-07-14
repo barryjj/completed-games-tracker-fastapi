@@ -310,6 +310,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
+- Collection auto-detection: the good heuristic (`_infer_is_collection` / `_COLLECTION_RE`, word-boundary + `is_dlc` guard) currently lives in `steam.py`, but it's pure title-keyword logic, not Steam-specific. Lift it into a neutral shared module so PSN sync calls the same implementation covered by the same `test_integrations` cases, rather than importing from the Steam module or reintroducing a copy. (An earlier substring-scan draft that lived in `pages.py` was deleted in the pages split — it produced false positives like "Recollection"/"Assassin's Creed Origins" that those tests exist to guard against; don't revive it.)
 
 ### Achievements / trophies (promoted 2026-07-12 — third in the agreed Tauri → PSN → achievements sequence)
 - Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
