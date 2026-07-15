@@ -1,0 +1,15 @@
+[package]
+name = "games-tracker-desktop"
+version = "0.1.0"
+description = "Desktop shell for the games tracker — spawns the local FastAPI backend and hosts the UI in a WebView"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.4", features = ["devtools"] }
+libc = "0.2"
+
+[profile.release]
+strip = true

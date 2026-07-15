@@ -1,0 +1,10 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Grants the backend-served UI (a remote origin from Tauri's point of view) access to core IPC. Capture commands are added here as they land.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:8000", "http://localhost:8000"]
+  },
+  "permissions": ["core:default"]
+}

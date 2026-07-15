@@ -296,12 +296,24 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
 
-### Desktop packaging (Tauri) — promoted from Later 2026-07-08; agreed 2026-07-12 as next up, then PSN, then achievements
-- Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
+### Tauri desktop shell — IN PROGRESS 2026-07-15 (full plan: `docs/tauri-desktop-plan.md`)
 - **Why now: it gates the sign-in story for both platform integrations.** A WebView we
   control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
   at login time — one "Sign in" click replaces manual cookie paste for both
-- Bundles into a single .app / .exe; target Mac first (user's primary machine), Windows second
+- Staged as three sequential PRs (agreed 2026-07-15):
+  1. **Dev shell** (`feature/tauri-shell`) — `desktop/` Tauri v2 app: launch starts the
+     backend from the repo `.venv` (reuses an already-running dev server if one answers on
+     :8000) and opens the UI in a window; kills the spawned backend on quit
+  2. **Steam cookie capture** (`feature/tauri-steam-capture`) — login WebView against
+     store.steampowered.com, `cookies_for_url()` grabs `sessionid`/`steamLoginSecure`
+     (HttpOnly), page JS submits them through the existing credentials form; stale-cookie
+     sync failure gets a re-capture affordance
+  3. **PSN capture framework** (`feature/psn-npsso-capture`) — `psn_npsso` column +
+     migration, `/integrations/psn` page (manual paste as web fallback), Sony login WebView
+     → NPSSO capture, test-token button; real library/trophy queries stay in the PSN phase
+- **Packaging (PyInstaller sidecar, bundled .app/.exe, installers) explicitly deferred to a
+  later roadmap phase** — the dev shell assumes the repo checkout + `.venv` exist on the
+  machine. Mac first (user's primary machine), Windows later.
 - **Explicitly does NOT change image loading.** The backend already runs locally; Tauri just
   swaps browser for WebView. Cover-art speed comes from the "Local artwork cache" item
   (Medium-term), which is independent, backend-only, and carries into Tauri unchanged.
