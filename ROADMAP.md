@@ -387,8 +387,10 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   code; prune them. First instance of the shared-partial standard; the import-review
   filter selects (`_import_filter_selects.html`, PR #123) were a smaller precedent.
 
-### pages.py refactor — split by domain (in progress)
-Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregator.
+### pages.py refactor — split by domain ✅ (2026-07-15)
+Split `pages.py` into domain modules. `pages.py`: **4259 → 320 lines**, now just auth +
+the home/tools dashboards + the two per-entry logo-position routes. Every domain module
+imports one-way from `pages_common`; nothing imports back.
 
 **Done (2026-07-14):**
 - `pages_common.py` — Jinja environment + filters, `_base_ctx`, `get_web_user`, the
@@ -408,15 +410,21 @@ Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregato
   `_annotate_platforms_in_library`. `home_page` and `tools_page` deliberately stayed: they
   sit under the same section marker but are cross-domain dashboards wired into library via
   `_build_lib_query`/`_steam_counts`. Imports only from `pages_common` — no library coupling.
-- `pages.py`: 4259 → 3473 → 2420 → 1990 → 1680 lines.
+- `pages_library.py` (2026-07-15) — the library list/grid page + infinite-scroll, entry
+  CRUD/hide, IGDB fetch/unlink, detail pane, metadata refresh, cover-override + auto-fetch
+  artwork, card fragments (`PAGE_SIZE` moved with it). `_build_lib_query` + `VIEW_OPTIONS` +
+  `SORT_OPTIONS` went to `pages_common` because the home/tools dashboards build the same
+  query. The steam/igdb/steamgriddb helpers stayed as function-local imports, avoiding the
+  ruff redundant-import pitfall. Also forced a latent cleanup: `test_pages.py` imported
+  `_extract_steam_meta` / `_build_detail_pane_visuals` / `_needs_metadata_refresh` from
+  `backend.pages` (they'd lived in `pages_common` since the first split but pages.py
+  re-exported them); repointed at `pages_common`.
+- `pages.py`: 4259 → 3473 → 2420 → 1990 → 1680 → 320 lines.
 
-**Remaining:** `pages_library.py` — the last and biggest section. `pages.py` is now auth +
-home/tools dashboards + library. Once library extracts, what's left (auth, the two
-dashboards, and whatever shared query helpers the dashboards need) is the thin aggregator —
-or a follow-up `pages_home` for home/tools if that reads cleaner. Note the home/tools ↔
-library coupling (`_build_lib_query`, `_steam_counts`, `PAGE_SIZE`, `_annotate_*` already
-moved): those shared query helpers will need to land in `pages_common` (or a query module)
-so both the dashboards and `pages_library` can reach them one-way.
+**Optional follow-up (not scheduled):** `pages_home` for `home_page` + `tools_page`. They're
+the only non-auth routes left in `pages.py` and they call `_build_lib_query` / `_steam_counts`.
+Extracting them would leave `pages.py` as pure auth + router aggregation, but there's no
+pressing need — 320 lines is fine, and `_steam_counts` would have to move too.
 
 **How to verify these safely** — the split is only trustworthy if it's a *pure move*.
 Prove it mechanically rather than by review: snapshot the app's route table (methods,
