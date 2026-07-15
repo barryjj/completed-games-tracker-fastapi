@@ -233,16 +233,31 @@ def import_status(
     )
 
 
-def _import_platform_options(db: Session, user_id: int, tab: str) -> list[dict]:
-    """Distinct platforms across ALL pending candidates in this tab (not just
-    the currently loaded page) for the filter dropdown."""
-    rows = (
-        db.query(models.ImportCandidate.platform_id, models.ImportCandidate.raw_platform)
-        .filter(
-            models.ImportCandidate.user_id == user_id,
+def _tab_candidate_filters(user_id: int, tab: str) -> list:
+    """Filter clauses selecting exactly the candidates a tab lists. The
+    "confirmed" tab shows already-imported candidates regardless of
+    proposed_action (no candidate ever has proposed_action == "confirmed");
+    every other tab shows pending candidates with that proposed_action. The
+    filter-dropdown builders and the page query must share this, or the
+    dropdowns populate from a different candidate set than the rows shown —
+    on the confirmed tab they used to match nothing and render empty."""
+    clauses = [models.ImportCandidate.user_id == user_id]
+    if tab == "confirmed":
+        clauses.append(models.ImportCandidate.status == "confirmed")
+    else:
+        clauses += [
             models.ImportCandidate.status == "pending",
             models.ImportCandidate.proposed_action == tab,
-        )
+        ]
+    return clauses
+
+
+def _import_platform_options(db: Session, user_id: int, tab: str) -> list[dict]:
+    """Distinct platforms across ALL candidates in this tab (not just the
+    currently loaded page) for the filter dropdown."""
+    rows = (
+        db.query(models.ImportCandidate.platform_id, models.ImportCandidate.raw_platform)
+        .filter(*_tab_candidate_filters(user_id, tab))
         .distinct()
         .all()
     )
@@ -263,14 +278,12 @@ def _import_platform_options(db: Session, user_id: int, tab: str) -> list[dict]:
 
 
 def _import_year_options(db: Session, user_id: int, tab: str) -> list[str]:
-    """Distinct completion years across ALL pending candidates in this tab."""
+    """Distinct completion years across ALL candidates in this tab."""
     rows = (
         db.query(func.strftime("%Y", models.ImportRow.completed_at))
         .join(models.ImportCandidate, models.ImportRow.candidate_id == models.ImportCandidate.id)
         .filter(
-            models.ImportCandidate.user_id == user_id,
-            models.ImportCandidate.status == "pending",
-            models.ImportCandidate.proposed_action == tab,
+            *_tab_candidate_filters(user_id, tab),
             models.ImportRow.completed_at.isnot(None),
         )
         .distinct()
@@ -341,19 +354,11 @@ def import_review_page(
     tab_counts = _import_tab_counts(db, current_user.id)
     pending = sum(tab_counts.values())
 
-    if tab == "confirmed":
-        # Already-imported candidates, any proposed_action — surfaced so a
-        # wrong confirm can be reopened instead of fixed by DB surgery.
-        filtered_q = db.query(models.ImportCandidate).filter(
-            models.ImportCandidate.user_id == current_user.id,
-            models.ImportCandidate.status == "confirmed",
-        )
-    else:
-        filtered_q = db.query(models.ImportCandidate).filter(
-            models.ImportCandidate.user_id == current_user.id,
-            models.ImportCandidate.status == "pending",
-            models.ImportCandidate.proposed_action == tab,
-        )
+    # Confirmed tab = already-imported candidates, any proposed_action —
+    # surfaced so a wrong confirm can be reopened instead of fixed by DB
+    # surgery. Shared with the filter-dropdown builders via
+    # _tab_candidate_filters so the two can't drift apart.
+    filtered_q = db.query(models.ImportCandidate).filter(*_tab_candidate_filters(current_user.id, tab))
 
     if q:
         filtered_q = filtered_q.filter(models.ImportCandidate.raw_title.ilike(f"%{q}%"))
