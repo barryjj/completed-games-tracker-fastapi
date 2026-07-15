@@ -401,11 +401,14 @@ Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregato
   badge helpers (`_import_tab_counts`, `_import_confirmed_count`, `_IMPORT_TABS`)
   went to `pages_common` instead, because home/library render them too — keeps the
   dependency one-way (nothing imports back from `pages_import`).
-- `pages.py`: 4259 → 3473 → 2420 lines.
+- `pages_completions.py` (2026-07-15) — the 7 completions routes + `COMPLETIONS_SORT_OPTIONS`.
+  `VIEW_MODES` + `_resolve_view_mode` went to `pages_common` (library and completions
+  resolve view_mode identically), same one-way-dependency reasoning as the import counts.
+- `pages.py`: 4259 → 3473 → 2420 → 1990 lines.
 
-**Remaining, in the order they're worth doing:** `pages_library.py`,
-`pages_completions.py`, `pages_account.py`. `pages.py` is currently auth + account +
-library + completions; account and completions are the smaller, cleaner cuts.
+**Remaining, in the order they're worth doing:** `pages_account.py`, then
+`pages_library.py`. `pages.py` is currently auth + account + library; account is the
+smaller, cleaner cut, leaving library (the biggest section) for last.
 
 **How to verify these safely** — the split is only trustworthy if it's a *pure move*.
 Prove it mechanically rather than by review: snapshot the app's route table (methods,
