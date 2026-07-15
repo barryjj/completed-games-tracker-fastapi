@@ -404,11 +404,19 @@ Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregato
 - `pages_completions.py` (2026-07-15) — the 7 completions routes + `COMPLETIONS_SORT_OPTIONS`.
   `VIEW_MODES` + `_resolve_view_mode` went to `pages_common` (library and completions
   resolve view_mode identically), same one-way-dependency reasoning as the import counts.
-- `pages.py`: 4259 → 3473 → 2420 → 1990 lines.
+- `pages_account.py` (2026-07-15) — settings/account/platform-CRUD/credentials routes +
+  `_annotate_platforms_in_library`. `home_page` and `tools_page` deliberately stayed: they
+  sit under the same section marker but are cross-domain dashboards wired into library via
+  `_build_lib_query`/`_steam_counts`. Imports only from `pages_common` — no library coupling.
+- `pages.py`: 4259 → 3473 → 2420 → 1990 → 1680 lines.
 
-**Remaining, in the order they're worth doing:** `pages_account.py`, then
-`pages_library.py`. `pages.py` is currently auth + account + library; account is the
-smaller, cleaner cut, leaving library (the biggest section) for last.
+**Remaining:** `pages_library.py` — the last and biggest section. `pages.py` is now auth +
+home/tools dashboards + library. Once library extracts, what's left (auth, the two
+dashboards, and whatever shared query helpers the dashboards need) is the thin aggregator —
+or a follow-up `pages_home` for home/tools if that reads cleaner. Note the home/tools ↔
+library coupling (`_build_lib_query`, `_steam_counts`, `PAGE_SIZE`, `_annotate_*` already
+moved): those shared query helpers will need to land in `pages_common` (or a query module)
+so both the dashboards and `pages_library` can reach them one-way.
 
 **How to verify these safely** — the split is only trustworthy if it's a *pure move*.
 Prove it mechanically rather than by review: snapshot the app's route table (methods,
