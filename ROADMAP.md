@@ -310,6 +310,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - PSN OAuth flow: open browser to login URL, user completes login, capture NPSSO token from cookies
 - Token stored and refreshed (valid ~6 months); used to pull library and trophy data
 - Platforms table must exist first — PSN games need proper platform rows (PS5, PS4, PS3, Vita, etc.)
+- Collection auto-detection: the good heuristic (`_infer_is_collection` / `_COLLECTION_RE`, word-boundary + `is_dlc` guard) currently lives in `steam.py`, but it's pure title-keyword logic, not Steam-specific. Lift it into a neutral shared module so PSN sync calls the same implementation covered by the same `test_integrations` cases, rather than importing from the Steam module or reintroducing a copy. (An earlier substring-scan draft that lived in `pages.py` was deleted in the pages split — it produced false positives like "Recollection"/"Assassin's Creed Origins" that those tests exist to guard against; don't revive it.)
 
 ### Achievements / trophies (promoted 2026-07-12 — third in the agreed Tauri → PSN → achievements sequence)
 - Unified concept across platforms: Steam achievements first, PSN trophies once PSN lands
@@ -386,10 +387,46 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   code; prune them. First instance of the shared-partial standard; the import-review
   filter selects (`_import_filter_selects.html`, PR #123) were a smaller precedent.
 
-### pages.py refactor — split by domain
-- At 3100+ lines `pages.py` is getting unwieldy; split into domain modules: `pages_library.py`, `pages_import.py`, `pages_match_review.py`, `pages_completions.py`, `pages_account.py`
-- `pages.py` becomes a thin aggregator; shared helpers (`_base_ctx`, auth wrappers, template setup) move to `pages_common.py`
-- Do after PR #115 merges so the import module boundary is stable
+### pages.py refactor — split by domain (in progress)
+Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregator.
+
+**Done (2026-07-14):**
+- `pages_common.py` — Jinja environment + filters, `_base_ctx`, `get_web_user`, the
+  metadata/visual helpers. Had to come first: no domain module can exist without
+  `templates` and `_base_ctx`.
+- `pages_match_review.py` — the 6 match-review routes. Taken first because it had
+  zero test coverage and the most destructive operations, so it was the riskiest
+  thing to move blind.
+- `pages_import.py` — the 20 historical-import routes + helpers. The import-count
+  badge helpers (`_import_tab_counts`, `_import_confirmed_count`, `_IMPORT_TABS`)
+  went to `pages_common` instead, because home/library render them too — keeps the
+  dependency one-way (nothing imports back from `pages_import`).
+- `pages.py`: 4259 → 3473 → 2420 lines.
+
+**Remaining, in the order they're worth doing:** `pages_library.py`,
+`pages_completions.py`, `pages_account.py`. `pages.py` is currently auth + account +
+library + completions; account and completions are the smaller, cleaner cuts.
+
+**How to verify these safely** — the split is only trustworthy if it's a *pure move*.
+Prove it mechanically rather than by review: snapshot the app's route table (methods,
+paths, handler names) and a hash of every route handler's source before and after; both
+must be unchanged. Moved routes shift position in the table, so also check no earlier
+dynamic route now shadows them. Watch for tests importing private helpers straight out
+of `backend.pages` — those imports break on a move and need repointing.
+
+**Do not run `ruff --fix` on the shrinking `pages.py` during a split.** It will strip
+things that look redundant but are load-bearing for the pure-move proof — e.g. the
+import split left six library/completions handlers with a *local* `import steamgriddb
+as sgdb` that `--fix` would have deleted (silently editing untouched handlers) once the
+module-level alias went unused. Remove now-unused *module-level* imports by hand instead
+(they aren't part of any handler's source, so they don't perturb the hashes), and let
+`ruff check` (no `--fix`) + `ruff format` (whitespace only) be the guardrail.
+
+**Known gap this refactor does not fix:** 34 of the original 74 `pages.py` routes have
+no test coverage at all — the whole match-review feature (and `backend/match_review.py`
+behind it), 11 import routes, `DELETE /library/entries/{id}`, the art auto-fetch
+endpoints, `POST /completions/{id}/increment`. Moving code doesn't make it tested. The
+destructive ones deserve tests on their own branch.
 
 ### Home / Tools / Settings restructure (direction agreed 2026-07-07 via in-app mockups)
 Replaces the old "Settings / navigation restructure" item. The current Integrations page conflated third-party integrations with function cards (import, match review), and Import lived in the user dropdown next to Settings — inconsistent and clunky. Direction settled with static mockup pages (mockup 2 rev 2 approved; the temporary mockup templates/routes/nav-links were deleted when phase 1 landed — see git history).
