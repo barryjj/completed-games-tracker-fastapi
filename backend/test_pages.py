@@ -531,7 +531,7 @@ def test_detail_pane_shows_description_from_appdetails(client, db_session):
 
 def test_extract_steam_meta_happy_path():
     """_extract_steam_meta returns clean display fields from a full payload."""
-    from backend.pages import _extract_steam_meta
+    from backend.pages_common import _extract_steam_meta
 
     appdetails = {
         "genres": [{"id": "1", "description": "Action"}, {"id": "25", "description": "Adventure"}],
@@ -580,7 +580,7 @@ def test_normalize_steam_date():
 
 
 def test_extract_steam_meta_publisher_shown_when_different():
-    from backend.pages import _extract_steam_meta
+    from backend.pages_common import _extract_steam_meta
 
     meta = _extract_steam_meta(
         {
@@ -593,7 +593,7 @@ def test_extract_steam_meta_publisher_shown_when_different():
 
 
 def test_extract_steam_meta_empty_payload():
-    from backend.pages import _extract_steam_meta
+    from backend.pages_common import _extract_steam_meta
 
     meta = _extract_steam_meta({})
     assert meta["genres"] == []
@@ -1032,7 +1032,7 @@ def test_user_artwork_h_wins_over_game_artwork(db_session):
     """UserArtwork cover_h beats a valid GameArtwork cover_h row in the
     detail-pane visuals dict — user explicit pick always wins."""
     from backend.models import User
-    from backend.pages import _build_detail_pane_visuals
+    from backend.pages_common import _build_detail_pane_visuals
 
     user = User(name="t", username="t", password_hash="x", api_token="tok-cov")
     db_session.add(user)
@@ -1165,7 +1165,7 @@ def test_clear_cover_override_rejects_bad_orientation(client, db_session):
 
 
 def test_needs_metadata_refresh_for_never_fetched_steam():
-    from backend.pages import _needs_metadata_refresh
+    from backend.pages_common import _needs_metadata_refresh
 
     release = models.GameRelease(source="steam", external_id="220", metadata_fetched_at=None)
     assert _needs_metadata_refresh(release) is True
@@ -1174,7 +1174,7 @@ def test_needs_metadata_refresh_for_never_fetched_steam():
 def test_needs_metadata_refresh_for_fresh_steam():
     import datetime as dt
 
-    from backend.pages import _needs_metadata_refresh
+    from backend.pages_common import _needs_metadata_refresh
 
     release = models.GameRelease(
         source="steam",
@@ -1187,7 +1187,7 @@ def test_needs_metadata_refresh_for_fresh_steam():
 def test_needs_metadata_refresh_for_stale_steam():
     import datetime as dt
 
-    from backend.pages import _needs_metadata_refresh
+    from backend.pages_common import _needs_metadata_refresh
 
     release = models.GameRelease(
         source="steam",
@@ -1198,7 +1198,7 @@ def test_needs_metadata_refresh_for_stale_steam():
 
 
 def test_needs_metadata_refresh_skips_non_steam():
-    from backend.pages import _needs_metadata_refresh
+    from backend.pages_common import _needs_metadata_refresh
 
     release = models.GameRelease(source="manual", external_id=None, metadata_fetched_at=None)
     assert _needs_metadata_refresh(release) is False
@@ -1252,7 +1252,7 @@ def test_needs_metadata_refresh_handles_naive_datetime():
     pane for any entry that had been enriched.)"""
     import datetime as dt
 
-    from backend.pages import _needs_metadata_refresh
+    from backend.pages_common import _needs_metadata_refresh
 
     # Naive datetime from 14 days ago — should be considered stale, no crash.
     release = models.GameRelease(

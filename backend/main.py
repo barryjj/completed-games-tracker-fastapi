@@ -141,7 +141,7 @@ async def requires_login_handler(request: Request, exc: RequiresLoginException):
 
 
 # Import and register the pages router after app is created to avoid circular imports
-from . import integrations, pages, pages_account, pages_completions, pages_import, pages_match_review  # noqa: E402
+from . import integrations, pages, pages_account, pages_completions, pages_import, pages_library, pages_match_review  # noqa: E402
 
 # Share the static cache-bust version across every Jinja2Templates instance so
 # {{ static_version }} works in base.html no matter which router rendered the page.
@@ -154,6 +154,7 @@ app.include_router(pages_match_review.router)
 app.include_router(pages_import.router)
 app.include_router(pages_completions.router)
 app.include_router(pages_account.router)
+app.include_router(pages_library.router)
 app.include_router(integrations.router)
 
 

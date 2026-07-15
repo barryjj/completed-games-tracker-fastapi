@@ -15,8 +15,8 @@ import re
 from fastapi import Depends, Request
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
-from sqlalchemy import func
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
 from . import importer, match_review, models, users
 from .models import get_db
@@ -584,3 +584,109 @@ def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: s
     if cookie_value in VIEW_MODES:
         return cookie_value
     return "list"
+
+
+# Library list query + its view/sort option lists. Shared: the library routes
+# (pages_library) and the home/tools dashboards (pages.py) both build the same
+# filtered query, so it lives here rather than coupling the two modules.
+VIEW_OPTIONS = ["default", "dlc", "collections", "in_collection", "manual", "all"]
+SORT_OPTIONS = ["name", "recently_played"]
+
+
+def _build_lib_query(
+    db: Session,
+    user: "models.User",
+    q: str,
+    platform: str,
+    view: str,
+    sort: str,
+    show_hidden: bool,
+    missing_art: bool,
+    view_mode: str,
+):
+    """Build and filter the library query.
+
+    Returns (base_q, view, sort) with view/sort normalisation applied.
+    Shared by library_page (full render) and library_more (scroll continuation).
+    """
+    base_q = (
+        db.query(models.UserLibraryEntry)
+        .join(models.UserLibraryEntry.release)
+        .join(models.GameRelease.game)
+        .options(
+            contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game),
+            contains_eager(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+            contains_eager(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+            selectinload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter(models.UserLibraryEntry.user_id == user.id)
+        .order_by(func.coalesce(models.Game.display_name, models.Game.title).collate("NOCASE"))
+    )
+    if sort not in SORT_OPTIONS:
+        sort = "name"
+    if sort == "recently_played":
+        base_q = base_q.order_by(None).order_by(models.UserLibraryEntry.last_played_at.desc().nulls_last())
+    if not show_hidden:
+        base_q = base_q.filter(models.UserLibraryEntry.is_hidden == False)
+    q = q.strip()
+    if q:
+        base_q = base_q.filter(
+            or_(
+                models.Game.title.ilike(f"%{q}%"),
+                models.Game.display_name.ilike(f"%{q}%"),
+            )
+        )
+    if platform:
+        # platform param is either "pid:<id>" (linked) or a raw string (unlinked)
+        if platform.startswith("pid:"):
+            try:
+                pid = int(platform[4:])
+                base_q = base_q.filter(models.GameRelease.platform_id == pid)
+            except ValueError:
+                pass
+        else:
+            base_q = base_q.filter(models.GameRelease.platform == platform)
+    if view not in VIEW_OPTIONS:
+        view = "default"
+    if view == "default":
+        base_q = base_q.filter(
+            or_(
+                models.Game.is_dlc == False,
+                models.UserLibraryEntry.import_source == "manual",
+            )
+        )
+    elif view == "dlc":
+        base_q = base_q.filter(models.Game.is_dlc == True)
+    elif view == "collections":
+        base_q = base_q.filter(models.Game.is_collection == True)
+    elif view == "in_collection":
+        base_q = base_q.filter(
+            models.Game.parent_id != None,
+            models.Game.is_dlc == False,
+        )
+    elif view == "manual":
+        base_q = base_q.filter(models.UserLibraryEntry.import_source == "manual")
+    if missing_art:
+        art_type = "cover_v" if view_mode == "grid_v" else "cover_h"
+        has_user_art_ids = (
+            db.query(models.UserArtwork.entry_id)
+            .filter(
+                models.UserArtwork.artwork_type == art_type,
+                models.UserArtwork.entry_id.isnot(None),
+                models.UserArtwork.url.isnot(None),
+            )
+            .scalar_subquery()
+        )
+        has_art_release_ids = (
+            db.query(models.GameArtwork.release_id)
+            .filter(
+                models.GameArtwork.artwork_type == art_type,
+                models.GameArtwork.is_valid.is_(True),
+            )
+            .scalar_subquery()
+        )
+        base_q = base_q.filter(
+            models.UserLibraryEntry.id.not_in(has_user_art_ids),
+            models.GameRelease.id.not_in(has_art_release_ids),
+        )
+    return base_q, view, sort
