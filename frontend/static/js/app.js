@@ -559,3 +559,47 @@ document.addEventListener('pointerover', function (e) {
     menu.classList.add('cgt-submenu-up');
   }
 });
+
+// ─── Tauri desktop shell integration ──────────────────────────────────────
+// Inside the desktop app, window.__TAURI__ exists (withGlobalTauri + the
+// remote-origin capability in desktop/src-tauri). Reveal the [data-tauri-only]
+// affordances and wire the cookie-capture buttons; in a plain browser this
+// whole block is inert and the manual-paste flow stays the only path.
+(function () {
+  if (!window.__TAURI__) return;
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-tauri-only]').forEach(function (el) {
+      el.classList.remove('d-none');
+    });
+  });
+
+  // Opens the Steam sign-in window (Rust side), waits for the cookies, then
+  // fills and submits the existing credentials form — save + flash + refresh
+  // behave exactly as if the values were pasted by hand.
+  window.cgtCaptureSteamCookies = async function (btn) {
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Waiting for Steam sign-in…';
+    try {
+      var cookies = await window.__TAURI__.core.invoke('capture_steam_login');
+      var form = document.getElementById('steam-credentials-form');
+      form.querySelector('[name="steam_session_id"]').value = cookies.sessionid;
+      form.querySelector('[name="steam_login_secure"]').value = cookies.steam_login_secure;
+      htmx.trigger(form, 'submit');
+    } catch (err) {
+      var flash = document.getElementById('steam-flash');
+      if (flash) {
+        flash.innerHTML = '';
+        var alert = document.createElement('div');
+        alert.className = 'alert alert-warning py-2';
+        var small = document.createElement('small');
+        small.textContent = String(err);
+        alert.appendChild(small);
+        flash.appendChild(alert);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  };
+})();
