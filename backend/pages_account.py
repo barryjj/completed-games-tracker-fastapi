@@ -74,10 +74,11 @@ _SETTINGS_SECTIONS = {"profile", "security", "appearance", "platforms", "integra
 @router.get("/account")
 def account_page(request: Request, tab: str = ""):
     """Old account page — content moved to /settings. Tab names map 1:1 to
-    settings sections, so deep links keep working. The tab value is checked
-    against the known section names so request data never flows into the
-    redirect target (CodeQL: untrusted URL redirection)."""
-    target = f"/settings?section={tab}" if tab in _SETTINGS_SECTIONS else "/settings"
+    settings sections, so deep links keep working. The redirect target is built
+    from a value taken out of the known-sections set (not from the request), so
+    request data never flows into the URL (CodeQL: untrusted URL redirection)."""
+    section = next((s for s in _SETTINGS_SECTIONS if s == tab), None)
+    target = f"/settings?section={section}" if section else "/settings"
     return RedirectResponse(target, status_code=302)
 
 
