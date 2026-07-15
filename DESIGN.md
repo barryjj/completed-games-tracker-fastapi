@@ -267,7 +267,7 @@ Color thresholds: ≥85 green, ≥70 teal, ≥50 yellow, ≥20 peach, else red.
 | `grid_h` | `cgt-library-grid--grid_h` | `cover_h` | 460×215 (landscape) |
 | list | table rows | `cover_h` thumbnail | fixed height |
 
-`_grid_cover_url(entry, orientation)` in `backend/pages.py` resolves the URL.
+`_grid_cover_url(entry, orientation)` in `backend/pages_common.py` resolves the URL.
 Fallback chain: UserArtwork → GameArtwork native (steam/psn) → GameArtwork sgdb.
 **No cross-orientation fallback** — stretched art looks worse than a placeholder.
 IGDB/manual entries without `cover_h` should use the SGDB picker to find one.

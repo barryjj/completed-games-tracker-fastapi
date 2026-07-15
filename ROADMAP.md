@@ -296,12 +296,24 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
 
-### Desktop packaging (Tauri) — promoted from Later 2026-07-08; agreed 2026-07-12 as next up, then PSN, then achievements
-- Wrap app in Tauri shell: FastAPI backend as sidecar, WebView for frontend
+### Tauri desktop shell — IN PROGRESS 2026-07-15 (full plan: `docs/tauri-desktop-plan.md`)
 - **Why now: it gates the sign-in story for both platform integrations.** A WebView we
   control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
   at login time — one "Sign in" click replaces manual cookie paste for both
-- Bundles into a single .app / .exe; target Mac first (user's primary machine), Windows second
+- Staged as three sequential PRs (agreed 2026-07-15):
+  1. **Dev shell** (`feature/tauri-shell`) — `desktop/` Tauri v2 app: launch starts the
+     backend from the repo `.venv` (reuses an already-running dev server if one answers on
+     :8000) and opens the UI in a window; kills the spawned backend on quit
+  2. **Steam cookie capture** (`feature/tauri-steam-capture`) — login WebView against
+     store.steampowered.com, `cookies_for_url()` grabs `sessionid`/`steamLoginSecure`
+     (HttpOnly), page JS submits them through the existing credentials form; stale-cookie
+     sync failure gets a re-capture affordance
+  3. **PSN capture framework** (`feature/psn-npsso-capture`) — `psn_npsso` column +
+     migration, `/integrations/psn` page (manual paste as web fallback), Sony login WebView
+     → NPSSO capture, test-token button; real library/trophy queries stay in the PSN phase
+- **Packaging (PyInstaller sidecar, bundled .app/.exe, installers) explicitly deferred to a
+  later roadmap phase** — the dev shell assumes the repo checkout + `.venv` exist on the
+  machine. Mac first (user's primary machine), Windows later.
 - **Explicitly does NOT change image loading.** The backend already runs locally; Tauri just
   swaps browser for WebView. Cover-art speed comes from the "Local artwork cache" item
   (Medium-term), which is independent, backend-only, and carries into Tauri unchanged.
@@ -387,8 +399,10 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   code; prune them. First instance of the shared-partial standard; the import-review
   filter selects (`_import_filter_selects.html`, PR #123) were a smaller precedent.
 
-### pages.py refactor — split by domain (in progress)
-Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregator.
+### pages.py refactor — split by domain ✅ (2026-07-15)
+Split `pages.py` into domain modules. `pages.py`: **4259 → 320 lines**, now just auth +
+the home/tools dashboards + the two per-entry logo-position routes. Every domain module
+imports one-way from `pages_common`; nothing imports back.
 
 **Done (2026-07-14):**
 - `pages_common.py` — Jinja environment + filters, `_base_ctx`, `get_web_user`, the
@@ -404,11 +418,25 @@ Split `pages.py` into domain modules, with `pages.py` ending up a thin aggregato
 - `pages_completions.py` (2026-07-15) — the 7 completions routes + `COMPLETIONS_SORT_OPTIONS`.
   `VIEW_MODES` + `_resolve_view_mode` went to `pages_common` (library and completions
   resolve view_mode identically), same one-way-dependency reasoning as the import counts.
-- `pages.py`: 4259 → 3473 → 2420 → 1990 lines.
+- `pages_account.py` (2026-07-15) — settings/account/platform-CRUD/credentials routes +
+  `_annotate_platforms_in_library`. `home_page` and `tools_page` deliberately stayed: they
+  sit under the same section marker but are cross-domain dashboards wired into library via
+  `_build_lib_query`/`_steam_counts`. Imports only from `pages_common` — no library coupling.
+- `pages_library.py` (2026-07-15) — the library list/grid page + infinite-scroll, entry
+  CRUD/hide, IGDB fetch/unlink, detail pane, metadata refresh, cover-override + auto-fetch
+  artwork, card fragments (`PAGE_SIZE` moved with it). `_build_lib_query` + `VIEW_OPTIONS` +
+  `SORT_OPTIONS` went to `pages_common` because the home/tools dashboards build the same
+  query. The steam/igdb/steamgriddb helpers stayed as function-local imports, avoiding the
+  ruff redundant-import pitfall. Also forced a latent cleanup: `test_pages.py` imported
+  `_extract_steam_meta` / `_build_detail_pane_visuals` / `_needs_metadata_refresh` from
+  `backend.pages` (they'd lived in `pages_common` since the first split but pages.py
+  re-exported them); repointed at `pages_common`.
+- `pages.py`: 4259 → 3473 → 2420 → 1990 → 1680 → 320 lines.
 
-**Remaining, in the order they're worth doing:** `pages_account.py`, then
-`pages_library.py`. `pages.py` is currently auth + account + library; account is the
-smaller, cleaner cut, leaving library (the biggest section) for last.
+**Optional follow-up (not scheduled):** `pages_home` for `home_page` + `tools_page`. They're
+the only non-auth routes left in `pages.py` and they call `_build_lib_query` / `_steam_counts`.
+Extracting them would leave `pages.py` as pure auth + router aggregation, but there's no
+pressing need — 320 lines is fine, and `_steam_counts` would have to move too.
 
 **How to verify these safely** — the split is only trustworthy if it's a *pure move*.
 Prove it mechanically rather than by review: snapshot the app's route table (methods,
