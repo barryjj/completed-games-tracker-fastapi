@@ -15,6 +15,7 @@ import re
 from fastapi import Depends, Request
 from fastapi.templating import Jinja2Templates
 from markupsafe import Markup, escape
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import importer, match_review, models, users
@@ -531,3 +532,30 @@ def get_web_user(request: Request, db: Session = Depends(get_db)) -> models.User
     if not user:
         raise RequiresLoginException()
     return user
+
+
+# Import-candidate badge counts — rendered in nav/home/library as well as on
+# the import review page itself, so they live here rather than in pages_import.
+_IMPORT_TABS = ("add_to_existing", "create_new", "needs_review")
+
+
+def _import_confirmed_count(db: Session, user_id: int) -> int:
+    return (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "confirmed")
+        .count()
+    )
+
+
+def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
+    counts = dict.fromkeys(_IMPORT_TABS, 0)
+    rows = (
+        db.query(models.ImportCandidate.proposed_action, func.count())
+        .filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "pending")
+        .group_by(models.ImportCandidate.proposed_action)
+        .all()
+    )
+    for action, count in rows:
+        if action in counts:
+            counts[action] = count
+    return counts
