@@ -559,3 +559,28 @@ def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
         if action in counts:
             counts[action] = count
     return counts
+
+
+# List-page view-mode resolution (list / grid_v / grid_h). Shared because both
+# the library and completions pages resolve view_mode the same way.
+VIEW_MODES = {"list", "grid_v", "grid_h"}
+
+
+def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: str) -> str:
+    """Resolve the effective view_mode for a list page.
+
+    Order of precedence:
+      1. Explicit `?view_mode=X` in the URL (user just clicked the toggle).
+      2. The persisted cookie set by the toolbar JS — this is the fix for
+         the "list flashes briefly before flipping to grid" lag, since the
+         server now renders the right view on first paint.
+      3. Default "list".
+
+    Falls back to "list" on junk values from any source.
+    """
+    if query_value:
+        return query_value if query_value in VIEW_MODES else "list"
+    cookie_value = request.cookies.get(cookie_name)
+    if cookie_value in VIEW_MODES:
+        return cookie_value
+    return "list"
