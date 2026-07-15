@@ -1851,6 +1851,50 @@ def test_full_page_load_never_duplicates_selects_even_with_refresh_flag(client, 
     assert r.text.count('id="import-platform-filter"') == 1
 
 
+def test_confirmed_tab_filter_dropdowns_populate_from_confirmed_candidates(client, db_session):
+    """The confirmed tab lists status=="confirmed" candidates with ANY
+    proposed_action, but the dropdown builders used to hardcode
+    status=="pending" AND proposed_action==tab — matching nothing there, so
+    platform/year selects rendered empty on that tab."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    entry = _make_plain_entry(db_session, user.id)
+    # confirmed candidate (SNES platform row + 2009 completion row via helper)
+    cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
+    snes = models.Platform(name="SNES", display_name="Super Nintendo")
+    db_session.add(snes)
+    db_session.flush()
+    cand.platform_id = snes.id
+    # pending decoy on another platform/year — must NOT bleed into confirmed's options
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    decoy = _make_import_candidate(db_session, user.id, "Pending Game", steam)
+    db_session.add(
+        models.ImportRow(
+            candidate_id=decoy.id,
+            raw_title="Pending Game",
+            raw_platform="Steam",
+            row_number=1,
+            completed_at=datetime.date(2021, 3, 2),
+            completed_at_precision="day",
+        )
+    )
+    db_session.commit()
+
+    # Full render of the confirmed tab: selects carry the confirmed set's options
+    full = client.get("/library/import/review?tab=confirmed")
+    assert full.status_code == 200
+    assert f'value="pid:{snes.id}"' in full.text
+    assert 'value="2009"' in full.text
+    assert f'value="pid:{steam.id}"' not in full.text
+    assert 'value="2021"' not in full.text
+
+    # and the platform filter actually narrows the confirmed list
+    r = client.get(f"/library/import/review?tab=confirmed&platform=pid:{snes.id}", headers=_HX)
+    assert "Old Game" in r.text
+
+
 def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
     _signup_and_login(client)
     user = db_session.query(models.User).first()

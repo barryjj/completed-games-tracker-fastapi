@@ -30,6 +30,11 @@ router = APIRouter()
 
 # --- Auth ---
 
+# Explicit expiry so the session survives WebView restarts: the Tauri (WKWebView)
+# shell discards no-expiry "session cookies" on every app quit — browsers restore
+# them, which is why the missing max_age never showed up there.
+_SESSION_MAX_AGE = 180 * 24 * 60 * 60  # 180 days
+
 
 @router.get("/login")
 def login_page(request: Request):
@@ -65,7 +70,7 @@ def signup_submit(
         )
     u = users.signup_user(db, username.strip(), password)
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("session", u.api_token, httponly=True, samesite="lax")
+    response.set_cookie("session", u.api_token, httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE)
     return response
 
 
@@ -85,7 +90,7 @@ def login_submit(
             status_code=401,
         )
     response = RedirectResponse("/", status_code=302)
-    response.set_cookie("session", user.api_token, httponly=True, samesite="lax")
+    response.set_cookie("session", user.api_token, httponly=True, samesite="lax", max_age=_SESSION_MAX_AGE)
     return response
 
 
