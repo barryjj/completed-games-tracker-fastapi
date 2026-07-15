@@ -301,9 +301,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
   at login time — one "Sign in" click replaces manual cookie paste for both
 - Staged as three sequential PRs (agreed 2026-07-15):
-  1. **Dev shell** (`feature/tauri-shell`) — `desktop/` Tauri v2 app: launch starts the
-     backend from the repo `.venv` (reuses an already-running dev server if one answers on
-     :8000) and opens the UI in a window; kills the spawned backend on quit
+  1. **Dev shell** ✅ (PR #132, merged 2026-07-15) — `desktop/` Tauri v2 app: launch starts
+     the backend from the repo `.venv` (reuses an already-running dev server if one answers
+     on :8000) and opens the UI in a window; kills the spawned backend on quit. Also rode
+     along: app icon (Bootstrap controller silhouette; Noun-variant alternate kept in
+     `src-tauri/icons/`), confirmed-tab import filter fix, session cookie 180-day max_age
+     (WKWebView drops no-expiry cookies on quit). Note: under `npm run dev` the tauri CLI
+     waits for devUrl, so dev mode needs uvicorn running — accepted; the built .app
+     self-spawns.
   2. **Steam cookie capture** (`feature/tauri-steam-capture`) — login WebView against
      store.steampowered.com, `cookies_for_url()` grabs `sessionid`/`steamLoginSecure`
      (HttpOnly), page JS submits them through the existing credentials form; stale-cookie

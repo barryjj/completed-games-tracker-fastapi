@@ -51,6 +51,7 @@
 
     <h5 class="cgt-config-section">Credentials</h5>
     <form
+      id="steam-credentials-form"
       hx-post="/integrations/steam/credentials"
       hx-target="#steam-flash"
       hx-swap="innerHTML"
@@ -70,6 +71,13 @@
       <hr class="my-3">
       <p class="section-heading">Browser Cookies <span class="fw-normal" style="text-transform: none; letter-spacing: 0;">— optional, enables faster DLC detection</span></p>
       <p class="text-secondary mb-3"><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
+      {# Desktop app only — revealed by app.js when window.__TAURI__ exists.
+         Opens a WebView sign-in window and captures both cookies, replacing
+         the DevTools paste above. #}
+      <div class="d-none mb-3" data-tauri-only>
+        <button type="button" class="btn btn-primary btn-sm" onclick="cgtCaptureSteamCookies(this)">Capture from Steam sign-in</button>
+        <div class="form-text">Opens a Steam sign-in window and fills both cookies automatically &mdash; no DevTools needed.</div>
+      </div>
       <div class="mb-3">
         <label class="form-label"><code>sessionid</code></label>
         <input
@@ -292,6 +300,12 @@
             hx-swap="innerHTML"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
           >Test Cookies</button>
+        </div>
+        <div class="d-none mt-2" data-tauri-only>
+          <div class="d-flex justify-content-between align-items-center gap-3">
+            <small class="text-secondary">Session expired? Re-capture both cookies in one click &mdash; usually no password needed.</small>
+            <button type="button" class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn" onclick="cgtCaptureSteamCookies(this)">Re-capture Cookies</button>
+          </div>
         </div>
         {% endif %}
       </div>

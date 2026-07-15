@@ -12,7 +12,7 @@ use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
-use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 
 const BACKEND_URL: &str = "http://127.0.0.1:8000";
 const BACKEND_ADDR: &str = "127.0.0.1:8000";
@@ -108,9 +108,89 @@ fn terminate(child: &mut Child) {
     let _ = child.wait();
 }
 
+#[derive(serde::Serialize)]
+struct SteamCookies {
+    sessionid: String,
+    steam_login_secure: String,
+}
+
+/// Open a Steam sign-in window and poll the shared cookie store until the
+/// logged-in marker cookie appears, then hand both cookies back to the page
+/// JS (which submits them through the existing credentials form, so auth and
+/// flash UX stay server-side). The store domain matters: the backend's one
+/// cookie-authenticated call is store.steampowered.com/dynamicstore/userdata/,
+/// and steamLoginSecure is per-domain — capturing on steamcommunity.com would
+/// yield cookies the backend can't use.
+///
+/// Async command on purpose: cookies_for_url deadlocks in sync commands on
+/// Windows, and the poll loop must not block the IPC thread. The blocking
+/// loop lives on a spawn_blocking thread; WebviewWindow methods proxy to the
+/// main thread internally.
+#[tauri::command]
+async fn capture_steam_login(app: AppHandle) -> Result<SteamCookies, String> {
+    const LABEL: &str = "steam-login";
+    const STORE_URL: &str = "https://store.steampowered.com";
+    if let Some(existing) = app.get_webview_window(LABEL) {
+        let _ = existing.set_focus();
+        return Err("A Steam sign-in window is already open.".into());
+    }
+    let login_url = format!("{STORE_URL}/login/")
+        .parse()
+        .expect("static URL parses");
+    let window = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(login_url))
+        .title("Sign in to Steam")
+        .inner_size(920.0, 800.0)
+        .build()
+        .map_err(|e| format!("Could not open the Steam sign-in window: {e}"))?;
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let store_url: tauri::Url = STORE_URL.parse().expect("static URL parses");
+        let deadline = Instant::now() + Duration::from_secs(600);
+        loop {
+            std::thread::sleep(Duration::from_millis(1500));
+            // Window gone = the user closed it without finishing sign-in.
+            if window.app_handle().get_webview_window(LABEL).is_none() {
+                return Err("Steam sign-in was cancelled.".to_string());
+            }
+            if Instant::now() > deadline {
+                let _ = window.close();
+                return Err("Timed out waiting for Steam sign-in.".to_string());
+            }
+            let cookies = match window.cookies_for_url(store_url.clone()) {
+                Ok(c) => c,
+                Err(e) => {
+                    eprintln!("[games-tracker] cookie poll failed: {e}");
+                    continue;
+                }
+            };
+            // sessionid exists even for anonymous visitors; steamLoginSecure
+            // only exists once signed in — it's the completion marker.
+            let find = |name: &str| {
+                cookies
+                    .iter()
+                    .find(|c| c.name() == name)
+                    .map(|c| c.value().to_string())
+            };
+            if let (Some(secure), Some(sessionid)) =
+                (find("steamLoginSecure"), find("sessionid"))
+            {
+                let _ = window.close();
+                return Ok(SteamCookies {
+                    sessionid,
+                    steam_login_secure: secure,
+                });
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Capture task failed: {e}"))?;
+    result
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(BackendChild(Mutex::new(None)))
+        .invoke_handler(tauri::generate_handler![capture_steam_login])
         .setup(|app| {
             let handle = app.handle().clone();
             // Backend bring-up happens off the main thread so the event loop
