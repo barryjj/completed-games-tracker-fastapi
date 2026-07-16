@@ -9,6 +9,12 @@
 {% for job in completed_jobs %}
   {% set kind = "success" if job.status.value == "done" else "danger" %}
   {% set body = job.message or job.error %}
+  {# Failure metadata for the desktop shell's stale-cookie auto-recovery.
+     Reset every iteration — a jinja set would otherwise leak from a failed
+     job onto the next toast in the same poll. #}
+  {% set error_code = job.error_code if job.status.value == "failed" else None %}
+  {% set retry_url = retry_paths.get(job.kind) if error_code and retry_paths else None %}
+  {% set job_label = job.label if error_code else None %}
   {% include "partials/_toast.html" %}
 {% endfor %}
 

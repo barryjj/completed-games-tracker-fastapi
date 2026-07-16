@@ -35,6 +35,7 @@ class Job:
     status: JobStatus = JobStatus.QUEUED
     message: str | None = None
     error: str | None = None
+    error_code: str | None = None  # machine-readable failure class, e.g. "steam_cookies_expired"
     notified: bool = False  # client has seen the completion toast for this job
     progress: dict | None = None  # live progress, updated mid-run: {done, total, title}
     cancel_requested: bool = False
@@ -124,11 +125,12 @@ def mark_done(job_id: str, message: str) -> Job | None:
     )
 
 
-def mark_failed(job_id: str, error: str) -> Job | None:
+def mark_failed(job_id: str, error: str, error_code: str | None = None) -> Job | None:
     return update(
         job_id,
         status=JobStatus.FAILED,
         error=error,
+        error_code=error_code,
         finished_at=datetime.datetime.now(datetime.UTC),
     )
 

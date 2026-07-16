@@ -88,6 +88,153 @@ def test_save_steam_credentials_clears_on_empty(client, db_session):
     assert user.steam_id64 == "76561197960287930"
 
 
+def test_cookies_only_endpoint_saves_cookies_but_not_api_key(client, db_session):
+    """POST /integrations/steam/cookies (desktop auto-recovery) updates the two
+    cookie columns and must leave the API key alone — the recovery JS runs from
+    whatever page the failure toast landed on and has no form to read it from."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_api_key = "KEEP-ME"
+    user.steam_session_id = "stale-sess"
+    user.steam_login_secure = "stale-login"
+    db_session.commit()
+
+    r = client.post(
+        "/integrations/steam/cookies",
+        data={"steam_session_id": "fresh-sess", "steam_login_secure": "fresh-login"},
+    )
+    assert r.status_code == 200
+    db_session.refresh(user)
+    assert user.steam_session_id == "fresh-sess"
+    assert user.steam_login_secure == "fresh-login"
+    assert user.steam_api_key == "KEEP-ME"
+
+    # Blank values are rejected rather than silently clearing credentials.
+    r = client.post(
+        "/integrations/steam/cookies",
+        data={"steam_session_id": "  ", "steam_login_secure": ""},
+    )
+    assert r.status_code == 422
+    db_session.refresh(user)
+    assert user.steam_session_id == "fresh-sess"
+
+
+def test_cookie_expiry_failure_tags_error_code_and_poll_carries_retry_metadata(client, db_session, monkeypatch):
+    """A sync failing with SteamCookiesExpiredError must (1) tag the job with
+    the machine-readable error_code and (2) surface data-error-code +
+    data-retry-url on the poll's failure toast — the hooks the desktop shell's
+    auto-recovery loop keys on. Plain ValueError failures must carry neither."""
+    import asyncio
+
+    from backend import jobs, steam
+    from backend.integrations import _run_sync_job
+
+    jobs.clear_all()
+    _setup_steam_connected(client, db_session)
+    user = db_session.query(models.User).first()
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "login"
+    db_session.commit()
+
+    # _run_sync_job opens its own SessionLocal (bound to the real DB URL, not
+    # the test engine) — patch it to the test session, and stop the runner's
+    # finally-close from killing that session (same dance as the sync tests).
+    db_session.close = lambda: None
+
+    def _expired(db, u):
+        raise steam.SteamCookiesExpiredError("Steam session cookies have expired — retry.")
+
+    monkeypatch.setattr(steam, "sync_full_library", _expired)
+    job = jobs.create(user_id=user.id, kind="steam_sync_full", label="Sync")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_full"))
+    assert jobs.get(job.id).status == jobs.JobStatus.FAILED
+    assert jobs.get(job.id).error_code == "steam_cookies_expired"
+
+    r = client.get("/integrations/jobs/poll")
+    assert r.status_code == 200
+    assert 'data-error-code="steam_cookies_expired"' in r.text
+    assert 'data-retry-url="/integrations/steam/sync-all"' in r.text
+
+    # Generic failures don't grow recovery attributes.
+    def _other(db, u):
+        raise ValueError("something else broke")
+
+    monkeypatch.setattr(steam, "sync_full_library", _other)
+    job2 = jobs.create(user_id=user.id, kind="steam_sync_full", label="Sync")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(_run_sync_job(job2.id, user.id, "steam_sync_full"))
+    assert jobs.get(job2.id).error_code is None
+    r2 = client.get("/integrations/jobs/poll")
+    assert "something else broke" in r2.text
+    assert "data-error-code" not in r2.text
+
+
+def test_psn_page_loads(client):
+    _signup_and_login(client)
+    r = client.get("/integrations/psn")
+    assert r.status_code == 200
+    assert b"PlayStation Network" in r.content
+    assert b"NPSSO" in r.content
+
+
+def test_save_psn_credentials_sets_captured_at_only_on_token_change(client, db_session):
+    token = _signup_and_login(client)
+    r = client.post(
+        "/integrations/psn/credentials",
+        data={"psn_online_id": "corrosivefrost", "psn_npsso": "a" * 64},
+    )
+    assert r.status_code == 200
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.refresh(user)
+    assert user.psn_online_id == "corrosivefrost"
+    assert user.psn_npsso == "a" * 64
+    first_captured = user.psn_npsso_captured_at
+    assert first_captured is not None
+
+    # Re-saving the same token (e.g. editing only the online id) must not
+    # move the captured_at freshness signal.
+    client.post(
+        "/integrations/psn/credentials",
+        data={"psn_online_id": "newname", "psn_npsso": "a" * 64},
+    )
+    db_session.refresh(user)
+    assert user.psn_online_id == "newname"
+    assert user.psn_npsso_captured_at == first_captured
+
+    # Clearing wipes token + timestamp.
+    client.post("/integrations/psn/credentials", data={"psn_online_id": "", "psn_npsso": ""})
+    db_session.refresh(user)
+    assert user.psn_npsso is None
+    assert user.psn_npsso_captured_at is None
+    assert user.psn_online_id is None
+
+
+def test_psn_test_token_paths(client, db_session):
+    """No token → error flash; authorize 302 with ?code= → valid; without → invalid."""
+    token = _signup_and_login(client)
+    r = client.post("/integrations/psn/test-token")
+    assert b"No NPSSO token saved" in r.content
+
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "x" * 64
+    db_session.commit()
+
+    valid = MagicMock()
+    valid.headers = {"location": "com.scee.psxandroid.scecompcall://redirect/?code=v3.AbCdEf"}
+    with patch("backend.integrations._httpx.get", return_value=valid) as mocked:
+        r = client.post("/integrations/psn/test-token")
+    assert b"valid" in r.content
+    assert mocked.call_args.kwargs["cookies"] == {"npsso": "x" * 64}
+    assert mocked.call_args.kwargs["follow_redirects"] is False
+
+    invalid = MagicMock()
+    invalid.headers = {"location": "https://ca.account.sony.com/some-error"}
+    with patch("backend.integrations._httpx.get", return_value=invalid):
+        r = client.post("/integrations/psn/test-token")
+    assert b"invalid or expired" in r.content
+
+
 def test_openid_forget_clears_identity_but_not_credentials(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()

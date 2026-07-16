@@ -5,7 +5,15 @@
 <div class="d-flex align-items-center gap-2 mb-4">
   <a href="/integrations" class="text-secondary text-decoration-none">&larr; Integrations</a>
 </div>
-<h1 class="mb-4">Steam</h1>
+<h1 class="mb-4 d-flex align-items-center" style="gap:.6rem;">
+  {# Steam glyph from Bootstrap Icons (MIT, (c) The Bootstrap Authors); inline
+     so it inherits the heading's theme color. #}
+  <svg xmlns="http://www.w3.org/2000/svg" width=".9em" height=".9em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" style="flex-shrink:0;">
+    <path d="M.329 10.333A8.01 8.01 0 0 0 7.99 16C12.414 16 16 12.418 16 8s-3.586-8-8.009-8A8.006 8.006 0 0 0 0 7.468l.003.006 4.304 1.769A2.2 2.2 0 0 1 5.62 8.88l1.96-2.844-.001-.04a3.046 3.046 0 0 1 3.042-3.043 3.046 3.046 0 0 1 3.042 3.043 3.047 3.047 0 0 1-3.111 3.044l-2.804 2a2.223 2.223 0 0 1-3.075 2.11 2.22 2.22 0 0 1-1.312-1.568L.33 10.333Z"/>
+    <path d="M4.868 12.683a1.715 1.715 0 0 0 1.318-3.165 1.7 1.7 0 0 0-1.263-.02l1.023.424a1.261 1.261 0 1 1-.97 2.33l-.99-.41a1.7 1.7 0 0 0 .882.84Zm3.726-6.687a2.03 2.03 0 0 0 2.027 2.029 2.03 2.03 0 0 0 2.027-2.029 2.03 2.03 0 0 0-2.027-2.027 2.03 2.03 0 0 0-2.027 2.027m2.03-1.527a1.524 1.524 0 1 1-.002 3.048 1.524 1.524 0 0 1 .002-3.048"/>
+  </svg>
+  Steam
+</h1>
 
 <div class="row g-4">
   <div class="col-lg-6">
@@ -70,15 +78,16 @@
       </div>
       <hr class="my-3">
       <p class="section-heading">Browser Cookies <span class="fw-normal" style="text-transform: none; letter-spacing: 0;">— optional, enables faster DLC detection</span></p>
-      <p class="text-secondary mb-3"><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
+      <p class="text-secondary mb-3" data-tauri-hide><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
       {# Desktop app only — revealed by app.js when window.__TAURI__ exists.
          Opens a WebView sign-in window and captures both cookies, replacing
          the DevTools paste above. #}
       <div class="d-none mb-3" data-tauri-only>
         <button type="button" class="btn btn-primary btn-sm" onclick="cgtCaptureSteamCookies(this)">Capture from Steam sign-in</button>
-        <div class="form-text">Opens a Steam sign-in window and fills both cookies automatically &mdash; no DevTools needed.</div>
+        <div class="form-text">Opens a Steam sign-in window and captures the session cookies automatically.
+          {% if current_user.steam_session_id and current_user.steam_login_secure %}Cookies are currently saved.{% endif %}</div>
       </div>
-      <div class="mb-3">
+      <div class="mb-3" data-tauri-hide>
         <label class="form-label"><code>sessionid</code></label>
         <input
           type="password"
@@ -89,7 +98,7 @@
           autocomplete="off"
         >
       </div>
-      <div class="mb-3">
+      <div class="mb-3" data-tauri-hide>
         <label class="form-label"><code>steamLoginSecure</code></label>
         <input
           type="password"
@@ -130,6 +139,14 @@
   <div class="col-lg-6">
     <h5 class="cgt-config-section">Library Sync</h5>
     {% if current_user.steam_id64 and current_user.steam_api_key %}
+    {# Refetches itself when the job poller reports any finished job (same
+       cgt:jobsDone pattern as home/tools), so the sync timestamps and the
+       cookie-gated sync button update without a manual reload. #}
+    <div id="steam-sync-status"
+         hx-get="/integrations/steam"
+         hx-select="#steam-sync-status"
+         hx-swap="outerHTML"
+         hx-trigger="cgt:jobsDone from:body">
     {% if current_user.steam_last_synced_at %}
     <p class="text-secondary mb-1"><small>Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% else %}
@@ -172,6 +189,7 @@
       >Sync Games Only</button>
     </div>
     {% endif %}
+    </div>
 
     {# Metadata enrichment status — visible by default since it tells you whether
        the background worker is still chewing through things. #}

@@ -10,6 +10,9 @@
    #toast-container with all its classes intact. #}
 <div hx-swap-oob="beforeend:#toast-container">
   <div class="toast toast-{{ kind }} align-items-center show"
+       {%- if error_code %} data-error-code="{{ error_code }}"{% endif %}
+       {%- if retry_url %} data-retry-url="{{ retry_url }}"{% endif %}
+       {%- if job_label %} data-job-label="{{ job_label }}"{% endif %}
        role="alert"
        aria-live="{{ 'assertive' if kind == 'danger' else 'polite' }}"
        aria-atomic="true"

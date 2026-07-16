@@ -187,10 +187,91 @@ async fn capture_steam_login(app: AppHandle) -> Result<SteamCookies, String> {
     result
 }
 
+#[derive(serde::Serialize)]
+struct PsnToken {
+    npsso: String,
+}
+
+/// Open a PlayStation sign-in window and poll the cookie store for the
+/// `npsso` cookie on ca.account.sony.com — the token the backend stores and
+/// later exchanges for PSN API access (the psn-api flow, validated by the
+/// psn-library-generator prototype). The cookie is HttpOnly, which is why
+/// the manual web flow needs the /api/v1/ssocookie JSON endpoint; reading
+/// the store directly sees it as soon as sign-in completes. If it hasn't
+/// materialized shortly after the user lands back on playstation.com, one
+/// navigation to the ssocookie endpoint re-establishes it.
+#[tauri::command]
+async fn capture_psn_login(app: AppHandle) -> Result<PsnToken, String> {
+    const LABEL: &str = "psn-login";
+    const SONY_ACCOUNT_URL: &str = "https://ca.account.sony.com";
+    const SSOCOOKIE_URL: &str = "https://ca.account.sony.com/api/v1/ssocookie";
+    if let Some(existing) = app.get_webview_window(LABEL) {
+        let _ = existing.set_focus();
+        return Err("A PlayStation sign-in window is already open.".into());
+    }
+    let login_url = "https://my.playstation.com/"
+        .parse()
+        .expect("static URL parses");
+    let window = WebviewWindowBuilder::new(&app, LABEL, WebviewUrl::External(login_url))
+        .title("Sign in to PlayStation")
+        .inner_size(920.0, 800.0)
+        .build()
+        .map_err(|e| format!("Could not open the PlayStation sign-in window: {e}"))?;
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let sony_url: tauri::Url = SONY_ACCOUNT_URL.parse().expect("static URL parses");
+        let deadline = Instant::now() + Duration::from_secs(600);
+        let mut saw_signin = false;
+        let mut back_on_psn_since: Option<Instant> = None;
+        let mut nudged_ssocookie = false;
+        loop {
+            std::thread::sleep(Duration::from_millis(1500));
+            if window.app_handle().get_webview_window(LABEL).is_none() {
+                return Err("PlayStation sign-in was cancelled.".to_string());
+            }
+            if Instant::now() > deadline {
+                let _ = window.close();
+                return Err("Timed out waiting for PlayStation sign-in.".to_string());
+            }
+            if let Ok(cookies) = window.cookies_for_url(sony_url.clone()) {
+                if let Some(c) = cookies.iter().find(|c| c.name() == "npsso") {
+                    let token = c.value().to_string();
+                    let _ = window.close();
+                    return Ok(PsnToken { npsso: token });
+                }
+            }
+            // Fallback: sign-in bounces my.playstation.com → Sony SSO → back.
+            // If we've seen the SSO page and been back on playstation.com for
+            // a few seconds with no npsso cookie, visit the ssocookie endpoint
+            // once — it re-establishes the cookie for a signed-in session.
+            if let Ok(url) = window.url() {
+                let host = url.host_str().unwrap_or("");
+                if host.contains("account.sony.com") || host.contains("sonyentertainmentnetwork") {
+                    saw_signin = true;
+                    back_on_psn_since = None;
+                } else if saw_signin && host.ends_with("playstation.com") {
+                    let since = *back_on_psn_since.get_or_insert_with(Instant::now);
+                    if !nudged_ssocookie && since.elapsed() > Duration::from_secs(5) {
+                        nudged_ssocookie = true;
+                        let sso = SSOCOOKIE_URL.parse().expect("static URL parses");
+                        let _ = window.navigate(sso);
+                    }
+                }
+            }
+        }
+    })
+    .await
+    .map_err(|e| format!("Capture task failed: {e}"))?;
+    result
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(BackendChild(Mutex::new(None)))
-        .invoke_handler(tauri::generate_handler![capture_steam_login])
+        .invoke_handler(tauri::generate_handler![
+            capture_steam_login,
+            capture_psn_login
+        ])
         .setup(|app| {
             let handle = app.handle().clone();
             // Backend bring-up happens off the main thread so the event loop

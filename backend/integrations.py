@@ -1,11 +1,12 @@
 import asyncio
+import datetime
 import logging
 import os
 import re
 from urllib.parse import urlencode
 
 import httpx as _httpx
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
@@ -74,6 +75,27 @@ def save_steam_credentials(
     )
     response.headers["HX-Refresh"] = "true"
     return response
+
+
+@router.post("/steam/cookies")
+def save_steam_cookies(
+    steam_session_id: str = Form(...),
+    steam_login_secure: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Save just the session cookies, leaving the API key untouched. Used by
+    the desktop shell's stale-cookie auto-recovery, which runs from whatever
+    page the failure toast lands on — it has no credentials form to read the
+    API key back from, so POSTing the full-form endpoint would blank it."""
+    session_id = steam_session_id.strip()
+    login_secure = steam_login_secure.strip()
+    if not session_id or not login_secure:
+        raise HTTPException(status_code=422, detail="Both cookies are required.")
+    current_user.steam_session_id = session_id
+    current_user.steam_login_secure = login_secure
+    db.commit()
+    return {"ok": True}
 
 
 # ─── Steam OpenID ("Sign in through Steam") ───────────────────────────────
@@ -247,6 +269,103 @@ def test_steam_cookies(
         )
 
 
+# ─── PSN (capture framework — library/trophy sync is a later phase) ───────
+
+_PSN_AUTHORIZE_URL = "https://ca.account.sony.com/api/authz/v3/oauth/authorize"
+# Public client id of the PlayStation Android app — the same one psn-api /
+# psnawp (and our ~/Coding/psn-library-generator prototype) authenticate as.
+_PSN_CLIENT_ID = "09515159-7237-4370-9b40-3806e67c0891"
+_PSN_REDIRECT_URI = "com.scee.psxandroid.scecompcall://redirect"
+
+
+@router.get("/psn")
+def psn_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="integrations_psn.html",
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
+    )
+
+
+@router.post("/psn/credentials")
+def save_psn_credentials(
+    request: Request,
+    psn_online_id: str = Form(""),
+    psn_npsso: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    npsso = psn_npsso.strip() or None
+    # captured_at tracks the token, not the form submit — only move it when
+    # the token actually changes (NPSSOs live ~2 months; the date is the
+    # "how stale is this" signal on the configure page).
+    if npsso != current_user.psn_npsso:
+        current_user.psn_npsso_captured_at = datetime.datetime.now(datetime.UTC) if npsso else None
+    current_user.psn_npsso = npsso
+    current_user.psn_online_id = psn_online_id.strip() or None
+    db.commit()
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "PSN credentials saved."},
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@router.post("/psn/test-token")
+def test_psn_token(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Sanity-check the stored NPSSO by running the first hop of the token
+    exchange (NPSSO → access code). A valid token gets a 302 whose location
+    carries ?code=…; anything else means invalid/expired. The code is
+    discarded — full token exchange belongs to the PSN sync phase."""
+    if not current_user.psn_npsso:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "No NPSSO token saved — capture or paste one above and save first."},
+        )
+    try:
+        resp = _httpx.get(
+            _PSN_AUTHORIZE_URL,
+            params={
+                "access_type": "offline",
+                "client_id": _PSN_CLIENT_ID,
+                "redirect_uri": _PSN_REDIRECT_URI,
+                "response_type": "code",
+                "scope": "psn:mobile.v2.core psn:clientapp",
+            },
+            cookies={"npsso": current_user.psn_npsso},
+            follow_redirects=False,
+            timeout=30,
+        )
+        location = resp.headers.get("location", "")
+        if "?code=" in location:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={"message": "NPSSO token is valid — PSN issued an access code."},
+            )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "NPSSO token appears invalid or expired — sign in to PlayStation again and re-capture it."},
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Request failed: {e}"},
+        )
+
+
 # All Steam sync job kinds, mapped to their (sync function, started toast text) tuple.
 # Adding a new kind here is the only place you need to wire up — endpoint just calls
 # _kick_off_sync with the kind, and _run_sync_job picks the function out of this table.
@@ -256,6 +375,9 @@ _STEAM_KINDS: dict[str, dict] = {
         "needs_cookies": True,
         "started": "Steam sync started — feel free to navigate away. You'll see a toast when it finishes.",
         "label": "Sync",
+        # POSTed by the desktop shell to re-run the job after it auto-refreshes
+        # expired cookies (see the steam_cookies_expired handling below).
+        "retry_path": "/integrations/steam/sync-all",
     },
     "steam_sync_games": {
         "fn": "sync_steam_library",
@@ -268,6 +390,7 @@ _STEAM_KINDS: dict[str, dict] = {
         "needs_cookies": True,
         "started": "Steam DLC sync started — you'll see a toast when it finishes.",
         "label": "DLC only",
+        "retry_path": "/integrations/steam/sync-dlc-only",
     },
     "steam_refresh_catalog": {
         "fn": "refresh_app_catalog",
@@ -350,6 +473,12 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
+    except steam.SteamCookiesExpiredError as e:
+        # Tagged so the desktop shell can recognize this failure on the poll
+        # toast, silently re-capture cookies in its WebView, and re-POST the
+        # job's retry_path — the seamless refresh loop. Browsers just see the
+        # normal failure toast text.
+        jobs.mark_failed(job_id, str(e), error_code="steam_cookies_expired")
     except ValueError as e:
         jobs.mark_failed(job_id, str(e))
     except Exception as e:
@@ -485,10 +614,18 @@ def jobs_poll(
     pending = jobs.pending_notifications_for(current_user.id)
     active = jobs.active_jobs_for(current_user.id)
     completed_import = next((j for j in pending if j.kind == "import_xlsx"), None)
+    # kind → retry endpoint, so failure toasts can carry a data-retry-url for
+    # the desktop shell's cookie-refresh loop.
+    retry_paths = {kind: spec["retry_path"] for kind, spec in _STEAM_KINDS.items() if spec.get("retry_path")}
     response = templates.TemplateResponse(
         request=request,
         name="partials/job_poller.html",
-        context={"completed_jobs": pending, "active_jobs": active, "completed_import": completed_import},
+        context={
+            "completed_jobs": pending,
+            "active_jobs": active,
+            "completed_import": completed_import,
+            "retry_paths": retry_paths,
+        },
     )
     triggers = []
     if pending:

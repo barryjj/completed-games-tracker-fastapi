@@ -117,10 +117,19 @@ window.cgtCoverFallback = function(img) {
 // base.html so they're defined before per-page inline scripts run — app.js
 // is `defer`red and wouldn't be ready in time otherwise.
 
-// Local-time helper: render any element with [data-utc] in the browser's locale.
-document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {
-  var d = new Date(el.dataset.utc + 'Z');
-  el.textContent = d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+// Local-time helper: render any element with [data-utc] in the browser's
+// locale. Re-run on HTMX swaps so refetched fragments (e.g. the Steam page's
+// #steam-sync-status block after a sync finishes) don't show the raw UTC
+// fallback text.
+function cgtRenderLocalTimes(root) {
+  (root || document).querySelectorAll('.local-time[data-utc]').forEach(function(el) {
+    var d = new Date(el.dataset.utc + 'Z');
+    el.textContent = d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+  });
+}
+cgtRenderLocalTimes();
+document.addEventListener('htmx:afterSettle', function(e) {
+  if (e.target instanceof Element) cgtRenderLocalTimes(e.target);
 });
 
 // Placeholder title fit: shrink font until the title fits within the
@@ -568,14 +577,107 @@ document.addEventListener('pointerover', function (e) {
 (function () {
   if (!window.__TAURI__) return;
   document.addEventListener('DOMContentLoaded', function () {
+    // Reveal desktop-only affordances; hide bits that only make sense in a
+    // browser (the DevTools cookie-paste instructions and manual fields —
+    // they stay in the DOM because the capture flow fills + submits them).
     document.querySelectorAll('[data-tauri-only]').forEach(function (el) {
       el.classList.remove('d-none');
     });
+    document.querySelectorAll('[data-tauri-hide]').forEach(function (el) {
+      el.classList.add('d-none');
+    });
+    _watchForCookieExpiryToasts();
   });
+
+  // ── Stale-cookie auto-recovery ──
+  // The job poller tags cookie-expiry failure toasts with
+  // data-error-code="steam_cookies_expired" and a data-retry-url. When one
+  // lands: swallow it, re-capture cookies in the WebView (usually silent —
+  // the Steam login outlives the captured cookies), save them via the
+  // cookies-only endpoint, and re-fire the failed operation. Guarded to one
+  // attempt per 10 minutes so a genuinely dead Steam login degrades to the
+  // normal failure toast instead of looping.
+  var COOKIE_RETRY_GUARD_KEY = 'cgt-steam-cookie-retry-at';
+
+  function _cookieRetryGuardActive() {
+    var t = parseInt(sessionStorage.getItem(COOKIE_RETRY_GUARD_KEY) || '0', 10);
+    return Date.now() - t < 10 * 60 * 1000;
+  }
+
+  async function _recoverSteamCookies(toastEl) {
+    sessionStorage.setItem(COOKIE_RETRY_GUARD_KEY, String(Date.now()));
+    var retryUrl = toastEl.getAttribute('data-retry-url');
+    var label = toastEl.getAttribute('data-job-label') || 'sync';
+    toastEl.remove();
+    cgtToast('Steam session expired — refreshing cookies…', 'info');
+    try {
+      var cookies = await window.__TAURI__.core.invoke('capture_steam_login');
+      var body = new FormData();
+      body.append('steam_session_id', cookies.sessionid);
+      body.append('steam_login_secure', cookies.steam_login_secure);
+      var save = await fetch('/integrations/steam/cookies', { method: 'POST', body: body });
+      if (!save.ok) throw new Error('saving refreshed cookies failed (HTTP ' + save.status + ')');
+      if (retryUrl) {
+        var retry = await fetch(retryUrl, { method: 'POST', headers: { 'HX-Request': 'true' } });
+        if (!retry.ok) throw new Error('restarting ' + label + ' failed (HTTP ' + retry.status + ')');
+        cgtToast('Cookies refreshed — ' + label + ' restarted.', 'info');
+      } else {
+        cgtToast('Cookies refreshed.', 'info');
+      }
+    } catch (err) {
+      cgtToast('Automatic cookie refresh failed: ' + String(err) + ' — use the Steam configure page to re-capture manually.', 'error');
+    }
+  }
+
+  function _watchForCookieExpiryToasts() {
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (m) {
+        Array.prototype.forEach.call(m.addedNodes, function (node) {
+          if (!(node instanceof Element)) return;
+          var toast = node.matches('[data-error-code="steam_cookies_expired"]')
+            ? node
+            : node.querySelector('[data-error-code="steam_cookies_expired"]');
+          if (!toast) return;
+          if (_cookieRetryGuardActive()) return; // let the failure toast show
+          _recoverSteamCookies(toast);
+        });
+      });
+    }).observe(container, { childList: true });
+  }
 
   // Opens the Steam sign-in window (Rust side), waits for the cookies, then
   // fills and submits the existing credentials form — save + flash + refresh
   // behave exactly as if the values were pasted by hand.
+  // PSN mirror of the Steam capture: sign-in window → npsso token → fill
+  // and submit the credentials form.
+  window.cgtCapturePsnNpsso = async function (btn) {
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Waiting for PlayStation sign-in…';
+    try {
+      var token = await window.__TAURI__.core.invoke('capture_psn_login');
+      var form = document.getElementById('psn-credentials-form');
+      form.querySelector('[name="psn_npsso"]').value = token.npsso;
+      htmx.trigger(form, 'submit');
+    } catch (err) {
+      var flash = document.getElementById('psn-flash');
+      if (flash) {
+        flash.innerHTML = '';
+        var alert = document.createElement('div');
+        alert.className = 'alert alert-warning py-2';
+        var small = document.createElement('small');
+        small.textContent = String(err);
+        alert.appendChild(small);
+        flash.appendChild(alert);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  };
+
   window.cgtCaptureSteamCookies = async function (btn) {
     var original = btn.textContent;
     btn.disabled = true;
