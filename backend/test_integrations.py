@@ -88,6 +88,80 @@ def test_save_steam_credentials_clears_on_empty(client, db_session):
     assert user.steam_id64 == "76561197960287930"
 
 
+def test_cookies_only_endpoint_saves_cookies_but_not_api_key(client, db_session):
+    """POST /integrations/steam/cookies (desktop auto-recovery) updates the two
+    cookie columns and must leave the API key alone — the recovery JS runs from
+    whatever page the failure toast landed on and has no form to read it from."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_api_key = "KEEP-ME"
+    user.steam_session_id = "stale-sess"
+    user.steam_login_secure = "stale-login"
+    db_session.commit()
+
+    r = client.post(
+        "/integrations/steam/cookies",
+        data={"steam_session_id": "fresh-sess", "steam_login_secure": "fresh-login"},
+    )
+    assert r.status_code == 200
+    db_session.refresh(user)
+    assert user.steam_session_id == "fresh-sess"
+    assert user.steam_login_secure == "fresh-login"
+    assert user.steam_api_key == "KEEP-ME"
+
+    # Blank values are rejected rather than silently clearing credentials.
+    r = client.post(
+        "/integrations/steam/cookies",
+        data={"steam_session_id": "  ", "steam_login_secure": ""},
+    )
+    assert r.status_code == 422
+    db_session.refresh(user)
+    assert user.steam_session_id == "fresh-sess"
+
+
+def test_cookie_expiry_failure_tags_error_code_and_poll_carries_retry_metadata(client, db_session, monkeypatch):
+    """A sync failing with SteamCookiesExpiredError must (1) tag the job with
+    the machine-readable error_code and (2) surface data-error-code +
+    data-retry-url on the poll's failure toast — the hooks the desktop shell's
+    auto-recovery loop keys on. Plain ValueError failures must carry neither."""
+    import asyncio
+
+    from backend import jobs, steam
+    from backend.integrations import _run_sync_job
+
+    _setup_steam_connected(client, db_session)
+    user = db_session.query(models.User).first()
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "login"
+    db_session.commit()
+
+    def _expired(db, u):
+        raise steam.SteamCookiesExpiredError("Steam session cookies have expired — retry.")
+
+    monkeypatch.setattr(steam, "sync_full_library", _expired)
+    job = jobs.create(user_id=user.id, kind="steam_sync_full", label="Sync")
+    asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_full"))
+    assert jobs.get(job.id).status == jobs.JobStatus.FAILED
+    assert jobs.get(job.id).error_code == "steam_cookies_expired"
+
+    r = client.get("/integrations/jobs/poll")
+    assert r.status_code == 200
+    assert 'data-error-code="steam_cookies_expired"' in r.text
+    assert 'data-retry-url="/integrations/steam/sync-all"' in r.text
+
+    # Generic failures don't grow recovery attributes.
+    def _other(db, u):
+        raise ValueError("something else broke")
+
+    monkeypatch.setattr(steam, "sync_full_library", _other)
+    job2 = jobs.create(user_id=user.id, kind="steam_sync_full", label="Sync")
+    asyncio.run(_run_sync_job(job2.id, user.id, "steam_sync_full"))
+    assert jobs.get(job2.id).error_code is None
+    r2 = client.get("/integrations/jobs/poll")
+    assert "something else broke" in r2.text
+    assert "data-error-code" not in r2.text
+
+
 def test_openid_forget_clears_identity_but_not_credentials(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()

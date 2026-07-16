@@ -5,7 +5,7 @@ import re
 from urllib.parse import urlencode
 
 import httpx as _httpx
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
@@ -74,6 +74,27 @@ def save_steam_credentials(
     )
     response.headers["HX-Refresh"] = "true"
     return response
+
+
+@router.post("/steam/cookies")
+def save_steam_cookies(
+    steam_session_id: str = Form(...),
+    steam_login_secure: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Save just the session cookies, leaving the API key untouched. Used by
+    the desktop shell's stale-cookie auto-recovery, which runs from whatever
+    page the failure toast lands on — it has no credentials form to read the
+    API key back from, so POSTing the full-form endpoint would blank it."""
+    session_id = steam_session_id.strip()
+    login_secure = steam_login_secure.strip()
+    if not session_id or not login_secure:
+        raise HTTPException(status_code=422, detail="Both cookies are required.")
+    current_user.steam_session_id = session_id
+    current_user.steam_login_secure = login_secure
+    db.commit()
+    return {"ok": True}
 
 
 # ─── Steam OpenID ("Sign in through Steam") ───────────────────────────────
@@ -256,6 +277,9 @@ _STEAM_KINDS: dict[str, dict] = {
         "needs_cookies": True,
         "started": "Steam sync started — feel free to navigate away. You'll see a toast when it finishes.",
         "label": "Sync",
+        # POSTed by the desktop shell to re-run the job after it auto-refreshes
+        # expired cookies (see the steam_cookies_expired handling below).
+        "retry_path": "/integrations/steam/sync-all",
     },
     "steam_sync_games": {
         "fn": "sync_steam_library",
@@ -268,6 +292,7 @@ _STEAM_KINDS: dict[str, dict] = {
         "needs_cookies": True,
         "started": "Steam DLC sync started — you'll see a toast when it finishes.",
         "label": "DLC only",
+        "retry_path": "/integrations/steam/sync-dlc-only",
     },
     "steam_refresh_catalog": {
         "fn": "refresh_app_catalog",
@@ -350,6 +375,12 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
+    except steam.SteamCookiesExpiredError as e:
+        # Tagged so the desktop shell can recognize this failure on the poll
+        # toast, silently re-capture cookies in its WebView, and re-POST the
+        # job's retry_path — the seamless refresh loop. Browsers just see the
+        # normal failure toast text.
+        jobs.mark_failed(job_id, str(e), error_code="steam_cookies_expired")
     except ValueError as e:
         jobs.mark_failed(job_id, str(e))
     except Exception as e:
@@ -485,10 +516,18 @@ def jobs_poll(
     pending = jobs.pending_notifications_for(current_user.id)
     active = jobs.active_jobs_for(current_user.id)
     completed_import = next((j for j in pending if j.kind == "import_xlsx"), None)
+    # kind → retry endpoint, so failure toasts can carry a data-retry-url for
+    # the desktop shell's cookie-refresh loop.
+    retry_paths = {kind: spec["retry_path"] for kind, spec in _STEAM_KINDS.items() if spec.get("retry_path")}
     response = templates.TemplateResponse(
         request=request,
         name="partials/job_poller.html",
-        context={"completed_jobs": pending, "active_jobs": active, "completed_import": completed_import},
+        context={
+            "completed_jobs": pending,
+            "active_jobs": active,
+            "completed_import": completed_import,
+            "retry_paths": retry_paths,
+        },
     )
     triggers = []
     if pending:

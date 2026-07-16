@@ -70,15 +70,16 @@
       </div>
       <hr class="my-3">
       <p class="section-heading">Browser Cookies <span class="fw-normal" style="text-transform: none; letter-spacing: 0;">— optional, enables faster DLC detection</span></p>
-      <p class="text-secondary mb-3"><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
+      <p class="text-secondary mb-3" data-tauri-hide><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
       {# Desktop app only — revealed by app.js when window.__TAURI__ exists.
          Opens a WebView sign-in window and captures both cookies, replacing
          the DevTools paste above. #}
       <div class="d-none mb-3" data-tauri-only>
         <button type="button" class="btn btn-primary btn-sm" onclick="cgtCaptureSteamCookies(this)">Capture from Steam sign-in</button>
-        <div class="form-text">Opens a Steam sign-in window and fills both cookies automatically &mdash; no DevTools needed.</div>
+        <div class="form-text">Opens a Steam sign-in window and captures the session cookies automatically.
+          {% if current_user.steam_session_id and current_user.steam_login_secure %}Cookies are currently saved.{% endif %}</div>
       </div>
-      <div class="mb-3">
+      <div class="mb-3" data-tauri-hide>
         <label class="form-label"><code>sessionid</code></label>
         <input
           type="password"
@@ -89,7 +90,7 @@
           autocomplete="off"
         >
       </div>
-      <div class="mb-3">
+      <div class="mb-3" data-tauri-hide>
         <label class="form-label"><code>steamLoginSecure</code></label>
         <input
           type="password"

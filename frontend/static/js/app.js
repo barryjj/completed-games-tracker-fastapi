@@ -568,10 +568,75 @@ document.addEventListener('pointerover', function (e) {
 (function () {
   if (!window.__TAURI__) return;
   document.addEventListener('DOMContentLoaded', function () {
+    // Reveal desktop-only affordances; hide bits that only make sense in a
+    // browser (the DevTools cookie-paste instructions and manual fields —
+    // they stay in the DOM because the capture flow fills + submits them).
     document.querySelectorAll('[data-tauri-only]').forEach(function (el) {
       el.classList.remove('d-none');
     });
+    document.querySelectorAll('[data-tauri-hide]').forEach(function (el) {
+      el.classList.add('d-none');
+    });
+    _watchForCookieExpiryToasts();
   });
+
+  // ── Stale-cookie auto-recovery ──
+  // The job poller tags cookie-expiry failure toasts with
+  // data-error-code="steam_cookies_expired" and a data-retry-url. When one
+  // lands: swallow it, re-capture cookies in the WebView (usually silent —
+  // the Steam login outlives the captured cookies), save them via the
+  // cookies-only endpoint, and re-fire the failed operation. Guarded to one
+  // attempt per 10 minutes so a genuinely dead Steam login degrades to the
+  // normal failure toast instead of looping.
+  var COOKIE_RETRY_GUARD_KEY = 'cgt-steam-cookie-retry-at';
+
+  function _cookieRetryGuardActive() {
+    var t = parseInt(sessionStorage.getItem(COOKIE_RETRY_GUARD_KEY) || '0', 10);
+    return Date.now() - t < 10 * 60 * 1000;
+  }
+
+  async function _recoverSteamCookies(toastEl) {
+    sessionStorage.setItem(COOKIE_RETRY_GUARD_KEY, String(Date.now()));
+    var retryUrl = toastEl.getAttribute('data-retry-url');
+    var label = toastEl.getAttribute('data-job-label') || 'sync';
+    toastEl.remove();
+    cgtToast('Steam session expired — refreshing cookies…', 'info');
+    try {
+      var cookies = await window.__TAURI__.core.invoke('capture_steam_login');
+      var body = new FormData();
+      body.append('steam_session_id', cookies.sessionid);
+      body.append('steam_login_secure', cookies.steam_login_secure);
+      var save = await fetch('/integrations/steam/cookies', { method: 'POST', body: body });
+      if (!save.ok) throw new Error('saving refreshed cookies failed (HTTP ' + save.status + ')');
+      if (retryUrl) {
+        var retry = await fetch(retryUrl, { method: 'POST', headers: { 'HX-Request': 'true' } });
+        if (!retry.ok) throw new Error('restarting ' + label + ' failed (HTTP ' + retry.status + ')');
+        cgtToast('Cookies refreshed — ' + label + ' restarted.', 'info');
+      } else {
+        cgtToast('Cookies refreshed.', 'info');
+      }
+    } catch (err) {
+      cgtToast('Automatic cookie refresh failed: ' + String(err) + ' — use the Steam configure page to re-capture manually.', 'error');
+    }
+  }
+
+  function _watchForCookieExpiryToasts() {
+    var container = document.getElementById('toast-container');
+    if (!container) return;
+    new MutationObserver(function (mutations) {
+      mutations.forEach(function (m) {
+        Array.prototype.forEach.call(m.addedNodes, function (node) {
+          if (!(node instanceof Element)) return;
+          var toast = node.matches('[data-error-code="steam_cookies_expired"]')
+            ? node
+            : node.querySelector('[data-error-code="steam_cookies_expired"]');
+          if (!toast) return;
+          if (_cookieRetryGuardActive()) return; // let the failure toast show
+          _recoverSteamCookies(toast);
+        });
+      });
+    }).observe(container, { childList: true });
+  }
 
   // Opens the Steam sign-in window (Rust side), waits for the cookies, then
   // fills and submits the existing credentials form — save + flash + refresh

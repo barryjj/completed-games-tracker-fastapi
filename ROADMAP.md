@@ -309,10 +309,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
      (WKWebView drops no-expiry cookies on quit). Note: under `npm run dev` the tauri CLI
      waits for devUrl, so dev mode needs uvicorn running — accepted; the built .app
      self-spawns.
-  2. **Steam cookie capture** (`feature/tauri-steam-capture`) — login WebView against
-     store.steampowered.com, `cookies_for_url()` grabs `sessionid`/`steamLoginSecure`
-     (HttpOnly), page JS submits them through the existing credentials form; stale-cookie
-     sync failure gets a re-capture affordance
+  2. **Steam cookie capture** (`feature/tauri-steam-capture`, PR #133) — login WebView
+     against store.steampowered.com, `cookies_for_url()` grabs `sessionid`/`steamLoginSecure`
+     (HttpOnly), page JS submits them through the existing credentials form. **Stale-cookie
+     auto-recovery:** cookie-expiry sync failures are tagged (`error_code` +
+     `data-retry-url` on the poll toast); in the desktop app the JS silently re-captures,
+     saves via the cookies-only endpoint, and re-fires the failed operation (one attempt
+     per 10 min, then degrades to the normal failure toast). Manual cookie fields are
+     hidden in-app (kept for browsers); capture/re-capture buttons are desktop-only.
   3. **PSN capture framework** (`feature/psn-npsso-capture`) — `psn_npsso` column +
      migration, `/integrations/psn` page (manual paste as web fallback), Sony login WebView
      → NPSSO capture, test-token button; real library/trophy queries stay in the PSN phase

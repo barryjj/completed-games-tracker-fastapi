@@ -576,6 +576,14 @@ def sync_steam_library(db: Session, user: models.User) -> dict:
     return {"added": result["games_added"], "updated": result["games_updated"], "total": result["games_total"]}
 
 
+class SteamCookiesExpiredError(ValueError):
+    """The stored sessionid/steamLoginSecure cookies no longer authenticate.
+    Subclasses ValueError so every existing catch keeps working; the job
+    runner catches this subclass first to tag the failure with a
+    machine-readable error_code, which the desktop shell uses to auto-run
+    the cookie re-capture + retry loop."""
+
+
 def _fetch_owned_appids(user: models.User) -> set[int]:
     """Hit dynamicstore/userdata/ with the user's session cookies and return the
     set of every appid they own (games + DLC + tools + everything)."""
@@ -598,7 +606,7 @@ def _fetch_owned_appids(user: models.User) -> set[int]:
     # sync since cookies went stale quietly reported success while finding
     # nothing (missed real, newly-added DLC with no error surfaced anywhere).
     if not owned:
-        raise ValueError(
+        raise SteamCookiesExpiredError(
             "Steam session cookies have expired — log in to Steam again and re-capture sessionid/steamLoginSecure, then retry."
         )
     return owned
