@@ -117,10 +117,19 @@ window.cgtCoverFallback = function(img) {
 // base.html so they're defined before per-page inline scripts run — app.js
 // is `defer`red and wouldn't be ready in time otherwise.
 
-// Local-time helper: render any element with [data-utc] in the browser's locale.
-document.querySelectorAll('.local-time[data-utc]').forEach(function(el) {
-  var d = new Date(el.dataset.utc + 'Z');
-  el.textContent = d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+// Local-time helper: render any element with [data-utc] in the browser's
+// locale. Re-run on HTMX swaps so refetched fragments (e.g. the Steam page's
+// #steam-sync-status block after a sync finishes) don't show the raw UTC
+// fallback text.
+function cgtRenderLocalTimes(root) {
+  (root || document).querySelectorAll('.local-time[data-utc]').forEach(function(el) {
+    var d = new Date(el.dataset.utc + 'Z');
+    el.textContent = d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+  });
+}
+cgtRenderLocalTimes();
+document.addEventListener('htmx:afterSettle', function(e) {
+  if (e.target instanceof Element) cgtRenderLocalTimes(e.target);
 });
 
 // Placeholder title fit: shrink font until the title fits within the

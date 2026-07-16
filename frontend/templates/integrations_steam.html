@@ -131,6 +131,14 @@
   <div class="col-lg-6">
     <h5 class="cgt-config-section">Library Sync</h5>
     {% if current_user.steam_id64 and current_user.steam_api_key %}
+    {# Refetches itself when the job poller reports any finished job (same
+       cgt:jobsDone pattern as home/tools), so the sync timestamps and the
+       cookie-gated sync button update without a manual reload. #}
+    <div id="steam-sync-status"
+         hx-get="/integrations/steam"
+         hx-select="#steam-sync-status"
+         hx-swap="outerHTML"
+         hx-trigger="cgt:jobsDone from:body">
     {% if current_user.steam_last_synced_at %}
     <p class="text-secondary mb-1"><small>Last synced <span class="local-time" data-utc="{{ current_user.steam_last_synced_at.isoformat() }}">{{ current_user.steam_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span></small></p>
     {% else %}
@@ -173,6 +181,7 @@
       >Sync Games Only</button>
     </div>
     {% endif %}
+    </div>
 
     {# Metadata enrichment status — visible by default since it tells you whether
        the background worker is still chewing through things. #}
