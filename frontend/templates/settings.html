@@ -262,14 +262,19 @@
         <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">Configure</a>
       </div>
 
-      <div class="cgt-service-row cgt-service-row--muted">
+      <div class="cgt-service-row">
         <div class="cgt-service-row__body">
           <div class="d-flex align-items-center gap-2">
             <span class="fw-semibold small">PlayStation Network</span>
-            <span class="badge bg-secondary">Coming soon</span>
+            {% if current_user.psn_npsso %}
+            <span class="badge bg-success">Connected</span>
+            {% else %}
+            <span class="badge bg-secondary">Not configured</span>
+            {% endif %}
           </div>
-          <div class="small text-secondary">Library and trophy sync</div>
+          <div class="small text-secondary">Sign-in capture ready &mdash; library and trophy sync coming</div>
         </div>
+        <a href="/integrations/psn" class="btn btn-surface btn-sm">Configure</a>
       </div>
     </div>
 

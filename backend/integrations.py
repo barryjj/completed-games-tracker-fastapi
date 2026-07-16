@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import os
 import re
@@ -259,6 +260,103 @@ def test_steam_cookies(
             request=request,
             name="partials/integrations_flash.html",
             context={"message": f"Cookies valid — {len(owned):,} owned apps visible (games + DLC)."},
+        )
+    except Exception as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": f"Request failed: {e}"},
+        )
+
+
+# ─── PSN (capture framework — library/trophy sync is a later phase) ───────
+
+_PSN_AUTHORIZE_URL = "https://ca.account.sony.com/api/authz/v3/oauth/authorize"
+# Public client id of the PlayStation Android app — the same one psn-api /
+# psnawp (and our ~/Coding/psn-library-generator prototype) authenticate as.
+_PSN_CLIENT_ID = "09515159-7237-4370-9b40-3806e67c0891"
+_PSN_REDIRECT_URI = "com.scee.psxandroid.scecompcall://redirect"
+
+
+@router.get("/psn")
+def psn_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    return templates.TemplateResponse(
+        request=request,
+        name="integrations_psn.html",
+        context={"current_user": current_user, **_base_ctx(db, current_user)},
+    )
+
+
+@router.post("/psn/credentials")
+def save_psn_credentials(
+    request: Request,
+    psn_online_id: str = Form(""),
+    psn_npsso: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    npsso = psn_npsso.strip() or None
+    # captured_at tracks the token, not the form submit — only move it when
+    # the token actually changes (NPSSOs live ~2 months; the date is the
+    # "how stale is this" signal on the configure page).
+    if npsso != current_user.psn_npsso:
+        current_user.psn_npsso_captured_at = datetime.datetime.now(datetime.UTC) if npsso else None
+    current_user.psn_npsso = npsso
+    current_user.psn_online_id = psn_online_id.strip() or None
+    db.commit()
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "PSN credentials saved."},
+    )
+    response.headers["HX-Refresh"] = "true"
+    return response
+
+
+@router.post("/psn/test-token")
+def test_psn_token(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Sanity-check the stored NPSSO by running the first hop of the token
+    exchange (NPSSO → access code). A valid token gets a 302 whose location
+    carries ?code=…; anything else means invalid/expired. The code is
+    discarded — full token exchange belongs to the PSN sync phase."""
+    if not current_user.psn_npsso:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "No NPSSO token saved — capture or paste one above and save first."},
+        )
+    try:
+        resp = _httpx.get(
+            _PSN_AUTHORIZE_URL,
+            params={
+                "access_type": "offline",
+                "client_id": _PSN_CLIENT_ID,
+                "redirect_uri": _PSN_REDIRECT_URI,
+                "response_type": "code",
+                "scope": "psn:mobile.v2.core psn:clientapp",
+            },
+            cookies={"npsso": current_user.psn_npsso},
+            follow_redirects=False,
+            timeout=30,
+        )
+        location = resp.headers.get("location", "")
+        if "?code=" in location:
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={"message": "NPSSO token is valid — PSN issued an access code."},
+            )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "NPSSO token appears invalid or expired — sign in to PlayStation again and re-capture it."},
         )
     except Exception as e:
         return templates.TemplateResponse(

@@ -650,6 +650,34 @@ document.addEventListener('pointerover', function (e) {
   // Opens the Steam sign-in window (Rust side), waits for the cookies, then
   // fills and submits the existing credentials form — save + flash + refresh
   // behave exactly as if the values were pasted by hand.
+  // PSN mirror of the Steam capture: sign-in window → npsso token → fill
+  // and submit the credentials form.
+  window.cgtCapturePsnNpsso = async function (btn) {
+    var original = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Waiting for PlayStation sign-in…';
+    try {
+      var token = await window.__TAURI__.core.invoke('capture_psn_login');
+      var form = document.getElementById('psn-credentials-form');
+      form.querySelector('[name="psn_npsso"]').value = token.npsso;
+      htmx.trigger(form, 'submit');
+    } catch (err) {
+      var flash = document.getElementById('psn-flash');
+      if (flash) {
+        flash.innerHTML = '';
+        var alert = document.createElement('div');
+        alert.className = 'alert alert-warning py-2';
+        var small = document.createElement('small');
+        small.textContent = String(err);
+        alert.appendChild(small);
+        flash.appendChild(alert);
+      }
+    } finally {
+      btn.disabled = false;
+      btn.textContent = original;
+    }
+  };
+
   window.cgtCaptureSteamCookies = async function (btn) {
     var original = btn.textContent;
     btn.disabled = true;

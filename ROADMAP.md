@@ -309,7 +309,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
      (WKWebView drops no-expiry cookies on quit). Note: under `npm run dev` the tauri CLI
      waits for devUrl, so dev mode needs uvicorn running — accepted; the built .app
      self-spawns.
-  2. **Steam cookie capture** (`feature/tauri-steam-capture`, PR #133) — login WebView
+  2. **Steam cookie capture** ✅ (PR #133, merged 2026-07-16) — login WebView
      against store.steampowered.com, `cookies_for_url()` grabs `sessionid`/`steamLoginSecure`
      (HttpOnly), page JS submits them through the existing credentials form. **Stale-cookie
      auto-recovery:** cookie-expiry sync failures are tagged (`error_code` +
@@ -317,9 +317,14 @@ Rough grouping of planned work. No dates or priority scores — order within eac
      saves via the cookies-only endpoint, and re-fires the failed operation (one attempt
      per 10 min, then degrades to the normal failure toast). Manual cookie fields are
      hidden in-app (kept for browsers); capture/re-capture buttons are desktop-only.
-  3. **PSN capture framework** (`feature/psn-npsso-capture`) — `psn_npsso` column +
-     migration, `/integrations/psn` page (manual paste as web fallback), Sony login WebView
-     → NPSSO capture, test-token button; real library/trophy queries stay in the PSN phase
+  3. **PSN capture framework** — IN PROGRESS (`feature/psn-npsso-capture`) — `psn_npsso` /
+     `psn_npsso_captured_at` / `psn_online_id` columns + migration, `/integrations/psn` page
+     (manual ssocookie paste as web fallback), Sony login WebView → NPSSO capture,
+     test-token button (NPSSO → access-code hop, code discarded); real library/trophy
+     queries stay in the PSN phase. **Auth flow and library crawl are already validated by
+     the working prototype at `~/Coding/psn-library-generator`** (Electron + psn-api):
+     client id, token exchange, refresh (~2-month refresh tokens), purchased/trophy/played
+     endpoints, and battle-tested merge heuristics — port from there, don't re-derive
 - **Packaging (PyInstaller sidecar, bundled .app/.exe, installers) explicitly deferred to a
   later roadmap phase** — the dev shell assumes the repo checkout + `.venv` exist on the
   machine. Mac first (user's primary machine), Windows later.

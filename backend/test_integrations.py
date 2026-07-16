@@ -170,6 +170,71 @@ def test_cookie_expiry_failure_tags_error_code_and_poll_carries_retry_metadata(c
     assert "data-error-code" not in r2.text
 
 
+def test_psn_page_loads(client):
+    _signup_and_login(client)
+    r = client.get("/integrations/psn")
+    assert r.status_code == 200
+    assert b"PlayStation Network" in r.content
+    assert b"NPSSO" in r.content
+
+
+def test_save_psn_credentials_sets_captured_at_only_on_token_change(client, db_session):
+    token = _signup_and_login(client)
+    r = client.post(
+        "/integrations/psn/credentials",
+        data={"psn_online_id": "corrosivefrost", "psn_npsso": "a" * 64},
+    )
+    assert r.status_code == 200
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.refresh(user)
+    assert user.psn_online_id == "corrosivefrost"
+    assert user.psn_npsso == "a" * 64
+    first_captured = user.psn_npsso_captured_at
+    assert first_captured is not None
+
+    # Re-saving the same token (e.g. editing only the online id) must not
+    # move the captured_at freshness signal.
+    client.post(
+        "/integrations/psn/credentials",
+        data={"psn_online_id": "newname", "psn_npsso": "a" * 64},
+    )
+    db_session.refresh(user)
+    assert user.psn_online_id == "newname"
+    assert user.psn_npsso_captured_at == first_captured
+
+    # Clearing wipes token + timestamp.
+    client.post("/integrations/psn/credentials", data={"psn_online_id": "", "psn_npsso": ""})
+    db_session.refresh(user)
+    assert user.psn_npsso is None
+    assert user.psn_npsso_captured_at is None
+    assert user.psn_online_id is None
+
+
+def test_psn_test_token_paths(client, db_session):
+    """No token → error flash; authorize 302 with ?code= → valid; without → invalid."""
+    token = _signup_and_login(client)
+    r = client.post("/integrations/psn/test-token")
+    assert b"No NPSSO token saved" in r.content
+
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "x" * 64
+    db_session.commit()
+
+    valid = MagicMock()
+    valid.headers = {"location": "com.scee.psxandroid.scecompcall://redirect/?code=v3.AbCdEf"}
+    with patch("backend.integrations._httpx.get", return_value=valid) as mocked:
+        r = client.post("/integrations/psn/test-token")
+    assert b"valid" in r.content
+    assert mocked.call_args.kwargs["cookies"] == {"npsso": "x" * 64}
+    assert mocked.call_args.kwargs["follow_redirects"] is False
+
+    invalid = MagicMock()
+    invalid.headers = {"location": "https://ca.account.sony.com/some-error"}
+    with patch("backend.integrations._httpx.get", return_value=invalid):
+        r = client.post("/integrations/psn/test-token")
+    assert b"invalid or expired" in r.content
+
+
 def test_openid_forget_clears_identity_but_not_credentials(client, db_session):
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()

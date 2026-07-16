@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}PlayStation Network Integration{% endblock %}
+
+{% block content %}
+<div class="d-flex align-items-center gap-2 mb-4">
+  <a href="/integrations" class="text-secondary text-decoration-none">&larr; Integrations</a>
+</div>
+<h1 class="mb-4 d-flex align-items-center" style="gap:.6rem;">
+  {# PlayStation glyph from Bootstrap Icons (MIT, (c) The Bootstrap Authors);
+     inline so it inherits the heading's theme color. #}
+  <svg xmlns="http://www.w3.org/2000/svg" width=".9em" height=".9em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" style="flex-shrink:0;">
+    <path d="M15.858 11.451c-.313.395-1.079.676-1.079.676l-5.696 2.046v-1.509l4.192-1.493c.476-.17.549-.412.162-.538-.386-.127-1.085-.09-1.56.08l-2.794.984v-1.566l.161-.054s.807-.286 1.942-.412c1.135-.125 2.525.017 3.616.43 1.23.39 1.368.962 1.056 1.356M9.625 8.883v-3.86c0-.453-.083-.87-.508-.988-.326-.105-.528.198-.528.65v9.664l-2.606-.827V2c1.108.206 2.722.692 3.59.985 2.207.757 2.955 1.7 2.955 3.825 0 2.071-1.278 2.856-2.903 2.072Zm-8.424 3.625C-.061 12.15-.271 11.41.304 10.984c.532-.394 1.436-.69 1.436-.69l3.737-1.33v1.515l-2.69.963c-.474.17-.547.411-.161.538.386.126 1.085.09 1.56-.08l1.29-.469v1.356l-.257.043a8.45 8.45 0 0 1-4.018-.323Z"/>
+  </svg>
+  PlayStation Network
+</h1>
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <h5 class="cgt-config-section">Credentials</h5>
+
+    {% if current_user.psn_npsso %}
+    <p class="text-secondary mb-3"><small>NPSSO token captured
+      {% if current_user.psn_npsso_captured_at %}
+      <span class="local-time" data-utc="{{ current_user.psn_npsso_captured_at.isoformat() }}">{{ current_user.psn_npsso_captured_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
+      {% endif %}
+      &mdash; tokens stay valid for roughly two months.</small></p>
+    {% else %}
+    <p class="text-secondary mb-3"><small>Not configured. The NPSSO token authenticates PSN API access; library and trophy sync arrive in a later phase, but capturing the token now means that phase starts ready.</small></p>
+    {% endif %}
+
+    <form
+      id="psn-credentials-form"
+      hx-post="/integrations/psn/credentials"
+      hx-target="#psn-flash"
+      hx-swap="innerHTML"
+    >
+      <div class="mb-3">
+        <label class="form-label">PSN Online ID</label>
+        <input
+          type="text"
+          class="form-control"
+          name="psn_online_id"
+          value="{{ current_user.psn_online_id or '' }}"
+          placeholder="Your PSN username"
+          autocomplete="off"
+        >
+        <div class="form-text">Used to look up your account when sync lands.</div>
+      </div>
+      <hr class="my-3">
+      <p class="section-heading">NPSSO Token</p>
+      <p class="text-secondary mb-3" data-tauri-hide><small>Log in at <a href="https://www.playstation.com" target="_blank" rel="noopener">playstation.com</a> in your browser, then visit <a href="https://ca.account.sony.com/api/v1/ssocookie" target="_blank" rel="noopener">ca.account.sony.com/api/v1/ssocookie</a> and copy the <code>npsso</code> value from the JSON response.</small></p>
+      {# Desktop app only — revealed by app.js when window.__TAURI__ exists.
+         Opens a WebView sign-in window and captures the token, replacing the
+         manual JSON-copy above. #}
+      <div class="d-none mb-3" data-tauri-only>
+        <button type="button" class="btn btn-primary btn-sm" onclick="cgtCapturePsnNpsso(this)">Capture from PlayStation sign-in</button>
+        <div class="form-text">Opens a PlayStation sign-in window and captures the token automatically.</div>
+      </div>
+      <div class="mb-3" data-tauri-hide>
+        <label class="form-label"><code>npsso</code></label>
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="psn_npsso"
+          value="{{ current_user.psn_npsso or '' }}"
+          placeholder="64-character NPSSO token"
+          autocomplete="off"
+        >
+      </div>
+      <div class="d-flex gap-3 flex-wrap align-items-center">
+        <button type="submit" class="btn btn-primary">Save Credentials</button>
+        {% if current_user.psn_npsso or current_user.psn_online_id %}
+        <button
+          type="button"
+          class="btn btn-ghost-danger btn-sm"
+          hx-post="/integrations/psn/credentials"
+          hx-vals='{"psn_online_id": "", "psn_npsso": ""}'
+          hx-target="#psn-flash"
+          hx-swap="innerHTML"
+          hx-confirm="Clear your saved PSN Online ID and NPSSO token?"
+        >Clear credentials</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-6">
+    <h5 class="cgt-config-section">Library Sync</h5>
+    <p class="text-secondary mb-3"><small>PSN library and trophy sync land in a later phase &mdash; imported games will go through the same match review queue as Steam.</small></p>
+    {% if current_user.psn_npsso %}
+    <div class="d-flex justify-content-between align-items-center gap-3">
+      <small class="text-secondary">Sanity-check the saved token by requesting a PSN access code.</small>
+      <button
+        class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn"
+        hx-post="/integrations/psn/test-token"
+        hx-target="#psn-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
+      >Test Token</button>
+    </div>
+    {% else %}
+    <p class="text-secondary"><small>Save an NPSSO token to enable the token test.</small></p>
+    {% endif %}
+  </div>
+</div>
+
+<div id="psn-flash" class="mt-4"></div>
+{% endblock %}
