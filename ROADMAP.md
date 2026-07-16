@@ -559,7 +559,19 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 
 ## Later
 
-### Platform preferences
+### Platform overlay glyphs on cover art (noted 2026-07-16, becomes relevant once PSN sync lands)
+- Small platform-indicator SVGs (Steam / PlayStation / etc.) rendered at partial opacity in
+  a corner of cover cards, in every view that shows artwork (library grids, completion
+  grids, detail-pane child tables)
+- **Why:** once PSN sync exists, the same game appears per-platform with identical artwork
+  (e.g. RE4 on PS5 and Steam) — the covers alone can't tell you which entry you're looking
+  at; a corner glyph disambiguates without giving up the clean cover-only mosaic
+- We already ship inline Bootstrap Icons glyphs for Steam/PlayStation (integration pages +
+  Tools cards) — same assets, likely driven by the platform accent/badge system so the
+  overlay maps platform → glyph the way `platform_tag_class` maps platform → color
+- Design questions for when it's picked up: corner choice + opacity, always-on vs. only when
+  the same game's artwork repeats in view, per-view toggle alongside the existing
+  borderless/size controls, and whether hidden/DLC indicators join the same overlay layer
 - User settings: check/uncheck platforms you own or want to track
 - Library and completions filters respect this by default
 
