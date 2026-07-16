@@ -129,18 +129,25 @@ def test_cookie_expiry_failure_tags_error_code_and_poll_carries_retry_metadata(c
     from backend import jobs, steam
     from backend.integrations import _run_sync_job
 
+    jobs.clear_all()
     _setup_steam_connected(client, db_session)
     user = db_session.query(models.User).first()
     user.steam_session_id = "sess"
     user.steam_login_secure = "login"
     db_session.commit()
 
+    # _run_sync_job opens its own SessionLocal (bound to the real DB URL, not
+    # the test engine) — patch it to the test session, and stop the runner's
+    # finally-close from killing that session (same dance as the sync tests).
+    db_session.close = lambda: None
+
     def _expired(db, u):
         raise steam.SteamCookiesExpiredError("Steam session cookies have expired — retry.")
 
     monkeypatch.setattr(steam, "sync_full_library", _expired)
     job = jobs.create(user_id=user.id, kind="steam_sync_full", label="Sync")
-    asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_full"))
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(_run_sync_job(job.id, user.id, "steam_sync_full"))
     assert jobs.get(job.id).status == jobs.JobStatus.FAILED
     assert jobs.get(job.id).error_code == "steam_cookies_expired"
 
@@ -155,7 +162,8 @@ def test_cookie_expiry_failure_tags_error_code_and_poll_carries_retry_metadata(c
 
     monkeypatch.setattr(steam, "sync_full_library", _other)
     job2 = jobs.create(user_id=user.id, kind="steam_sync_full", label="Sync")
-    asyncio.run(_run_sync_job(job2.id, user.id, "steam_sync_full"))
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(_run_sync_job(job2.id, user.id, "steam_sync_full"))
     assert jobs.get(job2.id).error_code is None
     r2 = client.get("/integrations/jobs/poll")
     assert "something else broke" in r2.text
