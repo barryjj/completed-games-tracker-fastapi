@@ -1,8 +1,47 @@
 # Roadmap
 
-Rough grouping of planned work. No dates or priority scores — order within each section is approximate.
+**Concrete, planned work now lives in [GitHub issues](https://github.com/barryjj/completed-games-tracker-fastapi/issues), not here.** File an issue (with a horizon label) instead of adding a per-feature entry to this doc. What remains here: a pointer table to the tracked issues, a short list of *speculative* ideas not yet ready to be issues, and the shipped-history changelog below (frozen).
+
+**Horizon labels** (on issues): `now` = actively next · `next` = after the current work · `later` = real but not urgent.
+
+## Tracked as issues
+
+| Issue | Item | Horizon |
+|-------|------|---------|
+| #135 | PSN library integration — crawl + merge from prototype | now |
+| #136 | Achievements / trophies (Steam first, PSN after) | now |
+| #140 | "Group by title" library view (ignore platform) | next |
+| #142 | Local artwork cache — download + serve same-origin | next |
+| #143 | Platform overlay glyphs on cover art | next |
+| #144 | Unified confidence-coding box (import + sync match review) | next |
+| #145 | Home customization — pin/unpin, widget picker, arrangement | next |
+| #146 | Stats & dashboard expansion + widget sizing | next |
+| #137 | Mosaic export | later |
+| #138 | User avatar displayed alongside username | later |
+| #139 | HowLongToBeat + external cross-reference links | later |
+| #141 | Parent/DLC grouping in list view | later |
+| #147 | Sort name field (franchise sort order) | later |
+| #148 | User-configurable DLC auto-hide keywords | later |
+| #149 | Platform ownership preferences | later |
+| #150 | Collection contents view + bulk-complete sub-games | later |
+| #151 | Polished README — screenshots, CI badges | later |
+
+## Possible improvements — not yet issues
+
+Speculative or undesigned. Promote one to an issue when it becomes almost-certainly-planned; that's the only reason to edit this list. (Full original notes for some of these remain in the frozen history below.)
+
+- **Steam news / announcements in detail pane** — `GetNewsForApp` "Latest news" section; follow-on to achievements.
+- **Bulk re-apply heuristics** — re-run classification on cached `appdetails` with no re-fetch, for when heuristic logic changes. A dev-maintenance tool, useful only right after classification code changes.
+- **Multiple completions on merge** — decide collapse vs. keep when both merged entries have completions.
+- **DLC completion visibility on library page** — surface a DLC-completion count/indicator on the parent's card.
+- **Tags → personal collections + "now playing" (epic)** — arbitrary tags, tag-driven views/collections, an in-progress status; reconcile with the current `is_collection` hierarchy. The "franchise" grouping idea (from the sort-name issue #147) belongs here too. Undesigned.
+- **Collection membership + hierarchy fixes** — membership is per-`Game`, so a game can't be both standalone and in a collection (DS *Dawn of Sorrow* vs. a Steam Castlevania collection); and adding a child requires the parent to already be `is_collection` (Shovel Knight → Treasure Trove). Real design work; connects to #150.
 
 ---
+
+## Shipped history & original notes (frozen — do not add here)
+
+The sections below are the shipped-work changelog (✅) plus the original detailed notes for items now tracked in the issue table above. Kept for reference; superseded by issues where a table entry exists.
 
 ## In progress / next up
 
@@ -223,7 +262,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - DLC-only filter: flat list with parent name shown alongside each row
 - Sort by added date meaningful only at parent level
 
-### Cover art grid view
+### Cover art grid view ✅ (shipped — library grid view PR #70 + completions grid port)
 - Grid toggle on library page using Steam CDN cover art (already stored in `GameArtwork` table)
 - Completions page: cover thumbnails alongside game titles
 
@@ -234,7 +273,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - API key + cookies still require manual paste (Steam doesn't issue API keys via OpenID, and session-cookie capture needs Tauri)
 - Pure web — no Tauri prerequisite for this part
 
-### Steam cookie capture (Tauri-only)
+### Steam cookie capture (Tauri) ✅ (PR #133)
 - Eliminates the `steamLoginSecure` / `sessionid` manual paste step
 - Requires the Tauri desktop wrapper to host a WebView that can intercept Steam's response cookies after login
 - Pair with the existing OpenID identity flow: one "Sign in through Steam" click → SteamID + persona + cookies all captured at once
@@ -296,7 +335,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
 - Review queue is platform-agnostic — PSN adds rows to the same queue when it lands without any rework
 - Building this before PSN means the PSN sync gets proper duplicate handling from day one
 
-### Tauri desktop shell — IN PROGRESS 2026-07-15 (full plan: `docs/tauri-desktop-plan.md`)
+### Tauri desktop shell ✅ (PRs #132 / #133 / #134, all merged by 2026-07-16 — full plan: `docs/tauri-desktop-plan.md`)
 - **Why now: it gates the sign-in story for both platform integrations.** A WebView we
   control can capture Steam's `steamLoginSecure`/`sessionid` cookies and PSN's NPSSO token
   at login time — one "Sign in" click replaces manual cookie paste for both
@@ -386,7 +425,7 @@ Rough grouping of planned work. No dates or priority scores — order within eac
   - Real matcher bug fixed this session: SQL-level candidate narrowing (`_search_pool`) did a literal contiguous-phrase `ILIKE`, which failed outright when the library title had stray characters the spreadsheet text didn't (e.g. "Golden Axe™ II" vs spreadsheet "Golden Axe II") — the correct entry was silently excluded before Python-side normalization ever ran. Combined with "III" containing "II" as a literal substring, this caused "Golden Axe II" to wrongly match "Golden Axe III"'s library entry. Fixed by tokenizing the search phrase (same punctuation-stripping as `_normalize_title`) and requiring each word to independently appear in `title` OR `display_name`, falling back to the old literal-phrase search only if the tokenized pass finds nothing
   - Not yet confirmed whether sync match review's `_score()` has a similar subtitle-insertion blind spot to what the importer had — untested there, not confirmed-safe
 
-### Completions page fixes (this session, done)
+### Completions page fixes ✅ (shipped)
 - `completions_page` sorted by `Completion.id.desc()` only — completely unrelated to `completed_at`, hence dates appearing scrambled. `Completion.sort_order` already existed (populated from the spreadsheet row number specifically as a same-date tiebreaker) but nothing used it.
 - Added a real sort filter (date newest/oldest, title A–Z/Z–A); date sorts order by `completed_at` first, `sort_order` (nulls last) as tiebreaker, so same-month import rows stay in their original 1-2-3 order regardless of sort direction
 - Filters/View toggle-button drawers removed to match `library.html`'s already-flat, always-visible layout (library dropped the collapsible drawers a while back; completions never got the same treatment)
@@ -572,6 +611,8 @@ Replaces the old "Settings / navigation restructure" item. The current Integrati
 - Design questions for when it's picked up: corner choice + opacity, always-on vs. only when
   the same game's artwork repeats in view, per-view toggle alongside the existing
   borderless/size controls, and whether hidden/DLC indicators join the same overlay layer
+
+### Platform preferences (tracked as #149)
 - User settings: check/uncheck platforms you own or want to track
 - Library and completions filters respect this by default
 
