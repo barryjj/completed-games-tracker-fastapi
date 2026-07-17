@@ -72,14 +72,14 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - This applies to migrations, config changes, dependency changes, and anything that touches files outside the immediate feature being worked on.
 - "I can see the problem" is not permission to fix it.
 
-## Roadmap maintenance
+## Planning & issues
 
-**ROADMAP.md is a living document. Keep it current.**
+**Concrete, planned work lives in GitHub issues — not `ROADMAP.md`.** (Migrated 2026-07-16.)
 
-- When a feature is discussed and agreed on — even informally — add it to `ROADMAP.md` before or alongside the implementation, not after.
-- When work is staged into phases, document all phases in the roadmap, not just the one being worked on now.
-- When a feature is completed, move or remove it from the roadmap rather than leaving it as a pending item.
-- Roadmap updates go on a branch and PR like everything else — never commit directly to `main`.
+- When a feature is discussed and agreed on, file a GitHub issue (`gh issue create`) with a **horizon label** (`now` = actively next, `next` = after the current work, `later` = real but not urgent) and an **area label** (`psn`, `artwork`, `ui`, `import`, `dx`, …). Do NOT add a per-feature entry to `ROADMAP.md`.
+- Stage phased work in the issue body (or one issue per phase). Reference the issue number in the PR; close the issue when the work ships.
+- **`ROADMAP.md` is frozen:** a pointer table to the tracked issues, a short "Possible improvements" list for genuinely *speculative / undesigned* ideas not yet ready to be issues, and the shipped-history changelog. Only edit it to (a) add a speculative idea to "Possible improvements", or (b) promote such an idea into an issue (and remove it from that list).
+- Issue edits and `ROADMAP.md`/doc edits still go on a branch and PR — never commit directly to `main`.
 
 ## What not to do
 
