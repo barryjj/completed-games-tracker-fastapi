@@ -110,6 +110,21 @@ def test_fetch_played_follows_next_offset():
     assert total == 12
 
 
+def test_exchange_npsso_posts_the_extracted_code():
+    """Regression: Sony's redirect is '…redirect/?code=…' — JS URLSearchParams
+    strips the leading '?', Python's parsers don't. The original port looked
+    up 'code' but had parsed '?code', POSTed an empty code, and Sony 400'd."""
+    authorize = MagicMock()
+    authorize.headers = {"location": "com.scee.psxandroid.scecompcall://redirect/?code=v3.SECRETCODE&cid=abc123"}
+    token = MagicMock()
+    token.json.return_value = {"access_token": "jwt-token-here"}
+    token.raise_for_status.return_value = None
+    with patch("backend.psn.httpx.get", return_value=authorize), patch("backend.psn.httpx.post", return_value=token) as mocked_post:
+        result = psn._exchange_npsso("valid-npsso")
+    assert result == "jwt-token-here"
+    assert mocked_post.call_args.kwargs["data"]["code"] == "v3.SECRETCODE"
+
+
 def test_fetch_trophy_titles_pages_until_reported_total():
     pages = [
         {"trophyTitles": [{"npCommunicationId": f"N{i}"} for i in range(100)], "totalItemCount": 150},

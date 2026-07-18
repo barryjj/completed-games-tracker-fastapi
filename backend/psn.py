@@ -26,6 +26,7 @@ import os
 import re
 import time
 from collections import Counter
+from urllib.parse import parse_qsl, urlparse
 
 import httpx
 from sqlalchemy.orm import Session
@@ -84,7 +85,13 @@ def _exchange_npsso(npsso: str) -> str:
     location = resp.headers.get("location", "")
     if "?code=" not in location:
         raise PsnNpssoExpiredError("PSN NPSSO token has expired — sign in to PlayStation again and re-capture it, then retry.")
-    code = dict(httpx.QueryParams(location.split("redirect/", 1)[1])).get("code")
+    # urlparse handles the custom scheme and keeps the '?' out of the query —
+    # the prototype's JS URLSearchParams stripped a leading '?' silently, but
+    # Python's query parsers don't (a naive split shipped 'code=None' to Sony
+    # as a 400 once already).
+    code = dict(parse_qsl(urlparse(location).query)).get("code")
+    if not code:
+        raise ValueError("PSN authorize redirect carried no access code — unexpected response shape.")
     token_resp = httpx.post(
         _TOKEN_URL,
         headers={"Authorization": _TOKEN_BASIC_AUTH, "Content-Type": "application/x-www-form-urlencoded"},
