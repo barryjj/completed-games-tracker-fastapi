@@ -194,6 +194,9 @@ def test_snapshot_report_renders_counts(client):
     with patch("backend.psn.load_snapshot", return_value=snap):
         r = client.get("/integrations/psn/snapshot-report")
     assert r.status_code == 200
+    # WKWebView (the desktop shell) heuristically caches header-less GETs —
+    # a stale cached report is invisible-bug territory in a no-reload WebView.
+    assert r.headers["cache-control"] == "no-store"
     assert b"731" in r.content
     assert b"PS_PLUS" in r.content
     assert b"Stellar Blade" in r.content

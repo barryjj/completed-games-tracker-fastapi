@@ -379,13 +379,19 @@ def psn_snapshot_report(
     current_user: models.User = Depends(get_web_user),
 ):
     """Render the stored snapshot's report (or an empty state) for the PSN
-    configure page. Reads the on-disk snapshot; no DB involvement."""
+    configure page. Reads the on-disk snapshot; no DB involvement.
+
+    no-store: the desktop shell's WKWebView heuristically caches GETs that
+    carry no cache headers, which can pin a stale/pre-snapshot response in a
+    context with no user-facing reload."""
     snap = psn.load_snapshot(current_user.id)
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
         context={"snapshot": snap, "report": (snap or {}).get("report")},
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # All Steam sync job kinds, mapped to their (sync function, started toast text) tuple.

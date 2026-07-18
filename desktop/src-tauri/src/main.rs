@@ -304,6 +304,17 @@ fn main() {
                     WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
                         .title("Games Tracker")
                         .inner_size(1440.0, 920.0)
+                        // WKWebView ships no reload affordance and Tauri wires no
+                        // menu accelerator for it — without this, a wedged page
+                        // state can only be cleared by relaunching the app.
+                        .initialization_script(
+                            "window.addEventListener('keydown', function (e) {\
+                                if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'r') {\
+                                    e.preventDefault();\
+                                    window.location.reload();\
+                                }\
+                            });",
+                        )
                         .build()
                 {
                     eprintln!("[games-tracker] failed to create window: {e}");
