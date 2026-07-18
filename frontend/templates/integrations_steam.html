@@ -145,6 +145,7 @@
     <div id="steam-sync-status"
          hx-get="/integrations/steam"
          hx-select="#steam-sync-status"
+         hx-disinherit="hx-select"
          hx-swap="outerHTML"
          hx-trigger="cgt:jobsDone from:body">
     {% if current_user.steam_last_synced_at %}

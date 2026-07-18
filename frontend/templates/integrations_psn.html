@@ -96,6 +96,7 @@
     <div id="psn-sync-status"
          hx-get="/integrations/psn"
          hx-select="#psn-sync-status"
+         hx-disinherit="hx-select"
          hx-swap="outerHTML"
          hx-trigger="cgt:jobsDone from:body">
     <p class="text-secondary mb-2"><small>Step 1 of the PSN sync: fetch your purchased, trophy, and played lists into a reviewable snapshot. <strong>Nothing is written to your library</strong> &mdash; the import step comes after you review the report.</small></p>

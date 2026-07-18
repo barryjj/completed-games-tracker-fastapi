@@ -320,6 +320,12 @@ Browsers render animated WebP/GIF natively in `<img>` tags.
 
 ## HTMX Conventions
 
+- **Self-refetching wrappers (`hx-get` self + `hx-select="#own-id"`) MUST carry
+  `hx-disinherit="hx-select"`.** `hx-select` is inherited: without it, any child that makes its
+  own request (a `hx-trigger="load"` status div, an action button) filters *its* response
+  through the parent's selector, matches nothing, and swaps in nothing — the element is
+  silently deleted with no error anywhere. This ate the PSN snapshot report and silently
+  suppressed the Tools enrichment status before being found (2026-07-18).
 - Use `hx-swap="none"` for actions that don't need to replace DOM (metadata refresh, delete with reload)
 - Use `hx-on::after-request` to trigger follow-up fetches after successful mutations
 - IGDB search and SGDB picker use plain `fetch()` — not HTMX — to avoid HTMX interference inside `hx-post` forms
