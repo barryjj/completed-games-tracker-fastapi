@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, models, steam, worker_state
+from . import jobs, models, psn, steam, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
@@ -366,6 +366,28 @@ def test_psn_token(
         )
 
 
+@router.post("/psn/fetch-library")
+async def psn_fetch_library(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Crawl + snapshot + report as a background job. Zero library writes —
+    the import step is separate and lands in the follow-up PR."""
+    return _kick_off_sync(request, current_user, "psn_snapshot")
+
+
+@router.get("/psn/snapshot-report")
+def psn_snapshot_report(
+    request: Request,
+    current_user: models.User = Depends(get_web_user),
+):
+    """Render the stored snapshot's report (or an empty state) for the PSN
+    configure page. Reads the on-disk snapshot; no DB involvement."""
+    snap = psn.load_snapshot(current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/psn_snapshot_report.html",
+        context={"snapshot": snap, "report": (snap or {}).get("report")},
+    )
+
+
 # All Steam sync job kinds, mapped to their (sync function, started toast text) tuple.
 # Adding a new kind here is the only place you need to wire up — endpoint just calls
 # _kick_off_sync with the kind, and _run_sync_job picks the function out of this table.
@@ -398,6 +420,17 @@ _STEAM_KINDS: dict[str, dict] = {
         "started": "Refreshing Steam app catalog — this takes a few seconds.",
         "label": "Refresh app catalog",
     },
+    # PSN rides the same job table; "service"/"module" route credential checks
+    # and dispatch away from the Steam defaults. Snapshot fetch writes NOTHING
+    # to the library — it saves a reviewable report (import is a later step).
+    "psn_snapshot": {
+        "fn": "fetch_snapshot",
+        "module": "psn",
+        "service": "psn",
+        "started": "PSN library fetch started — this crawls purchased, trophy, and played lists. You'll see a toast when it finishes.",
+        "label": "Library fetch",
+        "job_label": "PSN library fetch",
+    },
 }
 
 
@@ -414,6 +447,16 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
     are read from the DB after the sync, so they reflect real library state
     even when Steam returned 0 for some count this run.
     Platform prefix ("Steam") lets PSN drop in with the same shape later."""
+    if kind == "psn_snapshot":
+        t = result["totals"]
+        trophy = f"{t['trophy_fetched']:,}" + (f" of {t['trophy_reported']:,}" if t.get("trophy_reported") is not None else "")
+        played = f"{t['played_fetched']:,}" + (f" of {t['played_reported']:,}" if t.get("played_reported") is not None else "")
+        return (
+            "PSN fetch complete\n"
+            f"{result['merged_total']:,} merged games — {t['purchased_fetched']:,} purchased · {trophy} trophy · {played} played\n"
+            f"{result['new']:,} not yet imported — review the report on the PSN page"
+        )
+
     totals = _steam_counts(db, user) or {"games": 0, "dlc": 0, "total": 0}
     totals_line = f"{totals['games']:,} games · {totals['dlc']:,} DLC total"
 
@@ -466,13 +509,18 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        fn = getattr(steam, spec["fn"])
+        module = psn if spec.get("module") == "psn" else steam
+        fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
         else:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
+    except psn.PsnNpssoExpiredError as e:
+        # Same tagging pattern as Steam below; the desktop shell's re-capture
+        # loop for this code is wired in the PSN import PR.
+        jobs.mark_failed(job_id, str(e), error_code="psn_npsso_expired")
     except steam.SteamCookiesExpiredError as e:
         # Tagged so the desktop shell can recognize this failure on the poll
         # toast, silently re-capture cookies in its WebView, and re-POST the
@@ -505,10 +553,11 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
-            context={"error": "A Steam job is already running — please wait for it to finish."},
+            context={"error": "A sync job is already running — please wait for it to finish."},
             status_code=409,
         )
-    job = jobs.create(user_id=current_user.id, kind=kind, label=f"Steam {spec['label'].lower()}")
+    job_label = spec.get("job_label") or f"Steam {spec['label'].lower()}"
+    job = jobs.create(user_id=current_user.id, kind=kind, label=job_label)
     asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
     return templates.TemplateResponse(
         request=request,
@@ -520,9 +569,15 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
 def _credential_error(current_user: models.User, kind: str) -> str | None:
     """Pre-flight credential check so we 422 immediately instead of queueing a
     doomed background job."""
+    spec = _STEAM_KINDS.get(kind, {})
+    if spec.get("service") == "psn":
+        if not current_user.psn_npsso:
+            return "A PSN NPSSO token is required — capture or paste one on the PSN configure page."
+        if not current_user.psn_online_id:
+            return "Your PSN Online ID is required — set it on the PSN configure page."
+        return None
     if not current_user.steam_api_key or not current_user.steam_id64:
         return "Steam API key and Steam ID64 are required."
-    spec = _STEAM_KINDS.get(kind, {})
     if spec.get("needs_cookies"):
         if not current_user.steam_session_id or not current_user.steam_login_secure:
             return "Browser cookies (sessionid + steamLoginSecure) are required for this operation."

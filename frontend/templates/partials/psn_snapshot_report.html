@@ -1,0 +1,67 @@
+{# Snapshot report for the PSN configure page — read-only view of the last
+   crawl. Loaded via hx-get on page load and refreshed after a fetch job via
+   the cgt:jobsDone-triggered wrapper on the page. #}
+<div id="psn-snapshot-report">
+{% if not report %}
+  <p class="text-secondary mb-0"><small>No snapshot yet — Fetch library crawls PSN and builds a reviewable report here. Nothing is written to your library.</small></p>
+{% else %}
+  <div class="cgt-detail-block mb-3">
+    <h6 class="cgt-detail-block__heading">Last fetch</h6>
+    <dl class="cgt-detail-meta small mb-0">
+      <dt>Fetched</dt>
+      <dd><span class="local-time" data-utc="{{ snapshot.fetched_at.split('+')[0] }}">{{ snapshot.fetched_at }}</span></dd>
+      <dt>Merged games</dt>
+      <dd>{{ "{:,}".format(report.merged_total) }}</dd>
+      <dt>Purchased</dt>
+      <dd>{{ "{:,}".format(report.totals.purchased_fetched) }} fetched</dd>
+      <dt>Trophy titles</dt>
+      <dd>{{ "{:,}".format(report.totals.trophy_fetched) }} fetched{% if report.totals.trophy_reported is not none %} of {{ "{:,}".format(report.totals.trophy_reported) }} reported by PSN{% endif %}</dd>
+      <dt>Played</dt>
+      <dd>{{ "{:,}".format(report.totals.played_fetched) }} fetched{% if report.totals.played_reported is not none %} of {{ "{:,}".format(report.totals.played_reported) }} reported by PSN{% endif %}</dd>
+      <dt>Not yet imported</dt>
+      <dd>{{ "{:,}".format(report.new) }}{% if report.already_imported %} ({{ "{:,}".format(report.already_imported) }} already imported){% endif %}</dd>
+    </dl>
+  </div>
+
+  <div class="cgt-detail-block mb-3">
+    <h6 class="cgt-detail-block__heading">Filtered out</h6>
+    <p class="small text-secondary mb-1">Excluded from the merge as non-games:</p>
+    <dl class="cgt-detail-meta small mb-0">
+      <dt>Demos / betas</dt>
+      <dd>{{ report.filtered.non_game_purchased + report.filtered.non_game_titles + report.filtered.non_game_played }}</dd>
+      <dt>Media apps</dt>
+      <dd>{{ report.filtered.media_apps_played }}</dd>
+    </dl>
+  </div>
+
+  <div class="cgt-detail-block mb-3">
+    <h6 class="cgt-detail-block__heading">Breakdown</h6>
+    <dl class="cgt-detail-meta small mb-0">
+      <dt>Membership</dt>
+      <dd>{% for k, v in report.membership.items() %}{{ k }}: {{ v }}{{ " · " if not loop.last }}{% endfor %}</dd>
+      <dt>Platforms</dt>
+      <dd>{% for k, v in report.platforms.items() %}{{ k }}: {{ v }}{{ " · " if not loop.last }}{% endfor %}</dd>
+      {% if report.unresolvable_platforms %}
+      <dt>Unresolvable</dt>
+      <dd>{{ report.unresolvable_platforms | join(", ") }} — these would be skipped at import</dd>
+      {% endif %}
+      {% if report.no_external_id %}
+      <dt>No usable id</dt>
+      <dd>{{ report.no_external_id }} — these would be skipped at import</dd>
+      {% endif %}
+    </dl>
+  </div>
+
+  <div class="cgt-detail-block">
+    <h6 class="cgt-detail-block__heading">Sample</h6>
+    <table class="table table-sm small mb-0">
+      <thead><tr><th>Title</th><th>Platform</th><th>Seen in</th></tr></thead>
+      <tbody>
+        {% for s in report.sample %}
+        <tr><td>{{ s.name }}</td><td>{{ s.platform or "—" }}</td><td class="text-secondary">{{ s.sources | join(", ") }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+</div>

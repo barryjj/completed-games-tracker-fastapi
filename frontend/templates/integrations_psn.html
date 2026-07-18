@@ -89,9 +89,36 @@
 
   <div class="col-lg-6">
     <h5 class="cgt-config-section">Library Sync</h5>
-    <p class="text-secondary mb-3"><small>PSN library and trophy sync land in a later phase &mdash; imported games will go through the same match review queue as Steam.</small></p>
     {% if current_user.psn_npsso %}
-    <div class="d-flex justify-content-between align-items-center gap-3">
+    {# Refetches itself when the job poller reports any finished job (same
+       cgt:jobsDone pattern as the Steam page), so the report appears without
+       a manual reload when the fetch job completes. #}
+    <div id="psn-sync-status"
+         hx-get="/integrations/psn"
+         hx-select="#psn-sync-status"
+         hx-swap="outerHTML"
+         hx-trigger="cgt:jobsDone from:body">
+    <p class="text-secondary mb-2"><small>Step 1 of the PSN sync: fetch your purchased, trophy, and played lists into a reviewable snapshot. <strong>Nothing is written to your library</strong> &mdash; the import step comes after you review the report.</small></p>
+    {# Swap target for the job-poller's OOB sync-progress indicator. #}
+    <div id="sync-indicator"></div>
+    <div class="mb-3">
+      <button
+        class="btn btn-primary"
+        hx-post="/integrations/psn/fetch-library"
+        hx-target="#psn-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
+      >Fetch Library (preview)</button>
+    </div>
+    <div hx-get="/integrations/psn/snapshot-report"
+         hx-trigger="load"
+         hx-swap="outerHTML">
+      <p class="text-secondary mb-0"><small>Loading report&hellip;</small></p>
+    </div>
+    </div>
+
+    <div class="mt-4 d-flex justify-content-between align-items-center gap-3">
       <small class="text-secondary">Sanity-check the saved token by requesting a PSN access code.</small>
       <button
         class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn"
@@ -103,7 +130,7 @@
       >Test Token</button>
     </div>
     {% else %}
-    <p class="text-secondary"><small>Save an NPSSO token to enable the token test.</small></p>
+    <p class="text-secondary"><small>Save an NPSSO token to enable library fetch and the token test.</small></p>
     {% endif %}
   </div>
 </div>
