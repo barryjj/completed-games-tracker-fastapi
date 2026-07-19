@@ -89,6 +89,25 @@
     {% block content %}{% endblock %}
   </main>
   <div class="toast-container position-fixed bottom-0 end-0 p-3" id="toast-container" style="z-index: 1080"></div>
+  {# Global confirm dialog. hx-confirm defaults to window.confirm(), which the
+     Tauri shell's WKWebView does not implement (it returns falsy, so htmx
+     silently cancels the request). app.js intercepts htmx:confirm and drives
+     this modal instead — works in both the desktop app and a browser. #}
+  <div class="modal fade" id="cgt-confirm-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="cgt-confirm-title">Please confirm</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel"></button>
+        </div>
+        <div class="modal-body" data-cgt-confirm-body></div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-surface" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" data-cgt-confirm-ok>Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
   {# Background job poller — every authenticated page polls every 5s. When a
      sync job finishes, the next poll's response includes the completion toast
      via OOB swap and the toast surfaces wherever the user happens to be. #}
