@@ -1,10 +1,16 @@
-{# Snapshot report for the PSN configure page — read-only view of the last
-   crawl. Loaded via hx-get on page load and refreshed after a fetch job via
-   the cgt:jobsDone-triggered wrapper on the page. #}
+{# Snapshot report + played-only review for the PSN configure page. Also the
+   swap target (#psn-snapshot-report, outerHTML) for the per-row review
+   actions, which re-render it with a flash line. #}
 <div id="psn-snapshot-report">
 {% if not report %}
   <p class="text-secondary mb-0"><small>No snapshot yet — Fetch library crawls PSN and builds a reviewable report here. Nothing is written to your library.</small></p>
 {% else %}
+  {% if flash %}
+  <div class="alert alert-success py-2 mb-3"><small>{{ flash }}</small></div>
+  {% elif flash_error %}
+  <div class="alert alert-danger py-2 mb-3"><small>{{ flash_error }}</small></div>
+  {% endif %}
+
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">Last fetch</h6>
     <dl class="cgt-detail-meta small mb-0">
@@ -22,6 +28,77 @@
       <dd>{{ "{:,}".format(report.new) }}{% if report.already_imported %} ({{ "{:,}".format(report.already_imported) }} already imported){% endif %}</dd>
     </dl>
   </div>
+
+  <div class="cgt-detail-block mb-3">
+    <h6 class="cgt-detail-block__heading">Import</h6>
+    <p class="small text-secondary mb-2">Creates library entries for every purchased and trophy-backed game (PS Plus included — provenance is kept on each entry). Existing library rows are never modified; overlaps with manual entries are queued for match review. Played-only activity is excluded — review those below.</p>
+    <button
+      class="btn btn-primary btn-sm"
+      hx-post="/integrations/psn/import"
+      hx-target="#psn-flash"
+      hx-swap="innerHTML"
+      hx-disabled-elt="this"
+      hx-confirm="Import the PSN snapshot into your library? Existing entries are never modified; duplicates go to match review."
+      hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
+    >Import to Library</button>
+  </div>
+
+  {% if played_only %}
+  <div class="cgt-detail-block mb-3">
+    <h6 class="cgt-detail-block__heading">Played-only activity — your call per row</h6>
+    <p class="small text-secondary mb-2">Sessions with no purchase or trophy set behind them: disc copies, demos, friend passes, launch-and-quit noise. Nothing here imports without your click.</p>
+    <div class="table-responsive">
+      <table class="table table-sm small mb-0 align-middle">
+        <thead><tr><th>Title</th><th>Via</th><th>Played</th><th>When</th><th>Suggestion</th><th class="text-end">Action</th></tr></thead>
+        <tbody>
+          {% for row in played_only %}
+          <tr>
+            <td>{{ row.name }}<br><span class="text-secondary">{{ row.category or "" }}</span></td>
+            <td>{{ row.service or "—" }}</td>
+            <td>{{ row.minutes // 60 }}h{{ "%02d" % (row.minutes % 60) }}m<br><span class="text-secondary">{{ row.play_count }} session{{ "s" if row.play_count != 1 }}</span></td>
+            <td><span class="text-secondary">{{ row.first_played }}{% if row.last_played != row.first_played %} &rarr; {{ row.last_played }}{% endif %}</span></td>
+            <td><span class="text-secondary">{{ row.reason }}</span></td>
+            <td class="text-end" style="min-width: 220px;">
+              {% if row.decision %}
+                <span class="tag-badge {{ 'tag-platform-steam' if row.decision.action == 'imported' else 'tag-dlc' }}">{{ row.decision.action }}</span>
+              {% else %}
+                <button class="btn btn-sm {{ 'btn-primary' if row.suggested == 'import' else 'btn-surface' }}"
+                        hx-post="/integrations/psn/played-only/{{ row.external_id }}/import"
+                        hx-target="#psn-snapshot-report" hx-swap="outerHTML"
+                        hx-disabled-elt="this">Import</button>
+                <button class="btn btn-sm {{ 'btn-primary' if row.suggested == 'skip' else 'btn-surface' }}"
+                        hx-post="/integrations/psn/played-only/{{ row.external_id }}/skip"
+                        hx-target="#psn-snapshot-report" hx-swap="outerHTML"
+                        hx-disabled-elt="this">Skip</button>
+                <button type="button" class="btn btn-sm btn-surface"
+                        onclick="document.getElementById('psn-attach-{{ loop.index }}').classList.toggle('d-none')">Attach&hellip;</button>
+              {% endif %}
+            </td>
+          </tr>
+          {% if not row.decision %}
+          <tr id="psn-attach-{{ loop.index }}" class="d-none">
+            <td colspan="6">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <small class="text-secondary flex-shrink-0">Attach play stats to:</small>
+                <input type="search" class="form-control form-control-sm" style="max-width: 280px;"
+                       placeholder="Search your library&hellip;"
+                       name="q"
+                       hx-get="/integrations/psn/attach-search"
+                       hx-vals='{"external_id": "{{ row.external_id }}"}'
+                       hx-trigger="input changed delay:300ms"
+                       hx-target="next .psn-attach-results"
+                       hx-swap="innerHTML">
+              </div>
+              <div class="psn-attach-results"></div>
+            </td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">Filtered out</h6>
@@ -43,11 +120,11 @@
       <dd>{% for k, v in report.platforms.items() %}{{ k }}: {{ v }}{{ " · " if not loop.last }}{% endfor %}</dd>
       {% if report.unresolvable_platforms %}
       <dt>Unresolvable</dt>
-      <dd>{{ report.unresolvable_platforms | join(", ") }} — these would be skipped at import</dd>
+      <dd>{{ report.unresolvable_platforms | join(", ") }} — skipped at import unless resolved</dd>
       {% endif %}
       {% if report.no_external_id %}
       <dt>No usable id</dt>
-      <dd>{{ report.no_external_id }} — these would be skipped at import</dd>
+      <dd>{{ report.no_external_id }} — skipped at import</dd>
       {% endif %}
     </dl>
   </div>

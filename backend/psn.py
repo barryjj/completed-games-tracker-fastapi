@@ -31,7 +31,7 @@ from urllib.parse import parse_qsl, urlparse
 import httpx
 from sqlalchemy.orm import Session
 
-from . import models
+from . import models, titles
 
 _logger = logging.getLogger(__name__)
 
@@ -516,3 +516,303 @@ def fetch_snapshot(db: Session, user: models.User) -> dict:
             f,
         )
     return report
+
+
+# ─── Import (PR 2 — inserts only, played-only rows via explicit review) ────
+
+_DURATION_RE = re.compile(r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$")
+
+
+def duration_to_minutes(duration: str | None) -> int | None:
+    """ISO-8601 play duration ('PT30H23M7S') → whole minutes. None/unparseable → None."""
+    if not duration:
+        return None
+    m = _DURATION_RE.match(duration.strip())
+    if not m:
+        return None
+    hours, minutes, seconds = (float(x) if x else 0 for x in m.groups())
+    return int(hours * 60 + minutes + seconds / 60)
+
+
+def _parse_played_at(value: str | None) -> datetime.datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def is_played_only(item: dict) -> bool:
+    """Activity-history rows with no purchased/trophy backing — the mixed bag
+    of disc copies, demos, friend-pass sessions, and launch-and-quit noise.
+    Never auto-imported; each goes through the per-row review on the PSN page."""
+    return item.get("sources", []) == ["played"]
+
+
+def played_only_suggestion(item: dict) -> tuple[str, str]:
+    """(suggested_action, reason) for a played-only row. Pre-selects the
+    review default; the user's click decides. Signals (validated against the
+    user's real data 2026-07-18):
+      service=other + game category → no digital entitlement behind the
+        session → essentially the disc signature ⇒ import.
+      service=ps_plus + tiny playtime → catalog launch-and-quit ⇒ skip.
+      otherwise ($0 demo/friend-pass entitlements look identical to paid
+        ones) → playtime decides the lean."""
+    service = str(item.get("service") or "").lower()
+    minutes = duration_to_minutes(item.get("playDuration")) or 0
+    if service == "other":
+        return "import", "no digital entitlement behind the session — likely disc copy"
+    if service == "ps_plus":
+        if minutes < 60:
+            return "skip", f"PS Plus catalog launch, only {minutes}m played"
+        return "import", f"PS Plus catalog, {minutes // 60}h{minutes % 60:02d}m played"
+    if minutes < 15:
+        return "skip", f"entitlement play of {minutes}m — demo or launch-and-quit"
+    return "skip", f"$0-entitlement pattern (demo/friend-pass), {minutes // 60}h{minutes % 60:02d}m played"
+
+
+def platform_for_item(db: Session, item: dict) -> int | None:
+    """Merged item → platform row id. Falls back to the played category
+    (played-only rows carry no platform field). Multi-platform trophy strings
+    ('PS5,PSPC') resolve on their first segment."""
+    name = item.get("platform")
+    if not name:
+        category = str(item.get("category") or "").lower()
+        for prefix in ("ps5", "ps4", "ps3"):
+            if category.startswith(prefix):
+                name = prefix.upper()
+                break
+    if not name:
+        return None
+    return models.resolve_platform_id(db, str(name).split(",")[0])
+
+
+def _platform_label(db: Session, platform_id: int | None, item: dict) -> str:
+    if platform_id:
+        row = db.get(models.Platform, platform_id)
+        if row:
+            return row.display_name or row.name
+    return item.get("platform") or "PSN"
+
+
+def _import_one(db: Session, user: models.User, item: dict, platform_id: int) -> str:
+    """Upsert one merged item as Game/GameRelease/UserLibraryEntry (mirrors
+    steam._import_owned_games row-for-row). Returns 'added' | 'updated'.
+    Deliberately writes NO GameArtwork — SGDB is the agreed art source; PSN
+    URLs stay in raw_data."""
+    external_id = external_id_for(item)
+    title = item.get("displayName") or item.get("name") or external_id
+    release = db.query(models.GameRelease).filter_by(source="psn", external_id=external_id).first()
+
+    if release is None:
+        cleaned = titles._clean_title(title)
+        existing_game = (
+            db.query(models.Game)
+            .join(models.GameRelease)
+            .join(models.UserLibraryEntry)
+            .filter(
+                models.UserLibraryEntry.user_id == user.id,
+                models.Game.title == title,
+            )
+            .first()
+        )
+        if existing_game is not None:
+            game = existing_game
+            if not game.display_name_user_set and game.display_name is None and cleaned != title:
+                game.display_name = cleaned
+        else:
+            game = models.Game(
+                title=title,
+                display_name=cleaned if cleaned != title else None,
+                is_dlc=False,
+                is_collection=titles._infer_is_collection(title),
+            )
+            db.add(game)
+            db.flush()
+        release = models.GameRelease(
+            game_id=game.id,
+            platform=_platform_label(db, platform_id, item),
+            platform_id=platform_id,
+            source="psn",
+            external_id=external_id,
+            raw_data=item,
+        )
+        db.add(release)
+        db.flush()
+    else:
+        raw = dict(release.raw_data or {})
+        raw.update(item)
+        release.raw_data = raw
+
+    playtime = duration_to_minutes(item.get("playDuration"))
+    last_played = _parse_played_at(item.get("lastPlayed"))
+
+    entry = db.query(models.UserLibraryEntry).filter_by(user_id=user.id, release_id=release.id).first()
+    if entry is None:
+        db.add(
+            models.UserLibraryEntry(
+                user_id=user.id,
+                release_id=release.id,
+                playtime_minutes=playtime or 0,
+                last_played_at=last_played,
+                import_source="psn_import",
+            )
+        )
+        return "added"
+    if playtime is not None:
+        entry.playtime_minutes = playtime
+    if last_played is not None:
+        entry.last_played_at = last_played
+    entry.updated_at = datetime.datetime.now(datetime.UTC)
+    return "updated"
+
+
+def import_snapshot(db: Session, user: models.User) -> dict:
+    """Import the stored snapshot into the library: every purchased/trophy-
+    sourced game (PS_PLUS included — completability is the criterion, per
+    user decision 2026-07-18) becomes source='psn' rows. INSERTS ONLY for
+    existing library data; re-runs update the psn rows idempotently.
+    Played-only rows are never touched here — they go through the per-row
+    review actions. Ends by chaining the match-review scan so overlaps with
+    manual/historical entries surface immediately."""
+    snap = load_snapshot(user.id)
+    if not snap:
+        raise ValueError("No PSN snapshot found — run Fetch Library first.")
+
+    added = updated = 0
+    skipped_no_platform = 0
+    skipped_no_id = 0
+    played_only = 0
+    for item in snap.get("merged", []):
+        if is_played_only(item):
+            played_only += 1
+            continue
+        if not external_id_for(item):
+            skipped_no_id += 1
+            continue
+        platform_id = platform_for_item(db, item)
+        if platform_id is None:
+            skipped_no_platform += 1
+            continue
+        if _import_one(db, user, item, platform_id) == "added":
+            added += 1
+        else:
+            updated += 1
+    db.commit()
+
+    from . import match_review
+
+    scan = match_review.scan_for_matches(db, user)
+    db.commit()
+
+    return {
+        "added": added,
+        "updated": updated,
+        "skipped_no_platform": skipped_no_platform,
+        "skipped_no_id": skipped_no_id,
+        "played_only_pending": played_only,
+        "match_candidates": scan.get("candidates_added", 0),
+    }
+
+
+# ─── Played-only review actions ────────────────────────────────────────────
+
+
+def played_only_rows(db: Session, user_id: int) -> list[dict]:
+    """Review rows for the PSN page: every played-only item in the snapshot
+    plus its suggestion and any recorded decision."""
+    snap = load_snapshot(user_id)
+    if not snap:
+        return []
+    decisions = snap.get("played_only_decisions", {})
+    rows = []
+    for item in snap.get("merged", []):
+        if not is_played_only(item):
+            continue
+        ext_id = external_id_for(item)
+        action, reason = played_only_suggestion(item)
+        rows.append(
+            {
+                "external_id": ext_id,
+                "name": item.get("displayName") or item.get("name"),
+                "category": item.get("category"),
+                "service": item.get("service"),
+                "minutes": duration_to_minutes(item.get("playDuration")) or 0,
+                "play_count": item.get("playCount"),
+                "first_played": (item.get("firstPlayed") or "")[:10],
+                "last_played": (item.get("lastPlayed") or "")[:10],
+                "suggested": action,
+                "reason": reason,
+                "decision": decisions.get(ext_id),
+            }
+        )
+    return rows
+
+
+def _record_decision(user_id: int, external_id: str, decision: dict) -> None:
+    snap = load_snapshot(user_id)
+    if not snap:
+        raise ValueError("No PSN snapshot found.")
+    snap.setdefault("played_only_decisions", {})[external_id] = decision
+    with open(snapshot_path(user_id), "w") as f:
+        json.dump(snap, f)
+
+
+def _find_played_only(snap: dict, external_id: str) -> dict | None:
+    for item in snap.get("merged", []):
+        if is_played_only(item) and external_id_for(item) == external_id:
+            return item
+    return None
+
+
+def import_played_only(db: Session, user: models.User, external_id: str) -> str:
+    """User-clicked: import one played-only row as a library entry."""
+    snap = load_snapshot(user.id)
+    item = snap and _find_played_only(snap, external_id)
+    if not item:
+        raise ValueError("Played-only entry not found in the snapshot.")
+    platform_id = platform_for_item(db, item)
+    if platform_id is None:
+        raise ValueError("Cannot resolve a platform for this entry.")
+    _import_one(db, user, item, platform_id)
+    db.commit()
+    _record_decision(user.id, external_id, {"action": "imported"})
+    return item.get("displayName") or item.get("name") or external_id
+
+
+def skip_played_only(db: Session, user: models.User, external_id: str) -> None:
+    """User-clicked: record a skip so the row stops asking."""
+    _record_decision(user.id, external_id, {"action": "skipped"})
+
+
+def attach_played_only(db: Session, user: models.User, external_id: str, entry_id: int) -> str:
+    """User-clicked: attach a played-only row's play stats to an existing
+    library entry (the DMC5-SE-on-disc case — activity row and the owned
+    game wear different Sony names). Explicit user action, so mutating the
+    chosen entry's play stats is the point."""
+    snap = load_snapshot(user.id)
+    item = snap and _find_played_only(snap, external_id)
+    if not item:
+        raise ValueError("Played-only entry not found in the snapshot.")
+    entry = (
+        db.query(models.UserLibraryEntry).filter(models.UserLibraryEntry.id == entry_id, models.UserLibraryEntry.user_id == user.id).first()
+    )
+    if entry is None:
+        raise ValueError("Library entry not found.")
+    playtime = duration_to_minutes(item.get("playDuration"))
+    last_played = _parse_played_at(item.get("lastPlayed"))
+    if playtime is not None:
+        entry.playtime_minutes = playtime
+    if last_played is not None:
+        entry.last_played_at = last_played
+    release = entry.release
+    raw = dict(release.raw_data or {})
+    raw["psn_played"] = {
+        k: item.get(k) for k in ("titleId", "playCount", "playDuration", "firstPlayed", "lastPlayed", "service", "category")
+    }
+    release.raw_data = raw
+    db.commit()
+    _record_decision(user.id, external_id, {"action": "attached", "entry_id": entry_id})
+    game = release.game
+    return game.display_name or game.title

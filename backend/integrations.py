@@ -369,29 +369,142 @@ def test_psn_token(
 @router.post("/psn/fetch-library")
 async def psn_fetch_library(request: Request, current_user: models.User = Depends(get_web_user)):
     """Crawl + snapshot + report as a background job. Zero library writes —
-    the import step is separate and lands in the follow-up PR."""
+    importing the snapshot is its own explicit step below."""
     return _kick_off_sync(request, current_user, "psn_snapshot")
+
+
+@router.post("/psn/import")
+async def psn_import_library(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Import the reviewed snapshot into the library (background job).
+    Purchased/trophy-sourced games only — played-only rows go through the
+    per-row review actions. Chains the match-review scan on completion."""
+    return _kick_off_sync(request, current_user, "psn_import")
+
+
+@router.post("/psn/token")
+def save_psn_token(
+    psn_npsso: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Save just the NPSSO — used by the desktop shell's expiry auto-recovery,
+    which runs from whatever page the failure toast lands on. The full
+    credentials endpoint would blank the stored Online ID (same reasoning as
+    /steam/cookies vs the Steam credentials form)."""
+    npsso = psn_npsso.strip()
+    if not npsso:
+        raise HTTPException(status_code=422, detail="An NPSSO token is required.")
+    if npsso != current_user.psn_npsso:
+        current_user.psn_npsso_captured_at = datetime.datetime.now(datetime.UTC)
+    current_user.psn_npsso = npsso
+    db.commit()
+    return {"ok": True}
+
+
+def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
+    """Re-render the snapshot report block (used as the swap target by the
+    played-only review actions so the row list updates in place)."""
+    snap = psn.load_snapshot(current_user.id)
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/psn_snapshot_report.html",
+        context={
+            "snapshot": snap,
+            "report": (snap or {}).get("report"),
+            "played_only": psn.played_only_rows(db, current_user.id),
+            "flash": flash,
+            "flash_error": error,
+        },
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+@router.post("/psn/played-only/{external_id}/import")
+def psn_played_only_import(
+    external_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    try:
+        name = psn.import_played_only(db, current_user, external_id)
+    except ValueError as e:
+        return _psn_report_response(request, db, current_user, error=str(e))
+    return _psn_report_response(request, db, current_user, flash=f"Imported {name}.")
+
+
+@router.post("/psn/played-only/{external_id}/skip")
+def psn_played_only_skip(
+    external_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    try:
+        psn.skip_played_only(db, current_user, external_id)
+    except ValueError as e:
+        return _psn_report_response(request, db, current_user, error=str(e))
+    return _psn_report_response(request, db, current_user, flash="Skipped.")
+
+
+@router.post("/psn/played-only/{external_id}/attach")
+def psn_played_only_attach(
+    external_id: str,
+    request: Request,
+    entry_id: int = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    try:
+        name = psn.attach_played_only(db, current_user, external_id, entry_id)
+    except ValueError as e:
+        return _psn_report_response(request, db, current_user, error=str(e))
+    return _psn_report_response(request, db, current_user, flash=f"Play stats attached to {name}.")
+
+
+@router.get("/psn/attach-search")
+def psn_attach_search(
+    request: Request,
+    external_id: str,
+    q: str = "",
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Inline entry picker for the attach action: search the user's library,
+    return buttons that POST the attach directly."""
+    query = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(models.UserLibraryEntry.user_id == current_user.id)
+    )
+    qn = q.strip()
+    if qn:
+        query = query.filter(models.Game.title.ilike(f"%{qn}%"))
+    entries = query.order_by(models.Game.title).limit(8).all()
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/psn_attach_results.html",
+        context={"entries": entries, "external_id": external_id, "q": q},
+    )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.get("/psn/snapshot-report")
 def psn_snapshot_report(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     """Render the stored snapshot's report (or an empty state) for the PSN
-    configure page. Reads the on-disk snapshot; no DB involvement.
+    configure page, including the played-only review rows.
 
     no-store: the desktop shell's WKWebView heuristically caches GETs that
     carry no cache headers, which can pin a stale/pre-snapshot response in a
     context with no user-facing reload."""
-    snap = psn.load_snapshot(current_user.id)
-    response = templates.TemplateResponse(
-        request=request,
-        name="partials/psn_snapshot_report.html",
-        context={"snapshot": snap, "report": (snap or {}).get("report")},
-    )
-    response.headers["Cache-Control"] = "no-store"
-    return response
+    return _psn_report_response(request, db, current_user)
 
 
 # All Steam sync job kinds, mapped to their (sync function, started toast text) tuple.
@@ -436,6 +549,17 @@ _STEAM_KINDS: dict[str, dict] = {
         "started": "PSN library fetch started — this crawls purchased, trophy, and played lists. You'll see a toast when it finishes.",
         "label": "Library fetch",
         "job_label": "PSN library fetch",
+        # POSTed by the desktop shell after it auto-refreshes an expired NPSSO.
+        "retry_path": "/integrations/psn/fetch-library",
+    },
+    "psn_import": {
+        "fn": "import_snapshot",
+        "module": "psn",
+        "service": "psn",
+        "started": "PSN import started — creating library entries from the snapshot. You'll see a toast when it finishes.",
+        "label": "Import",
+        "job_label": "PSN import",
+        # Local-only (reads the snapshot from disk) — no NPSSO involved, no retry_path.
     },
 }
 
@@ -453,6 +577,20 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
     are read from the DB after the sync, so they reflect real library state
     even when Steam returned 0 for some count this run.
     Platform prefix ("Steam") lets PSN drop in with the same shape later."""
+    if kind == "psn_import":
+        parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
+        if result["updated"]:
+            parts.append(f"{result['updated']:,} updated")
+        skipped = result["skipped_no_platform"] + result["skipped_no_id"]
+        if skipped:
+            parts.append(f"{skipped} skipped")
+        lines = ["PSN import complete", " · ".join(parts)]
+        if result.get("match_candidates"):
+            lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
+        if result.get("played_only_pending"):
+            lines.append(f"{result['played_only_pending']} played-only entries await review on the PSN page")
+        return "\n".join(lines)
+
     if kind == "psn_snapshot":
         t = result["totals"]
         trophy = f"{t['trophy_fetched']:,}" + (f" of {t['trophy_reported']:,}" if t.get("trophy_reported") is not None else "")

@@ -597,35 +597,64 @@ document.addEventListener('pointerover', function (e) {
   // cookies-only endpoint, and re-fire the failed operation. Guarded to one
   // attempt per 10 minutes so a genuinely dead Steam login degrades to the
   // normal failure toast instead of looping.
-  var COOKIE_RETRY_GUARD_KEY = 'cgt-steam-cookie-retry-at';
+  // Per-error-code recovery table: capture command, endpoint to save the
+  // fresh credential (each deliberately partial so it can't blank sibling
+  // fields), and the message vocabulary. Steam cookies and PSN NPSSO ride
+  // identical machinery.
+  var CREDENTIAL_RECOVERIES = {
+    steam_cookies_expired: {
+      guardKey: 'cgt-steam-cookie-retry-at',
+      startMsg: 'Steam session expired — refreshing cookies…',
+      capture: 'capture_steam_login',
+      saveUrl: '/integrations/steam/cookies',
+      buildForm: function (captured) {
+        var body = new FormData();
+        body.append('steam_session_id', captured.sessionid);
+        body.append('steam_login_secure', captured.steam_login_secure);
+        return body;
+      },
+      okNoun: 'Cookies',
+      failHint: 'use the Steam configure page to re-capture manually.'
+    },
+    psn_npsso_expired: {
+      guardKey: 'cgt-psn-npsso-retry-at',
+      startMsg: 'PSN sign-in expired — refreshing the NPSSO token…',
+      capture: 'capture_psn_login',
+      saveUrl: '/integrations/psn/token',
+      buildForm: function (captured) {
+        var body = new FormData();
+        body.append('psn_npsso', captured.npsso);
+        return body;
+      },
+      okNoun: 'Token',
+      failHint: 'use the PSN configure page to re-capture manually.'
+    }
+  };
 
-  function _cookieRetryGuardActive() {
-    var t = parseInt(sessionStorage.getItem(COOKIE_RETRY_GUARD_KEY) || '0', 10);
+  function _retryGuardActive(guardKey) {
+    var t = parseInt(sessionStorage.getItem(guardKey) || '0', 10);
     return Date.now() - t < 10 * 60 * 1000;
   }
 
-  async function _recoverSteamCookies(toastEl) {
-    sessionStorage.setItem(COOKIE_RETRY_GUARD_KEY, String(Date.now()));
+  async function _recoverCredentials(spec, toastEl) {
+    sessionStorage.setItem(spec.guardKey, String(Date.now()));
     var retryUrl = toastEl.getAttribute('data-retry-url');
-    var label = toastEl.getAttribute('data-job-label') || 'sync';
+    var label = toastEl.getAttribute('data-job-label') || 'job';
     toastEl.remove();
-    cgtToast('Steam session expired — refreshing cookies…', 'info');
+    cgtToast(spec.startMsg, 'info');
     try {
-      var cookies = await window.__TAURI__.core.invoke('capture_steam_login');
-      var body = new FormData();
-      body.append('steam_session_id', cookies.sessionid);
-      body.append('steam_login_secure', cookies.steam_login_secure);
-      var save = await fetch('/integrations/steam/cookies', { method: 'POST', body: body });
-      if (!save.ok) throw new Error('saving refreshed cookies failed (HTTP ' + save.status + ')');
+      var captured = await window.__TAURI__.core.invoke(spec.capture);
+      var save = await fetch(spec.saveUrl, { method: 'POST', body: spec.buildForm(captured) });
+      if (!save.ok) throw new Error('saving refreshed credentials failed (HTTP ' + save.status + ')');
       if (retryUrl) {
         var retry = await fetch(retryUrl, { method: 'POST', headers: { 'HX-Request': 'true' } });
         if (!retry.ok) throw new Error('restarting ' + label + ' failed (HTTP ' + retry.status + ')');
-        cgtToast('Cookies refreshed — ' + label + ' restarted.', 'info');
+        cgtToast(spec.okNoun + ' refreshed — ' + label + ' restarted.', 'info');
       } else {
-        cgtToast('Cookies refreshed.', 'info');
+        cgtToast(spec.okNoun + ' refreshed.', 'info');
       }
     } catch (err) {
-      cgtToast('Automatic cookie refresh failed: ' + String(err) + ' — use the Steam configure page to re-capture manually.', 'error');
+      cgtToast('Automatic refresh failed: ' + String(err) + ' — ' + spec.failHint, 'error');
     }
   }
 
@@ -636,12 +665,12 @@ document.addEventListener('pointerover', function (e) {
       mutations.forEach(function (m) {
         Array.prototype.forEach.call(m.addedNodes, function (node) {
           if (!(node instanceof Element)) return;
-          var toast = node.matches('[data-error-code="steam_cookies_expired"]')
-            ? node
-            : node.querySelector('[data-error-code="steam_cookies_expired"]');
+          var toast = node.matches('[data-error-code]') ? node : node.querySelector('[data-error-code]');
           if (!toast) return;
-          if (_cookieRetryGuardActive()) return; // let the failure toast show
-          _recoverSteamCookies(toast);
+          var spec = CREDENTIAL_RECOVERIES[toast.getAttribute('data-error-code')];
+          if (!spec) return; // unknown codes fall through to the visible toast
+          if (_retryGuardActive(spec.guardKey)) return; // let the failure toast show
+          _recoverCredentials(spec, toast);
         });
       });
     }).observe(container, { childList: true });
