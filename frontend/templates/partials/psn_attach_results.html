@@ -1,0 +1,17 @@
+{# Inline entry-picker results for the played-only Attach action. #}
+{% if entries %}
+<div class="d-flex flex-column gap-1">
+  {% for entry in entries %}
+  <button class="btn btn-sm btn-surface text-start"
+          hx-post="/integrations/psn/played-only/{{ external_id }}/attach"
+          hx-vals='{"entry_id": {{ entry.id }}}'
+          hx-target="#psn-snapshot-report" hx-swap="outerHTML"
+          hx-disabled-elt="this">
+    {{ entry.release.game.display_name or entry.release.game.title }}
+    <span class="text-secondary">&mdash; {{ entry.release.display_platform }}</span>
+  </button>
+  {% endfor %}
+</div>
+{% elif q %}
+<small class="text-secondary">No library entries match &ldquo;{{ q }}&rdquo;.</small>
+{% endif %}

@@ -227,6 +227,14 @@
       <dd>{{ entry.playtime_minutes | playtime_human }}</dd>
       {% endif %}
 
+      {% if release.source == "psn" and (release.raw_data or {}).get("membership") == "PS_PLUS" %}
+      {# Provenance, not a paywall flag: the game entered the library via the
+         PS Plus catalog rather than a purchase (import-all decision,
+         2026-07-18 — completability is the criterion, not ownership). #}
+      <dt>Via</dt>
+      <dd>PS Plus catalog</dd>
+      {% endif %}
+
       {% if release.external_id %}
       <dt>{{ release.source | capitalize }} ID</dt>
       <dd>

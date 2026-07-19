@@ -48,3 +48,6 @@ pnpm-debug.log*
 *.tmp
 *.swp
 backend/steam_applist_cache.json
+
+# Local data (PSN snapshots, future artwork cache)
+data/
