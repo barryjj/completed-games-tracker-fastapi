@@ -569,6 +569,45 @@ document.addEventListener('pointerover', function (e) {
   }
 });
 
+// ─── Global confirm dialog ────────────────────────────────────────────────
+// hx-confirm normally calls window.confirm(); WKWebView (the Tauri shell)
+// does not implement it, so confirm() returns falsy and htmx silently cancels
+// the request — every hx-confirm in the app was dead in the desktop build.
+// Intercept htmx:confirm and drive a themed Bootstrap modal instead. Only acts
+// when a question is present (htmx:confirm fires on EVERY request); otherwise
+// it returns immediately and htmx proceeds untouched.
+(function () {
+  var pendingIssue = null;
+  var modalEl = null;
+  var modal = null;
+
+  function ensureModal() {
+    if (modal) return modal;
+    modalEl = document.getElementById('cgt-confirm-modal');
+    if (!modalEl || typeof bootstrap === 'undefined') return null;
+    modal = new bootstrap.Modal(modalEl);
+    modalEl.querySelector('[data-cgt-confirm-ok]').addEventListener('click', function () {
+      var issue = pendingIssue;
+      pendingIssue = null;
+      modal.hide();
+      if (issue) issue(); // re-issue the request with confirmation skipped
+    });
+    // Cancel / backdrop / Esc leaves the request cancelled.
+    modalEl.addEventListener('hidden.bs.modal', function () { pendingIssue = null; });
+    return modal;
+  }
+
+  document.body.addEventListener('htmx:confirm', function (e) {
+    if (!e.detail.question) return; // no hx-confirm on this element — proceed
+    var m = ensureModal();
+    if (!m) return; // bootstrap unavailable — fall back to htmx default
+    e.preventDefault();
+    modalEl.querySelector('[data-cgt-confirm-body]').textContent = e.detail.question;
+    pendingIssue = function () { e.detail.issueRequest(true); };
+    m.show();
+  });
+})();
+
 // ─── Tauri desktop shell integration ──────────────────────────────────────
 // Inside the desktop app, window.__TAURI__ exists (withGlobalTauri + the
 // remote-origin capability in desktop/src-tauri). Reveal the [data-tauri-only]

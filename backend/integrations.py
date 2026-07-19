@@ -581,7 +581,9 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
         if result["updated"]:
             parts.append(f"{result['updated']:,} updated")
-        skipped = result["skipped_no_platform"] + result["skipped_no_id"]
+        skipped = (
+            result["skipped_no_platform"] + result["skipped_no_id"] + result.get("skipped_non_game", 0) + result.get("skipped_conflict", 0)
+        )
         if skipped:
             parts.append(f"{skipped} skipped")
         lines = ["PSN import complete", " · ".join(parts)]

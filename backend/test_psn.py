@@ -475,3 +475,86 @@ def test_psn_token_endpoint_preserves_online_id(client, db_session):
 
     r = client.post("/integrations/psn/token", data={"psn_npsso": "  "})
     assert r.status_code == 422
+
+
+# ─── beta filter + import resilience (fix/psn-beta-filter) ─────────────────
+
+
+def test_is_non_game_catches_beta_mid_string_id():
+    """Sony buries BETA mid-id (Diablo IV beta entitlementId ends 'PS4000').
+    Regression: an earlier port anchored BETA to end-of-string and let it in."""
+    diablo_beta = {
+        "name": "Diablo IV",
+        "titleId": "CUSA30374_00",
+        "entitlementId": "UP0002-CUSA30374_00-RENEGDBETAPS4000",
+        "platform": "PS4",
+    }
+    assert psn.is_non_game(diablo_beta) is True
+    # DEMO stays end-anchored; a real game with DEMO mid-id is NOT filtered.
+    assert psn.is_non_game({"name": "Demolition Derby", "productId": "UP0000-X-DEMOLITION"}) is False
+    # DEMO / DEMO<n> at the end still caught.
+    assert psn.is_non_game({"name": "X", "productId": "UP0000-X-COOLDEMO"}) is True
+    assert psn.is_non_game({"name": "X", "productId": "UP0000-X-COOLDEMO3"}) is True
+
+
+def test_import_skips_non_game_in_snapshot(db_session, monkeypatch, tmp_path):
+    """A snapshot built before the filter fix can still hold a beta; the import
+    must skip it rather than create a row."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [
+        {"titleId": "CUSA1_00", "name": "Real Game", "displayName": "Real Game", "platform": "PS4", "sources": ["purchased"]},
+        {
+            "titleId": "CUSA30374_00",
+            "name": "Diablo IV",
+            "displayName": "Diablo IV",
+            "entitlementId": "UP0002-CUSA30374_00-RENEGDBETAPS4000",
+            "platform": "PS4",
+            "sources": ["purchased"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    result = psn.import_snapshot(db_session, user)
+    assert result["added"] == 1
+    assert result["skipped_non_game"] == 1
+    assert db_session.query(models.GameRelease).filter_by(external_id="CUSA30374_00").count() == 0
+
+
+def test_import_survives_game_platform_collision(db_session, monkeypatch, tmp_path):
+    """A second item sharing display title + platform with an ALREADY-IMPORTED
+    game (the real crash: the Diablo IV beta reused the committed Diablo IV
+    game, which already held a PS4 release) must be skipped, not abort the
+    whole import via UNIQUE(game_id, platform)."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+
+    # First import commits the real Twin Title PS4 entry.
+    _write_snapshot(
+        monkeypatch,
+        tmp_path,
+        user.id,
+        [{"titleId": "CUSA_A", "name": "Twin Title", "displayName": "Twin Title", "platform": "PS4", "sources": ["purchased"]}],
+    )
+    psn.import_snapshot(db_session, user)
+
+    # Second import: a different external_id, same display title + platform
+    # (a beta, a cross-region edition, …). It reuses the committed game, whose
+    # PS4 slot is taken — must skip, not crash. Other Game still imports.
+    _write_snapshot(
+        monkeypatch,
+        tmp_path,
+        user.id,
+        [
+            {"titleId": "CUSA_B", "name": "Twin Title", "displayName": "Twin Title", "platform": "PS4", "sources": ["purchased"]},
+            {"titleId": "CUSA_C", "name": "Other Game", "displayName": "Other Game", "platform": "PS4", "sources": ["purchased"]},
+        ],
+    )
+    result = psn.import_snapshot(db_session, user)
+    assert result["skipped_conflict"] == 1
+    assert result["added"] == 1  # Other Game landed; the run didn't roll back
+    assert db_session.query(models.GameRelease).filter_by(external_id="CUSA_B").count() == 0
+    assert db_session.query(models.GameRelease).filter_by(external_id="CUSA_C").count() == 1
