@@ -244,7 +244,11 @@ _ROMAN = [
 ]
 
 _NON_GAME_NAME_RE = re.compile(r"\b(demo|beta|trial version|trial edition|art of|soundtrack)\b", re.IGNORECASE)
-_NON_GAME_ID_RE = re.compile(r"(DEMO\d*|BETA)$", re.IGNORECASE)
+# DEMO is anchored to the end of the id; BETA matches anywhere (Sony buries it
+# mid-string, e.g. entitlementId "UP0002-CUSA30374_00-RENEGDBETAPS4000" for the
+# Diablo IV beta). Matches the prototype's two separate checks — an earlier
+# port wrongly anchored BETA too, letting betas through.
+_NON_GAME_ID_RE = re.compile(r"DEMO\d*$|BETA", re.IGNORECASE)
 
 
 def _normalized_name(name: str | None) -> str:
@@ -598,9 +602,9 @@ def _platform_label(db: Session, platform_id: int | None, item: dict) -> str:
 
 def _import_one(db: Session, user: models.User, item: dict, platform_id: int) -> str:
     """Upsert one merged item as Game/GameRelease/UserLibraryEntry (mirrors
-    steam._import_owned_games row-for-row). Returns 'added' | 'updated'.
-    Deliberately writes NO GameArtwork — SGDB is the agreed art source; PSN
-    URLs stay in raw_data."""
+    steam._import_owned_games row-for-row). Returns 'added' | 'updated' |
+    'conflict'. Deliberately writes NO GameArtwork — SGDB is the agreed art
+    source; PSN URLs stay in raw_data."""
     external_id = external_id_for(item)
     title = item.get("displayName") or item.get("name") or external_id
     release = db.query(models.GameRelease).filter_by(source="psn", external_id=external_id).first()
@@ -630,9 +634,17 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
             )
             db.add(game)
             db.flush()
+        label = _platform_label(db, platform_id, item)
+        # A different release already occupies this game+platform slot
+        # (UNIQUE(game_id, platform)). Happens when two items share a display
+        # title on the same platform — a beta + the real game, cross-region
+        # editions, etc. Skip this one instead of letting the IntegrityError
+        # abort the whole import.
+        if db.query(models.GameRelease).filter_by(game_id=game.id, platform=label).first() is not None:
+            return "conflict"
         release = models.GameRelease(
             game_id=game.id,
-            platform=_platform_label(db, platform_id, item),
+            platform=label,
             platform_id=platform_id,
             source="psn",
             external_id=external_id,
@@ -683,10 +695,18 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     added = updated = 0
     skipped_no_platform = 0
     skipped_no_id = 0
+    skipped_non_game = 0
+    skipped_conflict = 0
     played_only = 0
     for item in snap.get("merged", []):
         if is_played_only(item):
             played_only += 1
+            continue
+        # Belt-and-suspenders: the non-game filter runs at fetch time, but a
+        # snapshot taken before the filter was fixed can still hold a beta/demo
+        # — never import one regardless of when the snapshot was built.
+        if is_non_game(item):
+            skipped_non_game += 1
             continue
         if not external_id_for(item):
             skipped_no_id += 1
@@ -695,8 +715,11 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         if platform_id is None:
             skipped_no_platform += 1
             continue
-        if _import_one(db, user, item, platform_id) == "added":
+        outcome = _import_one(db, user, item, platform_id)
+        if outcome == "added":
             added += 1
+        elif outcome == "conflict":
+            skipped_conflict += 1
         else:
             updated += 1
     db.commit()
@@ -711,6 +734,8 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         "updated": updated,
         "skipped_no_platform": skipped_no_platform,
         "skipped_no_id": skipped_no_id,
+        "skipped_non_game": skipped_non_game,
+        "skipped_conflict": skipped_conflict,
         "played_only_pending": played_only,
         "match_candidates": scan.get("candidates_added", 0),
     }
