@@ -332,6 +332,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "completed-games-tracker"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "serde",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "cookie"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -876,16 +886,6 @@ dependencies = [
  "memchr",
  "pin-project-lite",
  "slab",
-]
-
-[[package]]
-name = "games-tracker-desktop"
-version = "0.1.0"
-dependencies = [
- "libc",
- "serde",
- "tauri",
- "tauri-build",
 ]
 
 [[package]]

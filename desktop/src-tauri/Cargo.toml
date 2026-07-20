@@ -1,5 +1,5 @@
 [package]
-name = "games-tracker-desktop"
+name = "completed-games-tracker"
 version = "0.1.0"
 description = "Desktop shell for the games tracker — spawns the local FastAPI backend and hosts the UI in a WebView"
 edition = "2021"
