@@ -140,7 +140,7 @@
      Parent breadcrumb lives in the title bar (above) — not duplicated here. #}
   <div class="cgt-detail-body">
     {% set _title_diff = candidate and candidate.raw_title and (candidate.raw_title | titles_differ(game.display_title)) %}
-    {% set _plat_diff = candidate and candidate.raw_platform and release.display_platform and candidate.raw_platform.strip().lower() != release.display_platform.strip().lower() %}
+    {% set _plat_diff = candidate and candidate.platform_id and release.platform_id and candidate.platform_id != release.platform_id %}
     {# Badges row: platform + flags. #}
     <div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
       <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
