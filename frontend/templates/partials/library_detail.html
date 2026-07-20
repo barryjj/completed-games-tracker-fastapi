@@ -186,12 +186,12 @@
     {# Alias match — platforms resolve to the same row (e.g. Vita / PS Vita).
        Informational, NOT an uncertainty flag: neutral blue, not peach. #}
     <div class="cgt-detail-block small mb-2">
+      <div class="cgt-detail-block__heading">Alias match</div>
       <div class="cgt-completion-record cgt-completion-record--info">
         <span class="cgt-slat__label">Platform</span>
         <span class="tag-badge {{ candidate.raw_platform | platform_color }}">{{ candidate.raw_platform }}</span>
         <span class="text-secondary">&rarr;</span>
         <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
-        <span class="text-secondary">matched via alias</span>
       </div>
     </div>
     {% endif %}
