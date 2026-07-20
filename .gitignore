@@ -57,3 +57,6 @@ data/
 *.bak.*
 *.bak-shm
 *.bak-wal
+
+# Editor/tool tilde backups
+*~

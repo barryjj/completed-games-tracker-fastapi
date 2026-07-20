@@ -567,8 +567,11 @@ def test_strip_trophy_suffix():
     assert psn._strip_trophy_suffix("God of War II Trophies") == "God of War II"
     assert psn._strip_trophy_suffix("TEKKEN 6 Trophy Set") == "TEKKEN 6"
     assert psn._strip_trophy_suffix("Novastrike Trophies") == "Novastrike"
-    # Don't over-strip: a game legitimately ending in a different word stays.
-    assert psn._strip_trophy_suffix("Atelier Trophy") == "Atelier Trophy"  # 'Trophy' alone, not a suffix pattern
+    # Bare ' Trophy' and a trailing period ('Trophy pack.') are stripped too.
+    assert psn._strip_trophy_suffix("BlazBlue Continuum Shift Trophy") == "BlazBlue Continuum Shift"
+    assert psn._strip_trophy_suffix("STREET FIGHTER IV Trophy pack.") == "STREET FIGHTER IV"
+    # Don't over-strip a title where 'trophy' isn't the trailing tag.
+    assert psn._strip_trophy_suffix("Trophy Hunter") == "Trophy Hunter"
     assert psn._strip_trophy_suffix("Resident Evil 4") == "Resident Evil 4"
     assert psn._display_name("God of War II Trophies™") == "God of War II"
 

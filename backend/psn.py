@@ -269,7 +269,10 @@ def _normalized_name(name: str | None) -> str:
 # "TEKKEN 6 Trophy Set"). For games you own, the purchased name wins the merge
 # so it's hidden — but trophy-only PS3/Vita history shows it. Strip it so the
 # game reads as its real title.
-_TROPHY_SUFFIX_RE = re.compile(r"\s+(?:trophies|trophy set|trophy pack|trophy collection|trophy list)\s*$", re.IGNORECASE)
+# Matches a trailing trophy-set tag: bare ' Trophy'/' Trophies', or
+# ' Trophy Set/Pack/Collection/List', with optional trailing punctuation
+# ('STREET FIGHTER IV Trophy pack.').
+_TROPHY_SUFFIX_RE = re.compile(r"\s+(?:trophies|trophy(?:\s+(?:set|pack|collection|list))?)[.!]?\s*$", re.IGNORECASE)
 
 
 def _strip_trophy_suffix(name: str | None) -> str:
@@ -671,6 +674,13 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
         raw = dict(release.raw_data or {})
         raw.update(item)
         release.raw_data = raw
+        # Re-derive the clean display title on re-import so title-cleanup fixes
+        # (trophy-suffix stripping, etc.) reach already-imported entries without
+        # a full rebuild. Respects a user-set display name.
+        game = release.game
+        if not game.display_name_user_set:
+            cleaned = titles._clean_title(title)
+            game.display_name = cleaned if cleaned != game.title else None
 
     playtime = duration_to_minutes(item.get("playDuration"))
     last_played = _parse_played_at(item.get("lastPlayed"))
