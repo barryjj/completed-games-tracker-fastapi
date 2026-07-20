@@ -115,7 +115,9 @@
   <div class="cgt-match-row__actions">
     {% if c.status == 'pending' %}
     <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-    <button class="btn btn-sm btn-surface" onclick="cgtShowListSkip('{{ c.id }}')">Dismiss</button>
+    <button class="btn btn-sm btn-surface"
+            hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+            hx-on::after-request="cgtListRowDone('{{ c.id }}')">Dismiss</button>
     <button class="btn btn-sm btn-primary"
             hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="cgtListRowDone('{{ c.id }}')">Confirm</button>
@@ -124,13 +126,6 @@
             hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="window.location.reload()">Merge anyway</button>
     {% endif %}
-  </div>
-</div>
-<div id="list-skip-{{ c.id }}" hidden class="px-3 pb-2" style="background:var(--ctp-base);border-bottom:1px solid var(--ctp-surface0);">
-  <div class="d-flex align-items-center gap-2">
-    <input type="text" class="form-control form-control-sm" id="list-skip-note-{{ c.id }}" placeholder="Optional note" style="max-width:280px;">
-    <button class="btn btn-sm btn-primary" onclick="cgtSubmitListSkip('{{ c.id }}')">Confirm skip</button>
-    <button class="btn btn-sm btn-surface" onclick="cgtHideListSkip('{{ c.id }}')">Cancel</button>
   </div>
 </div>
 {% endfor %}
@@ -337,7 +332,8 @@
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface flex-shrink-0" onclick="openCandidatePreview({{ c.id }})">Preview</button>
       <button class="btn btn-sm btn-surface flex-shrink-0"
-              onclick="cgtShowSkipForm('{{ c.id }}')">Dismiss</button>
+              hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+              hx-on::after-request="cgtCardDismiss('{{ c.id }}')">Dismiss</button>
       <button class="btn btn-sm btn-primary flex-shrink-0"
               hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
               hx-on::after-request="cgtCandidateDone('{{ c.id }}')">Confirm</button>
@@ -346,14 +342,6 @@
       {% endif %}
     </div>
     {% if c.note %}<div class="text-secondary small mt-1" style="padding-left:calc(64px + .75rem);">Note: {{ c.note }}</div>{% endif %}
-  </div>
-  <div id="skip-form-{{ c.id }}" hidden class="px-3 pb-3" style="background:var(--ctp-base);">
-    <div class="d-flex align-items-center gap-2">
-      <input type="text" class="form-control form-control-sm" id="skip-note-{{ c.id }}"
-             placeholder="Optional note (e.g. different region release)" style="max-width:280px;">
-      <button class="btn btn-sm btn-primary" onclick="cgtSubmitSkip('{{ c.id }}')">Confirm</button>
-      <button class="btn btn-sm btn-surface" onclick="cgtHideSkipForm('{{ c.id }}')">Cancel</button>
-    </div>
   </div>
 
   {% endif %}{# end single/multi branch #}
@@ -472,18 +460,6 @@
     }
   };
 
-  window.cgtShowListSkip = function(id) {
-    document.getElementById('list-skip-' + id).hidden = false;
-  };
-  window.cgtHideListSkip = function(id) {
-    document.getElementById('list-skip-' + id).hidden = true;
-  };
-  window.cgtSubmitListSkip = function(id) {
-    const note = document.getElementById('list-skip-note-' + id).value;
-    htmx.ajax('POST', '/library/match-review/' + id + '/skip', {
-      values: { note }, swap: 'none',
-    }).then(() => cgtListRowDone(id));
-  };
 
   // ── Detail / preview pane ────────────────────────────────────────
   let _matchDetailOffcanvas = null;
@@ -628,22 +604,11 @@
     });
   };
 
-  window.cgtShowSkipForm = function(id) {
-    document.getElementById('skip-form-' + id).hidden = false;
-  };
-  window.cgtHideSkipForm = function(id) {
-    document.getElementById('skip-form-' + id).hidden = true;
-  };
-  window.cgtSubmitSkip = function(id) {
-    const note = document.getElementById('skip-note-' + id).value;
-    htmx.ajax('POST', '/library/match-review/' + id + '/skip', {
-      values: { note },
-      swap: 'none',
-    }).then(() => {
-      const card = document.getElementById('candidate-' + id);
-      if (card) card.dataset.status = 'dismissed';
-      cgtCandidateDone(id);
-    });
+  // One-click dismiss (fired from the button's hx-on::after-request).
+  window.cgtCardDismiss = function(id) {
+    const card = document.getElementById('candidate-' + id);
+    if (card) card.dataset.status = 'dismissed';
+    cgtCandidateDone(id);
   };
 
   if (cards.length > 0) {

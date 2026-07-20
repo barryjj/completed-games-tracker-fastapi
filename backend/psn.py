@@ -265,10 +265,22 @@ def _normalized_name(name: str | None) -> str:
     return s.lower().strip()
 
 
+# Sony appends this to old trophy-set names (e.g. "God of War II Trophies",
+# "TEKKEN 6 Trophy Set"). For games you own, the purchased name wins the merge
+# so it's hidden — but trophy-only PS3/Vita history shows it. Strip it so the
+# game reads as its real title.
+_TROPHY_SUFFIX_RE = re.compile(r"\s+(?:trophies|trophy set|trophy pack|trophy collection|trophy list)\s*$", re.IGNORECASE)
+
+
+def _strip_trophy_suffix(name: str | None) -> str:
+    return _TROPHY_SUFFIX_RE.sub("", name or "").strip()
+
+
 def _display_name(name: str | None) -> str:
     if not name:
         return ""
-    return re.sub(r"\(TM\)|™|®", "", str(name), flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\(TM\)|™|®", "", str(name), flags=re.IGNORECASE)
+    return _strip_trophy_suffix(cleaned)
 
 
 def _item_name(item: dict) -> str:
@@ -606,7 +618,10 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
     'conflict'. Deliberately writes NO GameArtwork — SGDB is the agreed art
     source; PSN URLs stay in raw_data."""
     external_id = external_id_for(item)
-    title = item.get("displayName") or item.get("name") or external_id
+    # Strip the trophy-set suffix here too, so an existing snapshot (whose
+    # displayName was computed before this fix) still imports the clean name
+    # without a re-fetch.
+    title = _strip_trophy_suffix(item.get("displayName") or item.get("name") or external_id)
     release = db.query(models.GameRelease).filter_by(source="psn", external_id=external_id).first()
 
     if release is None:

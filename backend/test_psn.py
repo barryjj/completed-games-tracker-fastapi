@@ -558,3 +558,38 @@ def test_import_survives_game_platform_collision(db_session, monkeypatch, tmp_pa
     assert result["added"] == 1  # Other Game landed; the run didn't roll back
     assert db_session.query(models.GameRelease).filter_by(external_id="CUSA_B").count() == 0
     assert db_session.query(models.GameRelease).filter_by(external_id="CUSA_C").count() == 1
+
+
+# ─── trophy-set suffix stripping (display title) ───────────────────────────
+
+
+def test_strip_trophy_suffix():
+    assert psn._strip_trophy_suffix("God of War II Trophies") == "God of War II"
+    assert psn._strip_trophy_suffix("TEKKEN 6 Trophy Set") == "TEKKEN 6"
+    assert psn._strip_trophy_suffix("Novastrike Trophies") == "Novastrike"
+    # Don't over-strip: a game legitimately ending in a different word stays.
+    assert psn._strip_trophy_suffix("Atelier Trophy") == "Atelier Trophy"  # 'Trophy' alone, not a suffix pattern
+    assert psn._strip_trophy_suffix("Resident Evil 4") == "Resident Evil 4"
+    assert psn._display_name("God of War II Trophies™") == "God of War II"
+
+
+def test_import_strips_trophy_suffix_from_existing_snapshot(db_session, monkeypatch, tmp_path):
+    """A snapshot whose displayName still carries 'Trophies' (pre-fix) imports
+    the clean title without a re-fetch."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR555_00",
+            "name": "God of War II Trophies",
+            "displayName": "God of War II Trophies",
+            "platform": "PS3",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    psn.import_snapshot(db_session, user)
+    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR555_00").one()
+    assert rel.game.display_title == "God of War II"
