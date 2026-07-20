@@ -596,3 +596,41 @@ def test_import_strips_trophy_suffix_from_existing_snapshot(db_session, monkeypa
     psn.import_snapshot(db_session, user)
     rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR555_00").one()
     assert rel.game.display_title == "God of War II"
+
+
+def test_reimport_recleans_stale_title(db_session, monkeypatch, tmp_path):
+    """An entry imported before the trophy-strip fix (Game.title still ends in
+    'Trophies') gets its title cleaned on a plain re-import — library search
+    matches Game.title, so this stops it surfacing by the trophy artifact."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+    ps3 = models.resolve_platform_id(db_session, "PS3")
+    game = models.Game(title="Killzone 2 Trophies")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(game_id=game.id, platform="PlayStation 3", platform_id=ps3, source="psn", external_id="NPWR12345_00")
+    db_session.add(rel)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import"))
+    db_session.commit()
+
+    _write_snapshot(
+        monkeypatch,
+        tmp_path,
+        user.id,
+        [
+            {
+                "npCommunicationId": "NPWR12345_00",
+                "name": "Killzone 2 Trophies",
+                "displayName": "Killzone 2 Trophies",
+                "platform": "PS3",
+                "sources": ["titles"],
+            }
+        ],
+    )
+    psn.import_snapshot(db_session, user)
+    db_session.refresh(game)
+    assert game.title == "Killzone 2"
+    assert game.display_name is None

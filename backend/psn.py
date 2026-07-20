@@ -674,13 +674,16 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
         raw = dict(release.raw_data or {})
         raw.update(item)
         release.raw_data = raw
-        # Re-derive the clean display title on re-import so title-cleanup fixes
-        # (trophy-suffix stripping, etc.) reach already-imported entries without
-        # a full rebuild. Respects a user-set display name.
+        # Re-derive the clean title on re-import so title fixes (trophy-suffix
+        # stripping, etc.) reach already-imported entries without a rebuild.
+        # Library search matches Game.title, so update the title itself — not
+        # just the display_name override — to keep search clean. Mirrors the
+        # fresh-import path above; respects a user-set display name.
         game = release.game
         if not game.display_name_user_set:
             cleaned = titles._clean_title(title)
-            game.display_name = cleaned if cleaned != game.title else None
+            game.title = title
+            game.display_name = cleaned if cleaned != title else None
 
     playtime = duration_to_minutes(item.get("playDuration"))
     last_played = _parse_played_at(item.get("lastPlayed"))
