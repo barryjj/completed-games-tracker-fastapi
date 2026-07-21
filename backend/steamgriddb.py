@@ -391,6 +391,88 @@ def bulk_fill_missing(
     return {"filled": filled, "no_candidate": no_candidate, "skipped": skipped, "errored": errored}
 
 
+def bulk_fill_all_missing(db: Session, user: models.User, progress_callback=None) -> dict:
+    """Fill EVERY missing SGDB artwork type (cover_v, cover_h, hero, logo) for
+    every visible entry in one pass. The SGDB game is resolved ONCE per entry
+    and reused across all four types (vs. calling bulk_fill_missing four times,
+    which re-resolves each entry per type). This is the PSN on-ramp: PSx
+    entries have no native art at all, so SGDB supplies covers, hero, and logo.
+
+    Returns aggregate {"filled","no_candidate","skipped","errored"} plus a
+    per_type breakdown with the same shape for each of IMAGE_TYPES.
+    """
+    if not user.steamgriddb_api_key:
+        raise ValueError("User has no SteamGridDB API key set.")
+
+    api_key = user.steamgriddb_api_key
+    entries = (
+        db.query(models.UserLibraryEntry)
+        .options(
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+            joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
+            joinedload(models.UserLibraryEntry.user_artwork),
+        )
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.UserLibraryEntry.is_hidden.is_(False),
+        )
+        .all()
+    )
+    entries.sort(
+        key=lambda e: (e.release.game.display_title or e.release.game.title or "").casefold() if e.release and e.release.game else ""
+    )
+    total = len(entries)
+
+    per_type = {t: {"filled": 0, "no_candidate": 0, "skipped": 0, "errored": 0} for t in IMAGE_TYPES}
+
+    for i, entry in enumerate(entries):
+        if progress_callback:
+            g = entry.release.game if entry.release else None
+            progress_callback(i, total, (g.display_title or g.title or "") if g else "")
+
+        game = entry.release.game if entry.release else None
+        if game and re.match(r"^App \d+$", game.title or ""):
+            for t in IMAGE_TYPES:
+                per_type[t]["skipped"] += 1
+            continue
+
+        needed = [t for t in IMAGE_TYPES if not _entry_already_has_image(entry, t)]
+        for t in IMAGE_TYPES:
+            if t not in needed:
+                per_type[t]["skipped"] += 1
+        if not needed:
+            continue
+
+        try:
+            sgdb_game = _find_sgdb_game_for_entry(api_key, entry)
+        except Exception as e:
+            logger.warning("SGDB game lookup failed for entry %s: %s", entry.id, e)
+            for t in needed:
+                per_type[t]["errored"] += 1
+            continue
+        if not sgdb_game:
+            for t in needed:
+                per_type[t]["no_candidate"] += 1
+            continue
+
+        for t in needed:
+            try:
+                images = fetch_images_for_game(api_key, sgdb_game["id"], t)
+                top_url = images[0].get("url") if images else None
+                if not top_url:
+                    per_type[t]["no_candidate"] += 1
+                    continue
+                _upsert_user_artwork(db, entry, t, top_url)
+                per_type[t]["filled"] += 1
+            except Exception as e:
+                logger.warning("SGDB fill (%s) failed for entry %s: %s", t, entry.id, e)
+                per_type[t]["errored"] += 1
+
+    db.commit()
+    totals = {k: sum(per_type[t][k] for t in IMAGE_TYPES) for k in ("filled", "no_candidate", "skipped", "errored")}
+    return {"per_type": per_type, **totals}
+
+
 def fill_import_candidate_thumbnails(
     db: Session,
     user: models.User,

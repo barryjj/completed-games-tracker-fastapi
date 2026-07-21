@@ -634,3 +634,63 @@ def test_reimport_recleans_stale_title(db_session, monkeypatch, tmp_path):
     db_session.refresh(game)
     assert game.title == "Killzone 2"
     assert game.display_name is None
+
+
+def _psn_import_result():
+    return {
+        "added": 1,
+        "updated": 0,
+        "skipped_no_platform": 0,
+        "skipped_no_id": 0,
+        "skipped_non_game": 0,
+        "skipped_conflict": 0,
+        "played_only_pending": 0,
+        "match_candidates": 0,
+    }
+
+
+def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
+    import asyncio
+
+    from backend import integrations, jobs
+    from backend import psn as psn_mod
+
+    jobs.clear_all()
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.commit()
+
+    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+
+    async def _noop(job_id, user_id):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
+    db_session.close = lambda: None
+
+    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+
+    assert any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
+
+
+def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
+    import asyncio
+
+    from backend import integrations, jobs
+    from backend import psn as psn_mod
+
+    jobs.clear_all()
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")  # no sgdb key
+    db_session.add(user)
+    db_session.commit()
+
+    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+    db_session.close = lambda: None
+
+    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+
+    assert not any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
