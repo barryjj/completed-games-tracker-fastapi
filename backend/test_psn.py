@@ -558,3 +558,139 @@ def test_import_survives_game_platform_collision(db_session, monkeypatch, tmp_pa
     assert result["added"] == 1  # Other Game landed; the run didn't roll back
     assert db_session.query(models.GameRelease).filter_by(external_id="CUSA_B").count() == 0
     assert db_session.query(models.GameRelease).filter_by(external_id="CUSA_C").count() == 1
+
+
+# ─── trophy-set suffix stripping (display title) ───────────────────────────
+
+
+def test_strip_trophy_suffix():
+    assert psn._strip_trophy_suffix("God of War II Trophies") == "God of War II"
+    assert psn._strip_trophy_suffix("TEKKEN 6 Trophy Set") == "TEKKEN 6"
+    assert psn._strip_trophy_suffix("Novastrike Trophies") == "Novastrike"
+    # Bare ' Trophy' and a trailing period ('Trophy pack.') are stripped too.
+    assert psn._strip_trophy_suffix("BlazBlue Continuum Shift Trophy") == "BlazBlue Continuum Shift"
+    assert psn._strip_trophy_suffix("STREET FIGHTER IV Trophy pack.") == "STREET FIGHTER IV"
+    # Don't over-strip a title where 'trophy' isn't the trailing tag.
+    assert psn._strip_trophy_suffix("Trophy Hunter") == "Trophy Hunter"
+    assert psn._strip_trophy_suffix("Resident Evil 4") == "Resident Evil 4"
+    assert psn._display_name("God of War II Trophies™") == "God of War II"
+
+
+def test_import_strips_trophy_suffix_from_existing_snapshot(db_session, monkeypatch, tmp_path):
+    """A snapshot whose displayName still carries 'Trophies' (pre-fix) imports
+    the clean title without a re-fetch."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR555_00",
+            "name": "God of War II Trophies",
+            "displayName": "God of War II Trophies",
+            "platform": "PS3",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    psn.import_snapshot(db_session, user)
+    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR555_00").one()
+    assert rel.game.display_title == "God of War II"
+
+
+def test_reimport_recleans_stale_title(db_session, monkeypatch, tmp_path):
+    """An entry imported before the trophy-strip fix (Game.title still ends in
+    'Trophies') gets its title cleaned on a plain re-import — library search
+    matches Game.title, so this stops it surfacing by the trophy artifact."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+    ps3 = models.resolve_platform_id(db_session, "PS3")
+    game = models.Game(title="Killzone 2 Trophies")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(game_id=game.id, platform="PlayStation 3", platform_id=ps3, source="psn", external_id="NPWR12345_00")
+    db_session.add(rel)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import"))
+    db_session.commit()
+
+    _write_snapshot(
+        monkeypatch,
+        tmp_path,
+        user.id,
+        [
+            {
+                "npCommunicationId": "NPWR12345_00",
+                "name": "Killzone 2 Trophies",
+                "displayName": "Killzone 2 Trophies",
+                "platform": "PS3",
+                "sources": ["titles"],
+            }
+        ],
+    )
+    psn.import_snapshot(db_session, user)
+    db_session.refresh(game)
+    assert game.title == "Killzone 2"
+    assert game.display_name is None
+
+
+def _psn_import_result():
+    return {
+        "added": 1,
+        "updated": 0,
+        "skipped_no_platform": 0,
+        "skipped_no_id": 0,
+        "skipped_non_game": 0,
+        "skipped_conflict": 0,
+        "played_only_pending": 0,
+        "match_candidates": 0,
+    }
+
+
+def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
+    import asyncio
+
+    from backend import integrations, jobs
+    from backend import psn as psn_mod
+
+    jobs.clear_all()
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.commit()
+
+    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+
+    async def _noop(job_id, user_id):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
+    db_session.close = lambda: None
+
+    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+
+    assert any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
+
+
+def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
+    import asyncio
+
+    from backend import integrations, jobs
+    from backend import psn as psn_mod
+
+    jobs.clear_all()
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")  # no sgdb key
+    db_session.add(user)
+    db_session.commit()
+
+    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+    db_session.close = lambda: None
+
+    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+
+    assert not any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))

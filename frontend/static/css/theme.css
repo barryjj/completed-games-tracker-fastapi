@@ -786,6 +786,13 @@ html[data-bs-theme="light"] tr.completion-row-clickable:hover > td { background-
   align-items: center;
   gap: 0.4rem;
 }
+.cgt-completion-record--info {
+  border-left-color: var(--ctp-blue);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
 /* Clickable variant ("Other completions of this game" links to that
    completion's own detail view). */
 a.cgt-completion-record {

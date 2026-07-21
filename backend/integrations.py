@@ -663,6 +663,12 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
+        # PSN entries have no native artwork, so auto-fill from SGDB after an
+        # import — as its own background job so the import toast isn't held up
+        # by the (long) fill. Gated on an SGDB key; silently skipped without.
+        if kind == "psn_import" and user.steamgriddb_api_key:
+            fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
+            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id))
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.
@@ -1404,6 +1410,60 @@ async def steamgriddb_fill_missing(
         name="partials/sgdb_fill_status.html",
         context={"job": job},
     )
+
+
+async def _run_sgdb_fill_all_job(job_id: str, user_id: int) -> None:
+    """Background runner: fill all four SGDB artwork types in one pass."""
+    jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    db = SessionLocal()
+    try:
+        user = db.query(models.User).filter(models.User.id == user_id).first()
+        if user is None:
+            jobs.mark_failed(job_id, "User no longer exists.")
+            return
+
+        def on_progress(done: int, total: int, title: str) -> None:
+            jobs.update(job_id, progress={"done": done, "total": total, "title": title})
+
+        result = await asyncio.to_thread(sgdb.bulk_fill_all_missing, db, user, on_progress)
+        pt = result["per_type"]
+        lines = [
+            "SteamGridDB artwork fill complete",
+            f"+{result['filled']:,} filled · {result['no_candidate']:,} no match · {result['skipped']:,} already had art",
+            " · ".join(f"{_SGDB_IMAGE_LABELS.get(t, t)}: +{pt[t]['filled']:,}" for t in sgdb.IMAGE_TYPES),
+        ]
+        if result["errored"]:
+            lines.append(f"{result['errored']:,} errored")
+        jobs.mark_done(job_id, "\n".join(lines))
+    except ValueError as e:
+        jobs.mark_failed(job_id, str(e))
+    except Exception as e:
+        _logger.exception("SGDB fill-all job %s failed", job_id)
+        jobs.mark_failed(job_id, f"Job failed: {e}")
+    finally:
+        db.close()
+
+
+@router.post("/steamgriddb/fill-all")
+async def steamgriddb_fill_all(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Kick off a single job that fills all four artwork types (v/h/hero/logo)."""
+    if not current_user.steamgriddb_api_key:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Set your SteamGridDB API key first."},
+            status_code=422,
+        )
+    if jobs.active_jobs_for(current_user.id):
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Another job is already running — please wait for it to finish."},
+            status_code=409,
+        )
+    job = jobs.create(user_id=current_user.id, kind="sgdb_fill_all", label="Artwork fill")
+    asyncio.create_task(_run_sgdb_fill_all_job(job.id, current_user.id))
+    return templates.TemplateResponse(request=request, name="partials/sgdb_fill_status.html", context={"job": job})
 
 
 # ---------------------------------------------------------------------------

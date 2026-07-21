@@ -59,6 +59,19 @@
     {% if current_user.steamgriddb_api_key %}
     <h5 class="cgt-config-section mt-4">Bulk Fill</h5>
     <p class="text-secondary mb-3"><small>Walk your library and apply the top SGDB candidate to every entry missing art of that type. Skips entries that already have Steam CDN art or a custom override. Runs in the background; you'll get a toast when it finishes.</small></p>
+    <div class="d-flex justify-content-between align-items-center gap-3 mb-3 pb-3" style="border-bottom:1px solid var(--ctp-surface0);">
+      <small class="text-secondary"><strong>All types</strong> &mdash; vertical + horizontal covers, hero, and logo in one pass, resolving each game once. Best for PSN entries (no native art). Also runs automatically after a PSN import.</small>
+      <button
+        class="btn btn-primary btn-sm flex-shrink-0"
+        type="button"
+        hx-post="/integrations/steamgriddb/fill-all"
+        hx-target="#sgdb-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-confirm="Fill in all missing artwork (covers, hero, logo) across your library?"
+        hx-on::before-request="document.getElementById('sgdb-flash').innerHTML=''"
+      >Fill all</button>
+    </div>
     <div class="d-flex flex-column gap-3">
       <div class="d-flex justify-content-between align-items-center gap-3">
         <small class="text-secondary">Vertical covers — 600&times;900 portrait (library card art)</small>

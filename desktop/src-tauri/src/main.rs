@@ -302,7 +302,7 @@ fn main() {
                 let url = BACKEND_URL.parse().expect("static URL parses");
                 if let Err(e) =
                     WebviewWindowBuilder::new(&handle, "main", WebviewUrl::External(url))
-                        .title("Games Tracker")
+                        .title("Completed Games Tracker")
                         .inner_size(1440.0, 920.0)
                         // WKWebView ships no reload affordance and Tauri wires no
                         // menu accelerator for it — without this, a wedged page

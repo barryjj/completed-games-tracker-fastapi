@@ -265,10 +265,25 @@ def _normalized_name(name: str | None) -> str:
     return s.lower().strip()
 
 
+# Sony appends this to old trophy-set names (e.g. "God of War II Trophies",
+# "TEKKEN 6 Trophy Set"). For games you own, the purchased name wins the merge
+# so it's hidden — but trophy-only PS3/Vita history shows it. Strip it so the
+# game reads as its real title.
+# Matches a trailing trophy-set tag: bare ' Trophy'/' Trophies', or
+# ' Trophy Set/Pack/Collection/List', with optional trailing punctuation
+# ('STREET FIGHTER IV Trophy pack.').
+_TROPHY_SUFFIX_RE = re.compile(r"\s+(?:trophies|trophy(?:\s+(?:set|pack|collection|list))?)[.!]?\s*$", re.IGNORECASE)
+
+
+def _strip_trophy_suffix(name: str | None) -> str:
+    return _TROPHY_SUFFIX_RE.sub("", name or "").strip()
+
+
 def _display_name(name: str | None) -> str:
     if not name:
         return ""
-    return re.sub(r"\(TM\)|™|®", "", str(name), flags=re.IGNORECASE).strip()
+    cleaned = re.sub(r"\(TM\)|™|®", "", str(name), flags=re.IGNORECASE)
+    return _strip_trophy_suffix(cleaned)
 
 
 def _item_name(item: dict) -> str:
@@ -606,7 +621,10 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
     'conflict'. Deliberately writes NO GameArtwork — SGDB is the agreed art
     source; PSN URLs stay in raw_data."""
     external_id = external_id_for(item)
-    title = item.get("displayName") or item.get("name") or external_id
+    # Strip the trophy-set suffix here too, so an existing snapshot (whose
+    # displayName was computed before this fix) still imports the clean name
+    # without a re-fetch.
+    title = _strip_trophy_suffix(item.get("displayName") or item.get("name") or external_id)
     release = db.query(models.GameRelease).filter_by(source="psn", external_id=external_id).first()
 
     if release is None:
@@ -656,6 +674,16 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
         raw = dict(release.raw_data or {})
         raw.update(item)
         release.raw_data = raw
+        # Re-derive the clean title on re-import so title fixes (trophy-suffix
+        # stripping, etc.) reach already-imported entries without a rebuild.
+        # Library search matches Game.title, so update the title itself — not
+        # just the display_name override — to keep search clean. Mirrors the
+        # fresh-import path above; respects a user-set display name.
+        game = release.game
+        if not game.display_name_user_set:
+            cleaned = titles._clean_title(title)
+            game.title = title
+            game.display_name = cleaned if cleaned != title else None
 
     playtime = duration_to_minutes(item.get("playDuration"))
     last_played = _parse_played_at(item.get("lastPlayed"))

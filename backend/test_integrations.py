@@ -1805,3 +1805,63 @@ def test_fill_import_candidate_thumbnails_counts_no_candidate(db_session, monkey
     assert result == {"filled": 0, "no_candidate": 1, "errored": 0}
     db_session.refresh(candidate)
     assert candidate.thumbnail_url is None
+
+
+def test_sgdb_bulk_fill_all_resolves_game_once_and_fills_every_type(db_session, monkeypatch):
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+    game = models.Game(title="Bloodborne")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="PS4", source="manual", external_id=None)
+    db_session.add(release)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=release.id, import_source="manual")
+    db_session.add(entry)
+    db_session.commit()
+
+    calls = {"search": 0}
+
+    def fake_search(k, q):
+        calls["search"] += 1
+        return [{"id": 555, "name": "Bloodborne"}]
+
+    monkeypatch.setattr(steamgriddb, "search_games", fake_search)
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o, page=0: [{"url": f"https://sgdb/{o}.png"}])
+    monkeypatch.setattr(steamgriddb, "get_heroes_for_game", lambda k, gid, page=0: [{"url": "https://sgdb/hero.png"}])
+    monkeypatch.setattr(steamgriddb, "get_logos_for_game", lambda k, gid, page=0: [{"url": "https://sgdb/logo.png"}])
+
+    result = steamgriddb.bulk_fill_all_missing(db_session, user)
+    assert result["filled"] == 4
+    # The SGDB game is resolved ONCE per entry, not once per type.
+    assert calls["search"] == 1
+    for at in ("cover_v", "cover_h", "hero", "logo"):
+        assert db_session.query(models.UserArtwork).filter_by(entry_id=entry.id, artwork_type=at).count() == 1
+    assert all(result["per_type"][t]["filled"] == 1 for t in steamgriddb.IMAGE_TYPES)
+
+
+def test_sgdb_fill_all_endpoint_requires_key(client, db_session, monkeypatch):
+    # The endpoint create_task()s the runner, which opens its own real
+    # SessionLocal — stub it so the test doesn't fire a real fill.
+    from backend import integrations, jobs
+
+    jobs.clear_all()  # module-level registry persists across tests (same user id=1)
+
+    async def _noop(job_id, user_id):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
+
+    token = _signup_and_login(client)
+    r = client.post("/integrations/steamgriddb/fill-all")
+    assert r.status_code == 422
+    assert b"API key" in r.content
+
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steamgriddb_api_key = "k"
+    db_session.commit()
+    r = client.post("/integrations/steamgriddb/fill-all")
+    assert r.status_code == 200

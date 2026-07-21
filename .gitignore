@@ -55,3 +55,8 @@ data/
 # DB backups (app.db.bak.NNNNN etc.)
 *.bak
 *.bak.*
+*.bak-shm
+*.bak-wal
+
+# Editor/tool tilde backups
+*~
