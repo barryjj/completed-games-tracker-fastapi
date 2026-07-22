@@ -463,6 +463,38 @@ def test_detail_pane_returns_content_for_owned_entry(client, db_session):
     assert b"cgt-pane-nav" in r.content
 
 
+def test_detail_pane_psn_entry_links_to_ps_store(client, db_session):
+    """A PSN entry with a productId gets a PS Store link; a trophy-only entry
+    without one just shows the ID, no store link."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    with_pid = models.Game(title="Control Ultimate Edition")
+    without_pid = models.Game(title="Demon's Souls")
+    db_session.add_all([with_pid, without_pid])
+    db_session.flush()
+    rel_a = models.GameRelease(
+        game_id=with_pid.id,
+        platform="PS5",
+        source="psn",
+        external_id="PPSA01949_00",
+        raw_data={"productId": "UP4040-PPSA01949_00-CONTROLUEPS50000"},
+    )
+    rel_b = models.GameRelease(game_id=without_pid.id, platform="PS3", source="psn", external_id="NPWR555_00", raw_data={})
+    db_session.add_all([rel_a, rel_b])
+    db_session.flush()
+    entry_a = models.UserLibraryEntry(user_id=user.id, release_id=rel_a.id, import_source="psn_import")
+    entry_b = models.UserLibraryEntry(user_id=user.id, release_id=rel_b.id, import_source="psn_import")
+    db_session.add_all([entry_a, entry_b])
+    db_session.commit()
+
+    hx = {"HX-Request": "true"}
+    ra = client.get(f"/library/entries/{entry_a.id}/detail", headers=hx)
+    assert b"store.playstation.com/en-us/product/UP4040-PPSA01949_00-CONTROLUEPS50000" in ra.content
+    rb = client.get(f"/library/entries/{entry_b.id}/detail", headers=hx)
+    assert b"store.playstation.com" not in rb.content
+
+
 def test_detail_pane_404_for_other_users_entry(client, db_session):
     _signup_and_login(client, username="alice")
     alice = db_session.query(models.User).filter_by(username="alice").first()

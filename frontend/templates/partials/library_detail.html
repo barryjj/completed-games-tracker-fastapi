@@ -257,6 +257,11 @@
           {% if release.source == "steam" %}
           <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
              target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+          {% elif release.source == "psn" and (release.raw_data or {}).get("productId") %}
+          {# PS Store product page — productId is the store SKU (~70% of PSN
+             entries; trophy-only ones lack it and just show the code). #}
+          <a href="https://store.playstation.com/en-us/product/{{ (release.raw_data or {}).get('productId') }}"
+             target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
           {% endif %}
         </span>
       </dd>
