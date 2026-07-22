@@ -496,6 +496,41 @@ def test_detail_pane_shows_child_dlc_for_parent_game(client, db_session):
     assert f"/library/entries/{dlc_entry.id}/detail".encode() in r.content
 
 
+def test_detail_pane_scopes_dlc_to_release_source(client, db_session):
+    """A base Game shared across stores (one Steam + one PSN release) must not
+    leak the other store's DLC into the pane — Steam DLC shows under the Steam
+    entry, never under the PSN entry."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    base = models.Game(title="Control Ultimate Edition")
+    db_session.add(base)
+    db_session.flush()
+    steam_rel = models.GameRelease(game_id=base.id, platform="Steam", source="steam", external_id="870780")
+    psn_rel = models.GameRelease(game_id=base.id, platform="PS5", source="psn", external_id="PPSA01949_00")
+    db_session.add_all([steam_rel, psn_rel])
+    db_session.flush()
+    steam_entry = models.UserLibraryEntry(user_id=user.id, release_id=steam_rel.id, import_source="steam_import")
+    psn_entry = models.UserLibraryEntry(user_id=user.id, release_id=psn_rel.id, import_source="psn_import")
+    db_session.add_all([steam_entry, psn_entry])
+    db_session.flush()
+
+    dlc_game = models.Game(title="CONTROL - AWE", is_dlc=True, parent_id=base.id)
+    db_session.add(dlc_game)
+    db_session.flush()
+    dlc_rel = models.GameRelease(game_id=dlc_game.id, platform="Steam", source="steam", external_id="dlc1")
+    db_session.add(dlc_rel)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=dlc_rel.id, import_source="steam_import"))
+    db_session.commit()
+
+    hx = {"HX-Request": "true"}
+    r_steam = client.get(f"/library/entries/{steam_entry.id}/detail", headers=hx)
+    assert b"CONTROL - AWE" in r_steam.content  # DLC shows under the Steam release
+    r_psn = client.get(f"/library/entries/{psn_entry.id}/detail", headers=hx)
+    assert b"CONTROL - AWE" not in r_psn.content  # ...but not under the PSN release
+
+
 def test_detail_pane_shows_completion_history(client, db_session):
     import datetime as _dt
 
