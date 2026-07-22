@@ -192,8 +192,8 @@
     </div>
   </div>
 
-  {# ── PSN (future) ───────────────────────────────────────────────────── #}
-  <div class="cgt-tool-card cgt-tool-card--muted">
+  {# ── PSN sync ───────────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       {# PlayStation glyph from Bootstrap Icons (MIT) — matches the configure page heading. #}
       <svg xmlns="http://www.w3.org/2000/svg" width="1.2em" height="1.2em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true" style="flex-shrink:0;">
@@ -201,14 +201,36 @@
       </svg>
       PSN sync
       {% if current_user.psn_npsso %}
-      <span class="badge bg-success">Sign-in captured</span>
+      <span class="badge bg-success">Connected</span>
       {% else %}
-      <span class="badge bg-secondary">Coming soon</span>
+      <span class="badge bg-secondary">Not connected</span>
       {% endif %}
     </div>
-    <div class="small text-secondary">Sign-in capture is ready; library and trophy sync land here next.</div>
+    {% if current_user.psn_npsso %}
+    {% if current_user.psn_online_id %}
+    <div class="small">
+      <div class="fw-semibold">{{ current_user.psn_online_id }}</div>
+      <div class="text-secondary">PlayStation Network</div>
+    </div>
+    {% endif %}
+    {% if psn_counts is not none %}
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(psn_counts.games) }}</div>
+        <div class="cgt-tool-stat__label">Games</div>
+      </div>
+    </div>
+    {% endif %}
+    <div class="small text-secondary">Fetch your PlayStation library and trophy history, then import into your library.</div>
+    {% else %}
+    <div class="small text-secondary">Capture your PlayStation sign-in to sync your library and trophy history.</div>
+    {% endif %}
     <div class="cgt-tool-card__actions">
-      <a href="/integrations/psn" class="btn btn-surface btn-sm">Configure</a>
+      {% if current_user.psn_npsso %}
+      <a href="/integrations/psn" class="btn btn-primary btn-sm">Open PSN sync</a>
+      {% else %}
+      <a href="/integrations/psn" class="btn btn-surface btn-sm">Set up</a>
+      {% endif %}
     </div>
   </div>
 
