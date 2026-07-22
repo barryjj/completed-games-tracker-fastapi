@@ -649,12 +649,7 @@ def _build_lib_query(
     if view not in VIEW_OPTIONS:
         view = "default"
     if view == "default":
-        base_q = base_q.filter(
-            or_(
-                models.Game.is_dlc == False,
-                models.UserLibraryEntry.import_source == "manual",
-            )
-        )
+        base_q = base_q.filter(models.Game.is_dlc == False)
     elif view == "dlc":
         base_q = base_q.filter(models.Game.is_dlc == True)
     elif view == "collections":
