@@ -71,6 +71,9 @@ async def _artwork_verification_worker():
     await asyncio.sleep(30)  # let enrichment worker start first
     while True:
         try:
+            if worker_state.enrichment_paused:
+                await asyncio.sleep(1)
+                continue
             db = SessionLocal()
             try:
                 from . import steam

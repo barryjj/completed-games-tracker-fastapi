@@ -1422,6 +1422,11 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | 
     {"psn"} for the post-import auto-fill); None fills the whole library.
     """
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    # Pause the ambient enrichment + artwork-verification workers for the
+    # duration. Otherwise three background writers (this fill, Steam metadata
+    # enrichment, URL verification) serialize against the one SQLite writer and
+    # the foreground app crawls — the post-PSN-import freeze.
+    worker_state.enrichment_paused = True
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -1448,6 +1453,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | 
         _logger.exception("SGDB fill-all job %s failed", job_id)
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
+        worker_state.enrichment_paused = False
         db.close()
 
 
