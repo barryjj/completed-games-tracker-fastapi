@@ -436,6 +436,17 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             "sources": sorted(set((existing or {}).get("sources", []) + ["played"])),
             "platform": ((p.get("platform") or (existing or {}).get("platform") or "").upper() or None),
         }
+        # Keep the full set of play categories, not just the last one merged. A
+        # game can have several play records (e.g. ps5_native_game + pspc_game);
+        # the single `category` field can't tell "played natively on PS5 and
+        # briefly on PC" from "only ever played on PC" — is_pc_only needs all of
+        # them to skip Steam duplicates without dropping real PlayStation entries.
+        # Read the live lib[key] (not the pre-loop `existing`) so categories from
+        # an earlier play record for the same game aren't lost.
+        _cats = list((lib.get(key) or existing or {}).get("playCategories") or [])
+        if p.get("category"):
+            _cats.append(p["category"])
+        merged["playCategories"] = sorted(set(_cats))
         merged["normalizedName"] = _normalized_name(merged.get("name"))
         merged["displayName"] = _display_name(merged.get("name"))
         lib[key] = merged
@@ -567,6 +578,39 @@ def is_played_only(item: dict) -> bool:
     of disc copies, demos, friend-pass sessions, and launch-and-quit noise.
     Never auto-imported; each goes through the per-row review on the PSN page."""
     return item.get("sources", []) == ["played"]
+
+
+# Native PlayStation play categories read ps3_game / ps4_game / ps5_native_game;
+# the PC one is pspc_game (PSN tracking a Steam/PC playthrough via its PC
+# integration). ps[345] deliberately does NOT match "pspc".
+_NATIVE_PS_CAT_RE = re.compile(r"ps[345]", re.IGNORECASE)
+
+
+def is_pc_only(item: dict) -> bool:
+    """True when the only play evidence is a PC (pspc) playthrough with no
+    native PlayStation play record — a Steam/PC copy surfacing through PSN's PC
+    integration (Stellar Blade, the Until Dawn remake). Not a PlayStation entry."""
+    cats = list(item.get("playCategories") or [])
+    if not cats and item.get("category"):
+        cats = [item["category"]]
+    if not cats:
+        return False
+    has_pc = any("pspc" in str(c).lower() for c in cats)
+    has_native = any(_NATIVE_PS_CAT_RE.search(str(c)) for c in cats)
+    return has_pc and not has_native
+
+
+def _steam_title_keys(db: Session, user_id: int) -> set[str]:
+    """Normalized titles of the user's Steam library — used to recognize when a
+    pspc (PC) game is already tracked as a Steam entry so we skip the duplicate."""
+    rows = (
+        db.query(models.Game.title)
+        .join(models.GameRelease, models.GameRelease.game_id == models.Game.id)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "steam")
+        .distinct()
+    )
+    return {_normalized_name(t[0]) for t in rows if t[0]}
 
 
 def played_only_suggestion(item: dict) -> tuple[str, str]:
@@ -725,7 +769,9 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     skipped_no_id = 0
     skipped_non_game = 0
     skipped_conflict = 0
+    skipped_pc_dupe = 0
     played_only = 0
+    steam_keys = _steam_title_keys(db, user.id)
     for item in snap.get("merged", []):
         if is_played_only(item):
             played_only += 1
@@ -735,6 +781,12 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         # — never import one regardless of when the snapshot was built.
         if is_non_game(item):
             skipped_non_game += 1
+            continue
+        # A pspc (PC) game already in the Steam library is the same copy showing
+        # up through PSN's PC integration — skip it rather than mint a phantom
+        # PlayStation entry (e.g. Stellar Blade, the Until Dawn remake).
+        if is_pc_only(item) and (item.get("normalizedName") or _normalized_name(item.get("name"))) in steam_keys:
+            skipped_pc_dupe += 1
             continue
         if not external_id_for(item):
             skipped_no_id += 1
@@ -764,6 +816,7 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         "skipped_no_id": skipped_no_id,
         "skipped_non_game": skipped_non_game,
         "skipped_conflict": skipped_conflict,
+        "skipped_pc_dupe": skipped_pc_dupe,
         "played_only_pending": played_only,
         "match_candidates": scan.get("candidates_added", 0),
     }

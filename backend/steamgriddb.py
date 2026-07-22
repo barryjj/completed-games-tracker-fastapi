@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import re
+from urllib.parse import quote
 
 import httpx
 from sqlalchemy.orm import Session, joinedload
@@ -47,8 +48,13 @@ def lookup_by_steam_appid(api_key: str, appid: int | str) -> dict | None:
 def search_games(api_key: str, query: str) -> list[dict]:
     """Title-based search for entries that don't have a Steam appid (manual
     entries, PSN, etc.). Returns up to ~10 candidate games."""
+    # Percent-encode the whole title as one path segment. The old
+    # `httpx.URL(query).path` trick mangled any title whose pre-colon segment
+    # parsed as a URL scheme — "BioShock: The Collection" searched for
+    # " The Collection", "NieR:Automata" for "Automata". quote(safe="") keeps
+    # the full title and httpx doesn't double-encode it.
     resp = httpx.get(
-        f"{_BASE}/search/autocomplete/{httpx.URL(query).path or query}",
+        f"{_BASE}/search/autocomplete/{quote(query, safe='')}",
         headers=_headers(api_key),
         timeout=15,
     )
@@ -391,12 +397,24 @@ def bulk_fill_missing(
     return {"filled": filled, "no_candidate": no_candidate, "skipped": skipped, "errored": errored}
 
 
-def bulk_fill_all_missing(db: Session, user: models.User, progress_callback=None) -> dict:
+def bulk_fill_all_missing(
+    db: Session,
+    user: models.User,
+    progress_callback=None,
+    sources: set[str] | None = None,
+) -> dict:
     """Fill EVERY missing SGDB artwork type (cover_v, cover_h, hero, logo) for
-    every visible entry in one pass. The SGDB game is resolved ONCE per entry
-    and reused across all four types (vs. calling bulk_fill_missing four times,
-    which re-resolves each entry per type). This is the PSN on-ramp: PSx
-    entries have no native art at all, so SGDB supplies covers, hero, and logo.
+    each visible entry. The SGDB game is resolved ONCE per entry and reused
+    across all four types (vs. calling bulk_fill_missing four times, which
+    re-resolves each entry per type). This is the PSN on-ramp: PSx entries have
+    no native art at all, so SGDB supplies covers, hero, and logo.
+
+    sources: when given, restrict to entries whose release.source is in the set
+    (e.g. {"psn"} after a PSN import). None = whole visible library.
+
+    Commits after every entry that gets art written — so covers appear as they
+    land and a job killed partway keeps its progress, instead of an
+    all-or-nothing commit at the end that never arrives on a large library.
 
     Returns aggregate {"filled","no_candidate","skipped","errored"} plus a
     per_type breakdown with the same shape for each of IMAGE_TYPES.
@@ -405,8 +423,9 @@ def bulk_fill_all_missing(db: Session, user: models.User, progress_callback=None
         raise ValueError("User has no SteamGridDB API key set.")
 
     api_key = user.steamgriddb_api_key
-    entries = (
+    query = (
         db.query(models.UserLibraryEntry)
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
         .options(
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
             joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.artwork),
@@ -416,8 +435,10 @@ def bulk_fill_all_missing(db: Session, user: models.User, progress_callback=None
             models.UserLibraryEntry.user_id == user.id,
             models.UserLibraryEntry.is_hidden.is_(False),
         )
-        .all()
     )
+    if sources:
+        query = query.filter(models.GameRelease.source.in_(sources))
+    entries = query.all()
     entries.sort(
         key=lambda e: (e.release.game.display_title or e.release.game.title or "").casefold() if e.release and e.release.game else ""
     )
@@ -455,6 +476,7 @@ def bulk_fill_all_missing(db: Session, user: models.User, progress_callback=None
                 per_type[t]["no_candidate"] += 1
             continue
 
+        filled_this_entry = 0
         for t in needed:
             try:
                 images = fetch_images_for_game(api_key, sgdb_game["id"], t)
@@ -464,9 +486,15 @@ def bulk_fill_all_missing(db: Session, user: models.User, progress_callback=None
                     continue
                 _upsert_user_artwork(db, entry, t, top_url)
                 per_type[t]["filled"] += 1
+                filled_this_entry += 1
             except Exception as e:
                 logger.warning("SGDB fill (%s) failed for entry %s: %s", t, entry.id, e)
                 per_type[t]["errored"] += 1
+
+        # Commit per entry so art lands incrementally and survives an
+        # interrupted job — never batch the whole library into one commit.
+        if filled_this_entry:
+            db.commit()
 
     db.commit()
     totals = {k: sum(per_type[t][k] for t in IMAGE_TYPES) for k in ("filled", "no_candidate", "skipped", "errored")}

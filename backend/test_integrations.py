@@ -1843,6 +1843,68 @@ def test_sgdb_bulk_fill_all_resolves_game_once_and_fills_every_type(db_session, 
     assert all(result["per_type"][t]["filled"] == 1 for t in steamgriddb.IMAGE_TYPES)
 
 
+def test_search_games_encodes_colon_titles(monkeypatch):
+    """Titles whose pre-colon segment parses as a URL scheme (no space) used to
+    be mangled: 'BioShock: The Collection' searched for ' The Collection'. The
+    whole title must be percent-encoded into one path segment instead."""
+    from backend import steamgriddb
+
+    captured = {}
+
+    class _Resp:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": []}
+
+    def fake_get(url, **kwargs):
+        captured["url"] = url
+        return _Resp()
+
+    monkeypatch.setattr(steamgriddb.httpx, "get", fake_get)
+    steamgriddb.search_games("key", "BioShock: The Collection")
+    # The full title survives, encoded — not truncated to " The Collection".
+    assert captured["url"].endswith("/search/autocomplete/BioShock%3A%20The%20Collection")
+
+
+def test_bulk_fill_all_missing_scopes_to_sources(db_session, monkeypatch):
+    """sources={'psn'} must fill only PSN-source entries and leave a Steam
+    entry (also missing art) untouched — the post-import auto-fill scope."""
+    from backend import steamgriddb
+
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.flush()
+
+    psn_game = models.Game(title="Bloodborne")
+    steam_game = models.Game(title="Half-Life 2")
+    db_session.add_all([psn_game, steam_game])
+    db_session.flush()
+    psn_rel = models.GameRelease(game_id=psn_game.id, platform="PS4", source="psn", external_id="CUSA00900")
+    steam_rel = models.GameRelease(game_id=steam_game.id, platform="Steam", source="steam", external_id="220")
+    db_session.add_all([psn_rel, steam_rel])
+    db_session.flush()
+    psn_entry = models.UserLibraryEntry(user_id=user.id, release_id=psn_rel.id, import_source="psn_import")
+    steam_entry = models.UserLibraryEntry(user_id=user.id, release_id=steam_rel.id, import_source="steam_import")
+    db_session.add_all([psn_entry, steam_entry])
+    db_session.commit()
+
+    searched = []
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: searched.append(q) or [{"id": 1, "name": q}])
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, o, page=0: [{"url": f"https://sgdb/{o}.png"}])
+    monkeypatch.setattr(steamgriddb, "get_heroes_for_game", lambda k, gid, page=0: [{"url": "https://sgdb/hero.png"}])
+    monkeypatch.setattr(steamgriddb, "get_logos_for_game", lambda k, gid, page=0: [{"url": "https://sgdb/logo.png"}])
+
+    result = steamgriddb.bulk_fill_all_missing(db_session, user, sources={"psn"})
+
+    # Only the PSN entry was looked up and filled.
+    assert searched == ["Bloodborne"]
+    assert result["filled"] == 4
+    assert db_session.query(models.UserArtwork).filter_by(entry_id=psn_entry.id).count() == 4
+    assert db_session.query(models.UserArtwork).filter_by(entry_id=steam_entry.id).count() == 0
+
+
 def test_sgdb_fill_all_endpoint_requires_key(client, db_session, monkeypatch):
     # The endpoint create_task()s the runner, which opens its own real
     # SessionLocal — stub it so the test doesn't fire a real fill.

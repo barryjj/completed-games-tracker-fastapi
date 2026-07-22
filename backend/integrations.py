@@ -587,6 +587,8 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if skipped:
             parts.append(f"{skipped} skipped")
         lines = ["PSN import complete", " · ".join(parts)]
+        if result.get("skipped_pc_dupe"):
+            lines.append(f"{result['skipped_pc_dupe']} PC copies skipped — already in your Steam library")
         if result.get("match_candidates"):
             lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
         if result.get("played_only_pending"):
@@ -668,7 +670,10 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         # by the (long) fill. Gated on an SGDB key; silently skipped without.
         if kind == "psn_import" and user.steamgriddb_api_key:
             fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
-            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id))
+            # Scope to PSN entries — those are the ones the import just added
+            # with no native art. Re-scanning all 16k+ entries here never
+            # finishes and buries the covers we actually need.
+            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.
@@ -1412,9 +1417,18 @@ async def steamgriddb_fill_missing(
     )
 
 
-async def _run_sgdb_fill_all_job(job_id: str, user_id: int) -> None:
-    """Background runner: fill all four SGDB artwork types in one pass."""
+async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | None = None) -> None:
+    """Background runner: fill all four SGDB artwork types in one pass.
+
+    sources restricts the fill to entries of those release sources (e.g.
+    {"psn"} for the post-import auto-fill); None fills the whole library.
+    """
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
+    # Pause the ambient enrichment + artwork-verification workers for the
+    # duration. Otherwise three background writers (this fill, Steam metadata
+    # enrichment, URL verification) serialize against the one SQLite writer and
+    # the foreground app crawls — the post-PSN-import freeze.
+    worker_state.enrichment_paused = True
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -1425,7 +1439,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int) -> None:
         def on_progress(done: int, total: int, title: str) -> None:
             jobs.update(job_id, progress={"done": done, "total": total, "title": title})
 
-        result = await asyncio.to_thread(sgdb.bulk_fill_all_missing, db, user, on_progress)
+        result = await asyncio.to_thread(sgdb.bulk_fill_all_missing, db, user, on_progress, sources)
         pt = result["per_type"]
         lines = [
             "SteamGridDB artwork fill complete",
@@ -1441,6 +1455,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int) -> None:
         _logger.exception("SGDB fill-all job %s failed", job_id)
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
+        worker_state.enrichment_paused = False
         db.close()
 
 

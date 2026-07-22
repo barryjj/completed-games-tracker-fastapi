@@ -125,6 +125,23 @@ def _steam_counts(db: Session, user: models.User) -> dict | None:
     return {"games": games, "dlc": dlc, "total": games + dlc}
 
 
+def _psn_counts(db: Session, user: models.User) -> dict | None:
+    """Return {'games': N} for the user's PSN library, or None if PSN isn't set
+    up. Used by the Tools page's PSN sync card."""
+    if not user.psn_npsso:
+        return None
+    total = (
+        db.query(func.count(models.UserLibraryEntry.id))
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(
+            models.UserLibraryEntry.user_id == user.id,
+            models.GameRelease.source == "psn",
+        )
+        .scalar()
+    )
+    return {"games": total or 0}
+
+
 # TODO(phase 3): user-configurable yearly goal — hardcoded until widget
 # customization lands (see ROADMAP "Home / Tools / Settings restructure").
 _YEARLY_GOAL = 52
@@ -264,6 +281,7 @@ def tools_page(
         context={
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
+            "psn_counts": _psn_counts(db, current_user),
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),
