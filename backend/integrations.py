@@ -668,7 +668,10 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         # by the (long) fill. Gated on an SGDB key; silently skipped without.
         if kind == "psn_import" and user.steamgriddb_api_key:
             fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
-            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id))
+            # Scope to PSN entries — those are the ones the import just added
+            # with no native art. Re-scanning all 16k+ entries here never
+            # finishes and buries the covers we actually need.
+            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.
@@ -1412,8 +1415,12 @@ async def steamgriddb_fill_missing(
     )
 
 
-async def _run_sgdb_fill_all_job(job_id: str, user_id: int) -> None:
-    """Background runner: fill all four SGDB artwork types in one pass."""
+async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | None = None) -> None:
+    """Background runner: fill all four SGDB artwork types in one pass.
+
+    sources restricts the fill to entries of those release sources (e.g.
+    {"psn"} for the post-import auto-fill); None fills the whole library.
+    """
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
     db = SessionLocal()
     try:
@@ -1425,7 +1432,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int) -> None:
         def on_progress(done: int, total: int, title: str) -> None:
             jobs.update(job_id, progress={"done": done, "total": total, "title": title})
 
-        result = await asyncio.to_thread(sgdb.bulk_fill_all_missing, db, user, on_progress)
+        result = await asyncio.to_thread(sgdb.bulk_fill_all_missing, db, user, on_progress, sources)
         pt = result["per_type"]
         lines = [
             "SteamGridDB artwork fill complete",
