@@ -587,6 +587,8 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if skipped:
             parts.append(f"{skipped} skipped")
         lines = ["PSN import complete", " · ".join(parts)]
+        if result.get("skipped_pc_dupe"):
+            lines.append(f"{result['skipped_pc_dupe']} PC copies skipped — already in your Steam library")
         if result.get("match_candidates"):
             lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
         if result.get("played_only_pending"):

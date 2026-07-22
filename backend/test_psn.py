@@ -85,6 +85,30 @@ def test_merge_trophy_only_history_survives():
     assert psn.external_id_for(item) == "NPWR555_00"
 
 
+def test_merge_accumulates_all_play_categories():
+    """A game played both natively and on PC keeps BOTH categories, so it isn't
+    mistaken for a PC-only copy (Spider-Man 2: 28h PS5 + a 37min PC touch)."""
+    titles = [{"npCommunicationId": "NPWR700_00", "trophyTitleName": "Cross Play Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 50}]
+    played = [
+        {"npCommunicationId": "NPWR700_00", "name": "Cross Play Game", "category": "ps5_native_game", "playDuration": "PT28H"},
+        {"npCommunicationId": "NPWR700_00", "name": "Cross Play Game", "category": "pspc_game", "playDuration": "PT37M"},
+    ]
+    item = psn.merge_library([], titles, played)["merged"][0]
+    assert item["playCategories"] == ["ps5_native_game", "pspc_game"]
+    assert psn.is_pc_only(item) is False
+
+
+def test_is_pc_only_true_for_pspc_only():
+    """Only PC play evidence, no native PlayStation record → PC/Steam copy."""
+    titles = [{"npCommunicationId": "NPWR701_00", "trophyTitleName": "PC Only Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 100}]
+    played = [{"npCommunicationId": "NPWR701_00", "name": "PC Only Game", "category": "pspc_game", "playDuration": "PT80H"}]
+    item = psn.merge_library([], titles, played)["merged"][0]
+    assert item["playCategories"] == ["pspc_game"]
+    assert psn.is_pc_only(item) is True
+    # No play evidence at all is never PC-only.
+    assert psn.is_pc_only({"platform": "PS5", "sources": ["purchased"]}) is False
+
+
 # ─── auth + pagination ─────────────────────────────────────────────────────
 
 
@@ -350,6 +374,68 @@ def test_import_snapshot_creates_rows_and_chains_scan(db_session, monkeypatch, t
     assert result2["added"] == 0
     assert result2["updated"] == 2
     assert db_session.query(models.GameRelease).filter_by(source="psn").count() == 2
+
+
+def test_import_skips_pc_only_game_already_in_steam(db_session, monkeypatch, tmp_path):
+    """A pspc (PC) game that's already a Steam entry is the same copy surfacing
+    through PSN's PC integration — skip it instead of minting a phantom PS entry.
+    A pspc game NOT in Steam still imports; a natively-played game always does."""
+    _seed_platforms(db_session)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok")
+    db_session.add(user)
+    db_session.commit()
+
+    # Existing Steam entry — note the trademark glyph, which normalizes away.
+    steam_game = models.Game(title="Stellar Blade™")
+    db_session.add(steam_game)
+    db_session.flush()
+    steam_release = models.GameRelease(game_id=steam_game.id, platform="Steam", source="steam", external_id="3489700")
+    db_session.add(steam_release)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=steam_release.id, import_source="steam_import"))
+    db_session.commit()
+
+    merged = [
+        {  # pspc-only + has a Steam entry → skipped
+            "npCommunicationId": "NPWR37356_00",
+            "name": "Stellar Blade",
+            "displayName": "Stellar Blade",
+            "normalizedName": "stellarblade",
+            "platform": "PS5,PSPC",
+            "playCategories": ["pspc_game"],
+            "category": "pspc_game",
+            "sources": ["titles", "played"],
+        },
+        {  # pspc-only but NOT in Steam → still imports (as its resolved platform)
+            "npCommunicationId": "NPWR90001_00",
+            "name": "Some PC Game",
+            "displayName": "Some PC Game",
+            "normalizedName": "somepcgame",
+            "platform": "PS5,PSPC",
+            "playCategories": ["pspc_game"],
+            "category": "pspc_game",
+            "sources": ["titles", "played"],
+        },
+        {  # native PS5 play → imports even though a Steam entry exists
+            "titleId": "PPSA03016_00",
+            "name": "Stellar Blade",
+            "displayName": "Stellar Blade",
+            "normalizedName": "stellarblade",
+            "platform": "PS5",
+            "playCategories": ["ps5_native_game"],
+            "category": "ps5_native_game",
+            "sources": ["purchased", "titles", "played"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    result = psn.import_snapshot(db_session, user)
+    assert result["skipped_pc_dupe"] == 1
+    # The pspc Stellar Blade (trophy id) was skipped...
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR37356_00").count() == 0
+    # ...but the non-Steam PC game and the native PS5 copy both imported.
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR90001_00").count() == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="PPSA03016_00").count() == 1
 
 
 def test_played_only_actions(client, db_session, monkeypatch, tmp_path):
