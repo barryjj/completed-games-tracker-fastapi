@@ -608,6 +608,29 @@ document.addEventListener('pointerover', function (e) {
   });
 })();
 
+// ─── External links in the desktop shell ──────────────────────────────────
+// WKWebView has no popup handler, so target="_blank" links (store, IGDB,
+// Metacritic, official site) silently do nothing inside the app, and a plain
+// off-origin href would navigate the app window away from the UI. Intercept
+// those clicks and hand the URL to the shell, which opens the system browser.
+// Delegated on document so it covers HTMX-swapped content too. Inert in a
+// normal browser — links behave natively there.
+(function () {
+  if (!window.__TAURI__) return;
+  document.addEventListener('click', function (e) {
+    var link = e.target.closest && e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href') || '';
+    if (!/^https?:\/\//i.test(href)) return;
+    // Same-origin links are in-app navigation — leave them alone.
+    if (link.hostname === window.location.hostname) return;
+    e.preventDefault();
+    window.__TAURI__.core.invoke('open_external', { url: link.href }).catch(function (err) {
+      console.error('open_external failed', err);
+    });
+  });
+})();
+
 // ─── Tauri desktop shell integration ──────────────────────────────────────
 // Inside the desktop app, window.__TAURI__ exists (withGlobalTauri + the
 // remote-origin capability in desktop/src-tauri). Reveal the [data-tauri-only]
