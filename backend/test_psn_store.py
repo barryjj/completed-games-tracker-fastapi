@@ -127,3 +127,74 @@ def test_product_id_for_only_returns_psn_product_ids():
     assert psn_store.product_id_for(psn) == PRODUCT_ID
     assert psn_store.product_id_for(trophy_only) is None
     assert psn_store.product_id_for(steam) is None
+
+
+# ─── Persistence (DB) ──────────────────────────────────────────────────────
+
+from backend import models  # noqa: E402
+
+_META = {"name": "Batman: The Telltale Series", "publisher": "Telltale", "genres": ["Adventure"], "rating": 3.5}
+
+
+def _psn_release(db, title, product_id="UP0-CUSA05332_00-X", display_name_user_set=False, extra_source=None):
+    game = models.Game(title=title, display_name_user_set=display_name_user_set)
+    db.add(game)
+    db.flush()
+    rel = models.GameRelease(game_id=game.id, platform="PS4", source="psn", external_id="CUSA05332_00", raw_data={"productId": product_id})
+    db.add(rel)
+    if extra_source:
+        db.add(models.GameRelease(game_id=game.id, platform="Steam", source=extra_source, external_id="99"))
+    db.flush()
+    return rel
+
+
+def test_apply_metadata_stores_blob_and_adopts_title(db_session):
+    rel = _psn_release(db_session, "Batman")
+    retitled = psn_store.apply_metadata(db_session, rel, _META)
+    assert retitled is True
+    assert rel.game.title == "Batman: The Telltale Series"
+    assert rel.raw_data["store"]["publisher"] == "Telltale"
+    assert rel.metadata_fetched_at is not None
+
+
+def test_apply_metadata_never_overwrites_a_user_set_title(db_session):
+    rel = _psn_release(db_session, "My Batman", display_name_user_set=True)
+    assert psn_store.apply_metadata(db_session, rel, _META) is False
+    assert rel.game.title == "My Batman"
+    # ...but the store blob is still stored for the detail pane.
+    assert rel.raw_data["store"]["name"] == "Batman: The Telltale Series"
+
+
+def test_apply_metadata_does_not_retitle_a_steam_shared_game(db_session):
+    """A game with a Steam release too keeps its (good) title; only the blob lands."""
+    rel = _psn_release(db_session, "Control Ultimate Edition", extra_source="steam")
+    assert psn_store.apply_metadata(db_session, rel, {"name": "CONTROL Ultimate Edition"}) is False
+    assert rel.game.title == "Control Ultimate Edition"
+    assert rel.raw_data["store"]["name"] == "CONTROL Ultimate Edition"
+
+
+def test_refresh_release_no_product_id(db_session):
+    game = models.Game(title="Old Vita Game")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(
+        game_id=game.id, platform="PSVITA", source="psn", external_id="NPWR555_00", raw_data={"npCommunicationId": "NPWR555_00"}
+    )
+    db_session.add(rel)
+    db_session.flush()
+    assert psn_store.refresh_release(db_session, rel) == "no_product"
+
+
+def test_refresh_release_marks_not_found(db_session):
+    rel = _psn_release(db_session, "Delisted Game")
+    with patch("backend.psn_store.fetch_product", side_effect=psn_store.ProductNotFound("gone")):
+        assert psn_store.refresh_release(db_session, rel) == "not_found"
+    assert rel.raw_data["store"]["not_found"] is True
+    assert rel.metadata_fetched_at is not None
+
+
+def test_refresh_release_retitles_on_success(db_session):
+    rel = _psn_release(db_session, "Batman")
+    with patch("backend.psn_store.fetch_product", return_value=_META):
+        assert psn_store.refresh_release(db_session, rel) == "retitled"
+    assert rel.game.title == "Batman: The Telltale Series"

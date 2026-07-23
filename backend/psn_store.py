@@ -147,3 +147,64 @@ def product_id_for(release) -> str | None:
     if release.source != "psn":
         return None
     return ((release.raw_data or {}).get("productId")) or None
+
+
+# ─── Persistence ───────────────────────────────────────────────────────────
+
+
+def _is_psn_only(db, game) -> bool:
+    """True when every release of this game is source='psn'.
+
+    A Game row can carry both a Steam and a PSN release (they get matched into
+    one game — Control Ultimate Edition does exactly this). In that case the
+    title already came from Steam and is good; adopting the PSN store's casing
+    over it would be a pointless churn, so titles are only rewritten for
+    PSN-exclusive games."""
+    from . import models
+
+    other = db.query(models.GameRelease).filter(models.GameRelease.game_id == game.id, models.GameRelease.source != "psn").first()
+    return other is None
+
+
+def apply_metadata(db, release, meta: dict) -> bool:
+    """Persist a fetched store record onto the release, and adopt the store's
+    title when ours is sparse. Returns True when the title was rewritten.
+
+    The title is only taken when the user hasn't renamed the game and the game
+    is PSN-exclusive — never clobber a hand-edited or Steam-sourced title."""
+    raw = dict(release.raw_data or {})
+    raw["store"] = meta
+    release.raw_data = raw  # reassign: SQLAlchemy won't see in-place JSON edits
+    release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
+
+    store_name = (meta.get("name") or "").strip()
+    game = release.game
+    if not store_name or game is None:
+        return False
+    if game.display_name_user_set or not _is_psn_only(db, game):
+        return False
+    if store_name == game.title:
+        return False
+    game.title = store_name
+    game.display_name = None  # display_title falls back to the (now correct) title
+    return True
+
+
+def refresh_release(db, release) -> str:
+    """Fetch + apply store metadata for one release. Returns an outcome string:
+    'updated' | 'retitled' | 'no_product' | 'not_found'. Transient HTTP errors
+    propagate so the caller can leave it unfetched and retry later."""
+    product_id = product_id_for(release)
+    if not product_id:
+        return "no_product"
+    try:
+        meta = fetch_product(product_id)
+    except ProductNotFound:
+        # Delisted/region-locked: record the attempt so the staleness check
+        # doesn't re-fetch it on every pane open.
+        raw = dict(release.raw_data or {})
+        raw["store"] = {"product_id": product_id, "not_found": True, "fetched_at": datetime.datetime.now(datetime.UTC).isoformat()}
+        release.raw_data = raw
+        release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
+        return "not_found"
+    return "retitled" if apply_metadata(db, release, meta) else "updated"
