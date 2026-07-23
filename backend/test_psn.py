@@ -238,6 +238,19 @@ def test_psn_page_shows_fetch_button_when_token_saved(client, db_session):
     assert b"/integrations/psn/fetch-library" in r.content
 
 
+def test_psn_store_metadata_button_present_and_kicks_off_without_credentials(client, db_session):
+    """The store-metadata job scrapes public pages, so it needs no NPSSO — the
+    button works even before PSN credentials are saved."""
+    _signup_and_login(client)
+    page = client.get("/integrations/psn")
+    assert b"/integrations/psn/refresh-store-metadata" in page.content
+    assert b"Store Metadata" in page.content
+    # No credential gate: kicks off a job (or 409s if one is already running) —
+    # never the 422 the credentialed endpoints return.
+    r = client.post("/integrations/psn/refresh-store-metadata")
+    assert r.status_code != 422
+
+
 # ─── import (PR 2) ─────────────────────────────────────────────────────────
 
 

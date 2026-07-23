@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, models, psn, steam, worker_state
+from . import jobs, models, psn, psn_store, steam, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
@@ -381,6 +381,13 @@ async def psn_import_library(request: Request, current_user: models.User = Depen
     return _kick_off_sync(request, current_user, "psn_import")
 
 
+@router.post("/psn/refresh-store-metadata")
+async def psn_refresh_store_metadata(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Background job: fetch PS Store product-page metadata for PSN entries that
+    have a productId and are missing/stale (#168). Public pages — no NPSSO."""
+    return _kick_off_sync(request, current_user, "psn_store_refresh")
+
+
 @router.post("/psn/token")
 def save_psn_token(
     psn_npsso: str = Form(...),
@@ -561,6 +568,14 @@ _STEAM_KINDS: dict[str, dict] = {
         "job_label": "PSN import",
         # Local-only (reads the snapshot from disk) — no NPSSO involved, no retry_path.
     },
+    "psn_store_refresh": {
+        "fn": "refresh_all_store_metadata",
+        "module": "psn_store",
+        "no_credentials": True,  # public store pages — no PSN login required
+        "started": "Fetching PlayStation Store metadata in the background — you'll see a toast when it finishes.",
+        "label": "Store metadata",
+        "job_label": "PSN store metadata",
+    },
 }
 
 
@@ -577,6 +592,17 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
     are read from the DB after the sync, so they reflect real library state
     even when Steam returned 0 for some count this run.
     Platform prefix ("Steam") lets PSN drop in with the same shape later."""
+    if kind == "psn_store_refresh":
+        enriched = result.get("updated", 0) + result.get("retitled", 0)
+        lines = [
+            "PlayStation Store metadata complete",
+            f"{enriched:,} enriched · {result.get('retitled', 0):,} retitled · {result.get('not_found', 0):,} not found · {result.get('skipped', 0):,} already current",
+        ]
+        if result.get("errored"):
+            lines.append(f"{result['errored']:,} errored — try again later")
+        if result.get("no_product"):
+            lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
+        return "\n".join(lines)
     if kind == "psn_import":
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
         if result["updated"]:
@@ -657,7 +683,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        module = psn if spec.get("module") == "psn" else steam
+        module = {"psn": psn, "psn_store": psn_store}.get(spec.get("module"), steam)
         fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
@@ -727,6 +753,8 @@ def _credential_error(current_user: models.User, kind: str) -> str | None:
     """Pre-flight credential check so we 422 immediately instead of queueing a
     doomed background job."""
     spec = _STEAM_KINDS.get(kind, {})
+    if spec.get("no_credentials"):
+        return None  # e.g. PS Store scraping hits public pages — no login needed
     if spec.get("service") == "psn":
         if not current_user.psn_npsso:
             return "A PSN NPSSO token is required — capture or paste one on the PSN configure page."

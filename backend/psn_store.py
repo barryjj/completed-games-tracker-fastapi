@@ -26,6 +26,7 @@ import datetime
 import json
 import logging
 import re
+import time
 
 import httpx
 
@@ -208,3 +209,65 @@ def refresh_release(db, release) -> str:
         release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
         return "not_found"
     return "retitled" if apply_metadata(db, release, meta) else "updated"
+
+
+# Store metadata is very stable (a game's publisher/genre/release date don't
+# change), so re-check far less often than Steam appdetails.
+_STORE_STALE_DAYS = 30
+
+
+def store_is_stale(release) -> bool:
+    """True when a PSN release has a productId but no store record, or one older
+    than the staleness window. Drives both the batch job's skip logic and the
+    detail-pane auto-refetch."""
+    if not product_id_for(release):
+        return False
+    if not (release.raw_data or {}).get("store"):
+        return True
+    fetched = release.metadata_fetched_at
+    if fetched is None:
+        return True
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=datetime.UTC)
+    return (datetime.datetime.now(datetime.UTC) - fetched).days >= _STORE_STALE_DAYS
+
+
+def refresh_all_store_metadata(db, user, sleep: float = 1.0, progress_callback=None) -> dict:
+    """Walk this user's PSN releases and fetch store metadata for the ones that
+    need it (have a productId, and are missing/stale). Rate-limited and
+    committed per release so partial progress survives an interruption and the
+    DB isn't held in one long write transaction.
+
+    Returns counts by outcome. Transient HTTP errors on a single release are
+    swallowed (counted, that release left unfetched) so one flaky page doesn't
+    abort the whole run."""
+    from . import models
+
+    releases = (
+        db.query(models.GameRelease)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user.id, models.GameRelease.source == "psn")
+        .distinct()
+        .all()
+    )
+    counts = {"updated": 0, "retitled": 0, "not_found": 0, "skipped": 0, "no_product": 0, "errored": 0}
+    total = len(releases)
+    for i, release in enumerate(releases):
+        if progress_callback:
+            progress_callback(i, total, release.game.title if release.game else "")
+        if not product_id_for(release):
+            counts["no_product"] += 1
+            continue
+        if not store_is_stale(release):
+            counts["skipped"] += 1
+            continue
+        try:
+            counts[refresh_release(db, release)] += 1
+            db.commit()
+        except Exception as e:  # transient network/HTTP — skip this one, keep going
+            logger.warning("PS Store refresh failed for %s: %s", product_id_for(release), e)
+            db.rollback()
+            counts["errored"] += 1
+        if sleep:
+            time.sleep(sleep)
+    return counts

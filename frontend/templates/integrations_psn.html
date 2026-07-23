@@ -134,6 +134,21 @@
     <p class="text-secondary"><small>Save an NPSSO token to enable library fetch and the token test.</small></p>
     {% endif %}
   </div>
+  <div class="col-lg-6">
+    <h5 class="cgt-config-section">Store Metadata</h5>
+    <p class="text-secondary mb-2"><small>Fetch titles, genres, release dates, publishers, ratings and descriptions from the PlayStation Store for your imported PSN games. Runs in the background and fills the detail pane. Sparse names get corrected (e.g. <code>Batman</code> &rarr; <code>Batman: The Telltale Series</code>). Only entries with a store product link are fetched &mdash; trophy-only history has none.</small></p>
+    <div class="mb-3">
+      <button
+        class="btn btn-primary"
+        hx-post="/integrations/psn/refresh-store-metadata"
+        hx-target="#psn-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
+      >Fetch store metadata</button>
+    </div>
+  </div>
+
 </div>
 
 <div id="psn-flash" class="mt-4"></div>

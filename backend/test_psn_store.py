@@ -136,15 +136,18 @@ from backend import models  # noqa: E402
 _META = {"name": "Batman: The Telltale Series", "publisher": "Telltale", "genres": ["Adventure"], "rating": 3.5}
 
 
-def _psn_release(db, title, product_id="UP0-CUSA05332_00-X", display_name_user_set=False, extra_source=None):
+def _psn_release(db, title, product_id="UP0-CUSA05332_00-X", display_name_user_set=False, extra_source=None, user=None):
     game = models.Game(title=title, display_name_user_set=display_name_user_set)
     db.add(game)
     db.flush()
-    rel = models.GameRelease(game_id=game.id, platform="PS4", source="psn", external_id="CUSA05332_00", raw_data={"productId": product_id})
+    rel = models.GameRelease(game_id=game.id, platform="PS4", source="psn", external_id=product_id, raw_data={"productId": product_id})
     db.add(rel)
     if extra_source:
-        db.add(models.GameRelease(game_id=game.id, platform="Steam", source=extra_source, external_id="99"))
+        db.add(models.GameRelease(game_id=game.id, platform="Steam", source=extra_source, external_id=product_id + "-steam"))
     db.flush()
+    if user is not None:
+        db.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import"))
+        db.flush()
     return rel
 
 
@@ -198,3 +201,60 @@ def test_refresh_release_retitles_on_success(db_session):
     with patch("backend.psn_store.fetch_product", return_value=_META):
         assert psn_store.refresh_release(db_session, rel) == "retitled"
     assert rel.game.title == "Batman: The Telltale Series"
+
+
+def test_store_is_stale(db_session):
+    rel = _psn_release(db_session, "Batman")
+    assert psn_store.store_is_stale(rel) is True  # productId present, no store record yet
+    psn_store.apply_metadata(db_session, rel, _META)
+    assert psn_store.store_is_stale(rel) is False  # just fetched
+    # A trophy-only release (no productId) is never stale — nothing to fetch.
+    g = models.Game(title="Old Vita")
+    db_session.add(g)
+    db_session.flush()
+    tro = models.GameRelease(game_id=g.id, platform="PSVITA", source="psn", external_id="NPWR1", raw_data={"npCommunicationId": "NPWR1"})
+    assert psn_store.store_is_stale(tro) is False
+
+
+def _user(db, n):
+    u = models.User(name=n, username=n, password_hash="x", api_token=n)
+    db.add(u)
+    db.commit()
+    return u
+
+
+def test_refresh_all_walks_only_owned_psn_releases_that_need_it(db_session):
+    user = _user(db_session, "walker")
+    _psn_release(db_session, "Batman", product_id="UP0-CUSA05332_00-X", user=user)
+    _psn_release(db_session, "Some Game", product_id="UP0-CUSA111_00-Y", user=user)
+    # trophy-only (no productId), owned
+    g = models.Game(title="Old Vita")
+    db_session.add(g)
+    db_session.flush()
+    tro = models.GameRelease(game_id=g.id, platform="PSVITA", source="psn", external_id="NPWR1", raw_data={"npCommunicationId": "NPWR1"})
+    db_session.add(tro)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=tro.id, import_source="psn_import"))
+    db_session.commit()
+
+    def fake(pid, locale="en-us"):
+        return {"name": "Batman: The Telltale Series"} if "CUSA05332" in pid else {"name": "Some Game"}
+
+    with patch("backend.psn_store.fetch_product", side_effect=fake):
+        counts = psn_store.refresh_all_store_metadata(db_session, user, sleep=0)
+    assert counts["retitled"] == 1  # Batman → fuller title
+    assert counts["updated"] == 1  # Some Game: blob stored, title unchanged
+    assert counts["no_product"] == 1  # trophy-only Vita entry
+
+
+def test_refresh_all_skips_fresh_and_counts_transient_errors(db_session):
+    user = _user(db_session, "walker2")
+    fresh = _psn_release(db_session, "Fresh", product_id="UP0-CUSA1_00-A", user=user)
+    psn_store.apply_metadata(db_session, fresh, {"name": "Fresh"})  # mark fetched now
+    _psn_release(db_session, "Boom", product_id="UP0-CUSA2_00-B", user=user)
+    db_session.commit()
+
+    with patch("backend.psn_store.fetch_product", side_effect=httpx.ConnectError("down")):
+        counts = psn_store.refresh_all_store_metadata(db_session, user, sleep=0)
+    assert counts["skipped"] == 1  # fresh one, not re-fetched
+    assert counts["errored"] == 1  # boom, transient error swallowed
