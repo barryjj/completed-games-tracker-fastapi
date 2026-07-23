@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from . import models
@@ -854,6 +854,16 @@ def library_entry_detail(
             .filter(
                 models.UserLibraryEntry.user_id == current_user.id,
                 models.Game.parent_id == game.id,
+                # DLC is platform-specific. When a base Game row is shared across
+                # stores (e.g. Control Ultimate Edition has both a Steam and a
+                # PSN release), an unscoped parent_id lookup leaks the other
+                # store's DLC into this pane. Require a DLC child's release to
+                # match the source of the release being viewed. Collection
+                # members are not platform-bound, so leave those unscoped.
+                or_(
+                    models.Game.is_dlc.is_(False),
+                    models.GameRelease.source == entry.release.source,
+                ),
             )
             .order_by(models.Game.title)
             .all()

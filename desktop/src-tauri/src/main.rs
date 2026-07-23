@@ -265,12 +265,40 @@ async fn capture_psn_login(app: AppHandle) -> Result<PsnToken, String> {
     result
 }
 
+/// Open a URL in the user's default browser.
+///
+/// WKWebView has no popup handler wired, so `target="_blank"` links inside the
+/// shell are dead and a plain external href would hijack the app window. app.js
+/// intercepts those clicks and routes them here instead.
+///
+/// http(s) only — the URL is passed as a single argument (never through a
+/// shell), so it can't be interpreted as a command.
+#[tauri::command]
+fn open_external(url: String) -> Result<(), String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("Refusing to open a non-http(s) URL: {url}"));
+    }
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+    #[cfg(target_os = "linux")]
+    let opener = "xdg-open";
+    #[cfg(target_os = "windows")]
+    let opener = "explorer";
+
+    std::process::Command::new(opener)
+        .arg(&url)
+        .spawn()
+        .map_err(|e| format!("Could not open {url}: {e}"))?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(BackendChild(Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             capture_steam_login,
-            capture_psn_login
+            capture_psn_login,
+            open_external
         ])
         .setup(|app| {
             let handle = app.handle().clone();
