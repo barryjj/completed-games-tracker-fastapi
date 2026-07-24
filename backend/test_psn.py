@@ -251,6 +251,81 @@ def test_psn_store_metadata_button_present_and_kicks_off_without_credentials(cli
     assert r.status_code != 422
 
 
+# ─── avatar (#171) ─────────────────────────────────────────────────────────
+
+
+def test_largest_avatar_url_picks_biggest():
+    urls = {"avatarUrls": [{"size": "m", "avatarUrl": "m.png"}, {"size": "xl", "avatarUrl": "xl.png"}, {"size": "s", "avatarUrl": "s.png"}]}
+    assert psn._largest_avatar_url(urls) == "xl.png"
+    assert psn._largest_avatar_url({}) is None
+    assert psn._largest_avatar_url({"avatarUrls": []}) is None
+
+
+def test_resolve_profile_extracts_account_and_avatar():
+    data = {"profile": {"accountId": "123", "avatarUrls": [{"size": "l", "avatarUrl": "l.png"}]}}
+    with patch("backend.psn._bearer_get", return_value=data) as m:
+        acct, avatar = psn._resolve_profile("tok", "dude")
+    assert (acct, avatar) == ("123", "l.png")
+    assert "avatarUrls" in m.call_args.kwargs["params"]["fields"]  # widened field list
+
+
+def test_refresh_avatar_stores_url_on_user(db_session):
+    user = models.User(name="a", username="a", password_hash="x", api_token="t", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    prof = {"profile": {"accountId": "123", "avatarUrls": [{"size": "xl", "avatarUrl": "doom.png"}]}}
+    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._bearer_get", return_value=prof):
+        assert psn.refresh_avatar(db_session, user) == "doom.png"
+    assert user.psn_avatar_url == "doom.png"
+
+
+def test_test_token_refreshes_avatar(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "n" * 64
+    user.psn_online_id = "dude"
+    db_session.commit()
+    prof = {"profile": {"accountId": "123", "avatarUrls": [{"size": "xl", "avatarUrl": "doom.png"}]}}
+    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._bearer_get", return_value=prof):
+        r = client.post("/integrations/psn/test-token")
+    assert r.status_code == 200
+    assert r.headers.get("HX-Refresh") == "true"
+    db_session.refresh(user)
+    assert user.psn_avatar_url == "doom.png"
+
+
+def test_test_token_requires_online_id(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "n" * 64  # no online id
+    db_session.commit()
+    r = client.post("/integrations/psn/test-token")
+    assert b"Online ID" in r.content
+
+
+def test_clearing_npsso_clears_avatar(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "n" * 64
+    user.psn_online_id = "dude"
+    user.psn_avatar_url = "doom.png"
+    db_session.commit()
+    client.post("/integrations/psn/credentials", data={"psn_online_id": "dude", "psn_npsso": ""})
+    db_session.refresh(user)
+    assert user.psn_avatar_url is None
+
+
+def test_psn_avatar_shows_on_card_and_page(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "n" * 64
+    user.psn_online_id = "corrosivefrost"
+    user.psn_avatar_url = "https://cdn.example/doom.png"
+    db_session.commit()
+    assert b"https://cdn.example/doom.png" in client.get("/tools").content
+    assert b"https://cdn.example/doom.png" in client.get("/integrations/psn").content
+
+
 # ─── import (PR 2) ─────────────────────────────────────────────────────────
 
 

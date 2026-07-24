@@ -211,26 +211,26 @@ def test_save_psn_credentials_sets_captured_at_only_on_token_change(client, db_s
 
 
 def test_psn_test_token_paths(client, db_session):
-    """No token → error flash; authorize 302 with ?code= → valid; without → invalid."""
+    """No token → error; valid token → full exchange refreshes avatar (HX-Refresh);
+    dead token → invalid/expired."""
+    from backend import psn
+
     token = _signup_and_login(client)
     r = client.post("/integrations/psn/test-token")
     assert b"No NPSSO token saved" in r.content
 
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso = "x" * 64
+    user.psn_online_id = "dude"
     db_session.commit()
 
-    valid = MagicMock()
-    valid.headers = {"location": "com.scee.psxandroid.scecompcall://redirect/?code=v3.AbCdEf"}
-    with patch("backend.integrations._httpx.get", return_value=valid) as mocked:
+    prof = {"profile": {"accountId": "9", "avatarUrls": [{"size": "xl", "avatarUrl": "a.png"}]}}
+    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._bearer_get", return_value=prof):
         r = client.post("/integrations/psn/test-token")
     assert b"valid" in r.content
-    assert mocked.call_args.kwargs["cookies"] == {"npsso": "x" * 64}
-    assert mocked.call_args.kwargs["follow_redirects"] is False
+    assert r.headers.get("HX-Refresh") == "true"
 
-    invalid = MagicMock()
-    invalid.headers = {"location": "https://ca.account.sony.com/some-error"}
-    with patch("backend.integrations._httpx.get", return_value=invalid):
+    with patch("backend.psn._exchange_npsso", side_effect=psn.PsnNpssoExpiredError("dead")):
         r = client.post("/integrations/psn/test-token")
     assert b"invalid or expired" in r.content
 

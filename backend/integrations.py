@@ -271,12 +271,6 @@ def test_steam_cookies(
 
 # ─── PSN (capture framework — library/trophy sync is a later phase) ───────
 
-_PSN_AUTHORIZE_URL = "https://ca.account.sony.com/api/authz/v3/oauth/authorize"
-# Public client id of the PlayStation Android app — the same one psn-api /
-# psnawp (and our ~/Coding/psn-library-generator prototype) authenticate as.
-_PSN_CLIENT_ID = "09515159-7237-4370-9b40-3806e67c0891"
-_PSN_REDIRECT_URI = "com.scee.psxandroid.scecompcall://redirect"
-
 
 @router.get("/psn")
 def psn_page(
@@ -307,6 +301,8 @@ def save_psn_credentials(
         current_user.psn_npsso_captured_at = datetime.datetime.now(datetime.UTC) if npsso else None
     current_user.psn_npsso = npsso
     current_user.psn_online_id = psn_online_id.strip() or None
+    if not npsso:
+        current_user.psn_avatar_url = None  # no token → drop the stale avatar
     db.commit()
     response = templates.TemplateResponse(
         request=request,
@@ -320,39 +316,27 @@ def save_psn_credentials(
 @router.post("/psn/test-token")
 def test_psn_token(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Sanity-check the stored NPSSO by running the first hop of the token
-    exchange (NPSSO → access code). A valid token gets a 302 whose location
-    carries ?code=…; anything else means invalid/expired. The code is
-    discarded — full token exchange belongs to the PSN sync phase."""
+    """Validate the stored NPSSO end-to-end (full token exchange + profile
+    lookup) and refresh the user's PSN avatar as a side effect — a lightweight
+    profile fetch, not a library crawl."""
     if not current_user.psn_npsso:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
             context={"error": "No NPSSO token saved — capture or paste one above and save first."},
         )
-    try:
-        resp = _httpx.get(
-            _PSN_AUTHORIZE_URL,
-            params={
-                "access_type": "offline",
-                "client_id": _PSN_CLIENT_ID,
-                "redirect_uri": _PSN_REDIRECT_URI,
-                "response_type": "code",
-                "scope": "psn:mobile.v2.core psn:clientapp",
-            },
-            cookies={"npsso": current_user.psn_npsso},
-            follow_redirects=False,
-            timeout=30,
+    if not current_user.psn_online_id:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Your PSN Online ID is required to look up your profile — set it above and save first."},
         )
-        location = resp.headers.get("location", "")
-        if "?code=" in location:
-            return templates.TemplateResponse(
-                request=request,
-                name="partials/integrations_flash.html",
-                context={"message": "NPSSO token is valid — PSN issued an access code."},
-            )
+    try:
+        avatar_url = psn.refresh_avatar(db, current_user)
+    except psn.PsnNpssoExpiredError:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
@@ -364,6 +348,15 @@ def test_psn_token(
             name="partials/integrations_flash.html",
             context={"error": f"Request failed: {e}"},
         )
+    # Reload so the freshly-stored avatar shows on the card/header.
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "NPSSO token is valid" + (" — avatar updated." if avatar_url else " (no avatar on this profile).")},
+    )
+    if avatar_url:
+        response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @router.post("/psn/fetch-library")
