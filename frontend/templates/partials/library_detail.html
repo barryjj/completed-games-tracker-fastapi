@@ -284,6 +284,9 @@
       {% elif igdb_meta.year %}
       <dt>Released</dt>
       <dd>{{ igdb_meta.year }}</dd>
+      {% elif psn_meta.released %}
+      <dt>Released</dt>
+      <dd>{{ psn_meta.released }}</dd>
       {% endif %}
 
       {% if steam_meta.developers %}
@@ -294,6 +297,9 @@
       {% if steam_meta.publishers %}
       <dt>Publisher</dt>
       <dd>{{ steam_meta.publishers | join(", ") }}</dd>
+      {% elif psn_meta.publisher %}
+      <dt>Publisher</dt>
+      <dd>{{ psn_meta.publisher }}</dd>
       {% endif %}
 
       {% if steam_meta.genres %}
@@ -302,6 +308,9 @@
       {% elif igdb_meta.genres %}
       <dt>Genre</dt>
       <dd>{{ igdb_meta.genres | join(", ") }}</dd>
+      {% elif psn_meta.genres %}
+      <dt>Genre</dt>
+      <dd>{{ psn_meta.genres | join(", ") }}</dd>
       {% endif %}
 
       {% if steam_meta.features %}
@@ -328,6 +337,22 @@
       </dd>
       {% endif %}
 
+      {% if psn_meta.rating and steam_meta.metacritic_score is none %}
+      {% set _r = psn_meta.rating %}
+      {% if _r >= 4 %}{% set _r_color = "var(--ctp-green)" %}
+      {% elif _r >= 3 %}{% set _r_color = "var(--ctp-teal)" %}
+      {% elif _r >= 2 %}{% set _r_color = "var(--ctp-yellow)" %}
+      {% elif _r >= 1 %}{% set _r_color = "var(--ctp-peach)" %}
+      {% else %}{% set _r_color = "var(--ctp-red)" %}{% endif %}
+      <dt>Rating</dt>
+      <dd>
+        <span class="d-inline-flex align-items-center gap-1">
+          <span class="cgt-score-chip" style="background-color: {{ _r_color }};">{{ "%.1f"|format(_r) }}</span>
+          <span class="text-secondary">out of 5{% if psn_meta.rating_count %} &middot; {{ "{:,}".format(psn_meta.rating_count) }} ratings{% endif %}</span>
+        </span>
+      </dd>
+      {% endif %}
+
       {% if steam_meta.website %}
       <dt>Website</dt>
       <dd><a href="{{ steam_meta.website }}" target="_blank" rel="noopener">Official site ↗</a></dd>
@@ -347,6 +372,11 @@
     <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="cgt-detail-description mb-0">{{ igdb_meta.summary }}</p>
+    </div>
+    {% elif psn_meta.description %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Description</h6>
+      <p class="cgt-detail-description mb-0">{{ psn_meta.description }}</p>
     </div>
     {% endif %}
 
