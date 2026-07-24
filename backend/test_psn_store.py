@@ -256,5 +256,93 @@ def test_refresh_all_skips_fresh_and_counts_transient_errors(db_session):
 
     with patch("backend.psn_store.fetch_product", side_effect=httpx.ConnectError("down")):
         counts = psn_store.refresh_all_store_metadata(db_session, user, sleep=0)
-    assert counts["skipped"] == 1  # fresh one, not re-fetched
+    assert counts["skipped"] == 1  # fresh one, unchanged (no re-fetch, title already right)
     assert counts["errored"] == 1  # boom, transient error swallowed
+
+
+# ─── title cleaning ────────────────────────────────────────────────────────
+
+
+def test_clean_store_title():
+    c = psn_store._clean_store_title
+    # trademark glyphs
+    assert c("Need for Speed™ Unbound") == "Need for Speed Unbound"
+    assert c("Diablo® IV - Standard Edition") == "Diablo IV"
+    # platform tags
+    assert c("Grounded PS4® & PS5®") == "Grounded"
+    assert c("It Takes Two PS4™ & PS5™") == "It Takes Two"
+    # edition / bundle suffixes
+    assert c("God of War Digital Deluxe Edition") == "God of War"
+    assert c("Batman: The Telltale Series - Season Pass") == "Batman: The Telltale Series"
+    assert c("Call of Duty®: Modern Warfare® III - Cross-Gen Bundle") == "Call of Duty: Modern Warfare III"
+    assert c("EA SPORTS FC™ 26 Standard Edition PS4 & PS5") == "EA SPORTS FC 26"
+    # left alone — these are real product names
+    assert c("Control Ultimate Edition") == "Control Ultimate Edition"
+    assert c("The Stanley Parable: Ultra Deluxe") == "The Stanley Parable: Ultra Deluxe"
+    assert c("BioShock: The Collection") == "BioShock: The Collection"
+    assert c("The Outlast Trials") == "The Outlast Trials"
+
+
+def test_is_multigame_bundle():
+    assert psn_store._is_multigame_bundle({"CUSA1_00"}) is False  # single game
+    assert psn_store._is_multigame_bundle({"CUSA1_00", "PPSA1_00"}) is False  # cross-gen pair
+    assert psn_store._is_multigame_bundle({"CUSA1_00", "CUSA2_00"}) is True  # two PS4 games
+    assert psn_store._is_multigame_bundle({"CUSA1_00", "CUSA2_00", "CUSA3_00"}) is True  # 3-pack
+
+
+def _bundle_pair(db, product_id, names, user):
+    """Two distinct PS4 games sharing one bundle productId (Bleed-style)."""
+    rels = []
+    for i, name in enumerate(names):
+        g = models.Game(title=name)
+        db.add(g)
+        db.flush()
+        r = models.GameRelease(
+            game_id=g.id,
+            platform="PS4",
+            source="psn",
+            external_id=f"CUSA{product_id[-3:]}{i}_00",
+            raw_data={"productId": product_id, "name": name, "displayName": name},
+        )
+        db.add(r)
+        db.flush()
+        db.add(models.UserLibraryEntry(user_id=user.id, release_id=r.id, import_source="psn_import"))
+        rels.append(r)
+    db.flush()
+    return rels
+
+
+def test_multigame_bundle_title_not_adopted_and_repaired(db_session):
+    """Two games sharing a bundle SKU keep their own names; a clobbered one is
+    restored from the original PSN name in raw_data."""
+    user = _user(db_session, "bundler")
+    r1, r2 = _bundle_pair(db_session, "UP2187-CUSA08889_00-BCB", ["BLEED", "BLEED 2"], user)
+    db_session.commit()
+
+    # A store fetch returns the *bundle* name — must NOT be adopted onto either.
+    assert psn_store.apply_metadata(db_session, r1, {"name": "Bleed Complete Bundle"}) is False
+    assert r1.game.title == "BLEED"
+    assert r1.raw_data["store"]["name"] == "Bleed Complete Bundle"  # blob still stored
+
+    # Simulate prior damage: title already clobbered to the bundle name...
+    r2.game.title = "Bleed Complete Bundle"
+    r2.raw_data = {**r2.raw_data, "store": {"name": "Bleed Complete Bundle"}}
+    db_session.flush()
+    # ...a re-run's repair pass restores it from raw_data['displayName'].
+    counts = psn_store.refresh_all_store_metadata(db_session, user, sleep=0)
+    assert r2.game.title == "BLEED 2"
+    assert counts["retitled"] >= 1
+
+
+def test_rerun_repairs_trademark_and_edition_cruft(db_session):
+    """A single game whose title was adopted raw (with ™ and an edition suffix)
+    gets cleaned on the next run without re-fetching."""
+    user = _user(db_session, "cleaner")
+    rel = _psn_release(db_session, "Diablo® IV - Standard Edition", product_id="UP0-CUSA9_00-D", user=user)
+    rel.raw_data = {**rel.raw_data, "store": {"name": "Diablo® IV - Standard Edition"}}
+    rel.metadata_fetched_at = __import__("datetime").datetime.now(__import__("datetime").UTC)
+    db_session.commit()
+
+    counts = psn_store.refresh_all_store_metadata(db_session, user, sleep=0)  # no fetch — fresh
+    assert rel.game.title == "Diablo IV"
+    assert counts["retitled"] == 1

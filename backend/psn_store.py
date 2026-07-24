@@ -29,6 +29,7 @@ import re
 import time
 
 import httpx
+from sqlalchemy import func
 
 logger = logging.getLogger(__name__)
 
@@ -150,6 +151,73 @@ def product_id_for(release) -> str | None:
     return ((release.raw_data or {}).get("productId")) or None
 
 
+# ─── Title cleaning ─────────────────────────────────────────────────────────
+# Store names carry cruft the API feeds don't: trademark glyphs, trailing
+# platform tags ("PS4 & PS5"), and edition/bundle suffixes ("Digital Deluxe
+# Edition", "- Cross-Gen Bundle", "- Season Pass"). Strip them so an adopted
+# title reads like the game, not a store listing. Deliberately conservative:
+# "Ultimate Edition", "Complete Edition", "Ultra Deluxe" and "The Collection"
+# are real product names and are left alone.
+
+_TM_RE = re.compile(r"\(TM\)|™|®", re.IGNORECASE)
+_PLATFORM_TAG_RE = re.compile(r"\s*(?:[-–]\s*)?PS4(?:\s*&\s*PS5)?\s*$|\s*(?:[-–]\s*)?PS5\s*$", re.IGNORECASE)
+_EDITION_RE = re.compile(
+    r"\s*(?:[-–]\s*)?"
+    r"(?:(?:Digital\s+)?(?:Deluxe|Standard|Premium)\s+Edition"
+    r"|Cross-Gen(?:\s+Deluxe)?\s+Bundle"
+    r"|Complete\s+Bundle"
+    r"|Season\s+Pass)"
+    r"\s*$",
+    re.IGNORECASE,
+)
+
+
+def _clean_store_title(name: str | None) -> str:
+    """Strip store-listing cruft (trademark glyphs, platform tags, edition /
+    bundle suffixes) from a title. Loops because a name can carry several at
+    once ('EA SPORTS FC 26 Standard Edition PS4 & PS5')."""
+    if not name:
+        return ""
+    s = _TM_RE.sub("", str(name))
+    prev = None
+    while prev != s:
+        prev = s
+        s = _PLATFORM_TAG_RE.sub("", s)
+        s = _EDITION_RE.sub("", s)
+    return re.sub(r"\s{2,}", " ", s).strip(" -–")
+
+
+def _bundle_titleids(db, product_id: str) -> set[str]:
+    """The distinct titleIds (release external_ids) that share this productId."""
+    from . import models
+
+    if not product_id:
+        return set()
+    rows = (
+        db.query(models.GameRelease.external_id)
+        .filter(
+            models.GameRelease.source == "psn",
+            func.json_extract(models.GameRelease.raw_data, "$.productId") == product_id,
+        )
+        .distinct()
+        .all()
+    )
+    return {r[0] for r in rows if r[0]}
+
+
+def _is_multigame_bundle(titleids: set[str]) -> bool:
+    """True when a productId is shared across genuinely different games (a
+    multi-game bundle like Bleed Complete Bundle), NOT a cross-gen pair of the
+    same game (one CUSA/PS4 + one PPSA/PS5, which is fine to adopt)."""
+    tids = {t for t in titleids if t}
+    if len(tids) <= 1:
+        return False
+    gens = {("PS5" if t.startswith("PPSA") else "PS4" if t.startswith("CUSA") else "?") for t in tids}
+    if len(tids) == 2 and gens == {"PS4", "PS5"}:
+        return False  # cross-gen: same game, two platform SKUs
+    return True
+
+
 # ─── Persistence ───────────────────────────────────────────────────────────
 
 
@@ -167,28 +235,44 @@ def _is_psn_only(db, game) -> bool:
     return other is None
 
 
-def apply_metadata(db, release, meta: dict) -> bool:
-    """Persist a fetched store record onto the release, and adopt the store's
-    title when ours is sparse. Returns True when the title was rewritten.
+def _apply_title(db, release) -> bool:
+    """Set the game's title from the cached store record, cleaned. Returns True
+    when the title changed. Idempotent — safe to re-run for repair.
 
-    The title is only taken when the user hasn't renamed the game and the game
-    is PSN-exclusive — never clobber a hand-edited or Steam-sourced title."""
+    Guards, in order:
+      - never touch a user-renamed title or a game that also has a Steam release
+      - for a multi-game-bundle productId (shared across genuinely different
+        games), do NOT adopt the bundle's store name — the entry is an
+        individual game, so keep/restore its original PSN import name (which
+        survives in raw_data). This both prevents and repairs the case where
+        e.g. Bleed and Bleed 2 both got titled "Bleed Complete Bundle".
+      - otherwise adopt the cleaned store name.
+    """
+    game = release.game
+    if game is None or game.display_name_user_set or not _is_psn_only(db, game):
+        return False
+    raw = release.raw_data or {}
+    store = raw.get("store") or {}
+    product_id = product_id_for(release)
+    if _is_multigame_bundle(_bundle_titleids(db, product_id)):
+        correct = _clean_store_title(raw.get("displayName") or raw.get("name"))
+    else:
+        correct = _clean_store_title(store.get("name"))
+    if not correct or correct == game.title:
+        return False
+    game.title = correct
+    game.display_name = None  # display_title falls back to the (now correct) title
+    return True
+
+
+def apply_metadata(db, release, meta: dict) -> bool:
+    """Persist a fetched store record onto the release and (re)derive the title.
+    Returns True when the title was rewritten."""
     raw = dict(release.raw_data or {})
     raw["store"] = meta
     release.raw_data = raw  # reassign: SQLAlchemy won't see in-place JSON edits
     release.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
-
-    store_name = (meta.get("name") or "").strip()
-    game = release.game
-    if not store_name or game is None:
-        return False
-    if game.display_name_user_set or not _is_psn_only(db, game):
-        return False
-    if store_name == game.title:
-        return False
-    game.title = store_name
-    game.display_name = None  # display_title falls back to the (now correct) title
-    return True
+    return _apply_title(db, release)
 
 
 def refresh_release(db, release) -> str:
@@ -258,16 +342,24 @@ def refresh_all_store_metadata(db, user, sleep: float = 1.0, progress_callback=N
         if not product_id_for(release):
             counts["no_product"] += 1
             continue
-        if not store_is_stale(release):
-            counts["skipped"] += 1
+        if store_is_stale(release):
+            try:
+                counts[refresh_release(db, release)] += 1
+                db.commit()
+            except Exception as e:  # transient network/HTTP — skip this one, keep going
+                logger.warning("PS Store refresh failed for %s: %s", product_id_for(release), e)
+                db.rollback()
+                counts["errored"] += 1
+            if sleep:
+                time.sleep(sleep)
             continue
-        try:
-            counts[refresh_release(db, release)] += 1
+        # Not stale: re-derive the title from the cached store record (no fetch).
+        # This repairs titles polluted by an earlier, pre-cleaning run — ™®/
+        # edition cruft and bundle-name clobbering — on the next job run.
+        store = (release.raw_data or {}).get("store") or {}
+        if store and not store.get("not_found") and _apply_title(db, release):
+            counts["retitled"] += 1
             db.commit()
-        except Exception as e:  # transient network/HTTP — skip this one, keep going
-            logger.warning("PS Store refresh failed for %s: %s", product_id_for(release), e)
-            db.rollback()
-            counts["errored"] += 1
-        if sleep:
-            time.sleep(sleep)
+        else:
+            counts["skipped"] += 1
     return counts
