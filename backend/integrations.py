@@ -594,10 +594,11 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
     Platform prefix ("Steam") lets PSN drop in with the same shape later."""
     if kind == "psn_store_refresh":
         enriched = result.get("updated", 0) + result.get("retitled", 0)
-        lines = [
-            "PlayStation Store metadata complete",
-            f"{enriched:,} enriched · {result.get('retitled', 0):,} retitled · {result.get('not_found', 0):,} not found · {result.get('skipped', 0):,} already current",
-        ]
+        summary = (
+            f"{enriched:,} enriched · {result.get('retitled', 0):,} retitled · "
+            f"{result.get('not_found', 0):,} not found · {result.get('skipped', 0):,} already current"
+        )
+        lines = ["PlayStation Store metadata complete", summary]
         if result.get("errored"):
             lines.append(f"{result['errored']:,} errored — try again later")
         if result.get("no_product"):
