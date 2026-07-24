@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, models, psn, steam, worker_state
+from . import jobs, models, psn, psn_store, steam, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
@@ -271,12 +271,6 @@ def test_steam_cookies(
 
 # ─── PSN (capture framework — library/trophy sync is a later phase) ───────
 
-_PSN_AUTHORIZE_URL = "https://ca.account.sony.com/api/authz/v3/oauth/authorize"
-# Public client id of the PlayStation Android app — the same one psn-api /
-# psnawp (and our ~/Coding/psn-library-generator prototype) authenticate as.
-_PSN_CLIENT_ID = "09515159-7237-4370-9b40-3806e67c0891"
-_PSN_REDIRECT_URI = "com.scee.psxandroid.scecompcall://redirect"
-
 
 @router.get("/psn")
 def psn_page(
@@ -307,6 +301,8 @@ def save_psn_credentials(
         current_user.psn_npsso_captured_at = datetime.datetime.now(datetime.UTC) if npsso else None
     current_user.psn_npsso = npsso
     current_user.psn_online_id = psn_online_id.strip() or None
+    if not npsso:
+        current_user.psn_avatar_url = None  # no token → drop the stale avatar
     db.commit()
     response = templates.TemplateResponse(
         request=request,
@@ -320,39 +316,27 @@ def save_psn_credentials(
 @router.post("/psn/test-token")
 def test_psn_token(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Sanity-check the stored NPSSO by running the first hop of the token
-    exchange (NPSSO → access code). A valid token gets a 302 whose location
-    carries ?code=…; anything else means invalid/expired. The code is
-    discarded — full token exchange belongs to the PSN sync phase."""
+    """Validate the stored NPSSO end-to-end (full token exchange + profile
+    lookup) and refresh the user's PSN avatar as a side effect — a lightweight
+    profile fetch, not a library crawl."""
     if not current_user.psn_npsso:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
             context={"error": "No NPSSO token saved — capture or paste one above and save first."},
         )
-    try:
-        resp = _httpx.get(
-            _PSN_AUTHORIZE_URL,
-            params={
-                "access_type": "offline",
-                "client_id": _PSN_CLIENT_ID,
-                "redirect_uri": _PSN_REDIRECT_URI,
-                "response_type": "code",
-                "scope": "psn:mobile.v2.core psn:clientapp",
-            },
-            cookies={"npsso": current_user.psn_npsso},
-            follow_redirects=False,
-            timeout=30,
+    if not current_user.psn_online_id:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Your PSN Online ID is required to look up your profile — set it above and save first."},
         )
-        location = resp.headers.get("location", "")
-        if "?code=" in location:
-            return templates.TemplateResponse(
-                request=request,
-                name="partials/integrations_flash.html",
-                context={"message": "NPSSO token is valid — PSN issued an access code."},
-            )
+    try:
+        avatar_url = psn.refresh_avatar(db, current_user)
+    except psn.PsnNpssoExpiredError:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
@@ -364,6 +348,15 @@ def test_psn_token(
             name="partials/integrations_flash.html",
             context={"error": f"Request failed: {e}"},
         )
+    # Reload so the freshly-stored avatar shows on the card/header.
+    response = templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": "NPSSO token is valid" + (" — avatar updated." if avatar_url else " (no avatar on this profile).")},
+    )
+    if avatar_url:
+        response.headers["HX-Refresh"] = "true"
+    return response
 
 
 @router.post("/psn/fetch-library")
@@ -379,6 +372,13 @@ async def psn_import_library(request: Request, current_user: models.User = Depen
     Purchased/trophy-sourced games only — played-only rows go through the
     per-row review actions. Chains the match-review scan on completion."""
     return _kick_off_sync(request, current_user, "psn_import")
+
+
+@router.post("/psn/refresh-store-metadata")
+async def psn_refresh_store_metadata(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Background job: fetch PS Store product-page metadata for PSN entries that
+    have a productId and are missing/stale (#168). Public pages — no NPSSO."""
+    return _kick_off_sync(request, current_user, "psn_store_refresh")
 
 
 @router.post("/psn/token")
@@ -561,6 +561,14 @@ _STEAM_KINDS: dict[str, dict] = {
         "job_label": "PSN import",
         # Local-only (reads the snapshot from disk) — no NPSSO involved, no retry_path.
     },
+    "psn_store_refresh": {
+        "fn": "refresh_all_store_metadata",
+        "module": "psn_store",
+        "no_credentials": True,  # public store pages — no PSN login required
+        "started": "Fetching PlayStation Store metadata in the background — you'll see a toast when it finishes.",
+        "label": "Store metadata",
+        "job_label": "PSN store metadata",
+    },
 }
 
 
@@ -577,6 +585,18 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
     are read from the DB after the sync, so they reflect real library state
     even when Steam returned 0 for some count this run.
     Platform prefix ("Steam") lets PSN drop in with the same shape later."""
+    if kind == "psn_store_refresh":
+        enriched = result.get("updated", 0) + result.get("retitled", 0)
+        summary = (
+            f"{enriched:,} enriched · {result.get('retitled', 0):,} retitled · "
+            f"{result.get('not_found', 0):,} not found · {result.get('skipped', 0):,} already current"
+        )
+        lines = ["PlayStation Store metadata complete", summary]
+        if result.get("errored"):
+            lines.append(f"{result['errored']:,} errored — try again later")
+        if result.get("no_product"):
+            lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
+        return "\n".join(lines)
     if kind == "psn_import":
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
         if result["updated"]:
@@ -657,7 +677,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        module = psn if spec.get("module") == "psn" else steam
+        module = {"psn": psn, "psn_store": psn_store}.get(spec.get("module"), steam)
         fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
@@ -727,6 +747,8 @@ def _credential_error(current_user: models.User, kind: str) -> str | None:
     """Pre-flight credential check so we 422 immediately instead of queueing a
     doomed background job."""
     spec = _STEAM_KINDS.get(kind, {})
+    if spec.get("no_credentials"):
+        return None  # e.g. PS Store scraping hits public pages — no login needed
     if spec.get("service") == "psn":
         if not current_user.psn_npsso:
             return "A PSN NPSSO token is required — capture or paste one on the PSN configure page."

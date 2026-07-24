@@ -135,6 +135,8 @@ class User(Base):
     psn_npsso: Mapped[str | None] = mapped_column(String, nullable=True)
     psn_npsso_captured_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     psn_online_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # PSN profile avatar URL (largest size from the profile2 avatarUrls list).
+    psn_avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # SteamGridDB API key — used to look up community cover art for manual
     # entries, PSN entries, or any DLC/game whose Steam art is missing/ugly.
     steamgriddb_api_key: Mapped[str | None] = mapped_column(String, nullable=True)

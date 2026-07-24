@@ -121,18 +121,51 @@ def _bearer_get(token: str, url: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
-def _resolve_account_id(token: str, online_id: str) -> str:
-    """Online ID → accountId via the legacy profile2 endpoint (what psn-api's
-    getProfileFromUserName uses; the prototype resolved accountId this way)."""
+# profile2 returns avatarUrls as [{size, avatarUrl}]; sizes seen: s/m/l/xl.
+_AVATAR_SIZE_RANK = {"xl": 4, "l": 3, "m": 2, "s": 1}
+
+
+def _largest_avatar_url(profile: dict) -> str | None:
+    best, best_rank = None, -1
+    for a in profile.get("avatarUrls") or []:
+        url = a.get("avatarUrl")
+        rank = _AVATAR_SIZE_RANK.get(str(a.get("size", "")).lower(), 0)
+        if url and rank > best_rank:
+            best, best_rank = url, rank
+    return best
+
+
+def _resolve_profile(token: str, online_id: str) -> tuple[str, str | None]:
+    """Online ID → (accountId, avatar_url) via the legacy profile2 endpoint.
+    avatarUrls rides along on the same call — one extra field, no extra request."""
     data = _bearer_get(
         token,
         _PROFILE_URL.format(online_id=online_id),
-        params={"fields": "npId,onlineId,accountId"},
+        params={"fields": "npId,onlineId,accountId,avatarUrls"},
     )
-    account_id = (data.get("profile") or {}).get("accountId")
+    profile = data.get("profile") or {}
+    account_id = profile.get("accountId")
     if not account_id:
         raise ValueError(f"Could not resolve PSN accountId for online id '{online_id}'.")
-    return str(account_id)
+    return str(account_id), _largest_avatar_url(profile)
+
+
+def _resolve_account_id(token: str, online_id: str) -> str:
+    return _resolve_profile(token, online_id)[0]
+
+
+def refresh_avatar(db: Session, user: models.User) -> str | None:
+    """Lightweight profile refresh (no library crawl): exchange NPSSO, resolve
+    the profile, store the avatar URL. Returns the URL. Raises
+    PsnNpssoExpiredError on a dead token."""
+    if not user.psn_npsso or not user.psn_online_id:
+        raise ValueError("A PSN NPSSO token and Online ID are required.")
+    token = _exchange_npsso(user.psn_npsso)
+    _, avatar_url = _resolve_profile(token, user.psn_online_id)
+    if avatar_url:
+        user.psn_avatar_url = avatar_url
+        db.commit()
+    return avatar_url
 
 
 # ─── Fetchers (all paginated — the prototype's biggest gap) ────────────────
@@ -518,7 +551,10 @@ def fetch_snapshot(db: Session, user: models.User) -> dict:
         raise ValueError("Your PSN Online ID is required.")
 
     token = _exchange_npsso(user.psn_npsso)
-    account_id = _resolve_account_id(token, user.psn_online_id)
+    account_id, avatar_url = _resolve_profile(token, user.psn_online_id)
+    if avatar_url and avatar_url != user.psn_avatar_url:
+        user.psn_avatar_url = avatar_url
+        db.commit()
 
     purchased = _fetch_purchased(token, account_id)
     titles, titles_total = _fetch_trophy_titles(token, account_id)

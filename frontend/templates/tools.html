@@ -208,9 +208,15 @@
     </div>
     {% if current_user.psn_npsso %}
     {% if current_user.psn_online_id %}
-    <div class="small">
-      <div class="fw-semibold">{{ current_user.psn_online_id }}</div>
-      <div class="text-secondary">PlayStation Network</div>
+    <div class="d-flex align-items-center gap-2">
+      {% if current_user.psn_avatar_url %}
+      <img src="{{ current_user.psn_avatar_url }}" alt="" width="32" height="32"
+           style="border-radius: 3px; flex-shrink: 0;">
+      {% endif %}
+      <div class="small">
+        <div class="fw-semibold">{{ current_user.psn_online_id }}</div>
+        <div class="text-secondary">PlayStation Network</div>
+      </div>
     </div>
     {% endif %}
     {% if psn_counts is not none %}
