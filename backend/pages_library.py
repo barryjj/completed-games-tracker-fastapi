@@ -25,6 +25,7 @@ from .pages_common import (
     _build_detail_pane_visuals,
     _build_lib_query,
     _extract_igdb_meta,
+    _extract_psn_store_meta,
     _extract_steam_meta,
     _get_all_platforms,
     _import_confirmed_count,
@@ -889,6 +890,7 @@ def library_entry_detail(
             "appdetails": appdetails,
             "steam_meta": _extract_steam_meta(appdetails),
             "igdb_meta": _extract_igdb_meta(entry.release),
+            "psn_meta": _extract_psn_store_meta(entry.release),
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,
@@ -922,6 +924,35 @@ def refresh_entry_metadata(
     if not entry:
         return Response(status_code=404)
     release = entry.release
+
+    # PSN: refresh the PS Store record instead of Steam appdetails (#168).
+    if release.source == "psn":
+        from . import psn_store
+
+        if not psn_store.product_id_for(release):
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={"error": "This PSN entry has no store link to refresh (trophy-only)."},
+                status_code=400,
+            )
+        try:
+            psn_store.refresh_release(db, release)
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={"error": f"Store refresh failed: {e}"},
+                status_code=502,
+            )
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"message": f"Refreshed store metadata for {release.game.display_title}."},
+        )
+
     if release.source != "steam" or not release.external_id:
         return templates.TemplateResponse(
             request=request,

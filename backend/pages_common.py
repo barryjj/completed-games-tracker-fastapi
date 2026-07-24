@@ -208,10 +208,14 @@ _METADATA_STALENESS_DAYS = 7
 
 
 def _needs_metadata_refresh(release) -> bool:
-    """True when a Steam release's cached appdetails is missing or older than
-    the staleness threshold. Used by the detail-pane endpoints to decide
-    whether to fire a background refresh. Only Steam — other sources don't
-    have an appdetails endpoint to refresh against."""
+    """True when a release's cached metadata is missing or stale, so the detail
+    pane can fire a background refresh on open. Steam refreshes appdetails;
+    PSN refreshes the PS Store record (its own 30-day window, #168). Other
+    sources have nothing to refresh against."""
+    if release.source == "psn":
+        from . import psn_store
+
+        return psn_store.store_is_stale(release)
     if release.source != "steam" or not release.external_id:
         return False
     fetched_at = release.metadata_fetched_at
@@ -322,6 +326,35 @@ def _extract_steam_meta(appdetails: dict) -> dict:
         "metacritic_score": metacritic.get("score"),
         "metacritic_url": metacritic.get("url"),
         "website": (appdetails.get("website") or "").strip() or None,
+    }
+
+
+def _extract_psn_store_meta(release: "models.GameRelease") -> dict:
+    """Display-ready fields from a cached PS Store record (`raw_data['store']`,
+    #168) — the PSN counterpart to _extract_steam_meta. Returns {} when there's
+    no record or the product was delisted, so templates can guard on the whole
+    dict as well as individual keys."""
+    store = (release.raw_data or {}).get("store") or {}
+    if not store or store.get("not_found"):
+        return {}
+
+    released = None
+    raw_date = store.get("release_date")
+    if raw_date:
+        try:
+            dt = datetime.datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+            released = f"{dt.strftime('%b')} {dt.day}, {dt.year}"
+        except ValueError:
+            released = str(raw_date)[:10]
+
+    return {
+        "released": released,
+        "publisher": store.get("publisher"),
+        "genres": store.get("genres") or [],
+        "rating": store.get("rating"),
+        "rating_count": store.get("rating_count"),
+        "description": (store.get("description") or "").strip() or None,
+        "languages": store.get("languages") or [],
     }
 
 

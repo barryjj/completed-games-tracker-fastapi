@@ -463,6 +463,75 @@ def test_detail_pane_returns_content_for_owned_entry(client, db_session):
     assert b"cgt-pane-nav" in r.content
 
 
+def test_detail_pane_renders_psn_store_metadata(client, db_session):
+    """A PSN entry with a cached store record shows publisher / genre / release /
+    rating / description rows in the detail pane (#168 Chunk C)."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Control Ultimate Edition")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(
+        game_id=game.id,
+        platform="PS5",
+        source="psn",
+        external_id="PPSA01949_00",
+        raw_data={
+            "productId": "UP4040-PPSA01949_00-CONTROLUEPS50000",
+            "store": {
+                "name": "Control Ultimate Edition",
+                "publisher": "REMEDY ENTERTAINMENT LTD.",
+                "release_date": "2021-02-02T05:00:00Z",
+                "genres": ["Action"],
+                "rating": 4.39,
+                "rating_count": 47038,
+                "description": "A corruptive presence has invaded the Bureau.",
+            },
+        },
+    )
+    db_session.add(rel)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    r = client.get(f"/library/entries/{entry.id}/detail", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    body = r.content
+    assert b"REMEDY ENTERTAINMENT LTD." in body
+    assert b"Action" in body
+    assert b"Feb 2, 2021" in body
+    assert b"4.4" in body and b"47,038 ratings" in body
+    assert b"A corruptive presence" in body
+
+
+def test_psn_store_refresh_endpoint(client, db_session):
+    """The single-entry refresh endpoint refetches PSN store data; trophy-only
+    entries (no productId) are rejected."""
+    from unittest.mock import patch
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    game = models.Game(title="Batman")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(
+        game_id=game.id, platform="PS4", source="psn", external_id="CUSA05332_00", raw_data={"productId": "UP2026-CUSA05332_00-X"}
+    )
+    db_session.add(rel)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import")
+    db_session.add(entry)
+    db_session.commit()
+
+    with patch("backend.psn_store.fetch_product", return_value={"name": "Batman: The Telltale Series"}):
+        r = client.post(f"/library/entries/{entry.id}/refresh-metadata")
+    assert r.status_code == 200
+    assert b"Refreshed store metadata" in r.content
+    db_session.refresh(game)
+    assert game.title == "Batman: The Telltale Series"
+
+
 def test_detail_pane_psn_entry_links_to_ps_store(client, db_session):
     """A PSN entry with a productId gets a PS Store link; a trophy-only entry
     without one just shows the ID, no store link."""
@@ -1269,6 +1338,17 @@ def test_needs_metadata_refresh_skips_non_steam():
 
     release = models.GameRelease(source="manual", external_id=None, metadata_fetched_at=None)
     assert _needs_metadata_refresh(release) is False
+
+
+def test_needs_metadata_refresh_for_psn():
+    """A PSN release with a productId but no store record is stale → the pane
+    auto-refetches; a trophy-only PSN release (no productId) is not."""
+    from backend.pages_common import _needs_metadata_refresh
+
+    with_pid = models.GameRelease(source="psn", external_id="CUSA1_00", raw_data={"productId": "UP0-CUSA1_00-X"}, metadata_fetched_at=None)
+    trophy_only = models.GameRelease(source="psn", external_id="NPWR1", raw_data={"npCommunicationId": "NPWR1"}, metadata_fetched_at=None)
+    assert _needs_metadata_refresh(with_pid) is True
+    assert _needs_metadata_refresh(trophy_only) is False
 
 
 # --- view_mode resolution from cookie ---
