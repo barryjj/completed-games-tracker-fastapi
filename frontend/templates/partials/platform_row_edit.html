@@ -65,6 +65,20 @@
             </div>
           </div>
 
+          {# Physical media — the word a physical copy of a game on this
+             platform reads as in the detail pane's Format line. Blank for
+             digital-only platforms (Steam, mobile), which fall back to a
+             plain "Physical" if an entry is ever marked as such. #}
+          <div>
+            <label class="form-label small mb-1" for="edit-media-type-{{ platform.id }}">Physical media</label>
+            <select class="form-select form-select-sm" name="media_type" id="edit-media-type-{{ platform.id }}">
+              <option value="" {% if not platform.media_type %}selected{% endif %}>None / digital-only</option>
+              {% for key, label in media_types.items() %}
+              <option value="{{ key }}" {% if platform.media_type == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
         </div>
 
         {# Right column — aliases #}

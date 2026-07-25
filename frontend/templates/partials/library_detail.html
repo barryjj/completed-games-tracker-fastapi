@@ -241,12 +241,20 @@
       <dd>{{ entry.playtime_minutes | playtime_human }}</dd>
       {% endif %}
 
-      {% if release.source == "psn" and (release.raw_data or {}).get("membership") == "PS_PLUS" %}
-      {# Provenance, not a paywall flag: the game entered the library via the
-         PS Plus catalog rather than a purchase (import-all decision,
-         2026-07-18 — completability is the criterion, not ownership). #}
-      <dt>Via</dt>
-      <dd>PS Plus catalog</dd>
+      {% if format_meta.format %}
+      {# Two axes (#164): how the copy is owned (Digital, or the platform's
+         physical media word — Disc / Cartridge / UMD), and, when it isn't
+         owned outright, the subscription it came from as a small badge. #}
+      <dt>Format</dt>
+      <dd>
+        <span class="d-inline-flex align-items-center gap-2 flex-wrap">
+          {{ format_meta.format }}
+          {% if format_meta.service %}
+          {% set service = format_meta.service %}
+          {% include "partials/_service_badge.html" %}
+          {% endif %}
+        </span>
+      </dd>
       {% endif %}
 
       {% if release.external_id %}
@@ -472,6 +480,7 @@
              data-source="{{ release.source }}"
              data-igdb-id="{{ game.igdb_id or '' }}"
              data-platform="{{ release.display_platform | e }}"
+             data-medium="{{ entry.medium or '' }}"
              data-label="{{ game.display_title | e }}">Edit game</a></li>
       <li><hr class="dropdown-divider"></li>
       {% if release.source == "steam" %}
