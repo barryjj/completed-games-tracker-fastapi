@@ -609,12 +609,22 @@ def _parse_played_at(value: str | None) -> datetime.datetime | None:
         return None
 
 
-def medium_for_item(item: dict) -> str:
-    """How this PSN copy is owned. Presence in the purchased feed means a
-    digital entitlement — owned outright or through the PS Plus catalog, both
-    downloads. Trophy/played history with no purchase behind it is the disc
-    signature (same reasoning the played-only review uses for service='other')."""
-    return "digital" if "purchased" in (item.get("sources") or []) else "physical"
+def medium_for_item(item: dict) -> str | None:
+    """How this PSN copy is owned, or None when we genuinely can't tell.
+
+    Presence in the purchased feed means a digital entitlement — owned outright
+    or through the PS Plus catalog, both downloads. Absence does NOT imply
+    physical, so we assert nothing:
+
+    - PS3/Vita-era titles are missing from the modern purchased feed entirely
+      (it doesn't cover that era), yet most were digital purchases.
+    - Even on PS4/PS5 the absence has innocent causes — preinstalled titles
+      (ASTRO's PLAYROOM), classics re-releases, and PC copies surfacing through
+      PSN's PC integration.
+
+    Unknown entries are left blank for the user to resolve in bulk rather than
+    mislabeled as discs."""
+    return "digital" if "purchased" in (item.get("sources") or []) else None
 
 
 def is_played_only(item: dict) -> bool:

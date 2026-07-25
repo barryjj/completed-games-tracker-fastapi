@@ -118,23 +118,16 @@ def upgrade() -> None:
         """
     )
     # PSN: present in the purchased feed => a digital entitlement (owned or via
-    # the PS Plus catalog). Trophy/played-only history with no purchase behind
-    # it is the disc signature.
+    # the PS Plus catalog). Absence proves nothing — the modern feed doesn't
+    # cover PS3/Vita-era purchases at all, and even on PS4/PS5 preinstalls and
+    # classics re-releases are missing from it — so those are left NULL for the
+    # user to resolve in bulk rather than mislabeled as discs.
     op.execute(
         """
         UPDATE user_library SET medium = 'digital'
         WHERE medium IS NULL AND release_id IN (
             SELECT id FROM game_releases
             WHERE source = 'psn' AND json_extract(raw_data, '$.sources') LIKE '%purchased%'
-        )
-        """
-    )
-    op.execute(
-        """
-        UPDATE user_library SET medium = 'physical'
-        WHERE medium IS NULL AND release_id IN (
-            SELECT id FROM game_releases
-            WHERE source = 'psn' AND json_extract(raw_data, '$.sources') NOT LIKE '%purchased%'
         )
         """
     )

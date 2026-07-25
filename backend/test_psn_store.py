@@ -356,10 +356,12 @@ def test_medium_for_item_infers_from_sources():
 
     assert psn.medium_for_item({"sources": ["purchased", "titles"]}) == "digital"
     assert psn.medium_for_item({"sources": ["purchased"]}) == "digital"
-    # Trophy/played history with no purchase behind it = the disc signature.
-    assert psn.medium_for_item({"sources": ["titles"]}) == "physical"
-    assert psn.medium_for_item({"sources": ["titles", "played"]}) == "physical"
-    assert psn.medium_for_item({}) == "physical"
+    # Absence from the purchased feed proves nothing — the modern feed doesn't
+    # cover PS3/Vita-era purchases, and PS4/PS5 preinstalls are missing too. So
+    # we assert nothing rather than mislabeling those as discs.
+    assert psn.medium_for_item({"sources": ["titles"]}) is None
+    assert psn.medium_for_item({"sources": ["titles", "played"]}) is None
+    assert psn.medium_for_item({}) is None
 
 
 def test_physical_media_label_resolves_from_platform():
