@@ -1331,6 +1331,12 @@ body:has(.cgt-sticky-actions) {
 /* Subscription-service badge on the detail pane's Format line — marks a copy
    you have through a sub (PS Plus, and later NSO / Game Pass) rather than own.
    Neutral surface + hairline so the service's own icon carries the colour. */
+/* Bulk-select mode (#175) — checkboxes ride in the list's thumbnail cell and
+   stay out of the DOM's way until the mode is on, so toggling costs no fetch. */
+.cgt-bulk-check { display: none; margin-right: 0.4rem; vertical-align: middle; }
+.cgt-select-mode .cgt-bulk-check { display: inline-block; }
+.cgt-select-mode .library-row-clickable { cursor: default; }
+
 .cgt-service-badge {
   display: inline-flex;
   align-items: center;

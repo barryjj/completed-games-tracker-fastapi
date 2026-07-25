@@ -1,5 +1,10 @@
 <tr id="library-entry-{{ entry.id }}" class="library-row-clickable" data-entry-id="{{ entry.id }}">
   <td class="cgt-list-thumb-cell">
+    {# Bulk-select checkbox — always rendered, revealed by .cgt-select-mode on
+       the container so toggling select mode needs no re-fetch. #}
+    <input type="checkbox" class="form-check-input cgt-bulk-check" value="{{ entry.id }}"
+           data-source="{{ entry.release.source }}"
+           onclick="event.stopPropagation(); cgtBulkSync();">
     {# Dedicated thumbnail column — keeps the title cell from wrapping around
        a 64px image. Empty cell for manual entries without artwork. #}
     {% set _thumb = entry | grid_cover_url('grid_h') %}

@@ -692,6 +692,103 @@ def delete_library_entry(
     return Response(status_code=200)
 
 
+@router.post("/library/entries/bulk-edit")
+def bulk_edit_entries(
+    request: Request,
+    ids: str = Form(""),
+    medium: str = Form(""),
+    is_hidden: str = Form(""),
+    platform: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Apply one or more property changes across a selection of entries (#175).
+
+    Every field defaults to "keep" (empty string) so a bulk Format change can
+    never blank something else. Explicit clearing uses a sentinel:
+    medium="unknown" nulls the column and drops the user-set flag, letting the
+    importers' inference apply again.
+
+    Platform is only honoured when EVERY selected entry is manual — rewriting a
+    synced entry's platform would break the matching its next re-sync depends
+    on. Anything actually written flips the matching *_user_set flag so syncs
+    don't undo a bulk decision.
+    """
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "Nothing selected."},
+            status_code=422,
+        )
+    entries = (
+        db.query(models.UserLibraryEntry)
+        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+        .filter(models.UserLibraryEntry.id.in_(id_list), models.UserLibraryEntry.user_id == current_user.id)
+        .all()
+    )
+    if not entries:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "None of the selected entries were found."},
+            status_code=404,
+        )
+
+    medium = medium.strip()
+    is_hidden = is_hidden.strip()
+    platform = platform.strip()
+    changed: list[str] = []
+
+    if medium in models.MEDIUMS or medium == "unknown":
+        for entry in entries:
+            if medium == "unknown":
+                entry.medium, entry.medium_user_set = None, False
+            else:
+                entry.medium, entry.medium_user_set = medium, True
+        changed.append("format")
+
+    if is_hidden in ("true", "false"):
+        hide = is_hidden == "true"
+        for entry in entries:
+            entry.is_hidden = hide
+            entry.is_hidden_user_set = True
+        changed.append("hidden" if hide else "visible")
+
+    if platform:
+        # Guard: refuse the whole platform change if any selected entry is
+        # synced, rather than silently applying it to the manual subset.
+        if any(e.release.source != "manual" for e in entries):
+            return templates.TemplateResponse(
+                request=request,
+                name="partials/integrations_flash.html",
+                context={"error": "Platform can only be changed for manually-added entries — deselect the synced ones."},
+                status_code=422,
+            )
+        platform_id = models.resolve_platform_id(db, platform)
+        for entry in entries:
+            entry.release.platform = platform
+            entry.release.platform_id = platform_id
+        changed.append("platform")
+
+    if not changed:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": "No changes selected."},
+            status_code=422,
+        )
+
+    db.commit()
+    n = len(entries)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/integrations_flash.html",
+        context={"message": f"Updated {' + '.join(changed)} on {n} entr{'y' if n == 1 else 'ies'}."},
+    )
+
+
 @router.post("/library/entries/{entry_id}/hide")
 def hide_library_entry(
     entry_id: int,

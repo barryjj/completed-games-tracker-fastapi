@@ -2428,3 +2428,109 @@ def test_platform_admin_saves_media_type(client, db_session):
     client.post(f"/account/platforms/{plat.id}", data={"display_name": "", "color": "", "media_type": ""})
     db_session.refresh(plat)
     assert plat.media_type is None
+
+
+# --- Bulk edit (#175) ---
+
+
+def _bulk_entry(db, user, *, source="manual", medium=None, hidden=False, platform="PS4", n=1):
+    game = models.Game(title=f"Bulk {source} {n}")
+    db.add(game)
+    db.flush()
+    rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=f"BULK{source}{n}")
+    db.add(rel)
+    db.flush()
+    e = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source=source, medium=medium, is_hidden=hidden)
+    db.add(e)
+    db.commit()
+    return e
+
+
+def test_bulk_edit_sets_format_and_flags_user_set(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    a = _bulk_entry(db_session, user, n=1)
+    b = _bulk_entry(db_session, user, n=2)
+
+    r = client.post("/library/entries/bulk-edit", data={"ids": f"{a.id},{b.id}", "medium": "digital"})
+    assert r.status_code == 200
+    for e in (a, b):
+        db_session.refresh(e)
+        assert e.medium == "digital" and e.medium_user_set is True
+
+
+def test_bulk_edit_only_touches_fields_you_changed(client, db_session):
+    """Setting Format must not disturb visibility (every field defaults to keep)."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    e = _bulk_entry(db_session, user, medium="physical", hidden=True, n=3)
+
+    client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "medium": "digital", "is_hidden": ""})
+    db_session.refresh(e)
+    assert e.medium == "digital"
+    assert e.is_hidden is True  # untouched
+
+
+def test_bulk_edit_clear_medium_resets_user_set(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    e = _bulk_entry(db_session, user, medium="digital", n=4)
+    e.medium_user_set = True
+    db_session.commit()
+
+    client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "medium": "unknown"})
+    db_session.refresh(e)
+    assert e.medium is None and e.medium_user_set is False
+
+
+def test_bulk_edit_hidden(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    e = _bulk_entry(db_session, user, hidden=False, n=5)
+    client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "is_hidden": "true"})
+    db_session.refresh(e)
+    assert e.is_hidden is True and e.is_hidden_user_set is True
+
+
+def test_bulk_edit_platform_rejected_when_any_entry_is_synced(client, db_session):
+    """Rewriting a synced entry's platform would break its next re-sync match,
+    so the whole request is refused rather than partially applied."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    manual = _bulk_entry(db_session, user, source="manual", n=6)
+    synced = _bulk_entry(db_session, user, source="psn", n=7)
+
+    r = client.post("/library/entries/bulk-edit", data={"ids": f"{manual.id},{synced.id}", "platform": "PS5"})
+    assert r.status_code == 422
+    assert b"manually-added" in r.content
+    db_session.refresh(manual)
+    assert manual.release.platform == "PS4"  # nothing applied
+
+
+def test_bulk_edit_platform_applies_to_all_manual_selection(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    e = _bulk_entry(db_session, user, source="manual", platform="PS4", n=8)
+    r = client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "platform": "PS5"})
+    assert r.status_code == 200
+    db_session.refresh(e)
+    assert e.release.platform == "PS5"
+
+
+def test_bulk_edit_rejects_empty_selection_and_no_changes(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    e = _bulk_entry(db_session, user, n=9)
+    assert client.post("/library/entries/bulk-edit", data={"ids": ""}).status_code == 422
+    assert client.post("/library/entries/bulk-edit", data={"ids": str(e.id)}).status_code == 422
+
+
+def test_bulk_edit_ignores_other_users_entries(client, db_session):
+    _signup_and_login(client, username="alice")
+    alice = db_session.query(models.User).filter_by(username="alice").first()
+    theirs = _bulk_entry(db_session, alice, n=10)
+    _signup_and_login(client, username="bob")
+    r = client.post("/library/entries/bulk-edit", data={"ids": str(theirs.id), "medium": "digital"})
+    assert r.status_code == 404
+    db_session.refresh(theirs)
+    assert theirs.medium is None
