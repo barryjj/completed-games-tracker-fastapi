@@ -609,6 +609,14 @@ def _parse_played_at(value: str | None) -> datetime.datetime | None:
         return None
 
 
+def medium_for_item(item: dict) -> str:
+    """How this PSN copy is owned. Presence in the purchased feed means a
+    digital entitlement — owned outright or through the PS Plus catalog, both
+    downloads. Trophy/played history with no purchase behind it is the disc
+    signature (same reasoning the played-only review uses for service='other')."""
+    return "digital" if "purchased" in (item.get("sources") or []) else "physical"
+
+
 def is_played_only(item: dict) -> bool:
     """Activity-history rows with no purchased/trophy backing — the mixed bag
     of disc copies, demos, friend-pass sessions, and launch-and-quit noise.
@@ -777,6 +785,7 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
                 playtime_minutes=playtime or 0,
                 last_played_at=last_played,
                 import_source="psn_import",
+                medium=medium_for_item(item),
             )
         )
         return "added"
@@ -784,6 +793,8 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
         entry.playtime_minutes = playtime
     if last_played is not None:
         entry.last_played_at = last_played
+    if not entry.medium_user_set:
+        entry.medium = medium_for_item(item)
     entry.updated_at = datetime.datetime.now(datetime.UTC)
     return "updated"
 

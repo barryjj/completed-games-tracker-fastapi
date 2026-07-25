@@ -24,6 +24,7 @@ from .pages_common import (
     _base_ctx,
     _build_detail_pane_visuals,
     _build_lib_query,
+    _extract_format_meta,
     _extract_igdb_meta,
     _extract_psn_store_meta,
     _extract_steam_meta,
@@ -469,6 +470,7 @@ def edit_library_entry(
     parent_game_id: int | None = Form(None),
     igdb_game_id: int | None = Form(None),
     platform: str = Form(""),
+    medium: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -536,6 +538,17 @@ def edit_library_entry(
     else:
         game.parent_id = None
     game.parent_id_user_set = True
+
+    # Format (digital/physical) is per-copy, so it lives on the entry. Only flag
+    # it user-set when a real value is chosen — picking "Unknown" clears the
+    # override and lets the importers' inference apply again on the next sync.
+    medium = medium.strip()
+    if medium in models.MEDIUMS:
+        entry.medium = medium
+        entry.medium_user_set = True
+    elif medium == "":
+        entry.medium = None
+        entry.medium_user_set = False
 
     # IGDB link — only for fully-manual games (never overwrite a sync'd game's ID).
     if igdb_game_id and is_fully_manual:
@@ -891,6 +904,7 @@ def library_entry_detail(
             "steam_meta": _extract_steam_meta(appdetails),
             "igdb_meta": _extract_igdb_meta(entry.release),
             "psn_meta": _extract_psn_store_meta(entry.release),
+            "format_meta": _extract_format_meta(entry),
             "child_entries": child_entries,
             "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
             "current_user": current_user,

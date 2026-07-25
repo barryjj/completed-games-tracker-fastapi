@@ -358,6 +358,42 @@ def _extract_psn_store_meta(release: "models.GameRelease") -> dict:
     }
 
 
+# Subscription services a copy can come from. Owned copies get no badge; a
+# digital copy you only have through a sub gets one. Keyed by service id so
+# Nintendo Switch Online / Game Pass drop in as data, not new render logic.
+SUBSCRIPTION_SERVICES = {
+    "ps_plus": {"label": "PS Plus", "icon": "ps_plus"},
+}
+
+
+def _entitlement_service(release) -> dict | None:
+    """The subscription this copy came from, or None when it's owned outright.
+    Detection is per-source: PSN marks catalog titles with membership=PS_PLUS."""
+    if release.source == "psn" and (release.raw_data or {}).get("membership") == "PS_PLUS":
+        return SUBSCRIPTION_SERVICES["ps_plus"]
+    return None
+
+
+def _extract_format_meta(entry) -> dict:
+    """The detail pane's Format line — two independent axes (#164):
+
+    format  — how the copy is owned: "Digital", or the platform's physical
+              media word ("Disc" / "Cartridge" / "UMD", plain "Physical" when
+              the platform has no media_type). None when unknown, so the row
+              is skipped entirely.
+    service — the subscription it came from (PS Plus today), rendered as a
+              small badge beside the format. None for owned copies.
+    """
+    release = entry.release
+    if entry.medium == "digital":
+        label = "Digital"
+    elif entry.medium == "physical":
+        label = models.physical_media_label(release.platform_obj)
+    else:
+        label = None
+    return {"format": label, "service": _entitlement_service(release)}
+
+
 _STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps"
 
 

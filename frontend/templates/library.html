@@ -176,6 +176,17 @@
             <label class="form-label">Display name <span class="text-secondary fw-normal">(what shows in the library)</span></label>
             <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off">
           </div>
+          {# Format is a property of THIS copy, not the game. The physical word
+             (Disc / Cartridge / UMD) is derived from the platform's media_type,
+             so the user only picks digital vs physical. #}
+          <div class="mb-3">
+            <label class="form-label" for="edit-medium">Format</label>
+            <select class="form-select" name="medium" id="edit-medium">
+              <option value="">Unknown</option>
+              <option value="digital">Digital</option>
+              <option value="physical">Physical</option>
+            </select>
+          </div>
           {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
           {# IGDB link section — only shown for manual entries by editLibraryEntry(). #}
           <div class="mb-3" id="edit-igdb-section" hidden>
@@ -679,6 +690,7 @@ function updateEditParentRows() {
 function editLibraryEntry(ds) {
   _editEntryId = ds.entryId;
   var isManual = ds.source === 'manual';
+  document.getElementById('edit-medium').value = ds.medium || '';
 
   // Imported entries (Steam/PSN/etc.): hide the title field + the "same as
   // title" checkbox entirely. The canonical title is what the platform's
@@ -812,6 +824,9 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
   }
   body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
   body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
+  // Format (digital/physical) — always sent, including empty, so choosing
+  // "Unknown" clears an override rather than silently keeping the old value.
+  body.append('medium', document.getElementById('edit-medium').value);
 
   // Pick the parent from the hidden release-id input (set by selectEditParent
   // or pre-filled from data attributes when the modal opened).

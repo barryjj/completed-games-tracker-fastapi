@@ -1,0 +1,23 @@
+{# Subscription-service badge for the detail pane's Format line (#164).
+   Rendered only when a copy is NOT owned outright — i.e. it's yours through a
+   subscription. Expects `service` = {label, icon} from SUBSCRIPTION_SERVICES.
+   New services (Nintendo Switch Online, Game Pass) add an icon branch here and
+   an entry in that dict; no other render logic changes.
+   Icons are original inline SVG, matching the Steam/PlayStation card glyphs. #}
+<span class="cgt-service-badge" title="{{ service.label }}">
+  {% if service.icon == "ps_plus" %}
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 58" width="15" height="15" aria-hidden="true" style="flex-shrink:0;">
+    <g transform="rotate(-12 28 28)">
+      <path fill="#a66a18" d="M22 7 H38 V23 H54 V39 H38 V55 H22 V39 H6 V23 H22 Z"/>
+      <path fill="#f6c51c" d="M20 4 H36 V20 H52 V36 H36 V52 H20 V36 H4 V20 H20 Z"/>
+      <g fill="#6a420d" fill-rule="evenodd">
+        <path d="M28 6.5 L34.5 17 L21.5 17 Z M28 10.2 L31.3 15 L24.7 15 Z"/>
+        <path d="M49.5 28 A5.5 5.5 0 1 1 38.5 28 A5.5 5.5 0 1 1 49.5 28 Z M47 28 A3 3 0 1 0 41 28 A3 3 0 1 0 47 28 Z"/>
+        <path d="M6.5 22.5 H17.5 V33.5 H6.5 Z M9.2 25.2 H14.8 V30.8 H9.2 Z"/>
+        <path d="M31.47 38.27 L33.73 40.53 L30.26 44 L33.73 47.47 L31.47 49.73 L28 46.26 L24.53 49.73 L22.27 47.47 L25.74 44 L22.27 40.53 L24.53 38.27 L28 41.74 Z"/>
+      </g>
+    </g>
+  </svg>
+  {% endif %}
+  {{ service.label }}
+</span>
