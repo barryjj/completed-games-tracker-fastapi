@@ -868,3 +868,156 @@ def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
         asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
 
     assert not any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
+
+
+# ─── cross-play platform resolution (#163) ─────────────────────────────────
+
+
+def test_platform_candidates_ranks_and_drops_pspc():
+    assert psn.platform_candidates({"platform": "PS3,PSVITA"}) == ["PS3", "PSVITA"]
+    assert psn.platform_candidates({"platform": "PSVITA,PS4"}) == ["PS4", "PSVITA"]
+    # PSPC is PSN's PC integration, never a PlayStation platform.
+    assert psn.platform_candidates({"platform": "PS5,PSPC"}) == ["PS5"]
+    assert psn.platform_candidates({"platform": ""}) == []
+
+
+def test_resolve_platform_single_is_confident():
+    p, _, confident = psn.resolve_platform_choice({"platform": "PS4"})
+    assert (p, confident) == ("PS4", True)
+
+
+def test_resolve_platform_uses_substantial_playtime():
+    """73h on PS5 beats a 14min PS4 cross-gen touch, and it's confident."""
+    item = {"platform": "PS4,PS5", "playByCategory": {"ps5_native_game": 4380, "ps4_game": 14}}
+    p, reason, confident = psn.resolve_platform_choice(item)
+    assert p == "PS5" and confident is True
+    assert "PS5" in reason
+
+
+def test_resolve_platform_two_substantial_is_a_suggestion():
+    """Played both for real — pick the bigger, but make the user confirm."""
+    item = {"platform": "PS4,PS5", "playByCategory": {"ps5_native_game": 1700, "ps4_game": 3400}}
+    p, _, confident = psn.resolve_platform_choice(item)
+    assert p == "PS4" and confident is False
+
+
+def test_resolve_platform_trivial_playtime_is_not_confident():
+    item = {"platform": "PSVITA,PS4", "playByCategory": {"ps4_game": 5}}
+    p, reason, confident = psn.resolve_platform_choice(item)
+    assert p == "PS4" and confident is False
+    assert "5m" in reason
+
+
+def test_resolve_platform_trophy_only_suggests_oldest():
+    """Shinovi Versus: PS3,PSVITA with no play history. The modern purchased
+    feed doesn't cover that era, so the handheld copy is the better guess — but
+    it stays a suggestion, never applied silently."""
+    item = {"platform": "PS3,PSVITA", "sources": ["titles"]}
+    p, reason, confident = psn.resolve_platform_choice(item)
+    assert p == "PSVITA" and confident is False
+    assert "No play history" in reason
+
+
+def test_platform_for_item_prefers_a_user_decision(db_session):
+    _seed_platforms(db_session)
+    vita = models.Platform(name="PSVITA", display_name="PlayStation Vita")
+    db_session.add(vita)
+    db_session.commit()
+    item = {"platform": "PS3,PSVITA", "platformDecision": "PS3"}
+    assert psn.platform_for_item(db_session, item) == models.resolve_platform_id(db_session, "PS3")
+
+
+def test_platform_for_item_never_returns_pspc(db_session):
+    _seed_platforms(db_session)
+    # A PC-only trophy set has no PlayStation platform to resolve to.
+    assert psn.platform_for_item(db_session, {"platform": "PSPC"}) is None
+
+
+def test_merge_tracks_play_minutes_per_category():
+    titles = [{"npCommunicationId": "NPWR1_00", "trophyTitleName": "X", "trophyTitlePlatform": "PS4,PS5"}]
+    played = [
+        {"npCommunicationId": "NPWR1_00", "name": "X", "category": "ps5_native_game", "playDuration": "PT10H"},
+        {"npCommunicationId": "NPWR1_00", "name": "X", "category": "ps4_game", "playDuration": "PT30M"},
+    ]
+    item = psn.merge_library([], titles, played)["merged"][0]
+    assert item["playByCategory"] == {"ps5_native_game": 600, "ps4_game": 30}
+    assert psn.played_minutes_by_platform(item) == {"PS5": 600, "PS4": 30}
+
+
+def test_platform_review_rows_only_lists_the_ambiguous(db_session, monkeypatch, tmp_path):
+    """Confident resolutions are applied silently; only genuine guesses surface."""
+    merged = [
+        {  # confident — substantial playtime on one platform
+            "npCommunicationId": "NPWR_CONF_00",
+            "name": "Confident",
+            "displayName": "Confident",
+            "platform": "PS4,PS5",
+            "playByCategory": {"ps5_native_game": 600},
+            "sources": ["titles", "played"],
+        },
+        {  # ambiguous — trophy-only cross-play
+            "npCommunicationId": "NPWR_AMB_00",
+            "name": "Shinovi",
+            "displayName": "Shinovi",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        },
+        {  # single platform — never in review
+            "npCommunicationId": "NPWR_ONE_00",
+            "name": "Single",
+            "displayName": "Single",
+            "platform": "PS4",
+            "sources": ["titles"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    rows = psn.platform_review_rows(db_session, 1)
+    assert [r["name"] for r in rows] == ["Shinovi"]
+    assert rows[0]["candidates"] == ["PS3", "PSVITA"]
+    assert rows[0]["suggested"] == "PSVITA"
+
+
+def test_record_platform_decisions_validates_against_the_trophy_set(monkeypatch, tmp_path):
+    merged = [{"npCommunicationId": "NPWR_A_00", "name": "A", "displayName": "A", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    # A platform the set doesn't cover is rejected.
+    assert psn.record_platform_decisions(1, {"NPWR_A_00": "PS5"}) == 0
+    # Unknown ids are ignored.
+    assert psn.record_platform_decisions(1, {"NOPE": "PS3"}) == 0
+    # A valid choice is stored.
+    assert psn.record_platform_decisions(1, {"NPWR_A_00": "PS3"}) == 1
+    assert psn.load_snapshot(1)["platform_decisions"]["NPWR_A_00"] == "PS3"
+
+
+def test_import_applies_a_reviewed_platform(db_session, monkeypatch, tmp_path):
+    """The decision beats the heuristic: suggested PSVITA, user chose PS3."""
+    _seed_platforms(db_session)
+    user = models.User(name="p", username="p", password_hash="x", api_token="ptok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [{"npCommunicationId": "NPWR_D_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    psn.record_platform_decisions(user.id, {"NPWR_D_00": "PS3"})
+
+    psn.import_snapshot(db_session, user)
+    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_D_00").one()
+    assert rel.platform_id == models.resolve_platform_id(db_session, "PS3")
+
+
+def test_platform_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [{"npCommunicationId": "NPWR_E_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    r = client.post("/integrations/psn/platform-review", data={"choices": "NPWR_E_00=PS3"})
+    assert r.status_code == 200
+    assert b"Recorded 1 platform choice" in r.content
+    assert psn.load_snapshot(user.id)["platform_decisions"]["NPWR_E_00"] == "PS3"
+
+    # Garbage in → a clear error, nothing stored.
+    r = client.post("/integrations/psn/platform-review", data={"choices": ""})
+    assert b"No platform choices" in r.content
