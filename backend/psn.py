@@ -480,6 +480,14 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
         if p.get("category"):
             _cats.append(p["category"])
         merged["playCategories"] = sorted(set(_cats))
+        # Minutes per play category. The merged playDuration is a single total,
+        # but disambiguating a cross-play trophy set needs to know WHERE the
+        # time went — 73h on PS5 vs a 14min PS4 cross-gen touch is the whole
+        # signal (#163).
+        _by_cat = dict((lib.get(key) or existing or {}).get("playByCategory") or {})
+        if p.get("category"):
+            _by_cat[p["category"]] = _by_cat.get(p["category"], 0) + (duration_to_minutes(p.get("playDuration")) or 0)
+        merged["playByCategory"] = _by_cat
         merged["normalizedName"] = _normalized_name(merged.get("name"))
         merged["displayName"] = _display_name(merged.get("name"))
         lib[key] = merged
@@ -689,20 +697,107 @@ def played_only_suggestion(item: dict) -> tuple[str, str]:
     return "skip", f"$0-entitlement pattern (demo/friend-pass), {minutes // 60}h{minutes % 60:02d}m played"
 
 
+# ─── Cross-play platform resolution (#163) ─────────────────────────────────
+# A shared trophy set reports every platform it covers ("PS3,PSVITA"), and the
+# trophies alone never say which one you actually played. Taking the first
+# token — what the merge used to do — tagged Shinovi Versus as PS3, a game that
+# never had a PS3 release.
+
+# Newest first. PSPC is deliberately absent: it's PSN's PC integration (a Steam
+# copy), never a PlayStation platform.
+_PS_PLATFORM_RANK = ["PS5", "PS4", "PS3", "PSVITA", "PSP"]
+
+# Played-feed categories -> platform token.
+_CATEGORY_PLATFORM = {"ps5": "PS5", "ps4": "PS4", "ps3": "PS3", "pspc": "PSPC"}
+
+# Below this, a play record reads as a cross-gen upgrade touch or a launch-and-
+# quit rather than "this is the version I played" (Forbidden West: 73h on PS5
+# vs 14min on PS4).
+_SUBSTANTIAL_MINUTES = 60
+
+
+def platform_candidates(item: dict) -> list[str]:
+    """PlayStation platforms a trophy set covers, newest first. PSPC dropped —
+    that's a PC copy, handled separately by the Steam-duplicate skip."""
+    raw = str(item.get("platform") or "")
+    toks = {t.strip().upper() for t in raw.split(",") if t.strip()}
+    toks.discard("PSPC")
+    ranked = [p for p in _PS_PLATFORM_RANK if p in toks]
+    return ranked + sorted(toks - set(ranked))
+
+
+def _platform_of_category(category: str) -> str | None:
+    c = str(category or "").lower()
+    for prefix, platform in _CATEGORY_PLATFORM.items():
+        if c.startswith(prefix):
+            return platform
+    return None
+
+
+def played_minutes_by_platform(item: dict) -> dict[str, int]:
+    """Minutes played per platform, derived from the play records' categories."""
+    out: dict[str, int] = {}
+    for category, minutes in (item.get("playByCategory") or {}).items():
+        platform = _platform_of_category(category)
+        if platform:
+            out[platform] = out.get(platform, 0) + (minutes or 0)
+    return out
+
+
+def resolve_platform_choice(item: dict) -> tuple[str | None, str, bool]:
+    """(platform, reason, confident) for a merged item.
+
+    Confident results are applied on import; anything else is a *suggestion*
+    the user confirms in the review list, because guessing wrong here creates a
+    library entry on a console you never owned.
+    """
+    candidates = platform_candidates(item)
+    if not candidates:
+        return None, "No PlayStation platform reported", False
+    if len(candidates) == 1:
+        return candidates[0], "Only one platform on this trophy set", True
+
+    played = {p: m for p, m in played_minutes_by_platform(item).items() if p in candidates}
+    substantial = {p: m for p, m in played.items() if m >= _SUBSTANTIAL_MINUTES}
+
+    if len(substantial) == 1:
+        platform, minutes = next(iter(substantial.items()))
+        return platform, f"Played {minutes // 60}h on {platform}", True
+    if len(substantial) > 1:
+        platform = max(substantial, key=lambda p: (substantial[p], -_PS_PLATFORM_RANK.index(p) if p in _PS_PLATFORM_RANK else 0))
+        others = ", ".join(f"{p} {substantial[p] // 60}h" for p in substantial if p != platform)
+        return platform, f"Most played on {platform} ({substantial[platform] // 60}h vs {others})", False
+    if played:
+        # Only trivial playtime — enough to say WHERE, not enough to be sure.
+        platform = max(played, key=lambda p: played[p])
+        return platform, f"Only {played[platform]}m played, on {platform}", False
+
+    # Trophy-only. The modern purchased feed doesn't cover PS3/Vita-era
+    # purchases, so a set spanning that era with no purchase record is almost
+    # certainly the handheld/older copy — but it's a guess either way.
+    oldest = candidates[-1]
+    return oldest, f"No play history — trophy set covers {', '.join(candidates)}", False
+
+
 def platform_for_item(db: Session, item: dict) -> int | None:
-    """Merged item → platform row id. Falls back to the played category
-    (played-only rows carry no platform field). Multi-platform trophy strings
-    ('PS5,PSPC') resolve on their first segment."""
-    name = item.get("platform")
-    if not name:
-        category = str(item.get("category") or "").lower()
-        for prefix in ("ps5", "ps4", "ps3"):
-            if category.startswith(prefix):
-                name = prefix.upper()
-                break
-    if not name:
+    """Merged item → platform row id.
+
+    Cross-play trophy sets ("PS3,PSVITA") are resolved by play history rather
+    than by taking the first token, which used to mislabel games (#163). An
+    explicit user decision from the review list always wins.
+    """
+    chosen = item.get("platformDecision")
+    if not chosen:
+        candidates = platform_candidates(item)
+        if candidates:
+            chosen = resolve_platform_choice(item)[0]
+    if not chosen:
+        # Played-only rows carry no trophy platform string — fall back to the
+        # played category.
+        chosen = _platform_of_category(item.get("category") or "")
+    if not chosen or chosen == "PSPC":
         return None
-    return models.resolve_platform_id(db, str(name).split(",")[0])
+    return models.resolve_platform_id(db, chosen)
 
 
 def _platform_label(db: Session, platform_id: int | None, item: dict) -> str:
