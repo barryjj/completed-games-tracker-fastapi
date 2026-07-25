@@ -924,10 +924,15 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     skipped_pc_dupe = 0
     played_only = 0
     steam_keys = _steam_title_keys(db, user.id)
+    platform_decisions = snap.get("platform_decisions", {})
     for item in snap.get("merged", []):
         if is_played_only(item):
             played_only += 1
             continue
+        # A reviewed platform choice overrides the heuristic (#163).
+        decided = platform_decisions.get(external_id_for(item))
+        if decided:
+            item = {**item, "platformDecision": decided}
         # Belt-and-suspenders: the non-game filter runs at fetch time, but a
         # snapshot taken before the filter was fixed can still hold a beta/demo
         # — never import one regardless of when the snapshot was built.
@@ -1006,6 +1011,67 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
             }
         )
     return rows
+
+
+def platform_review_rows(db: Session, user_id: int) -> list[dict]:
+    """Cross-play items whose platform couldn't be settled from play history.
+
+    Only the genuinely ambiguous ones surface — anything resolve_platform_choice
+    is confident about is applied on import without bothering the user.
+    """
+    snap = load_snapshot(user_id)
+    if not snap:
+        return []
+    decisions = snap.get("platform_decisions", {})
+    rows = []
+    for item in snap.get("merged", []):
+        if is_played_only(item):
+            continue
+        candidates = platform_candidates(item)
+        if len(candidates) < 2:
+            continue
+        suggested, reason, confident = resolve_platform_choice(item)
+        if confident:
+            continue
+        ext_id = external_id_for(item)
+        rows.append(
+            {
+                "external_id": ext_id,
+                "name": item.get("displayName") or item.get("name"),
+                "candidates": candidates,
+                "suggested": suggested,
+                "reason": reason,
+                "minutes": played_minutes_by_platform(item),
+                "trophy_progress": item.get("trophyProgress"),
+                "decision": decisions.get(ext_id),
+            }
+        )
+    rows.sort(key=lambda r: (r["decision"] is not None, (r["name"] or "").casefold()))
+    return rows
+
+
+def record_platform_decisions(user_id: int, decisions: dict[str, str]) -> int:
+    """Persist chosen platforms onto the snapshot so the next import applies
+    them. Returns how many were recorded. Only platforms the item's own trophy
+    set actually covers are accepted."""
+    snap = load_snapshot(user_id)
+    if not snap:
+        raise ValueError("No PSN snapshot found.")
+    by_ext = {external_id_for(i): i for i in snap.get("merged", [])}
+    store = snap.setdefault("platform_decisions", {})
+    written = 0
+    for ext_id, platform in decisions.items():
+        item = by_ext.get(ext_id)
+        if item is None:
+            continue
+        if platform not in platform_candidates(item):
+            continue
+        store[ext_id] = platform
+        written += 1
+    if written:
+        with open(snapshot_path(user_id), "w") as f:
+            json.dump(snap, f)
+    return written
 
 
 def _record_decision(user_id: int, external_id: str, decision: dict) -> None:

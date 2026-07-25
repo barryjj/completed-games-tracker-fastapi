@@ -412,12 +412,52 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
             "snapshot": snap,
             "report": (snap or {}).get("report"),
             "played_only": psn.played_only_rows(db, current_user.id),
+            "platform_review": psn.platform_review_rows(db, current_user.id),
             "flash": flash,
             "flash_error": error,
         },
     )
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@router.post("/psn/platform-review")
+def psn_platform_review_save(
+    request: Request,
+    choices: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Record reviewed platforms for cross-play trophy sets (#163).
+
+    `choices` is a compact "externalId=PLATFORM" list, newline- or
+    comma-separated, so one form post covers a single row or a bulk apply.
+    Choices are validated against each item's own trophy set, then stored on
+    the snapshot for the next import to apply.
+    """
+    parsed: dict[str, str] = {}
+    for part in choices.replace("\n", ",").split(","):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        ext_id, _, platform = part.partition("=")
+        ext_id, platform = ext_id.strip(), platform.strip().upper()
+        if ext_id and platform:
+            parsed[ext_id] = platform
+    if not parsed:
+        return _psn_report_response(request, db, current_user, error="No platform choices submitted.")
+    try:
+        written = psn.record_platform_decisions(current_user.id, parsed)
+    except ValueError as e:
+        return _psn_report_response(request, db, current_user, error=str(e))
+    if not written:
+        return _psn_report_response(request, db, current_user, error="No valid choices — a platform must be one the trophy set covers.")
+    return _psn_report_response(
+        request,
+        db,
+        current_user,
+        flash=f"Recorded {written} platform choice{'s' if written != 1 else ''} — run Import to apply.",
+    )
 
 
 @router.post("/psn/played-only/{external_id}/import")

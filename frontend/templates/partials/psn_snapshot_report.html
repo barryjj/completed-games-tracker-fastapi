@@ -43,6 +43,55 @@
     >Import to Library</button>
   </div>
 
+  {% if platform_review %}
+  {# Cross-play trophy sets PSN reports across several platforms (#163). Only
+     the ones play history couldn't settle appear here — confident matches are
+     applied on import silently. Choosing here records the decision on the
+     snapshot; the next Import applies it. #}
+  <div class="cgt-detail-block mb-3">
+    <h6 class="cgt-detail-block__heading">
+      Cross-play platforms &mdash; confirm which you owned
+      <span class="text-secondary fw-normal ms-1">({{ platform_review | length }})</span>
+    </h6>
+    <p class="text-secondary mb-2"><small>These trophy sets cover several platforms and PSN doesn&rsquo;t say which one you played. The suggestion is pre-selected &mdash; adjust any that are wrong, then save.</small></p>
+    <form id="psn-platform-review-form"
+          hx-post="/integrations/psn/platform-review"
+          hx-target="#psn-snapshot-report"
+          hx-swap="outerHTML"
+          hx-vals='js:{choices: cgtPsnPlatformChoices()}'>
+      <div class="table-responsive">
+        <table class="table table-sm small mb-0 align-middle">
+          <tbody>
+            {% for row in platform_review %}
+            <tr>
+              <td>
+                {{ row.name }}
+                {% if row.decision %}<span class="tag-badge tag-in-collection ms-1">Saved: {{ row.decision }}</span>{% endif %}
+                <div class="text-secondary"><small>{{ row.reason }}</small></div>
+              </td>
+              <td style="width:12rem;">
+                <select class="form-select form-select-sm cgt-psn-platform-choice"
+                        data-external-id="{{ row.external_id }}">
+                  {% for cand in row.candidates %}
+                  <option value="{{ cand }}" {% if (row.decision or row.suggested) == cand %}selected{% endif %}>
+                    {{ cand }}{% if row.minutes.get(cand) %} &middot; {{ row.minutes[cand] // 60 }}h{% endif %}
+                  </option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-2 d-flex align-items-center gap-2">
+        <button type="submit" class="btn btn-sm btn-primary" hx-disabled-elt="this">Save platform choices</button>
+        <span class="text-secondary"><small>Then run Import to apply them.</small></span>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
   {% if played_only %}
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">Played-only activity — your call per row</h6>

@@ -608,6 +608,16 @@ document.addEventListener('pointerover', function (e) {
   });
 })();
 
+// ─── PSN cross-play platform review (#163) ────────────────────────────────
+// Collects the per-row platform selects into the compact "extId=PLATFORM"
+// list the endpoint parses. Read at request time via hx-vals js:, so it picks
+// up whatever the selects currently hold after an HTMX re-render.
+window.cgtPsnPlatformChoices = function () {
+  return Array.from(document.querySelectorAll('.cgt-psn-platform-choice'))
+    .map(function (sel) { return sel.dataset.externalId + '=' + sel.value; })
+    .join(',');
+};
+
 // ─── External links in the desktop shell ──────────────────────────────────
 // WKWebView has no popup handler, so target="_blank" links (store, IGDB,
 // Metacritic, official site) silently do nothing inside the app, and a plain
