@@ -24,27 +24,6 @@ CTP_ACCENTS = (
     "lavender",
 )
 
-# Physical media a platform can ship on, and the word shown for a physical copy.
-# NULL/unset on a platform means "physical, but we don't know what kind" — the
-# UI falls back to a plain "Physical" rather than guessing wrong.
-MEDIA_TYPES = {
-    "disc": "Disc",
-    "cartridge": "Cartridge",
-    "umd": "UMD",
-    "floppy": "Floppy",
-}
-
-# How a copy is owned. NULL = unknown (nothing rendered).
-MEDIUMS = ("digital", "physical")
-
-
-def physical_media_label(platform) -> str:
-    """The word for a physical copy on this platform — 'Disc' for PS4,
-    'Cartridge' for Vita. Falls back to plain 'Physical' when the platform has
-    no media_type (digital-only, custom, or not yet seeded)."""
-    media = getattr(platform, "media_type", None) if platform is not None else None
-    return MEDIA_TYPES.get(media or "", "Physical")
-
 
 def _platform_heuristic_css(name: str) -> str:
     """Return a tag-platform-* CSS class from a raw platform name string.
@@ -209,12 +188,6 @@ class Platform(Base):
     name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     display_name: Mapped[str | None] = mapped_column(String, nullable=True)
     color: Mapped[str | None] = mapped_column(String, nullable=True)
-    # Physical media this platform shipped on ("disc", "cartridge", "umd",
-    # "floppy"). Drives the word shown for a physical copy in the detail pane's
-    # Format line — a PS4 copy reads "Disc", a Vita copy "Cartridge". NULL for
-    # digital-only platforms (Steam, mobile, VR storefronts) and for anything
-    # unseeded, where the pane falls back to a plain "Physical".
-    media_type: Mapped[str | None] = mapped_column(String, nullable=True)
     family_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("platform_families.id"), nullable=True)
     is_custom: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
@@ -550,13 +523,6 @@ class UserLibraryEntry(Base):
     # True when the user explicitly toggled is_hidden — the auto-hide heuristic
     # must not touch this entry. Same pattern as the *_user_set flags on Game.
     is_hidden_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # How this copy is owned: 'digital' | 'physical' | NULL (unknown). A
-    # property of the copy, not the game — the same title can be a disc on one
-    # platform and a download on another. Inferred on import (Steam is always
-    # digital; PSN infers from which feeds an entry appears in) and overridable
-    # in the edit modal, where medium_user_set then protects it from resyncs.
-    medium: Mapped[str | None] = mapped_column(String, nullable=True)
-    medium_user_set: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Detail-pane hero logo placement — preset anchor ('top-left', 'top-center',
     # 'top-right', 'center', 'bottom-center', 'bottom-right') or 'hidden'.
     # NULL = default bottom-left. Cosmetic, per entry.

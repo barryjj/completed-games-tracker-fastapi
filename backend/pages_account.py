@@ -60,7 +60,6 @@ def settings_page(
             "current_user": current_user,
             "platforms": platforms,
             "ctp_accents": models.CTP_ACCENTS,
-            "media_types": models.MEDIA_TYPES,
             "has_library_platforms": has_library_platforms,
             **_base_ctx(db, current_user),
         },
@@ -114,7 +113,7 @@ def cancel_platform_edit(
     return templates.TemplateResponse(
         request=request,
         name="partials/platform_row.html",
-        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS, "media_types": models.MEDIA_TYPES},
+        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS},
     )
 
 
@@ -137,7 +136,7 @@ def edit_platform_row(
     return templates.TemplateResponse(
         request=request,
         name="partials/platform_row_edit.html",
-        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS, "media_types": models.MEDIA_TYPES},
+        context={"platform": platform, "ctp_accents": models.CTP_ACCENTS},
     )
 
 
@@ -147,12 +146,10 @@ def update_platform(
     platform_id: int,
     display_name: str = Form(""),
     color: str = Form(""),
-    media_type: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Update a platform's display_name, color and/or physical media type.
-    Returns the updated row partial."""
+    """Update a platform's display_name and/or color. Returns the updated row partial."""
     platform = (
         db.query(models.Platform)
         .options(joinedload(models.Platform.aliases), joinedload(models.Platform.family))
@@ -168,11 +165,6 @@ def update_platform(
         platform.color = color
     elif color == "":
         platform.color = None
-    media_type = media_type.strip()
-    if media_type in models.MEDIA_TYPES:
-        platform.media_type = media_type
-    elif media_type == "":
-        platform.media_type = None
     db.commit()
     db.refresh(platform)
     in_library = (
@@ -193,7 +185,6 @@ def update_platform(
         context={
             "platform": platform,
             "ctp_accents": models.CTP_ACCENTS,
-            "media_types": models.MEDIA_TYPES,
         },
     )
 

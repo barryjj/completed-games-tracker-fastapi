@@ -60,3 +60,4 @@ data/
 
 # Editor/tool tilde backups
 *~
+backend/psn_artwork_backup.json

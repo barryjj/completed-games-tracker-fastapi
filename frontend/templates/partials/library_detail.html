@@ -241,19 +241,14 @@
       <dd>{{ entry.playtime_minutes | playtime_human }}</dd>
       {% endif %}
 
-      {% if format_meta.format %}
-      {# Two axes (#164): how the copy is owned (Digital, or the platform's
-         physical media word — Disc / Cartridge / UMD), and, when it isn't
-         owned outright, the subscription it came from as a small badge. #}
-      <dt>Format</dt>
+      {% if entitlement_meta.service %}
+      {# Ownership vs subscription — a copy you only have through a service
+         (#164). Owned copies show nothing. Digital-vs-physical was tried and
+         removed: PSN can't see discs, so it was unknowable and unused. #}
+      <dt>Access</dt>
       <dd>
-        <span class="d-inline-flex align-items-center gap-2 flex-wrap">
-          {{ format_meta.format }}
-          {% if format_meta.service %}
-          {% set service = format_meta.service %}
-          {% include "partials/_service_badge.html" %}
-          {% endif %}
-        </span>
+        {% set service = entitlement_meta.service %}
+        {% include "partials/_service_badge.html" %}
       </dd>
       {% endif %}
 
@@ -480,7 +475,6 @@
              data-source="{{ release.source }}"
              data-igdb-id="{{ game.igdb_id or '' }}"
              data-platform="{{ release.display_platform | e }}"
-             data-medium="{{ entry.medium or '' }}"
              data-label="{{ game.display_title | e }}">Edit game</a></li>
       <li><hr class="dropdown-divider"></li>
       {% if release.source == "steam" %}

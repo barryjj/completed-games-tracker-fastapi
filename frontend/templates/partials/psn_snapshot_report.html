@@ -43,52 +43,70 @@
     >Import to Library</button>
   </div>
 
-  {% if platform_review %}
-  {# Cross-play trophy sets PSN reports across several platforms (#163). Only
-     the ones play history couldn't settle appear here — confident matches are
-     applied on import silently. Choosing here records the decision on the
-     snapshot; the next Import applies it. #}
+  {% if import_review %}
+  {# Cross-play trophy sets (#163). PSN reports one set covering several
+     platforms and never says which you own — and with cross-buy the answer is
+     often more than one (Shovel Knight: Treasure Trove is a single
+     PS3,PSVITA,PS4 set). So each platform is its own checkbox with its own
+     format: you might have the PS4 disc and the Vita download. Play history
+     pre-checks what it can defend. Unchecking everything skips the game. #}
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">
-      Cross-play platforms &mdash; confirm which you owned
-      <span class="text-secondary fw-normal ms-1">({{ platform_review | length }})</span>
+      Cross-play games &mdash; choose what to create
+      <span class="text-secondary fw-normal ms-1">({{ import_review | length }})</span>
     </h6>
-    <p class="text-secondary mb-2"><small>These trophy sets cover several platforms and PSN doesn&rsquo;t say which one you played. The suggestion is pre-selected &mdash; adjust any that are wrong, then save.</small></p>
-    <form id="psn-platform-review-form"
-          hx-post="/integrations/psn/platform-review"
-          hx-target="#psn-snapshot-report"
-          hx-swap="outerHTML"
-          hx-vals='js:{choices: cgtPsnPlatformChoices()}'>
-      <div class="table-responsive">
-        <table class="table table-sm small mb-0 align-middle">
-          <tbody>
-            {% for row in platform_review %}
-            <tr>
-              <td>
-                {{ row.name }}
-                {% if row.decision %}<span class="tag-badge tag-in-collection ms-1">Saved: {{ row.decision }}</span>{% endif %}
-                <div class="text-secondary"><small>{{ row.reason }}</small></div>
-              </td>
-              <td style="width:12rem;">
-                <select class="form-select form-select-sm cgt-psn-platform-choice"
-                        data-external-id="{{ row.external_id }}">
-                  {% for cand in row.candidates %}
-                  <option value="{{ cand }}" {% if (row.decision or row.suggested) == cand %}selected{% endif %}>
-                    {{ cand }}{% if row.minutes.get(cand) %} &middot; {{ row.minutes[cand] // 60 }}h{% endif %}
-                  </option>
-                  {% endfor %}
-                </select>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+      <p class="text-secondary mb-0"><small>One trophy set, several platforms. Tick every platform you own it on &mdash; these become your library entries. Untick all to skip a game.</small></p>
+      {# List is the baseline view, cards are the roomier presentation on top —
+         same markup either way, the layout is a CSS class. #}
+      <div class="d-flex align-items-center gap-2 flex-shrink-0 flex-wrap">
+      {# With hundreds of rows, per-row clicking is untenable — filter to a
+         platform, then set every visible row's format in one go. #}
+      <select class="form-select form-select-sm" id="cgt-review-filter" style="width:auto;"
+              onchange="cgtPsnReviewFilter()" title="Show only games offering this platform">
+        <option value="">All platforms</option>
+        {% for p in review_platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+      </select>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Review layout">
+        <button type="button" class="btn btn-surface" id="cgt-review-view-list"
+                onclick="cgtPsnReviewView('list')" title="List view">&equiv;</button>
+        <button type="button" class="btn btn-surface" id="cgt-review-view-cards"
+                onclick="cgtPsnReviewView('cards')" title="Card view">&#9638;</button>
       </div>
-      <div class="mt-2 d-flex align-items-center gap-2">
-        <button type="submit" class="btn btn-sm btn-primary" hx-disabled-elt="this">Save platform choices</button>
-        <span class="text-secondary"><small>Then run Import to apply them.</small></span>
       </div>
-    </form>
+    </div>
+    <div class="cgt-review-grid" id="cgt-review-grid">
+      {% for row in import_review %}
+      <div class="cgt-review-card" data-external-id="{{ row.external_id }}">
+        <div class="cgt-review-card__title">
+          {{ row.name }}
+          {% if row.reviewed %}<span class="tag-badge tag-in-collection ms-1">Reviewed</span>{% endif %}
+        </div>
+        <div class="cgt-review-card__reason">{{ row.reason }}</div>
+        {% for opt in row.options %}
+        <div class="cgt-review-option">
+          <div class="form-check mb-0">
+            <input class="form-check-input cgt-review-platform" type="checkbox"
+                   id="rv-{{ row.external_id }}-{{ opt.platform }}"
+                   value="{{ opt.platform }}" {% if opt.selected %}checked{% endif %}>
+            <label class="form-check-label" for="rv-{{ row.external_id }}-{{ opt.platform }}">
+              {{ opt.platform }}{% if opt.minutes %} <span class="text-secondary">&middot; {{ opt.minutes // 60 }}h</span>{% endif %}
+            </label>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </div>
+    <div class="mt-3 d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-sm btn-primary"
+              hx-post="/integrations/psn/import-review"
+              hx-target="#psn-snapshot-report"
+              hx-swap="outerHTML"
+              hx-vals='js:{decisions: cgtPsnReviewDecisions()}'
+              hx-disabled-elt="this">Save choices</button>
+      <span class="text-secondary"><small>Then run Import to create them.</small></span>
+    </div>
   </div>
   {% endif %}
 

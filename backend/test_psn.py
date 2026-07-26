@@ -944,67 +944,95 @@ def test_merge_tracks_play_minutes_per_category():
     assert psn.played_minutes_by_platform(item) == {"PS5": 600, "PS4": 30}
 
 
-def test_platform_review_rows_only_lists_the_ambiguous(db_session, monkeypatch, tmp_path):
-    """Confident resolutions are applied silently; only genuine guesses surface."""
+def test_import_review_rows_lists_only_cross_play_games(db_session, monkeypatch, tmp_path):
+    """Only an ambiguous PLATFORM reaches the review. Anything on a single
+    platform is settled — the import creates it without asking."""
     merged = [
-        {  # confident — substantial playtime on one platform
-            "npCommunicationId": "NPWR_CONF_00",
-            "name": "Confident",
-            "displayName": "Confident",
+        {  # cross-play: played on PS5, but the set also covers PS4
+            "npCommunicationId": "NPWR_X_00",
+            "name": "Cross",
+            "displayName": "Cross",
             "platform": "PS4,PS5",
             "playByCategory": {"ps5_native_game": 600},
             "sources": ["titles", "played"],
         },
-        {  # ambiguous — trophy-only cross-play
-            "npCommunicationId": "NPWR_AMB_00",
-            "name": "Shinovi",
-            "displayName": "Shinovi",
-            "platform": "PS3,PSVITA",
-            "sources": ["titles"],
-        },
-        {  # single platform — never in review
+        {  # single platform, trophy-only — nothing to ask
             "npCommunicationId": "NPWR_ONE_00",
-            "name": "Single",
-            "displayName": "Single",
+            "name": "TrophyOnly",
+            "displayName": "TrophyOnly",
             "platform": "PS4",
             "sources": ["titles"],
         },
+        {  # single platform and purchased — likewise settled
+            "titleId": "CUSA9999_00",
+            "name": "Settled",
+            "displayName": "Settled",
+            "platform": "PS4",
+            "sources": ["purchased"],
+        },
     ]
     _write_snapshot(monkeypatch, tmp_path, 1, merged)
-    rows = psn.platform_review_rows(db_session, 1)
-    assert [r["name"] for r in rows] == ["Shinovi"]
-    assert rows[0]["candidates"] == ["PS3", "PSVITA"]
-    assert rows[0]["suggested"] == "PSVITA"
+    rows = psn.import_review_rows(db_session, 1)
+
+    assert [r["name"] for r in rows] == ["Cross"]
+    options = {o["platform"]: o for o in rows[0]["options"]}
+    assert set(options) == {"PS4", "PS5"}
+    # Play history pre-ticks only the platform it can defend.
+    assert options["PS5"]["selected"] is True
+    assert options["PS4"]["selected"] is False
 
 
-def test_record_platform_decisions_validates_against_the_trophy_set(monkeypatch, tmp_path):
-    merged = [{"npCommunicationId": "NPWR_A_00", "name": "A", "displayName": "A", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+def test_record_entry_decisions_validates_and_allows_multiple(monkeypatch, tmp_path):
+    merged = [{"npCommunicationId": "NPWR_A_00", "name": "A", "displayName": "A", "platform": "PS3,PSVITA,PS4", "sources": ["titles"]}]
     _write_snapshot(monkeypatch, tmp_path, 1, merged)
-    # A platform the set doesn't cover is rejected.
-    assert psn.record_platform_decisions(1, {"NPWR_A_00": "PS5"}) == 0
-    # Unknown ids are ignored.
-    assert psn.record_platform_decisions(1, {"NOPE": "PS3"}) == 0
-    # A valid choice is stored.
-    assert psn.record_platform_decisions(1, {"NPWR_A_00": "PS3"}) == 1
-    assert psn.load_snapshot(1)["platform_decisions"]["NPWR_A_00"] == "PS3"
+    # Cross-buy: several platforms, each with its own format.
+    written = psn.record_entry_decisions(1, {"NPWR_A_00": [{"platform": "PS4"}, {"platform": "PSVITA"}]})
+    assert written == 1
+    stored = psn.load_snapshot(1)["entry_decisions"]["NPWR_A_00"]
+    assert sorted(d["platform"] for d in stored) == ["PS4", "PSVITA"]
+    # A platform the trophy set doesn't cover is dropped.
+    psn.record_entry_decisions(1, {"NPWR_A_00": [{"platform": "PS5"}]})
+    assert psn.load_snapshot(1)["entry_decisions"]["NPWR_A_00"] == []
 
 
-def test_import_applies_a_reviewed_platform(db_session, monkeypatch, tmp_path):
-    """The decision beats the heuristic: suggested PSVITA, user chose PS3."""
+def test_import_creates_one_entry_per_chosen_platform(db_session, monkeypatch, tmp_path):
+    """Cross-buy: one trophy set becomes a library entry on each platform the user picked."""
     _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
     user = models.User(name="p", username="p", password_hash="x", api_token="ptok")
     db_session.add(user)
     db_session.commit()
-    merged = [{"npCommunicationId": "NPWR_D_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    merged = [
+        {"npCommunicationId": "NPWR_D_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA,PS4", "sources": ["titles"]}
+    ]
     _write_snapshot(monkeypatch, tmp_path, user.id, merged)
-    psn.record_platform_decisions(user.id, {"NPWR_D_00": "PS3"})
+    psn.record_entry_decisions(user.id, {"NPWR_D_00": [{"platform": "PS4"}, {"platform": "PSVITA"}]})
 
+    result = psn.import_snapshot(db_session, user)
+    assert result["added"] == 2
+    releases = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_D_00").all()
+    assert {r.platform_id for r in releases} == {
+        models.resolve_platform_id(db_session, "PS4"),
+        models.resolve_platform_id(db_session, "PSVITA"),
+    }
+
+
+def test_import_skips_a_game_with_an_empty_decision(db_session, monkeypatch, tmp_path):
+    """Unticking every platform is a real decision: don't import this one."""
+    _seed_platforms(db_session)
+    user = models.User(name="q", username="q", password_hash="x", api_token="qtok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [{"npCommunicationId": "NPWR_S_00", "name": "Skip", "displayName": "Skip", "platform": "PS3,PS4", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    psn.record_entry_decisions(user.id, {"NPWR_S_00": []})
     psn.import_snapshot(db_session, user)
-    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_D_00").one()
-    assert rel.platform_id == models.resolve_platform_id(db_session, "PS3")
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_S_00").count() == 0
 
 
-def test_platform_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
+def test_import_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
+    import json as _j
+
     _seed_platforms(db_session)
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
@@ -1013,11 +1041,194 @@ def test_platform_review_endpoint_records_choices(client, db_session, monkeypatc
     merged = [{"npCommunicationId": "NPWR_E_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
     _write_snapshot(monkeypatch, tmp_path, user.id, merged)
 
-    r = client.post("/integrations/psn/platform-review", data={"choices": "NPWR_E_00=PS3"})
+    payload = _j.dumps({"NPWR_E_00": [{"platform": "PS3"}]})
+    r = client.post("/integrations/psn/import-review", data={"decisions": payload})
     assert r.status_code == 200
-    assert b"Recorded 1 platform choice" in r.content
-    assert psn.load_snapshot(user.id)["platform_decisions"]["NPWR_E_00"] == "PS3"
+    assert b"Saved choices for 1 game" in r.content
+    assert psn.load_snapshot(user.id)["entry_decisions"]["NPWR_E_00"] == [{"platform": "PS3"}]
 
-    # Garbage in → a clear error, nothing stored.
-    r = client.post("/integrations/psn/platform-review", data={"choices": ""})
-    assert b"No platform choices" in r.content
+    r = client.post("/integrations/psn/import-review", data={"decisions": ""})
+    assert b"No review selections" in r.content
+
+
+def test_two_trophy_sets_for_one_name_stay_separate():
+    """Two trophy sets are two records — a second platform's progress, or an
+    outright different game sharing a name (Demon's Souls PS3 vs the PS5
+    remake). Both used to match the same purchased row by name, resolve to the
+    same key, and the second silently overwrote the first (#163)."""
+    purchased = [_purchased("Demon's Souls", "CUSA00881_00", platform="PS4")]
+    titles = [
+        {"npCommunicationId": "NPWR00881_00", "trophyTitleName": "Demon's Souls", "trophyTitlePlatform": "PS3", "progress": 100},
+        {"npCommunicationId": "NPWR20277_00", "trophyTitleName": "Demon's Souls", "trophyTitlePlatform": "PS5", "progress": 42},
+    ]
+    merged = psn.merge_library(purchased, titles, [])["merged"]
+    by_npc = {m.get("npCommunicationId"): m for m in merged}
+    assert "NPWR00881_00" in by_npc and "NPWR20277_00" in by_npc
+    # Each keeps its own progress — neither is clobbered.
+    assert by_npc["NPWR00881_00"]["trophyProgress"] == 100
+    assert by_npc["NPWR20277_00"]["trophyProgress"] == 42
+    assert by_npc["NPWR00881_00"]["platform"] == "PS3"
+    assert by_npc["NPWR20277_00"]["platform"] == "PS5"
+
+
+def test_played_feed_name_never_overwrites_the_real_title():
+    """Sony's played feed reports activity under a concept/collection name:
+    Uncharted 4 and The Lost Legacy both come back as 'UNCHARTED: Legacy of
+    Thieves Collection' even though their trophy sets and store entries name
+    them correctly. Letting that win merged two distinct games into one name
+    and broke matching against the user's own records (#163)."""
+    purchased = [
+        _purchased("Uncharted 4: A Thief's End", "CUSA00341_00", platform="PS4"),
+        _purchased("Uncharted: The Lost Legacy", "CUSA07737_00", platform="PS4"),
+    ]
+    titles = [
+        {
+            "npCommunicationId": "NPWR07028_00",
+            "titleId": "CUSA00341_00",
+            "trophyTitleName": "Uncharted 4: A Thief's End",
+            "trophyTitlePlatform": "PS4",
+            "progress": 84,
+        },
+        {
+            "npCommunicationId": "NPWR13408_00",
+            "titleId": "CUSA07737_00",
+            "trophyTitleName": "Uncharted: The Lost Legacy",
+            "trophyTitlePlatform": "PS4",
+            "progress": 100,
+        },
+    ]
+    played = [
+        {"titleId": "CUSA00341_00", "name": "UNCHARTED: Legacy of Thieves Collection", "category": "ps4_game", "playDuration": "PT50H"},
+        {"titleId": "CUSA07737_00", "name": "UNCHARTED: Legacy of Thieves Collection", "category": "ps4_game", "playDuration": "PT23H"},
+    ]
+    merged = psn.merge_library(purchased, titles, played)["merged"]
+    names = sorted(m["name"] for m in merged)
+    assert names == ["Uncharted 4: A Thief's End", "Uncharted: The Lost Legacy"]
+    # ...and each keeps its own trophy progress.
+    by_name = {m["name"]: m for m in merged}
+    assert by_name["Uncharted 4: A Thief's End"]["trophyProgress"] == 84
+    assert by_name["Uncharted: The Lost Legacy"]["trophyProgress"] == 100
+
+
+def test_played_only_rows_still_use_the_played_name():
+    """The played name is the fallback, not banned — a played-only row has
+    nothing else to go on."""
+    played = [{"titleId": "CUSA9_00", "name": "Some Game", "category": "ps4_game", "playDuration": "PT1H"}]
+    merged = psn.merge_library([], [], played)["merged"]
+    assert merged[0]["name"] == "Some Game"
+
+
+# ─── shared match normalization (#180) ─────────────────────────────────────
+
+
+def test_normalize_folds_instead_of_deleting():
+    """The old PSN folding stripped non-alphanumerics, so accented and
+    non-Latin characters were DELETED: ABZÛ -> 'abz', NINJA GAIDEN Σ2 ->
+    'ninjagaiden2'. Every one of these was a real unmatched game."""
+    from backend.titles import normalize_for_match as n
+
+    def same(a, b):
+        return n(a).replace(" ", "") == n(b).replace(" ", "")
+
+    assert same("ABZÛ*#", "ABZU")  # accent + the sheet's own annotation chars
+    assert same("Söldner-X 2", "Soldner-X 2")
+    assert same("Ninja Gaiden Sigma 2", "NINJA GAIDEN Σ2")  # Greek, which NFKD leaves alone
+    assert same("Soul Calibur V", "SOULCALIBUR Ⅴ")  # U+2164, plus a word break
+    assert same("Super Street Fighter IV", "SUPER STREET FIGHTER Ⅳ")
+    assert same("Ratchet and Clank", "Ratchet & Clank")
+    assert same("Assassin's Creed", "Assassin’s Creed")  # curly apostrophe
+    # Trophy-set suffixes Sony appends
+    assert same("God of War II", "God of War® II Trophies")
+    assert same("Tekken 6", "TEKKEN 6 Trophy Set")
+    assert same("Slayaway Camp", "Slayaway Camp trophies")
+    # Port/edition markers and disambiguators either side may carry
+    assert same("Hitman (2016)", "HITMAN")
+    assert same("Resident Evil 4 HD", "resident evil 4")
+    assert same("PaRappa the Rapper", "PaRappa The Rapper Remastered")
+    # Titles really do ship with embedded newlines — they collapse to spaces
+    # rather than surviving into the key. (What's left here is a subtitle
+    # difference, which is a matching-strategy problem, not a folding one.)
+    assert n("The Legend of Dark Witch\n-Chronicle 2D ACT-") == "the legend of dark witch chronicle 2d act"
+
+
+def test_normalize_keeps_numbers_distinct():
+    """Numbers are identity, not noise — these must never collapse together."""
+    from backend.titles import normalize_for_match as n
+
+    assert n("Final Fantasy XII") != n("Final Fantasy XVI")
+    assert n("Street Fighter IV") != n("Street Fighter V")
+    assert n("Assassin's Creed") != n("Assassin's Creed II")
+    assert n("Uncharted 2") != n("Uncharted 3")
+    # Roman numerals fold to arabic so both spellings agree
+    assert n("God of War II") == n("God of War 2")
+
+
+def test_normalize_leaves_a_lone_letter_alone():
+    """The X in Soldner-X is part of the name. Converting single letters turned
+    it into 'soldner 10', which matched nothing."""
+    from backend.titles import normalize_for_match as n
+
+    assert "10" not in n("Soldner-X 2")
+    assert n("Street Fighter V") == n("STREET FIGHTER V")
+
+
+def test_normalize_survives_non_latin_titles():
+    """A Japanese title must fold to something, not to nothing."""
+    from backend.titles import normalize_for_match as n
+
+    assert n("閃乱カグラ SHINOVI VERSUS")
+    assert "shinovi versus" in n("閃乱カグラ SHINOVI VERSUS")
+
+
+def test_trademark_stripped_before_nfkd():
+    """Regression: NFKD expands ™ into the letters 'TM', so stripping after it
+    left 'Stellar Blade™' as 'stellarbladetm' and broke the Steam-dupe check."""
+    from backend.titles import normalize_for_match as n
+
+    assert n("Stellar Blade™") == n("Stellar Blade")
+
+
+def test_titles_match_tiers():
+    """Exact is safe to act on; contained is a suggestion to confirm."""
+    from backend.titles import titles_match as m
+
+    # Exact — folding differences only.
+    assert m("ABZÛ*#", "ABZU") == "exact"
+    assert m("Tekken 6", "TEKKEN 6 Trophy Set") == "exact"
+    assert m("Soul Calibur V", "SOULCALIBUR Ⅴ") == "exact"
+
+    # Contained — one side drops a subtitle...
+    assert m("Uncharted", "Uncharted: Drake's Fortune") == "contained"
+    assert m("Enslaved", "ENSLAVED™: Odyssey to the West™") == "contained"
+    # ...or a franchise prefix, in either direction (Sony's is the short one here)
+    assert m("The Elder Scrolls V: Skyrim", "Skyrim") == "contained"
+    assert m("Stranger's Wrath HD", "Oddworld: Stranger's Wrath HD") == "contained"
+    # Sony appends the platform to some titles
+    assert m("Grounded", "Grounded PS4 & PS5") == "exact"
+
+
+def test_titles_match_never_crosses_a_sequel():
+    """The whole risk of containment matching. A number in the dropped words
+    means a different entry in the series — evidence for #160, where fuzzy
+    matching confidently produced every one of these."""
+    from backend.titles import titles_match as m
+
+    assert m("Uncharted", "Uncharted 2: Among Thieves") is None
+    assert m("Uncharted", "Uncharted 3: Drake's Deception") is None
+    assert m("Assassin's Creed", "Assassin's Creed II") is None
+    assert m("Final Fantasy XII", "FINAL FANTASY XVI") is None
+    assert m("Street Fighter IV", "Street Fighter V") is None
+    assert m("God of War II", "God of War") is None
+    assert m("Call of Duty: Modern Warfare 2", "Modern Warfare 3") is None
+    # A lone short extra word is a different game, not a dropped subtitle.
+    assert m("Hitman GO", "HITMAN") is None
+
+
+def test_titles_match_contained_is_only_a_suggestion():
+    """Contained legitimately covers DLC-to-parent, which is NOT the same game.
+    Auto-merging would fold separate DLC completions into their base game."""
+    from backend.titles import titles_match as m
+
+    assert m("Alan Wake II: Night Springs", "Alan Wake II") == "contained"
+    assert m("Nioh 2 - The Tengu's Disciple", "Nioh 2") == "contained"
+    assert m("Peggle Nights", "Peggle") == "contained"

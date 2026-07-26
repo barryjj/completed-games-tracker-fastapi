@@ -167,15 +167,6 @@
       <div class="modal-body">
         <p class="text-secondary small">Only the fields you change are applied — anything left on <em>Keep</em> is untouched.</p>
 
-        <div class="mb-3">
-          <label class="form-label" for="bulk-medium">Format</label>
-          <select class="form-select" id="bulk-medium">
-            <option value="">Keep</option>
-            <option value="digital">Digital</option>
-            <option value="physical">Physical</option>
-            <option value="unknown">Clear (unknown)</option>
-          </select>
-        </div>
 
         <div class="mb-3">
           <label class="form-label" for="bulk-hidden">Visibility</label>
@@ -240,17 +231,6 @@
           <div class="mb-3">
             <label class="form-label">Display name <span class="text-secondary fw-normal">(what shows in the library)</span></label>
             <input type="text" class="form-control" name="display_name" id="edit-display-name" autocomplete="off">
-          </div>
-          {# Format is a property of THIS copy, not the game. The physical word
-             (Disc / Cartridge / UMD) is derived from the platform's media_type,
-             so the user only picks digital vs physical. #}
-          <div class="mb-3">
-            <label class="form-label" for="edit-medium">Format</label>
-            <select class="form-select" name="medium" id="edit-medium">
-              <option value="">Unknown</option>
-              <option value="digital">Digital</option>
-              <option value="physical">Physical</option>
-            </select>
           </div>
           {% if current_user.twitch_client_id and current_user.twitch_client_secret %}
           {# IGDB link section — only shown for manual entries by editLibraryEntry(). #}
@@ -582,7 +562,6 @@ window.cgtOpenBulkEdit = function() {
   var boxes = cgtBulkCheckedBoxes();
   if (!boxes.length) return;
   document.getElementById('bulk-edit-count').textContent = boxes.length;
-  document.getElementById('bulk-medium').value = '';
   document.getElementById('bulk-hidden').value = '';
   document.getElementById('bulk-platform').value = '';
   // Platform is only offered when every selected entry is manual.
@@ -597,7 +576,6 @@ window.cgtSubmitBulkEdit = function(btn) {
   if (!ids) return;
   var body = new URLSearchParams();
   body.append('ids', ids);
-  body.append('medium', document.getElementById('bulk-medium').value);
   body.append('is_hidden', document.getElementById('bulk-hidden').value);
   var platEl = document.getElementById('bulk-platform');
   if (!document.getElementById('bulk-platform-section').hidden) {
@@ -845,7 +823,6 @@ function updateEditParentRows() {
 function editLibraryEntry(ds) {
   _editEntryId = ds.entryId;
   var isManual = ds.source === 'manual';
-  document.getElementById('edit-medium').value = ds.medium || '';
 
   // Imported entries (Steam/PSN/etc.): hide the title field + the "same as
   // title" checkbox entirely. The canonical title is what the platform's
@@ -979,9 +956,6 @@ document.getElementById('edit-entry-form').addEventListener('submit', function(e
   }
   body.append('is_dlc', form.is_dlc.checked ? 'true' : 'false');
   body.append('is_collection', form.is_collection.checked ? 'true' : 'false');
-  // Format (digital/physical) — always sent, including empty, so choosing
-  // "Unknown" clears an override rather than silently keeping the old value.
-  body.append('medium', document.getElementById('edit-medium').value);
 
   // Pick the parent from the hidden release-id input (set by selectEditParent
   // or pre-filled from data attributes when the modal opened).

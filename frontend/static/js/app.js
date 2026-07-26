@@ -608,14 +608,52 @@ document.addEventListener('pointerover', function (e) {
   });
 })();
 
-// ─── PSN cross-play platform review (#163) ────────────────────────────────
-// Collects the per-row platform selects into the compact "extId=PLATFORM"
-// list the endpoint parses. Read at request time via hx-vals js:, so it picks
-// up whatever the selects currently hold after an HTMX re-render.
-window.cgtPsnPlatformChoices = function () {
-  return Array.from(document.querySelectorAll('.cgt-psn-platform-choice'))
-    .map(function (sel) { return sel.dataset.externalId + '=' + sel.value; })
-    .join(',');
+// ─── PSN cross-play import review (#163) ──────────────────────────────────
+// Serialises each review card into {externalId: [{platform}]}. A game
+// can resolve to several platforms (cross-buy), and an empty array is a real
+// decision meaning "skip this one". Read at request time via hx-vals js:.
+// List is the baseline layout; cards are the roomier option. Same markup —
+// only a class on the container changes — and the choice persists like the
+// library's view mode. Re-applied on HTMX settle since the report re-renders.
+window.cgtPsnReviewView = function (mode) {
+  var grid = document.getElementById('cgt-review-grid');
+  if (!grid) return;
+  if (mode) localStorage.setItem('cgt-psn-review-view', mode);
+  var current = mode || localStorage.getItem('cgt-psn-review-view') || 'list';
+  grid.classList.toggle('cgt-review-grid--cards', current === 'cards');
+  var listBtn = document.getElementById('cgt-review-view-list');
+  var cardBtn = document.getElementById('cgt-review-view-cards');
+  if (listBtn) listBtn.classList.toggle('active', current === 'list');
+  if (cardBtn) cardBtn.classList.toggle('active', current === 'cards');
+};
+document.addEventListener('DOMContentLoaded', function () { window.cgtPsnReviewView(); });
+document.addEventListener('htmx:afterSettle', function () { window.cgtPsnReviewView(); });
+
+// Filter the review to games offering one platform, and bulk-set the format
+// of everything currently visible. With hundreds of rows this is the
+// difference between usable and not.
+window.cgtPsnReviewFilter = function () {
+  var want = (document.getElementById('cgt-review-filter') || {}).value || '';
+  document.querySelectorAll('.cgt-review-card').forEach(function (card) {
+    var has = !want || Array.from(card.querySelectorAll('.cgt-review-platform'))
+      .some(function (b) { return b.value === want; });
+    card.hidden = !has;
+  });
+};
+
+
+window.cgtPsnReviewDecisions = function () {
+  var out = {};
+  document.querySelectorAll('.cgt-review-card').forEach(function (card) {
+    var choices = [];
+    card.querySelectorAll('.cgt-review-option').forEach(function (opt) {
+      var box = opt.querySelector('.cgt-review-platform');
+      if (!box || !box.checked) return;
+      choices.push({platform: box.value});
+    });
+    out[card.dataset.externalId] = choices;
+  });
+  return JSON.stringify(out);
 };
 
 // ─── External links in the desktop shell ──────────────────────────────────

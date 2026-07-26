@@ -374,24 +374,17 @@ def _entitlement_service(release) -> dict | None:
     return None
 
 
-def _extract_format_meta(entry) -> dict:
-    """The detail pane's Format line — two independent axes (#164):
+def _extract_entitlement_meta(entry) -> dict:
+    """The detail pane's entitlement line: the subscription a copy came from, or
+    nothing when it's owned outright (#164).
 
-    format  — how the copy is owned: "Digital", or the platform's physical
-              media word ("Disc" / "Cartridge" / "UMD", plain "Physical" when
-              the platform has no media_type). None when unknown, so the row
-              is skipped entirely.
-    service — the subscription it came from (PS Plus today), rendered as a
-              small badge beside the format. None for owned copies.
+    Digital-vs-physical was tried and removed: PSN cannot see disc ownership at
+    all (a disc surfaces only as whatever digital entitlement it granted), so
+    the field was unknowable at the source, had no consumer in the app, and
+    generated most of the PSN import review's noise. Ownership-vs-subscription
+    is the half that answers a real question.
     """
-    release = entry.release
-    if entry.medium == "digital":
-        label = "Digital"
-    elif entry.medium == "physical":
-        label = models.physical_media_label(release.platform_obj)
-    else:
-        label = None
-    return {"format": label, "service": _entitlement_service(release)}
+    return {"service": _entitlement_service(entry.release)}
 
 
 _STEAM_CDN_BASE = "https://cdn.akamai.steamstatic.com/steam/apps"
