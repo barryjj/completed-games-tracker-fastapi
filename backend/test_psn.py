@@ -1186,3 +1186,49 @@ def test_trademark_stripped_before_nfkd():
     from backend.titles import normalize_for_match as n
 
     assert n("Stellar Blade™") == n("Stellar Blade")
+
+
+def test_titles_match_tiers():
+    """Exact is safe to act on; contained is a suggestion to confirm."""
+    from backend.titles import titles_match as m
+
+    # Exact — folding differences only.
+    assert m("ABZÛ*#", "ABZU") == "exact"
+    assert m("Tekken 6", "TEKKEN 6 Trophy Set") == "exact"
+    assert m("Soul Calibur V", "SOULCALIBUR Ⅴ") == "exact"
+
+    # Contained — one side drops a subtitle...
+    assert m("Uncharted", "Uncharted: Drake's Fortune") == "contained"
+    assert m("Enslaved", "ENSLAVED™: Odyssey to the West™") == "contained"
+    # ...or a franchise prefix, in either direction (Sony's is the short one here)
+    assert m("The Elder Scrolls V: Skyrim", "Skyrim") == "contained"
+    assert m("Stranger's Wrath HD", "Oddworld: Stranger's Wrath HD") == "contained"
+    # Sony appends the platform to some titles
+    assert m("Grounded", "Grounded PS4 & PS5") == "exact"
+
+
+def test_titles_match_never_crosses_a_sequel():
+    """The whole risk of containment matching. A number in the dropped words
+    means a different entry in the series — evidence for #160, where fuzzy
+    matching confidently produced every one of these."""
+    from backend.titles import titles_match as m
+
+    assert m("Uncharted", "Uncharted 2: Among Thieves") is None
+    assert m("Uncharted", "Uncharted 3: Drake's Deception") is None
+    assert m("Assassin's Creed", "Assassin's Creed II") is None
+    assert m("Final Fantasy XII", "FINAL FANTASY XVI") is None
+    assert m("Street Fighter IV", "Street Fighter V") is None
+    assert m("God of War II", "God of War") is None
+    assert m("Call of Duty: Modern Warfare 2", "Modern Warfare 3") is None
+    # A lone short extra word is a different game, not a dropped subtitle.
+    assert m("Hitman GO", "HITMAN") is None
+
+
+def test_titles_match_contained_is_only_a_suggestion():
+    """Contained legitimately covers DLC-to-parent, which is NOT the same game.
+    Auto-merging would fold separate DLC completions into their base game."""
+    from backend.titles import titles_match as m
+
+    assert m("Alan Wake II: Night Springs", "Alan Wake II") == "contained"
+    assert m("Nioh 2 - The Tengu's Disciple", "Nioh 2") == "contained"
+    assert m("Peggle Nights", "Peggle") == "contained"

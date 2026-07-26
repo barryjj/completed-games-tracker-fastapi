@@ -181,6 +181,14 @@ _MATCH_TROPHY_SUFFIX_RE = re.compile(
 # "PaRappa The Rapper Remastered" vs the sheet's plain title. Removed for
 # comparison only — the display title keeps them.
 _PARENTHETICAL_RE = re.compile(r"\s*\((?:\d{4}|remake|remaster(?:ed)?|hd|classic)\)", re.IGNORECASE)
+# Sony sometimes appends the platform to the title itself ("Rocketbirds PS
+# Vita", "Grounded PS4 & PS5"). Meaningless for identity.
+_PLATFORM_SUFFIX_RE = re.compile(
+    r"\s+(?:for\s+)?(?:ps\s?vita|playstation\s?vita|psvita|ps\s?portable|psp|"
+    r"ps\s?[345](?:\s*(?:&|and)\s*ps\s?[345])*|playstation\s?[345]?)\s*$",
+    re.IGNORECASE,
+)
+
 _EDITION_SUFFIX_RE = re.compile(
     r"\s+(?:hd|remastered|remaster|definitive\s+edition|complete\s+edition|"
     r"game\s+of\s+the\s+year(?:\s+edition)?|goty(?:\s+edition)?|"
@@ -252,6 +260,7 @@ def normalize_for_match(title: str | None) -> str:
     while prev != s:
         prev = s
         s = _EDITION_SUFFIX_RE.sub("", s)
+        s = _PLATFORM_SUFFIX_RE.sub("", s)
     s = s.lower()
     # Punctuation (and newlines — platforms really do ship those inside titles)
     # becomes space, so hyphenation and curly quotes stop mattering.
@@ -261,3 +270,62 @@ def normalize_for_match(title: str | None) -> str:
     for word in s.split():
         out.append(_WORD_NUMBERS.get(word) or _roman_to_arabic(word) or word)
     return " ".join(out)
+
+
+def _numeric_tokens(words: list[str]) -> list[str]:
+    return [w for w in words if w.isdigit()]
+
+
+def titles_match(a: str | None, b: str | None) -> str | None:
+    """How confidently two titles refer to the same game.
+
+    Returns:
+      "exact"     — same after folding, including spaceless ("SOULCALIBUR" vs
+                    "Soul Calibur"). Safe to act on.
+      "contained" — one is a word-boundary prefix or suffix of the other. A
+                    strong hint, NOT a fact: platforms and people disagree about
+                    subtitles ("Uncharted" vs "Uncharted: Drake's Fortune") and
+                    about franchise prefixes, where Sony's title is the shorter
+                    one ("The Elder Scrolls V: Skyrim" is just "Skyrim"). But
+                    the same shape also covers genuinely different products —
+                    "Peggle Nights" is an expansion, not "Peggle". Callers
+                    should surface these for confirmation rather than merge them.
+      None        — no match.
+
+    Guards that keep "contained" usable: the dropped words must not begin with a
+    number, which is what separates a subtitle from a sequel ("Uncharted" never
+    reaches "Uncharted 2"); a lone short extra word is rejected ("Hitman GO" is
+    not "HITMAN"); and numeric components must agree throughout, so "Final
+    Fantasy XII" can never reach "XVI" (#160).
+    """
+    na, nb = normalize_for_match(a), normalize_for_match(b)
+    if not na or not nb:
+        return None
+    if na == nb or na.replace(" ", "") == nb.replace(" ", ""):
+        return "exact"
+
+    short, long_ = sorted((na.split(), nb.split()), key=len)
+    if not short:
+        return None
+    if short == long_[: len(short)]:
+        extra = long_[len(short) :]
+    elif short == long_[-len(short) :]:
+        extra = long_[: -len(short)]
+    else:
+        return None
+
+    # A leading number in the dropped words means the longer title is a
+    # different entry in the series, not the same game with a subtitle.
+    if extra and extra[0].isdigit():
+        return None
+    # A single SHORT extra word is more often a different game than a dropped
+    # subtitle — "Hitman GO" is not "HITMAN". Longer single words are usually a
+    # franchise prefix the other side omits ("Oddworld: Stranger's Wrath HD"),
+    # so length is the discriminator. Imperfect, which is why this tier is a
+    # suggestion rather than a match.
+    if len(extra) == 1 and len(extra[0]) <= 3:
+        return None
+    # Numbers inside the shared portion must agree.
+    if _numeric_tokens(short) != _numeric_tokens([w for w in long_ if w not in extra]):
+        return None
+    return "contained"
