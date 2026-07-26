@@ -227,6 +227,7 @@ def home_page(
         else:
             label = raw_labels[key] or "Unknown"
             platform_breakdown.append({"label": label, "css": models._platform_heuristic_css(label), "value": label, "count": n})
+
     import_counts = _import_tab_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
@@ -271,6 +272,8 @@ def tools_page(
     """Operations hub: recurring actions on the library (sync, match review,
     import, artwork) as cards. Replaces the action half of the old
     /integrations hub; configuration lives under /settings."""
+    from . import psn as _psn
+
     import_counts = _import_tab_counts(db, current_user.id)
     # Entries with no vertical cover (the canonical orientation) — same filter
     # the library's "Missing artwork" checkbox applies in grid_v.
@@ -282,6 +285,7 @@ def tools_page(
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
             "psn_counts": _psn_counts(db, current_user),
+            "psn_review_pending": len(_psn.import_review_rows(db, current_user)) if current_user.psn_npsso else 0,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),

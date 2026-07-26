@@ -23,6 +23,34 @@ from .pages_common import (
 router = APIRouter()
 
 
+@router.get("/library/psn-review")
+def psn_review_page(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Cross-play decisions from the PSN snapshot, as their own page.
+
+    Lives beside match review rather than inside the PSN fetch report: choosing
+    which library entries to create is a review workflow, not part of a summary
+    of what the crawl found (#163).
+    """
+    from . import psn
+
+    rows = psn.import_review_rows(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="psn_review.html",
+        context={
+            "current_user": current_user,
+            **_base_ctx(db, current_user),
+            "rows": rows,
+            "has_snapshot": psn.load_snapshot(current_user.id) is not None,
+            "review_platforms": sorted({o["platform"] for r in rows for o in r["options"]}),
+        },
+    )
+
+
 @router.get("/library/match-review")
 def match_review_page(
     request: Request,

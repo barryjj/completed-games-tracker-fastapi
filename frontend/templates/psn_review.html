@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}PSN Review{% endblock %}
+
+{% block content %}
+<div class="mb-3">
+  <h4 class="mb-0">PSN Review</h4>
+  <p class="text-secondary small mb-0">
+    Decisions the PSN import can&rsquo;t make for you. Cross-play trophy sets cover several platforms and PSN never says which you own &mdash; and with cross-buy the answer is often more than one.
+  </p>
+</div>
+
+<div id="psn-review-content">
+{% if flash %}<div class="alert alert-success py-2 small">{{ flash }}</div>{% endif %}
+{% if flash_error %}<div class="alert alert-danger py-2 small">{{ flash_error }}</div>{% endif %}
+{% if not rows %}
+<div class="cgt-detail-block">
+  <p class="text-secondary mb-0">
+    {% if not has_snapshot %}
+    <em>No PSN snapshot yet &mdash; run <a href="/integrations/psn">Fetch Library</a> first.</em>
+    {% else %}
+    <em>Nothing to review &mdash; every game resolved to a single platform. Run Import on the PSN page when you&rsquo;re ready.</em>
+    {% endif %}
+  </p>
+</div>
+{% else %}
+
+{# Toolbar: layout, platform filter, bulk tick. List is the baseline view. #}
+<div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+  <div class="btn-group btn-group-sm" role="group" aria-label="Layout">
+    <button type="button" class="btn btn-surface" id="cgt-review-view-list"
+            onclick="cgtPsnReviewView('list')" title="List view">&equiv;</button>
+    <button type="button" class="btn btn-surface" id="cgt-review-view-cards"
+            onclick="cgtPsnReviewView('cards')" title="Card view">&#9638;</button>
+  </div>
+  <select class="form-select form-select-sm" id="cgt-review-filter" style="width:auto;"
+          onchange="cgtPsnReviewFilter()" title="Show only games offering this platform">
+    <option value="">All platforms</option>
+    {% for p in review_platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+  </select>
+  <span class="text-secondary small ms-auto">{{ rows | length }} game{{ 's' if rows | length != 1 }} to review</span>
+</div>
+
+<div class="cgt-review-grid" id="cgt-review-grid">
+  {% for row in rows %}
+  <div class="cgt-review-card" data-external-id="{{ row.external_id }}">
+    <div class="cgt-review-card__title">
+      {{ row.name }}
+      {% if row.reviewed %}<span class="tag-badge tag-in-collection ms-1">Reviewed</span>{% endif %}
+    </div>
+    <div class="cgt-review-card__reason">{{ row.reason }}</div>
+    {% for opt in row.options %}
+    <div class="cgt-review-option">
+      <div class="form-check mb-0">
+        <input class="form-check-input cgt-review-platform" type="checkbox"
+               id="rv-{{ row.external_id }}-{{ opt.platform }}"
+               value="{{ opt.platform }}" {% if opt.selected %}checked{% endif %}>
+        <label class="form-check-label" for="rv-{{ row.external_id }}-{{ opt.platform }}">
+          {{ opt.platform }}{% if opt.minutes %} <span class="text-secondary">&middot; {{ opt.minutes // 60 }}h</span>{% endif %}
+        </label>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+</div>
+
+{% if rows %}
+{# Sticky footer so Save is reachable without scrolling a long list. #}
+<div class="cgt-sticky-actions">
+  <span class="small text-secondary me-auto">Tick every platform you own it on. Untick all to skip a game.</span>
+  <button type="button" class="btn btn-primary"
+          hx-post="/integrations/psn/import-review"
+          hx-target="#psn-review-content"
+          hx-select="#psn-review-content"
+          hx-swap="outerHTML"
+          hx-vals='js:{decisions: cgtPsnReviewDecisions()}'
+          hx-disabled-elt="this">Save choices</button>
+  <a href="/integrations/psn" class="btn btn-surface">Back to PSN</a>
+</div>
+{% endif %}
+{% endblock %}

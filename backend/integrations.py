@@ -415,7 +415,6 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
             "report": (snap or {}).get("report"),
             "played_only": psn.played_only_rows(db, current_user.id),
             "import_review": _review,
-            "review_platforms": sorted({o["platform"] for r in _review for o in r["options"]}),
             "flash": flash,
             "flash_error": error,
         },
@@ -431,28 +430,53 @@ def psn_import_review_save(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Record reviewed platform + format choices for cross-play trophy sets (#163).
+    """Record reviewed platform choices for cross-play trophy sets (#163).
 
     `decisions` is JSON: {externalId: [{platform}, ...]}. A game can resolve to
     several platforms (cross-buy), and an empty list means "don't import this
     one". Choices are validated against the item's own trophy set, stored on the
-    snapshot, and applied by the next import.
+    snapshot, and applied by the next import. Re-renders the review page so the
+    saved state shows in place.
     """
+    error = None
     try:
         parsed = _json.loads(decisions) if decisions.strip() else {}
     except ValueError:
-        return _psn_report_response(request, db, current_user, error="Could not read the review selections.")
-    if not isinstance(parsed, dict) or not parsed:
-        return _psn_report_response(request, db, current_user, error="No review selections submitted.")
-    try:
-        written = psn.record_entry_decisions(current_user.id, parsed)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    if not written:
-        return _psn_report_response(request, db, current_user, error="No valid selections — platforms must be ones the trophy set covers.")
-    return _psn_report_response(
-        request, db, current_user, flash=f"Saved choices for {written} game{'s' if written != 1 else ''} — run Import to apply."
+        parsed = None
+        error = "Could not read the review selections."
+    if parsed is not None and (not isinstance(parsed, dict) or not parsed):
+        error = "No review selections submitted."
+    if error is None:
+        try:
+            written = psn.record_entry_decisions(current_user.id, parsed)
+            error = None if written else "No valid selections — platforms must be ones the trophy set covers."
+        except ValueError as e:
+            error = str(e)
+        else:
+            if written:
+                flash = f"Saved choices for {written} game{'s' if written != 1 else ''} — run Import on the PSN page to apply."
+                return _psn_review_response(request, db, current_user, flash=flash)
+    return _psn_review_response(request, db, current_user, error=error)
+
+
+def _psn_review_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
+    """Re-render the PSN review page (the HTMX swap target is its content div)."""
+    rows = psn.import_review_rows(db, current_user.id)
+    response = templates.TemplateResponse(
+        request=request,
+        name="psn_review.html",
+        context={
+            "current_user": current_user,
+            **_base_ctx(db, current_user),
+            "rows": rows,
+            "has_snapshot": psn.load_snapshot(current_user.id) is not None,
+            "review_platforms": sorted({o["platform"] for r in rows for o in r["options"]}),
+            "flash": flash,
+            "flash_error": error,
+        },
     )
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/psn/played-only/{external_id}/import")

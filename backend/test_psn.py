@@ -1268,3 +1268,88 @@ def test_purchased_fetch_falls_back_when_sony_rejects_the_wider_list():
     assert out == [{"titleId": "CUSA1_00"}]  # fallback result, not an exception
     assert calls[0] != calls[-1]
     assert calls[-1] == ["ps4", "ps5"]
+
+
+def test_psn_review_page_renders_with_both_layouts(client, db_session, monkeypatch, tmp_path):
+    """The cross-play decisions are their own page with a list/card toggle and
+    a sticky Save — matching match review and import review, not buried in the
+    fetch report."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_R_00",
+            "name": "Cross Play Game",
+            "displayName": "Cross Play Game",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    r = client.get("/library/psn-review")
+    assert r.status_code == 200
+    body = r.content
+    assert b"Cross Play Game" in body
+    # both layouts available, list is the baseline
+    assert b"cgt-review-view-list" in body and b"cgt-review-view-cards" in body
+    assert b"cgt-review-grid" in body
+    # a platform option per candidate, and the save action
+    assert b"rv-NPWR_R_00-PS3" in body and b"rv-NPWR_R_00-PSVITA" in body
+    assert b"/integrations/psn/import-review" in body
+
+
+def test_psn_review_page_empty_states(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    _signup_and_login(client)
+    # Point at an empty data dir — otherwise this reads the developer's real
+    # snapshot file and the "no snapshot" branch never renders.
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    r = client.get("/library/psn-review")
+    assert b"No PSN snapshot yet" in r.content
+
+
+def test_tools_shows_the_psn_review_card(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_T_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    r = client.get("/tools")
+    assert b"PSN review" in r.content
+    assert b"/library/psn-review" in r.content
+
+
+def test_psn_fetch_report_links_out_instead_of_embedding_the_review(client, db_session, monkeypatch, tmp_path):
+    """Creating library entries doesn't belong inside a summary of the crawl."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_L_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    r = client.get("/integrations/psn/snapshot-report")
+    assert b"/library/psn-review" in r.content  # links out
+    assert b"cgt-review-platform" not in r.content  # no checkboxes embedded
