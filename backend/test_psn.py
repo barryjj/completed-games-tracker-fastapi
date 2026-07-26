@@ -980,8 +980,12 @@ def test_medium_suggestion_per_platform():
     old_era = {"sources": ["titles"], "platform": "PS3,PSVITA"}
     # The modern feed doesn't cover PS3/Vita, so absence there means nothing.
     assert psn.medium_suggestion(old_era, "PSVITA")[0] == "digital"
-    # Modern platform absent from the purchases you DO have → likely a disc.
-    assert psn.medium_suggestion({"sources": ["titles"], "platform": "PS4,PS5"}, "PS5")[0] == "physical"
+    # PSN can't see discs at all — a disc reports as whatever digital
+    # entitlement it granted (Fenyx: PS4 disc + free upgrade => "PS5 purchase";
+    # Nioh 2: disc => PS_PLUS), so absence never implies physical.
+    medium, reason = psn.medium_suggestion({"sources": ["titles"], "platform": "PS4,PS5"}, "PS5")
+    assert medium == "digital"
+    assert "disc" in reason.lower()
     # Actually in the purchased feed → digital.
     assert psn.medium_suggestion({"sources": ["purchased"], "platform": "PS4"}, "PS4")[0] == "digital"
 

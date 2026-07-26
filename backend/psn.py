@@ -1041,12 +1041,23 @@ _OLD_ERA_PLATFORMS = {"PS3", "PSVITA", "PSP"}
 
 def medium_suggestion(item: dict, platform: str) -> tuple[str, str]:
     """(medium, reason) for one platform of one item — a pre-selection for the
-    review, never applied silently."""
+    review, never applied silently.
+
+    Always suggests digital, because **PSN cannot see physical ownership**.
+    A disc surfaces only as whatever digital entitlement it granted, or not at
+    all: a PS4 disc with a free PS5 upgrade reports as a plain PS5 purchase
+    (Immortals Fenyx Rising), and a disc whose game later hit the catalogue
+    reports as PS_PLUS (Nioh 2). Absence from the purchased feed likewise means
+    nothing — cross-buy registers only against the platform first bought on, so
+    a Vita-era purchase playable on PS4 never appears as a PS4 purchase
+    (Crimsonland). Only the user knows what's on a shelf; the reason line tells
+    them when to flip it.
+    """
     if "purchased" in (item.get("sources") or []) and platform == str(item.get("platform") or "").upper():
         return "digital", "In your digital purchases"
     if platform in _OLD_ERA_PLATFORMS:
         return "digital", f"{platform}-era purchases aren't in PSN's modern feed"
-    return "physical", "Not in your digital purchases"
+    return "digital", "PSN can't see disc copies — switch to Physical if you own it on disc"
 
 
 def import_review_rows(db: Session, user_id: int) -> list[dict]:
