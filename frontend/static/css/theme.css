@@ -1334,10 +1334,40 @@ body:has(.cgt-sticky-actions) {
 /* PSN cross-play review cards (#163). Cards, not rows — each game carries a
    platform checkbox + format select per platform, which is too much to cram
    into a table row. Auto-fill keeps them readable at any pane width. */
+/* List is the default: one full-width row per game, title on the left and the
+   platform options laid out across — a tall row, but it keeps parity with
+   every other review surface. Cards are the opt-in roomier layout; only this
+   class differs, the markup is identical. */
 .cgt-review-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.cgt-review-grid .cgt-review-card {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) auto;
+  align-items: center;
+  column-gap: 1rem;
+}
+.cgt-review-grid .cgt-review-card__reason { grid-column: 1; margin-bottom: 0; }
+.cgt-review-grid .cgt-review-option {
+  grid-column: 2;
+  justify-content: flex-end;
+  min-width: 16rem;
+}
+
+.cgt-review-grid--cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 0.75rem;
+}
+.cgt-review-grid--cards .cgt-review-card { display: block; }
+.cgt-review-grid--cards .cgt-review-card__reason { margin-bottom: 0.5rem; }
+.cgt-review-grid--cards .cgt-review-option { justify-content: space-between; min-width: 0; }
+
+@media (max-width: 720px) {
+  .cgt-review-grid .cgt-review-card { grid-template-columns: 1fr; }
+  .cgt-review-grid .cgt-review-option { grid-column: 1; justify-content: space-between; min-width: 0; }
 }
 .cgt-review-card {
   background-color: var(--ctp-mantle);

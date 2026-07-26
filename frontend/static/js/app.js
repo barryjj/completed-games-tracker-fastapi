@@ -612,6 +612,23 @@ document.addEventListener('pointerover', function (e) {
 // Serialises each review card into {externalId: [{platform, medium}]}. A game
 // can resolve to several platforms (cross-buy), and an empty array is a real
 // decision meaning "skip this one". Read at request time via hx-vals js:.
+// List is the baseline layout; cards are the roomier option. Same markup —
+// only a class on the container changes — and the choice persists like the
+// library's view mode. Re-applied on HTMX settle since the report re-renders.
+window.cgtPsnReviewView = function (mode) {
+  var grid = document.getElementById('cgt-review-grid');
+  if (!grid) return;
+  if (mode) localStorage.setItem('cgt-psn-review-view', mode);
+  var current = mode || localStorage.getItem('cgt-psn-review-view') || 'list';
+  grid.classList.toggle('cgt-review-grid--cards', current === 'cards');
+  var listBtn = document.getElementById('cgt-review-view-list');
+  var cardBtn = document.getElementById('cgt-review-view-cards');
+  if (listBtn) listBtn.classList.toggle('active', current === 'list');
+  if (cardBtn) cardBtn.classList.toggle('active', current === 'cards');
+};
+document.addEventListener('DOMContentLoaded', function () { window.cgtPsnReviewView(); });
+document.addEventListener('htmx:afterSettle', function () { window.cgtPsnReviewView(); });
+
 window.cgtPsnReviewDecisions = function () {
   var out = {};
   document.querySelectorAll('.cgt-review-card').forEach(function (card) {

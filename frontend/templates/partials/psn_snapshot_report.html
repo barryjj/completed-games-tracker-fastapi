@@ -55,8 +55,18 @@
       Cross-play games &mdash; choose what to create
       <span class="text-secondary fw-normal ms-1">({{ import_review | length }})</span>
     </h6>
-    <p class="text-secondary mb-3"><small>One trophy set, several platforms. Tick every platform you own it on and set how you own each &mdash; these become your library entries. Untick all to skip a game.</small></p>
-    <div class="cgt-review-grid">
+    <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
+      <p class="text-secondary mb-0"><small>One trophy set, several platforms. Tick every platform you own it on and set how you own each &mdash; these become your library entries. Untick all to skip a game.</small></p>
+      {# List is the baseline view, cards are the roomier presentation on top —
+         same markup either way, the layout is a CSS class. #}
+      <div class="btn-group btn-group-sm flex-shrink-0" role="group" aria-label="Review layout">
+        <button type="button" class="btn btn-surface" id="cgt-review-view-list"
+                onclick="cgtPsnReviewView('list')" title="List view">&equiv;</button>
+        <button type="button" class="btn btn-surface" id="cgt-review-view-cards"
+                onclick="cgtPsnReviewView('cards')" title="Card view">&#9638;</button>
+      </div>
+    </div>
+    <div class="cgt-review-grid" id="cgt-review-grid">
       {% for row in import_review %}
       <div class="cgt-review-card" data-external-id="{{ row.external_id }}">
         <div class="cgt-review-card__title">
