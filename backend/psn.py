@@ -171,15 +171,25 @@ def refresh_avatar(db: Session, user: models.User) -> str | None:
 # ─── Fetchers (all paginated — the prototype's biggest gap) ────────────────
 
 
-def _fetch_purchased(token: str, account_id: str) -> list[dict]:
-    """GraphQL getPurchasedGameList, paged 100 at a time (prototype-parity
-    variables). Returns the raw game dicts."""
+# Platforms asked of getPurchasedGameList. The original port requested only
+# ps4/ps5, which meant every conclusion about "PSN doesn't return PS3/Vita-era
+# purchases" was really a filter WE set (#181) — the snapshot contained PS4
+# (583) and PS5 (161) and nothing else, because nothing else was asked for.
+# Asking for the older platforms is the only way to find out.
+_PURCHASED_PLATFORMS = ["ps3", "ps4", "ps5", "ps vita", "psp"]
+# If Sony rejects the wider list (unknown token, changed enum), fall back to
+# the pair known to work rather than failing the whole crawl.
+_PURCHASED_PLATFORMS_FALLBACK = ["ps4", "ps5"]
+
+
+def _fetch_purchased_pages(token: str, account_id: str, platforms: list[str]) -> list[dict]:
+    """One full paged getPurchasedGameList run for a given platform list."""
     out: list[dict] = []
     start = 0
     for _ in range(_MAX_PAGES):
         variables = {
             "isActive": True,
-            "platform": ["ps4", "ps5"],
+            "platform": platforms,
             "size": 100,
             "start": start,
             "sortBy": "ACTIVE_DATE",
@@ -195,6 +205,8 @@ def _fetch_purchased(token: str, account_id: str) -> list[dict]:
                 "extensions": json.dumps({"persistedQuery": {"version": 1, "sha256Hash": _PURCHASED_QUERY_HASH}}),
             },
         )
+        if data.get("errors") and start == 0:
+            raise ValueError(f"PSN rejected the purchased query: {data['errors']}")
         games = ((data.get("data") or {}).get("purchasedTitlesRetrieve") or {}).get("games") or []
         out.extend(games)
         if len(games) < 100:
@@ -202,6 +214,22 @@ def _fetch_purchased(token: str, account_id: str) -> list[dict]:
         start += 100
         time.sleep(_PAGE_SLEEP_S)
     return out
+
+
+def _fetch_purchased(token: str, account_id: str) -> list[dict]:
+    """GraphQL getPurchasedGameList, paged 100 at a time. Asks for every
+    PlayStation platform, falling back to ps4/ps5 if Sony won't take the wider
+    list — a rejected token must not cost the user their whole crawl."""
+    try:
+        return _fetch_purchased_pages(token, account_id, _PURCHASED_PLATFORMS)
+    except Exception as e:
+        _logger.warning(
+            "PSN purchased fetch failed for platforms %s (%s) — retrying with %s",
+            _PURCHASED_PLATFORMS,
+            e,
+            _PURCHASED_PLATFORMS_FALLBACK,
+        )
+        return _fetch_purchased_pages(token, account_id, _PURCHASED_PLATFORMS_FALLBACK)
 
 
 def _fetch_trophy_titles(token: str, account_id: str) -> tuple[list[dict], int | None]:
@@ -540,8 +568,11 @@ def external_id_for(item: dict) -> str | None:
     return item.get("titleId") or item.get("npCommunicationId") or item.get("productId") or None
 
 
-def _build_report(db: Session, merged: list[dict], filtered: dict, totals: dict) -> dict:
+def _build_report(db: Session, merged: list[dict], filtered: dict, totals: dict, purchased: list[dict] | None = None) -> dict:
     membership = Counter((m.get("membership") or "NONE") for m in merged if "purchased" in m.get("sources", []))
+    # Which platforms the purchased feed actually returned. We now ask for the
+    # old consoles too (#181) — this is how you see whether Sony honours it.
+    purchased_platforms = Counter((p.get("platform") or "unknown") for p in (purchased or []))
     platforms = Counter((m.get("platform") or "unknown") for m in merged)
     platform_resolution = {}
     for name in platforms:
@@ -561,6 +592,7 @@ def _build_report(db: Session, merged: list[dict], filtered: dict, totals: dict)
         "merged_total": len(merged),
         "filtered": filtered,
         "membership": dict(membership),
+        "purchased_platforms": dict(purchased_platforms),
         "platforms": dict(platforms),
         "unresolvable_platforms": unresolvable,
         "no_external_id": sum(1 for i in ids if not i),
@@ -599,7 +631,7 @@ def fetch_snapshot(db: Session, user: models.User) -> dict:
         "played_fetched": len(played),
         "played_reported": played_total,
     }
-    report = _build_report(db, result["merged"], result["filtered"], totals)
+    report = _build_report(db, result["merged"], result["filtered"], totals, purchased)
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(snapshot_path(user.id), "w") as f:

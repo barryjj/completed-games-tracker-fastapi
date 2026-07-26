@@ -1232,3 +1232,39 @@ def test_titles_match_contained_is_only_a_suggestion():
     assert m("Alan Wake II: Night Springs", "Alan Wake II") == "contained"
     assert m("Nioh 2 - The Tengu's Disciple", "Nioh 2") == "contained"
     assert m("Peggle Nights", "Peggle") == "contained"
+
+
+def test_purchased_fetch_asks_for_every_platform():
+    """The original port asked only for ps4/ps5, so every conclusion about
+    'PSN doesn't return PS3/Vita purchases' was really about our own filter
+    (#181)."""
+    import json as _j
+
+    page = {"data": {"purchasedTitlesRetrieve": {"games": []}}}
+    with patch("backend.psn._bearer_get", return_value=page) as mocked:
+        psn._fetch_purchased("tok", "acct")
+    variables = _j.loads(mocked.call_args.kwargs["params"]["variables"])
+    assert "ps3" in variables["platform"]
+    assert "ps vita" in variables["platform"]
+    assert "psp" in variables["platform"]
+
+
+def test_purchased_fetch_falls_back_when_sony_rejects_the_wider_list():
+    """A rejected platform token must not cost the user their whole crawl."""
+    import json as _j
+
+    good = {"data": {"purchasedTitlesRetrieve": {"games": [{"titleId": "CUSA1_00"}]}}}
+    calls = []
+
+    def fake(_token, _url, params=None):
+        platforms = _j.loads(params["variables"])["platform"]
+        calls.append(platforms)
+        if "ps3" in platforms:
+            return {"errors": [{"message": "unknown platform"}]}
+        return good
+
+    with patch("backend.psn._bearer_get", side_effect=fake):
+        out = psn._fetch_purchased("tok", "acct")
+    assert out == [{"titleId": "CUSA1_00"}]  # fallback result, not an exception
+    assert calls[0] != calls[-1]
+    assert calls[-1] == ["ps4", "ps5"]

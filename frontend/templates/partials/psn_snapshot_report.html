@@ -20,6 +20,14 @@
       <dd>{{ "{:,}".format(report.merged_total) }}</dd>
       <dt>Purchased</dt>
       <dd>{{ "{:,}".format(report.totals.purchased_fetched) }} fetched</dd>
+      {% if report.purchased_platforms %}
+      {# Which platforms the purchased feed returned. We ask Sony for the old
+         consoles too (#181); if only PS4/PS5 come back, it genuinely doesn't
+         serve pre-PS4 purchases. #}
+      <dt>Purchases by platform</dt>
+      <dd>{% for plat, n in report.purchased_platforms.items() %}{{ plat }} {{ "{:,}".format(n) }}{% if not loop.last %} &middot; {% endif %}{% endfor %}</dd>
+      {% endif %}
+
       <dt>Trophy titles</dt>
       <dd>{{ "{:,}".format(report.totals.trophy_fetched) }} fetched{% if report.totals.trophy_reported is not none %} of {{ "{:,}".format(report.totals.trophy_reported) }} reported by PSN{% endif %}</dd>
       <dt>Played</dt>
