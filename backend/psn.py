@@ -417,6 +417,11 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
                 (v for v in current if v.get("normalizedName") and v["normalizedName"] == t_norm and _platforms_compatible(v, t)),
                 None,
             )
+        # Never fold two trophy sets into one item. A second npCommunicationId
+        # is a genuinely separate record — a different platform's progress, or
+        # an outright different game sharing a name (Demon's Souls PS3 vs the
+        # PS5 remake). Both used to match the same purchased row by name, and
+        # the second silently overwrote the first, losing its progress (#163).
         key = (
             (existing or {}).get("titleId")
             or (existing or {}).get("npCommunicationId")
@@ -424,6 +429,21 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             or t.get("titleId")
             or _item_name(t)
         )
+        # The slot this would land in may already hold a DIFFERENT trophy set —
+        # `current` is snapshotted before the loop, so two sets for one game both
+        # match the same purchased row by name and resolve to the same key. The
+        # second used to overwrite the first, silently losing its progress
+        # (Crimsonland's 90% set) and merging genuinely different games
+        # (Demon's Souls PS3 vs the PS5 remake). Give it its own slot instead.
+        occupant = lib.get(key)
+        if (
+            occupant
+            and occupant.get("npCommunicationId")
+            and t.get("npCommunicationId")
+            and occupant["npCommunicationId"] != t["npCommunicationId"]
+        ):
+            existing = None
+            key = t["npCommunicationId"]
         merged = {
             **(existing or {}),
             "titleId": (existing or {}).get("titleId") or t.get("titleId"),

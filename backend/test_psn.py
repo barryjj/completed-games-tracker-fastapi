@@ -1067,3 +1067,23 @@ def test_import_review_endpoint_records_choices(client, db_session, monkeypatch,
 
     r = client.post("/integrations/psn/import-review", data={"decisions": ""})
     assert b"No review selections" in r.content
+
+
+def test_two_trophy_sets_for_one_name_stay_separate():
+    """Two trophy sets are two records — a second platform's progress, or an
+    outright different game sharing a name (Demon's Souls PS3 vs the PS5
+    remake). Both used to match the same purchased row by name, resolve to the
+    same key, and the second silently overwrote the first (#163)."""
+    purchased = [_purchased("Demon's Souls", "CUSA00881_00", platform="PS4")]
+    titles = [
+        {"npCommunicationId": "NPWR00881_00", "trophyTitleName": "Demon's Souls", "trophyTitlePlatform": "PS3", "progress": 100},
+        {"npCommunicationId": "NPWR20277_00", "trophyTitleName": "Demon's Souls", "trophyTitlePlatform": "PS5", "progress": 42},
+    ]
+    merged = psn.merge_library(purchased, titles, [])["merged"]
+    by_npc = {m.get("npCommunicationId"): m for m in merged}
+    assert "NPWR00881_00" in by_npc and "NPWR20277_00" in by_npc
+    # Each keeps its own progress — neither is clobbered.
+    assert by_npc["NPWR00881_00"]["trophyProgress"] == 100
+    assert by_npc["NPWR20277_00"]["trophyProgress"] == 42
+    assert by_npc["NPWR00881_00"]["platform"] == "PS3"
+    assert by_npc["NPWR20277_00"]["platform"] == "PS5"
