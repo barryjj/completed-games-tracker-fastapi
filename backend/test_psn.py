@@ -1105,3 +1105,50 @@ def test_two_trophy_sets_for_one_name_stay_separate():
     assert by_npc["NPWR20277_00"]["trophyProgress"] == 42
     assert by_npc["NPWR00881_00"]["platform"] == "PS3"
     assert by_npc["NPWR20277_00"]["platform"] == "PS5"
+
+
+def test_played_feed_name_never_overwrites_the_real_title():
+    """Sony's played feed reports activity under a concept/collection name:
+    Uncharted 4 and The Lost Legacy both come back as 'UNCHARTED: Legacy of
+    Thieves Collection' even though their trophy sets and store entries name
+    them correctly. Letting that win merged two distinct games into one name
+    and broke matching against the user's own records (#163)."""
+    purchased = [
+        _purchased("Uncharted 4: A Thief's End", "CUSA00341_00", platform="PS4"),
+        _purchased("Uncharted: The Lost Legacy", "CUSA07737_00", platform="PS4"),
+    ]
+    titles = [
+        {
+            "npCommunicationId": "NPWR07028_00",
+            "titleId": "CUSA00341_00",
+            "trophyTitleName": "Uncharted 4: A Thief's End",
+            "trophyTitlePlatform": "PS4",
+            "progress": 84,
+        },
+        {
+            "npCommunicationId": "NPWR13408_00",
+            "titleId": "CUSA07737_00",
+            "trophyTitleName": "Uncharted: The Lost Legacy",
+            "trophyTitlePlatform": "PS4",
+            "progress": 100,
+        },
+    ]
+    played = [
+        {"titleId": "CUSA00341_00", "name": "UNCHARTED: Legacy of Thieves Collection", "category": "ps4_game", "playDuration": "PT50H"},
+        {"titleId": "CUSA07737_00", "name": "UNCHARTED: Legacy of Thieves Collection", "category": "ps4_game", "playDuration": "PT23H"},
+    ]
+    merged = psn.merge_library(purchased, titles, played)["merged"]
+    names = sorted(m["name"] for m in merged)
+    assert names == ["Uncharted 4: A Thief's End", "Uncharted: The Lost Legacy"]
+    # ...and each keeps its own trophy progress.
+    by_name = {m["name"]: m for m in merged}
+    assert by_name["Uncharted 4: A Thief's End"]["trophyProgress"] == 84
+    assert by_name["Uncharted: The Lost Legacy"]["trophyProgress"] == 100
+
+
+def test_played_only_rows_still_use_the_played_name():
+    """The played name is the fallback, not banned — a played-only row has
+    nothing else to go on."""
+    played = [{"titleId": "CUSA9_00", "name": "Some Game", "category": "ps4_game", "playDuration": "PT1H"}]
+    merged = psn.merge_library([], [], played)["merged"]
+    assert merged[0]["name"] == "Some Game"

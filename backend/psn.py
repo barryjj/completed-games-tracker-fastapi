@@ -480,7 +480,13 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             "titleId": (existing or {}).get("titleId") or p.get("titleId"),
             "npCommunicationId": (existing or {}).get("npCommunicationId") or p.get("npCommunicationId"),
             "productId": (existing or {}).get("productId") or p.get("productId"),
-            "name": p.get("name") or p.get("localizedName") or (existing or {}).get("name"),
+            # The played feed is the LEAST authoritative name: Sony reports
+            # activity under a concept/collection name, so both Uncharted 4 and
+            # The Lost Legacy come back as "UNCHARTED: Legacy of Thieves
+            # Collection" even though their trophy sets and store entries name
+            # them correctly. Only fall back to it when nothing better exists
+            # (played-only rows, where it's all we have).
+            "name": (existing or {}).get("name") or p.get("name") or p.get("localizedName"),
             "playCount": p.get("playCount", (existing or {}).get("playCount", 0)),
             "firstPlayed": p.get("firstPlayedDateTime") or (existing or {}).get("firstPlayed"),
             "lastPlayed": p.get("lastPlayedDateTime") or (existing or {}).get("lastPlayed"),
