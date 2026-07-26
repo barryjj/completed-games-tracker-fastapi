@@ -629,6 +629,31 @@ window.cgtPsnReviewView = function (mode) {
 document.addEventListener('DOMContentLoaded', function () { window.cgtPsnReviewView(); });
 document.addEventListener('htmx:afterSettle', function () { window.cgtPsnReviewView(); });
 
+// Filter the review to games offering one platform, and bulk-set the format
+// of everything currently visible. With hundreds of rows this is the
+// difference between usable and not.
+window.cgtPsnReviewFilter = function () {
+  var want = (document.getElementById('cgt-review-filter') || {}).value || '';
+  document.querySelectorAll('.cgt-review-card').forEach(function (card) {
+    var has = !want || Array.from(card.querySelectorAll('.cgt-review-platform'))
+      .some(function (b) { return b.value === want; });
+    card.hidden = !has;
+  });
+};
+
+window.cgtPsnReviewSetAll = function (medium) {
+  var want = (document.getElementById('cgt-review-filter') || {}).value || '';
+  document.querySelectorAll('.cgt-review-card').forEach(function (card) {
+    if (card.hidden) return;
+    card.querySelectorAll('.cgt-review-option').forEach(function (opt) {
+      // With a platform filter on, only touch that platform's row.
+      var box = opt.querySelector('.cgt-review-platform');
+      if (want && box && box.value !== want) return;
+      opt.querySelector('.cgt-review-medium').value = medium;
+    });
+  });
+};
+
 window.cgtPsnReviewDecisions = function () {
   var out = {};
   document.querySelectorAll('.cgt-review-card').forEach(function (card) {

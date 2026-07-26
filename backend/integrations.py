@@ -406,6 +406,7 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
     """Re-render the snapshot report block (used as the swap target by the
     played-only review actions so the row list updates in place)."""
     snap = psn.load_snapshot(current_user.id)
+    _review = psn.import_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
@@ -413,7 +414,8 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
             "snapshot": snap,
             "report": (snap or {}).get("report"),
             "played_only": psn.played_only_rows(db, current_user.id),
-            "import_review": psn.import_review_rows(db, current_user.id),
+            "import_review": _review,
+            "review_platforms": sorted({o["platform"] for r in _review for o in r["options"]}),
             "flash": flash,
             "flash_error": error,
         },

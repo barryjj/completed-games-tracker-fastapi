@@ -1081,13 +1081,22 @@ def medium_suggestion(item: dict, platform: str) -> tuple[str, str]:
 
 
 def import_review_rows(db: Session, user_id: int) -> list[dict]:
-    """Cross-play trophy sets — one row per game, one option per platform.
+    """Everything the import can't settle on its own — one row per game, one
+    option per platform.
 
-    Every cross-play item is listed, not just the ones play history couldn't
-    settle: knowing WHERE you played doesn't tell us what you OWN. Cross-buy
-    means the answer is often several platforms (Shovel Knight: Treasure Trove
-    is one PS3,PSVITA,PS4 trophy set), so platforms are checkboxes, and each
-    carries its own format — you might have the PS4 disc and the Vita download.
+    Two kinds of uncertainty land here, because both are questions only the
+    user can answer and it would be daft to ask them in two places:
+
+      * **which platform(s)** — a cross-play trophy set covers several and
+        never says which you own. Cross-buy means the answer is often more than
+        one (Shovel Knight: Treasure Trove is one PS3,PSVITA,PS4 set), so
+        platforms are checkboxes.
+      * **what format** — PSN can't see discs at all, so anything not in the
+        purchased feed has no defensible format. Each platform carries its own,
+        since you might have the PS4 disc and the Vita download.
+
+    Items the import is sure about (single platform, already known digital)
+    never appear. Unticking every platform skips the game entirely.
     """
     snap = load_snapshot(user_id)
     if not snap:
@@ -1098,7 +1107,13 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         if is_played_only(item):
             continue
         candidates = platform_candidates(item)
-        if len(candidates) < 2:
+        if not candidates:
+            continue
+        # Ask when the platform is ambiguous OR the format is unknowable.
+        # A single-platform game already known to be digital needs nothing.
+        needs_platform = len(candidates) > 1
+        needs_format = medium_for_item(item) is None
+        if not (needs_platform or needs_format):
             continue
         ext_id = external_id_for(item)
         decided = {d["platform"]: d for d in decisions.get(ext_id, []) if d.get("platform")}
@@ -1123,8 +1138,11 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
             {
                 "external_id": ext_id,
                 "name": item.get("displayName") or item.get("name"),
-                "reason": reason,
+                # A single-platform row is purely a format question — say so
+                # rather than showing platform-resolution reasoning.
+                "reason": reason if needs_platform else "Format unknown — PSN can't see disc copies",
                 "options": options,
+                "needs_platform": needs_platform,
                 "reviewed": ext_id in decisions,
             }
         )

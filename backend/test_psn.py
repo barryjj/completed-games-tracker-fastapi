@@ -944,11 +944,11 @@ def test_merge_tracks_play_minutes_per_category():
     assert psn.played_minutes_by_platform(item) == {"PS5": 600, "PS4": 30}
 
 
-def test_import_review_rows_lists_cross_play_games(db_session, monkeypatch, tmp_path):
-    """Every cross-play game is listed — knowing where you PLAYED doesn't say
-    what you OWN, and cross-buy means the answer is often several platforms."""
+def test_import_review_rows_lists_what_the_import_cannot_settle(db_session, monkeypatch, tmp_path):
+    """Two kinds of uncertainty reach the review — an ambiguous platform, and
+    an unknowable format — and anything the import can settle stays out of it."""
     merged = [
-        {  # played on PS5, but the set also covers PS4 — user may own both
+        {  # cross-play: played on PS5, but the set also covers PS4
             "npCommunicationId": "NPWR_X_00",
             "name": "Cross",
             "displayName": "Cross",
@@ -956,24 +956,42 @@ def test_import_review_rows_lists_cross_play_games(db_session, monkeypatch, tmp_
             "playByCategory": {"ps5_native_game": 600},
             "sources": ["titles", "played"],
         },
-        {  # single platform — never needs review
+        {  # single platform, trophy-only — format is unknowable, so it's asked
             "npCommunicationId": "NPWR_ONE_00",
-            "name": "Single",
-            "displayName": "Single",
+            "name": "FormatOnly",
+            "displayName": "FormatOnly",
             "platform": "PS4",
             "sources": ["titles"],
         },
+        {  # single platform AND in the purchased feed — settled, never asked
+            "titleId": "CUSA9999_00",
+            "name": "Settled",
+            "displayName": "Settled",
+            "platform": "PS4",
+            "sources": ["purchased"],
+        },
     ]
     _write_snapshot(monkeypatch, tmp_path, 1, merged)
-    rows = psn.import_review_rows(db_session, 1)
-    assert [r["name"] for r in rows] == ["Cross"]
-    options = {o["platform"]: o for o in rows[0]["options"]}
+    by_name = {r["name"]: r for r in psn.import_review_rows(db_session, 1)}
+
+    # Nothing the import can settle on its own shows up.
+    assert "Settled" not in by_name
+
+    # The cross-play one is a platform question: both platforms offered, play
+    # history pre-ticking only the one it can defend.
+    cross = by_name["Cross"]
+    assert cross["needs_platform"] is True
+    options = {o["platform"]: o for o in cross["options"]}
     assert set(options) == {"PS4", "PS5"}
-    # Play history pre-checks PS5 only; PS4 is offered, unticked.
     assert options["PS5"]["selected"] is True
     assert options["PS4"]["selected"] is False
-    # Each platform carries its own format suggestion.
-    assert options["PS5"]["medium"] in ("digital", "physical")
+
+    # The trophy-only one is purely a format question on its single platform.
+    fmt = by_name["FormatOnly"]
+    assert fmt["needs_platform"] is False
+    assert [o["platform"] for o in fmt["options"]] == ["PS4"]
+    assert fmt["options"][0]["selected"] is True
+    assert fmt["options"][0]["medium"] == "digital"
 
 
 def test_medium_suggestion_per_platform():
