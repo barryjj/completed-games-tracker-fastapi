@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import json as _json
 import logging
 import os
 import re
@@ -412,7 +413,7 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
             "snapshot": snap,
             "report": (snap or {}).get("report"),
             "played_only": psn.played_only_rows(db, current_user.id),
-            "platform_review": psn.platform_review_rows(db, current_user.id),
+            "import_review": psn.import_review_rows(db, current_user.id),
             "flash": flash,
             "flash_error": error,
         },
@@ -421,42 +422,34 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
     return response
 
 
-@router.post("/psn/platform-review")
-def psn_platform_review_save(
+@router.post("/psn/import-review")
+def psn_import_review_save(
     request: Request,
-    choices: str = Form(""),
+    decisions: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Record reviewed platforms for cross-play trophy sets (#163).
+    """Record reviewed platform + format choices for cross-play trophy sets (#163).
 
-    `choices` is a compact "externalId=PLATFORM" list, newline- or
-    comma-separated, so one form post covers a single row or a bulk apply.
-    Choices are validated against each item's own trophy set, then stored on
-    the snapshot for the next import to apply.
+    `decisions` is JSON: {externalId: [{platform, medium}, ...]}. A game can
+    resolve to several platforms (cross-buy), each with its own format, and an
+    empty list means "don't import this one". Choices are validated against the
+    item's own trophy set, stored on the snapshot, and applied by the next import.
     """
-    parsed: dict[str, str] = {}
-    for part in choices.replace("\n", ",").split(","):
-        part = part.strip()
-        if not part or "=" not in part:
-            continue
-        ext_id, _, platform = part.partition("=")
-        ext_id, platform = ext_id.strip(), platform.strip().upper()
-        if ext_id and platform:
-            parsed[ext_id] = platform
-    if not parsed:
-        return _psn_report_response(request, db, current_user, error="No platform choices submitted.")
     try:
-        written = psn.record_platform_decisions(current_user.id, parsed)
+        parsed = _json.loads(decisions) if decisions.strip() else {}
+    except ValueError:
+        return _psn_report_response(request, db, current_user, error="Could not read the review selections.")
+    if not isinstance(parsed, dict) or not parsed:
+        return _psn_report_response(request, db, current_user, error="No review selections submitted.")
+    try:
+        written = psn.record_entry_decisions(current_user.id, parsed)
     except ValueError as e:
         return _psn_report_response(request, db, current_user, error=str(e))
     if not written:
-        return _psn_report_response(request, db, current_user, error="No valid choices — a platform must be one the trophy set covers.")
+        return _psn_report_response(request, db, current_user, error="No valid selections — platforms must be ones the trophy set covers.")
     return _psn_report_response(
-        request,
-        db,
-        current_user,
-        flash=f"Recorded {written} platform choice{'s' if written != 1 else ''} — run Import to apply.",
+        request, db, current_user, flash=f"Saved choices for {written} game{'s' if written != 1 else ''} — run Import to apply."
     )
 
 

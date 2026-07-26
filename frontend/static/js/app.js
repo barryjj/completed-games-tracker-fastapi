@@ -608,14 +608,22 @@ document.addEventListener('pointerover', function (e) {
   });
 })();
 
-// ─── PSN cross-play platform review (#163) ────────────────────────────────
-// Collects the per-row platform selects into the compact "extId=PLATFORM"
-// list the endpoint parses. Read at request time via hx-vals js:, so it picks
-// up whatever the selects currently hold after an HTMX re-render.
-window.cgtPsnPlatformChoices = function () {
-  return Array.from(document.querySelectorAll('.cgt-psn-platform-choice'))
-    .map(function (sel) { return sel.dataset.externalId + '=' + sel.value; })
-    .join(',');
+// ─── PSN cross-play import review (#163) ──────────────────────────────────
+// Serialises each review card into {externalId: [{platform, medium}]}. A game
+// can resolve to several platforms (cross-buy), and an empty array is a real
+// decision meaning "skip this one". Read at request time via hx-vals js:.
+window.cgtPsnReviewDecisions = function () {
+  var out = {};
+  document.querySelectorAll('.cgt-review-card').forEach(function (card) {
+    var choices = [];
+    card.querySelectorAll('.cgt-review-option').forEach(function (opt) {
+      var box = opt.querySelector('.cgt-review-platform');
+      if (!box || !box.checked) return;
+      choices.push({platform: box.value, medium: opt.querySelector('.cgt-review-medium').value || null});
+    });
+    out[card.dataset.externalId] = choices;
+  });
+  return JSON.stringify(out);
 };
 
 // ─── External links in the desktop shell ──────────────────────────────────

@@ -944,25 +944,19 @@ def test_merge_tracks_play_minutes_per_category():
     assert psn.played_minutes_by_platform(item) == {"PS5": 600, "PS4": 30}
 
 
-def test_platform_review_rows_only_lists_the_ambiguous(db_session, monkeypatch, tmp_path):
-    """Confident resolutions are applied silently; only genuine guesses surface."""
+def test_import_review_rows_lists_cross_play_games(db_session, monkeypatch, tmp_path):
+    """Every cross-play game is listed — knowing where you PLAYED doesn't say
+    what you OWN, and cross-buy means the answer is often several platforms."""
     merged = [
-        {  # confident — substantial playtime on one platform
-            "npCommunicationId": "NPWR_CONF_00",
-            "name": "Confident",
-            "displayName": "Confident",
+        {  # played on PS5, but the set also covers PS4 — user may own both
+            "npCommunicationId": "NPWR_X_00",
+            "name": "Cross",
+            "displayName": "Cross",
             "platform": "PS4,PS5",
             "playByCategory": {"ps5_native_game": 600},
             "sources": ["titles", "played"],
         },
-        {  # ambiguous — trophy-only cross-play
-            "npCommunicationId": "NPWR_AMB_00",
-            "name": "Shinovi",
-            "displayName": "Shinovi",
-            "platform": "PS3,PSVITA",
-            "sources": ["titles"],
-        },
-        {  # single platform — never in review
+        {  # single platform — never needs review
             "npCommunicationId": "NPWR_ONE_00",
             "name": "Single",
             "displayName": "Single",
@@ -971,40 +965,88 @@ def test_platform_review_rows_only_lists_the_ambiguous(db_session, monkeypatch, 
         },
     ]
     _write_snapshot(monkeypatch, tmp_path, 1, merged)
-    rows = psn.platform_review_rows(db_session, 1)
-    assert [r["name"] for r in rows] == ["Shinovi"]
-    assert rows[0]["candidates"] == ["PS3", "PSVITA"]
-    assert rows[0]["suggested"] == "PSVITA"
+    rows = psn.import_review_rows(db_session, 1)
+    assert [r["name"] for r in rows] == ["Cross"]
+    options = {o["platform"]: o for o in rows[0]["options"]}
+    assert set(options) == {"PS4", "PS5"}
+    # Play history pre-checks PS5 only; PS4 is offered, unticked.
+    assert options["PS5"]["selected"] is True
+    assert options["PS4"]["selected"] is False
+    # Each platform carries its own format suggestion.
+    assert options["PS5"]["medium"] in ("digital", "physical")
 
 
-def test_record_platform_decisions_validates_against_the_trophy_set(monkeypatch, tmp_path):
-    merged = [{"npCommunicationId": "NPWR_A_00", "name": "A", "displayName": "A", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+def test_medium_suggestion_per_platform():
+    old_era = {"sources": ["titles"], "platform": "PS3,PSVITA"}
+    # The modern feed doesn't cover PS3/Vita, so absence there means nothing.
+    assert psn.medium_suggestion(old_era, "PSVITA")[0] == "digital"
+    # Modern platform absent from the purchases you DO have → likely a disc.
+    assert psn.medium_suggestion({"sources": ["titles"], "platform": "PS4,PS5"}, "PS5")[0] == "physical"
+    # Actually in the purchased feed → digital.
+    assert psn.medium_suggestion({"sources": ["purchased"], "platform": "PS4"}, "PS4")[0] == "digital"
+
+
+def test_record_entry_decisions_validates_and_allows_multiple(monkeypatch, tmp_path):
+    merged = [{"npCommunicationId": "NPWR_A_00", "name": "A", "displayName": "A", "platform": "PS3,PSVITA,PS4", "sources": ["titles"]}]
     _write_snapshot(monkeypatch, tmp_path, 1, merged)
-    # A platform the set doesn't cover is rejected.
-    assert psn.record_platform_decisions(1, {"NPWR_A_00": "PS5"}) == 0
-    # Unknown ids are ignored.
-    assert psn.record_platform_decisions(1, {"NOPE": "PS3"}) == 0
-    # A valid choice is stored.
-    assert psn.record_platform_decisions(1, {"NPWR_A_00": "PS3"}) == 1
-    assert psn.load_snapshot(1)["platform_decisions"]["NPWR_A_00"] == "PS3"
+    # Cross-buy: several platforms, each with its own format.
+    written = psn.record_entry_decisions(
+        1, {"NPWR_A_00": [{"platform": "PS4", "medium": "physical"}, {"platform": "PSVITA", "medium": "digital"}]}
+    )
+    assert written == 1
+    stored = psn.load_snapshot(1)["entry_decisions"]["NPWR_A_00"]
+    assert {d["platform"]: d["medium"] for d in stored} == {"PS4": "physical", "PSVITA": "digital"}
+    # A platform the trophy set doesn't cover is dropped.
+    psn.record_entry_decisions(1, {"NPWR_A_00": [{"platform": "PS5", "medium": "digital"}]})
+    assert psn.load_snapshot(1)["entry_decisions"]["NPWR_A_00"] == []
 
 
-def test_import_applies_a_reviewed_platform(db_session, monkeypatch, tmp_path):
-    """The decision beats the heuristic: suggested PSVITA, user chose PS3."""
+def test_import_creates_one_entry_per_chosen_platform(db_session, monkeypatch, tmp_path):
+    """Cross-buy: one trophy set becomes a library entry on each platform the
+    user picked, each with the format they chose."""
     _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
     user = models.User(name="p", username="p", password_hash="x", api_token="ptok")
     db_session.add(user)
     db_session.commit()
-    merged = [{"npCommunicationId": "NPWR_D_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    merged = [
+        {"npCommunicationId": "NPWR_D_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA,PS4", "sources": ["titles"]}
+    ]
     _write_snapshot(monkeypatch, tmp_path, user.id, merged)
-    psn.record_platform_decisions(user.id, {"NPWR_D_00": "PS3"})
+    psn.record_entry_decisions(
+        user.id, {"NPWR_D_00": [{"platform": "PS4", "medium": "physical"}, {"platform": "PSVITA", "medium": "digital"}]}
+    )
 
+    result = psn.import_snapshot(db_session, user)
+    assert result["added"] == 2
+    releases = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_D_00").all()
+    assert {r.platform_id for r in releases} == {
+        models.resolve_platform_id(db_session, "PS4"),
+        models.resolve_platform_id(db_session, "PSVITA"),
+    }
+    mediums = {}
+    for rel in releases:
+        entry = db_session.query(models.UserLibraryEntry).filter_by(release_id=rel.id).one()
+        mediums[rel.platform_id] = entry.medium
+    assert set(mediums.values()) == {"physical", "digital"}
+
+
+def test_import_skips_a_game_with_an_empty_decision(db_session, monkeypatch, tmp_path):
+    """Unticking every platform is a real decision: don't import this one."""
+    _seed_platforms(db_session)
+    user = models.User(name="q", username="q", password_hash="x", api_token="qtok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [{"npCommunicationId": "NPWR_S_00", "name": "Skip", "displayName": "Skip", "platform": "PS3,PS4", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    psn.record_entry_decisions(user.id, {"NPWR_S_00": []})
     psn.import_snapshot(db_session, user)
-    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_D_00").one()
-    assert rel.platform_id == models.resolve_platform_id(db_session, "PS3")
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_S_00").count() == 0
 
 
-def test_platform_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
+def test_import_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
+    import json as _j
+
     _seed_platforms(db_session)
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
@@ -1013,11 +1055,11 @@ def test_platform_review_endpoint_records_choices(client, db_session, monkeypatc
     merged = [{"npCommunicationId": "NPWR_E_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
     _write_snapshot(monkeypatch, tmp_path, user.id, merged)
 
-    r = client.post("/integrations/psn/platform-review", data={"choices": "NPWR_E_00=PS3"})
+    payload = _j.dumps({"NPWR_E_00": [{"platform": "PS3", "medium": "physical"}]})
+    r = client.post("/integrations/psn/import-review", data={"decisions": payload})
     assert r.status_code == 200
-    assert b"Recorded 1 platform choice" in r.content
-    assert psn.load_snapshot(user.id)["platform_decisions"]["NPWR_E_00"] == "PS3"
+    assert b"Saved choices for 1 game" in r.content
+    assert psn.load_snapshot(user.id)["entry_decisions"]["NPWR_E_00"] == [{"platform": "PS3", "medium": "physical"}]
 
-    # Garbage in → a clear error, nothing stored.
-    r = client.post("/integrations/psn/platform-review", data={"choices": ""})
-    assert b"No platform choices" in r.content
+    r = client.post("/integrations/psn/import-review", data={"decisions": ""})
+    assert b"No review selections" in r.content

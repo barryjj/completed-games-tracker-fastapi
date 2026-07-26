@@ -1331,6 +1331,35 @@ body:has(.cgt-sticky-actions) {
 /* Subscription-service badge on the detail pane's Format line — marks a copy
    you have through a sub (PS Plus, and later NSO / Game Pass) rather than own.
    Neutral surface + hairline so the service's own icon carries the colour. */
+/* PSN cross-play review cards (#163). Cards, not rows — each game carries a
+   platform checkbox + format select per platform, which is too much to cram
+   into a table row. Auto-fill keeps them readable at any pane width. */
+.cgt-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.75rem;
+}
+.cgt-review-card {
+  background-color: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 6px;
+  padding: 0.65rem 0.75rem;
+}
+.cgt-review-card__title { font-weight: 500; font-size: 0.9rem; }
+.cgt-review-card__reason {
+  color: var(--ctp-subtext);
+  font-size: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+.cgt-review-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+.cgt-review-option .form-select { width: auto; min-width: 7.5rem; }
+
 /* Bulk-select mode (#175) — checkboxes ride in the list's thumbnail cell and
    stay out of the DOM's way until the mode is on, so toggling costs no fetch. */
 .cgt-bulk-check { display: none; margin-right: 0.4rem; vertical-align: middle; }

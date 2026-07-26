@@ -808,7 +808,7 @@ def _platform_label(db: Session, platform_id: int | None, item: dict) -> str:
     return item.get("platform") or "PSN"
 
 
-def _import_one(db: Session, user: models.User, item: dict, platform_id: int) -> str:
+def _import_one(db: Session, user: models.User, item: dict, platform_id: int, medium: str | None = None) -> str:
     """Upsert one merged item as Game/GameRelease/UserLibraryEntry (mirrors
     steam._import_owned_games row-for-row). Returns 'added' | 'updated' |
     'conflict'. Deliberately writes NO GameArtwork — SGDB is the agreed art
@@ -818,7 +818,10 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
     # displayName was computed before this fix) still imports the clean name
     # without a re-fetch.
     title = _strip_trophy_suffix(item.get("displayName") or item.get("name") or external_id)
-    release = db.query(models.GameRelease).filter_by(source="psn", external_id=external_id).first()
+    # Scoped to the platform: one trophy set can legitimately become several
+    # releases (cross-buy — Shovel Knight on PS4 *and* Vita). external_id is
+    # not unique, only (game_id, platform) is.
+    release = db.query(models.GameRelease).filter_by(source="psn", external_id=external_id, platform_id=platform_id).first()
 
     if release is None:
         cleaned = titles._clean_title(title)
@@ -890,7 +893,7 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
                 playtime_minutes=playtime or 0,
                 last_played_at=last_played,
                 import_source="psn_import",
-                medium=medium_for_item(item),
+                medium=medium or medium_for_item(item),
             )
         )
         return "added"
@@ -898,7 +901,9 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
         entry.playtime_minutes = playtime
     if last_played is not None:
         entry.last_played_at = last_played
-    if not entry.medium_user_set:
+    if medium:
+        entry.medium, entry.medium_user_set = medium, True
+    elif not entry.medium_user_set:
         entry.medium = medium_for_item(item)
     entry.updated_at = datetime.datetime.now(datetime.UTC)
     return "updated"
@@ -924,15 +929,11 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     skipped_pc_dupe = 0
     played_only = 0
     steam_keys = _steam_title_keys(db, user.id)
-    platform_decisions = snap.get("platform_decisions", {})
+    entry_decisions = snap.get("entry_decisions", {})
     for item in snap.get("merged", []):
         if is_played_only(item):
             played_only += 1
             continue
-        # A reviewed platform choice overrides the heuristic (#163).
-        decided = platform_decisions.get(external_id_for(item))
-        if decided:
-            item = {**item, "platformDecision": decided}
         # Belt-and-suspenders: the non-game filter runs at fetch time, but a
         # snapshot taken before the filter was fixed can still hold a beta/demo
         # — never import one regardless of when the snapshot was built.
@@ -948,6 +949,25 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         if not external_id_for(item):
             skipped_no_id += 1
             continue
+        # A reviewed cross-play game becomes one entry per chosen platform,
+        # each with the format picked at review time (#163). An empty decision
+        # means "don't import this one".
+        decided = entry_decisions.get(external_id_for(item))
+        if decided is not None:
+            for choice in decided:
+                platform_id = models.resolve_platform_id(db, choice["platform"])
+                if platform_id is None:
+                    skipped_no_platform += 1
+                    continue
+                outcome = _import_one(db, user, item, platform_id, medium=choice.get("medium"))
+                if outcome == "added":
+                    added += 1
+                elif outcome == "conflict":
+                    skipped_conflict += 1
+                else:
+                    updated += 1
+            continue
+
         platform_id = platform_for_item(db, item)
         if platform_id is None:
             skipped_no_platform += 1
@@ -1013,16 +1033,35 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
     return rows
 
 
-def platform_review_rows(db: Session, user_id: int) -> list[dict]:
-    """Cross-play items whose platform couldn't be settled from play history.
+# Old-era platforms: the modern purchased feed doesn't cover them at all, so a
+# trophy-only record there says nothing about physical vs digital — and most of
+# that era's PSN library was bought digitally.
+_OLD_ERA_PLATFORMS = {"PS3", "PSVITA", "PSP"}
 
-    Only the genuinely ambiguous ones surface — anything resolve_platform_choice
-    is confident about is applied on import without bothering the user.
+
+def medium_suggestion(item: dict, platform: str) -> tuple[str, str]:
+    """(medium, reason) for one platform of one item — a pre-selection for the
+    review, never applied silently."""
+    if "purchased" in (item.get("sources") or []) and platform == str(item.get("platform") or "").upper():
+        return "digital", "In your digital purchases"
+    if platform in _OLD_ERA_PLATFORMS:
+        return "digital", f"{platform}-era purchases aren't in PSN's modern feed"
+    return "physical", "Not in your digital purchases"
+
+
+def import_review_rows(db: Session, user_id: int) -> list[dict]:
+    """Cross-play trophy sets — one row per game, one option per platform.
+
+    Every cross-play item is listed, not just the ones play history couldn't
+    settle: knowing WHERE you played doesn't tell us what you OWN. Cross-buy
+    means the answer is often several platforms (Shovel Knight: Treasure Trove
+    is one PS3,PSVITA,PS4 trophy set), so platforms are checkboxes, and each
+    carries its own format — you might have the PS4 disc and the Vita download.
     """
     snap = load_snapshot(user_id)
     if not snap:
         return []
-    decisions = snap.get("platform_decisions", {})
+    decisions = snap.get("entry_decisions", {})
     rows = []
     for item in snap.get("merged", []):
         if is_played_only(item):
@@ -1030,43 +1069,61 @@ def platform_review_rows(db: Session, user_id: int) -> list[dict]:
         candidates = platform_candidates(item)
         if len(candidates) < 2:
             continue
-        suggested, reason, confident = resolve_platform_choice(item)
-        if confident:
-            continue
         ext_id = external_id_for(item)
+        decided = {d["platform"]: d for d in decisions.get(ext_id, []) if d.get("platform")}
+        resolved, reason, _confident = resolve_platform_choice(item)
+        minutes = played_minutes_by_platform(item)
+        options = []
+        for platform in candidates:
+            suggested_medium, medium_reason = medium_suggestion(item, platform)
+            chosen = decided.get(platform)
+            options.append(
+                {
+                    "platform": platform,
+                    # Pre-check what we can defend: a saved decision, else the
+                    # platform play history points at.
+                    "selected": bool(chosen) if decided else platform == resolved,
+                    "medium": (chosen or {}).get("medium") or suggested_medium,
+                    "medium_reason": medium_reason,
+                    "minutes": minutes.get(platform, 0),
+                }
+            )
         rows.append(
             {
                 "external_id": ext_id,
                 "name": item.get("displayName") or item.get("name"),
-                "candidates": candidates,
-                "suggested": suggested,
                 "reason": reason,
-                "minutes": played_minutes_by_platform(item),
-                "trophy_progress": item.get("trophyProgress"),
-                "decision": decisions.get(ext_id),
+                "options": options,
+                "reviewed": ext_id in decisions,
             }
         )
-    rows.sort(key=lambda r: (r["decision"] is not None, (r["name"] or "").casefold()))
+    rows.sort(key=lambda r: (r["reviewed"], (r["name"] or "").casefold()))
     return rows
 
 
-def record_platform_decisions(user_id: int, decisions: dict[str, str]) -> int:
-    """Persist chosen platforms onto the snapshot so the next import applies
-    them. Returns how many were recorded. Only platforms the item's own trophy
-    set actually covers are accepted."""
+def record_entry_decisions(user_id: int, decisions: dict[str, list[dict]]) -> int:
+    """Persist the reviewed platform+format choices. Returns the number of
+    games recorded. Platforms are validated against each item's own trophy set;
+    an empty list is a valid decision meaning "don't import this at all"."""
     snap = load_snapshot(user_id)
     if not snap:
         raise ValueError("No PSN snapshot found.")
     by_ext = {external_id_for(i): i for i in snap.get("merged", [])}
-    store = snap.setdefault("platform_decisions", {})
+    store = snap.setdefault("entry_decisions", {})
     written = 0
-    for ext_id, platform in decisions.items():
+    for ext_id, choices in decisions.items():
         item = by_ext.get(ext_id)
         if item is None:
             continue
-        if platform not in platform_candidates(item):
-            continue
-        store[ext_id] = platform
+        allowed = set(platform_candidates(item))
+        clean = []
+        for choice in choices:
+            platform = str(choice.get("platform") or "").upper()
+            if platform not in allowed:
+                continue
+            medium = choice.get("medium")
+            clean.append({"platform": platform, "medium": medium if medium in models.MEDIUMS else None})
+        store[ext_id] = clean
         written += 1
     if written:
         with open(snapshot_path(user_id), "w") as f:
