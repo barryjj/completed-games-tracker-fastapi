@@ -328,7 +328,6 @@ def _import_owned_games(db: Session, user: models.User, games: list[dict]) -> di
                     playtime_minutes=playtime,
                     last_played_at=last_played,
                     import_source="steam_import",
-                    medium="digital",  # Steam is digital-only
                 )
             )
             added += 1
@@ -382,7 +381,6 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
                         user_id=user.id,
                         release_id=release.id,
                         import_source="steam_import",
-                        medium="digital",  # Steam is digital-only
                     )
                 )
                 user_release_ids.add(release.id)
@@ -427,7 +425,6 @@ def _import_dlc(db: Session, user: models.User, dlc_appids: set[int], app_names:
                     user_id=user.id,
                     release_id=release.id,
                     import_source="steam_import",
-                    medium="digital",  # Steam is digital-only
                 )
             )
             existing_releases[appid_str] = release

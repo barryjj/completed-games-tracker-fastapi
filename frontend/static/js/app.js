@@ -609,7 +609,7 @@ document.addEventListener('pointerover', function (e) {
 })();
 
 // ─── PSN cross-play import review (#163) ──────────────────────────────────
-// Serialises each review card into {externalId: [{platform, medium}]}. A game
+// Serialises each review card into {externalId: [{platform}]}. A game
 // can resolve to several platforms (cross-buy), and an empty array is a real
 // decision meaning "skip this one". Read at request time via hx-vals js:.
 // List is the baseline layout; cards are the roomier option. Same markup —
@@ -641,18 +641,6 @@ window.cgtPsnReviewFilter = function () {
   });
 };
 
-window.cgtPsnReviewSetAll = function (medium) {
-  var want = (document.getElementById('cgt-review-filter') || {}).value || '';
-  document.querySelectorAll('.cgt-review-card').forEach(function (card) {
-    if (card.hidden) return;
-    card.querySelectorAll('.cgt-review-option').forEach(function (opt) {
-      // With a platform filter on, only touch that platform's row.
-      var box = opt.querySelector('.cgt-review-platform');
-      if (want && box && box.value !== want) return;
-      opt.querySelector('.cgt-review-medium').value = medium;
-    });
-  });
-};
 
 window.cgtPsnReviewDecisions = function () {
   var out = {};
@@ -661,7 +649,7 @@ window.cgtPsnReviewDecisions = function () {
     card.querySelectorAll('.cgt-review-option').forEach(function (opt) {
       var box = opt.querySelector('.cgt-review-platform');
       if (!box || !box.checked) return;
-      choices.push({platform: box.value, medium: opt.querySelector('.cgt-review-medium').value || null});
+      choices.push({platform: box.value});
     });
     out[card.dataset.externalId] = choices;
   });

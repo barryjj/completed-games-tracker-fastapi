@@ -643,24 +643,6 @@ def _parse_played_at(value: str | None) -> datetime.datetime | None:
         return None
 
 
-def medium_for_item(item: dict) -> str | None:
-    """How this PSN copy is owned, or None when we genuinely can't tell.
-
-    Presence in the purchased feed means a digital entitlement — owned outright
-    or through the PS Plus catalog, both downloads. Absence does NOT imply
-    physical, so we assert nothing:
-
-    - PS3/Vita-era titles are missing from the modern purchased feed entirely
-      (it doesn't cover that era), yet most were digital purchases.
-    - Even on PS4/PS5 the absence has innocent causes — preinstalled titles
-      (ASTRO's PLAYROOM), classics re-releases, and PC copies surfacing through
-      PSN's PC integration.
-
-    Unknown entries are left blank for the user to resolve in bulk rather than
-    mislabeled as discs."""
-    return "digital" if "purchased" in (item.get("sources") or []) else None
-
-
 def is_played_only(item: dict) -> bool:
     """Activity-history rows with no purchased/trophy backing — the mixed bag
     of disc copies, demos, friend-pass sessions, and launch-and-quit noise.
@@ -834,7 +816,7 @@ def _platform_label(db: Session, platform_id: int | None, item: dict) -> str:
     return item.get("platform") or "PSN"
 
 
-def _import_one(db: Session, user: models.User, item: dict, platform_id: int, medium: str | None = None) -> str:
+def _import_one(db: Session, user: models.User, item: dict, platform_id: int) -> str:
     """Upsert one merged item as Game/GameRelease/UserLibraryEntry (mirrors
     steam._import_owned_games row-for-row). Returns 'added' | 'updated' |
     'conflict'. Deliberately writes NO GameArtwork — SGDB is the agreed art
@@ -919,7 +901,6 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int, me
                 playtime_minutes=playtime or 0,
                 last_played_at=last_played,
                 import_source="psn_import",
-                medium=medium or medium_for_item(item),
             )
         )
         return "added"
@@ -927,10 +908,6 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int, me
         entry.playtime_minutes = playtime
     if last_played is not None:
         entry.last_played_at = last_played
-    if medium:
-        entry.medium, entry.medium_user_set = medium, True
-    elif not entry.medium_user_set:
-        entry.medium = medium_for_item(item)
     entry.updated_at = datetime.datetime.now(datetime.UTC)
     return "updated"
 
@@ -985,7 +962,7 @@ def import_snapshot(db: Session, user: models.User) -> dict:
                 if platform_id is None:
                     skipped_no_platform += 1
                     continue
-                outcome = _import_one(db, user, item, platform_id, medium=choice.get("medium"))
+                outcome = _import_one(db, user, item, platform_id)
                 if outcome == "added":
                     added += 1
                 elif outcome == "conflict":
@@ -1059,33 +1036,6 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
     return rows
 
 
-# Old-era platforms: the modern purchased feed doesn't cover them at all, so a
-# trophy-only record there says nothing about physical vs digital — and most of
-# that era's PSN library was bought digitally.
-_OLD_ERA_PLATFORMS = {"PS3", "PSVITA", "PSP"}
-
-
-def medium_suggestion(item: dict, platform: str) -> tuple[str, str]:
-    """(medium, reason) for one platform of one item — a pre-selection for the
-    review, never applied silently.
-
-    Always suggests digital, because **PSN cannot see physical ownership**.
-    A disc surfaces only as whatever digital entitlement it granted, or not at
-    all: a PS4 disc with a free PS5 upgrade reports as a plain PS5 purchase
-    (Immortals Fenyx Rising), and a disc whose game later hit the catalogue
-    reports as PS_PLUS (Nioh 2). Absence from the purchased feed likewise means
-    nothing — cross-buy registers only against the platform first bought on, so
-    a Vita-era purchase playable on PS4 never appears as a PS4 purchase
-    (Crimsonland). Only the user knows what's on a shelf; the reason line tells
-    them when to flip it.
-    """
-    if "purchased" in (item.get("sources") or []) and platform == str(item.get("platform") or "").upper():
-        return "digital", "In your digital purchases"
-    if platform in _OLD_ERA_PLATFORMS:
-        return "digital", f"{platform}-era purchases aren't in PSN's modern feed"
-    return "digital", "PSN can't see disc copies — switch to Physical if you own it on disc"
-
-
 def import_review_rows(db: Session, user_id: int) -> list[dict]:
     """Everything the import can't settle on its own — one row per game, one
     option per platform.
@@ -1117,9 +1067,7 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
             continue
         # Ask when the platform is ambiguous OR the format is unknowable.
         # A single-platform game already known to be digital needs nothing.
-        needs_platform = len(candidates) > 1
-        needs_format = medium_for_item(item) is None
-        if not (needs_platform or needs_format):
+        if len(candidates) < 2:
             continue
         ext_id = external_id_for(item)
         decided = {d["platform"]: d for d in decisions.get(ext_id, []) if d.get("platform")}
@@ -1127,7 +1075,6 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         minutes = played_minutes_by_platform(item)
         options = []
         for platform in candidates:
-            suggested_medium, medium_reason = medium_suggestion(item, platform)
             chosen = decided.get(platform)
             options.append(
                 {
@@ -1135,8 +1082,6 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                     # Pre-check what we can defend: a saved decision, else the
                     # platform play history points at.
                     "selected": bool(chosen) if decided else platform == resolved,
-                    "medium": (chosen or {}).get("medium") or suggested_medium,
-                    "medium_reason": medium_reason,
                     "minutes": minutes.get(platform, 0),
                 }
             )
@@ -1144,11 +1089,8 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
             {
                 "external_id": ext_id,
                 "name": item.get("displayName") or item.get("name"),
-                # A single-platform row is purely a format question — say so
-                # rather than showing platform-resolution reasoning.
-                "reason": reason if needs_platform else "Format unknown — PSN can't see disc copies",
+                "reason": reason,
                 "options": options,
-                "needs_platform": needs_platform,
                 "reviewed": ext_id in decisions,
             }
         )
@@ -1176,8 +1118,7 @@ def record_entry_decisions(user_id: int, decisions: dict[str, list[dict]]) -> in
             platform = str(choice.get("platform") or "").upper()
             if platform not in allowed:
                 continue
-            medium = choice.get("medium")
-            clean.append({"platform": platform, "medium": medium if medium in models.MEDIUMS else None})
+            clean.append({"platform": platform})
         store[ext_id] = clean
         written += 1
     if written:

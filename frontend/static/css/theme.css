@@ -1388,7 +1388,6 @@ body:has(.cgt-sticky-actions) {
   gap: 0.5rem;
   padding: 0.15rem 0;
 }
-.cgt-review-option .form-select { width: auto; min-width: 7.5rem; }
 
 /* Bulk-select mode (#175) — checkboxes ride in the list's thumbnail cell and
    stay out of the DOM's way until the mode is on, so toggling costs no fetch. */

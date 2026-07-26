@@ -56,7 +56,7 @@
       <span class="text-secondary fw-normal ms-1">({{ import_review | length }})</span>
     </h6>
     <div class="d-flex align-items-start justify-content-between gap-2 mb-3">
-      <p class="text-secondary mb-0"><small>One trophy set, several platforms. Tick every platform you own it on and set how you own each &mdash; these become your library entries. Untick all to skip a game.</small></p>
+      <p class="text-secondary mb-0"><small>One trophy set, several platforms. Tick every platform you own it on &mdash; these become your library entries. Untick all to skip a game.</small></p>
       {# List is the baseline view, cards are the roomier presentation on top —
          same markup either way, the layout is a CSS class. #}
       <div class="d-flex align-items-center gap-2 flex-shrink-0 flex-wrap">
@@ -67,10 +67,6 @@
         <option value="">All platforms</option>
         {% for p in review_platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
       </select>
-      <div class="btn-group btn-group-sm" role="group" aria-label="Set format">
-        <button type="button" class="btn btn-surface" onclick="cgtPsnReviewSetAll('digital')" title="Set every visible row to Digital">All digital</button>
-        <button type="button" class="btn btn-surface" onclick="cgtPsnReviewSetAll('physical')" title="Set every visible row to Physical">All physical</button>
-      </div>
       <div class="btn-group btn-group-sm" role="group" aria-label="Review layout">
         <button type="button" class="btn btn-surface" id="cgt-review-view-list"
                 onclick="cgtPsnReviewView('list')" title="List view">&equiv;</button>
@@ -97,11 +93,6 @@
               {{ opt.platform }}{% if opt.minutes %} <span class="text-secondary">&middot; {{ opt.minutes // 60 }}h</span>{% endif %}
             </label>
           </div>
-          <select class="form-select form-select-sm cgt-review-medium" title="{{ opt.medium_reason }}">
-            <option value="digital" {% if opt.medium == 'digital' %}selected{% endif %}>Digital</option>
-            <option value="physical" {% if opt.medium == 'physical' %}selected{% endif %}>Physical</option>
-            <option value="" {% if not opt.medium %}selected{% endif %}>Unknown</option>
-          </select>
         </div>
         {% endfor %}
       </div>

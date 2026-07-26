@@ -2335,152 +2335,31 @@ def test_matcher_spaceless_exact_and_display_name(client, db_session):
     assert hit is not None and hit.id == abzu.id
 
 
-# --- Format line / medium (#164 Chunk C2) ---
-
-
-def _psn_entry(db, user, *, medium, media_type="disc", membership=None, ext="CUSA1_00"):
-    plat = models.Platform(name=f"PS-{ext}", media_type=media_type)
-    db.add(plat)
-    db.flush()
-    game = models.Game(title=f"Game {ext}")
-    db.add(game)
-    db.flush()
-    rel = models.GameRelease(
-        game_id=game.id,
-        platform=plat.name,
-        platform_id=plat.id,
-        source="psn",
-        external_id=ext,
-        raw_data={"membership": membership} if membership else {},
-    )
-    db.add(rel)
-    db.flush()
-    entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import", medium=medium)
-    db.add(entry)
-    db.commit()
-    return entry
-
-
-def test_detail_pane_format_line_digital_owned(client, db_session):
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    entry = _psn_entry(db_session, user, medium="digital", ext="OWNED_00")
-    r = client.get(f"/library/entries/{entry.id}/detail", headers={"HX-Request": "true"})
-    assert b"Format" in r.content and b"Digital" in r.content
-    assert b"PS Plus" not in r.content  # owned outright — no service badge
-    assert b"<dt>Via</dt>" not in r.content  # old label is gone
-
-
-def test_detail_pane_format_line_ps_plus_badge(client, db_session):
-    """PS Plus is an entitlement, not a format: the value stays Digital and the
-    membership renders as a service badge."""
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    entry = _psn_entry(db_session, user, medium="digital", membership="PS_PLUS", ext="PLUS_00")
-    r = client.get(f"/library/entries/{entry.id}/detail", headers={"HX-Request": "true"})
-    assert b"Digital" in r.content
-    assert b"PS Plus" in r.content
-    assert b"cgt-service-badge" in r.content
-
-
-def test_detail_pane_format_line_physical_uses_platform_media(client, db_session):
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    disc = _psn_entry(db_session, user, medium="physical", media_type="disc", ext="DISC_00")
-    assert b"Disc" in client.get(f"/library/entries/{disc.id}/detail", headers={"HX-Request": "true"}).content
-    cart = _psn_entry(db_session, user, medium="physical", media_type="cartridge", ext="CART_00")
-    assert b"Cartridge" in client.get(f"/library/entries/{cart.id}/detail", headers={"HX-Request": "true"}).content
-
-
-def test_detail_pane_omits_format_when_unknown(client, db_session):
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    entry = _psn_entry(db_session, user, medium=None, ext="UNK_00")
-    r = client.get(f"/library/entries/{entry.id}/detail", headers={"HX-Request": "true"})
-    assert b"<dt>Format</dt>" not in r.content
-
-
-def test_edit_modal_sets_and_clears_medium(client, db_session):
-    """Choosing a format flags it user-set so syncs can't undo it; choosing
-    Unknown clears the override and lets inference apply again."""
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    entry = _psn_entry(db_session, user, medium="digital", ext="EDIT_00")
-    game = entry.release.game
-
-    client.patch(f"/library/entries/{entry.id}", data={"display_name": game.title, "medium": "physical"})
-    db_session.refresh(entry)
-    assert entry.medium == "physical" and entry.medium_user_set is True
-
-    client.patch(f"/library/entries/{entry.id}", data={"display_name": game.title, "medium": ""})
-    db_session.refresh(entry)
-    assert entry.medium is None and entry.medium_user_set is False
-
-
-def test_platform_admin_saves_media_type(client, db_session):
-    _signup_and_login(client)
-    plat = models.Platform(name="Test Console")
-    db_session.add(plat)
-    db_session.commit()
-    client.post(f"/account/platforms/{plat.id}", data={"display_name": "", "color": "", "media_type": "cartridge"})
-    db_session.refresh(plat)
-    assert plat.media_type == "cartridge"
-    client.post(f"/account/platforms/{plat.id}", data={"display_name": "", "color": "", "media_type": ""})
-    db_session.refresh(plat)
-    assert plat.media_type is None
-
-
 # --- Bulk edit (#175) ---
 
 
-def _bulk_entry(db, user, *, source="manual", medium=None, hidden=False, platform="PS4", n=1):
+def _bulk_entry(db, user, *, source="manual", hidden=False, platform="PS4", n=1):
     game = models.Game(title=f"Bulk {source} {n}")
     db.add(game)
     db.flush()
     rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=f"BULK{source}{n}")
     db.add(rel)
     db.flush()
-    e = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source=source, medium=medium, is_hidden=hidden)
+    e = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source=source, is_hidden=hidden)
     db.add(e)
     db.commit()
     return e
 
 
-def test_bulk_edit_sets_format_and_flags_user_set(client, db_session):
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    a = _bulk_entry(db_session, user, n=1)
-    b = _bulk_entry(db_session, user, n=2)
-
-    r = client.post("/library/entries/bulk-edit", data={"ids": f"{a.id},{b.id}", "medium": "digital"})
-    assert r.status_code == 200
-    for e in (a, b):
-        db_session.refresh(e)
-        assert e.medium == "digital" and e.medium_user_set is True
-
-
 def test_bulk_edit_only_touches_fields_you_changed(client, db_session):
-    """Setting Format must not disturb visibility (every field defaults to keep)."""
+    """Setting one field must not disturb another (every field defaults to keep)."""
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
-    e = _bulk_entry(db_session, user, medium="physical", hidden=True, n=3)
+    e = _bulk_entry(db_session, user, hidden=True, n=3)
 
-    client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "medium": "digital", "is_hidden": ""})
+    client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "is_hidden": "true"})
     db_session.refresh(e)
-    assert e.medium == "digital"
-    assert e.is_hidden is True  # untouched
-
-
-def test_bulk_edit_clear_medium_resets_user_set(client, db_session):
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    e = _bulk_entry(db_session, user, medium="digital", n=4)
-    e.medium_user_set = True
-    db_session.commit()
-
-    client.post("/library/entries/bulk-edit", data={"ids": str(e.id), "medium": "unknown"})
-    db_session.refresh(e)
-    assert e.medium is None and e.medium_user_set is False
+    assert e.is_hidden is True
 
 
 def test_bulk_edit_hidden(client, db_session):
@@ -2530,7 +2409,6 @@ def test_bulk_edit_ignores_other_users_entries(client, db_session):
     alice = db_session.query(models.User).filter_by(username="alice").first()
     theirs = _bulk_entry(db_session, alice, n=10)
     _signup_and_login(client, username="bob")
-    r = client.post("/library/entries/bulk-edit", data={"ids": str(theirs.id), "medium": "digital"})
+    r = client.post("/library/entries/bulk-edit", data={"ids": str(theirs.id), "is_hidden": "true"})
     assert r.status_code == 404
     db_session.refresh(theirs)
-    assert theirs.medium is None

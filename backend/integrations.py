@@ -433,10 +433,10 @@ def psn_import_review_save(
 ):
     """Record reviewed platform + format choices for cross-play trophy sets (#163).
 
-    `decisions` is JSON: {externalId: [{platform, medium}, ...]}. A game can
-    resolve to several platforms (cross-buy), each with its own format, and an
-    empty list means "don't import this one". Choices are validated against the
-    item's own trophy set, stored on the snapshot, and applied by the next import.
+    `decisions` is JSON: {externalId: [{platform}, ...]}. A game can resolve to
+    several platforms (cross-buy), and an empty list means "don't import this
+    one". Choices are validated against the item's own trophy set, stored on the
+    snapshot, and applied by the next import.
     """
     try:
         parsed = _json.loads(decisions) if decisions.strip() else {}
