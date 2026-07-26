@@ -285,17 +285,14 @@ _NON_GAME_ID_RE = re.compile(r"DEMO\d*$|BETA", re.IGNORECASE)
 
 
 def _normalized_name(name: str | None) -> str:
-    """Merge key: uppercase, Roman→Arabic (word-boundary), strip trademark
-    glyphs and non-alphanumerics, lowercase. Port of the prototype's
-    normalizedName."""
-    if not name:
-        return ""
-    s = str(name).upper()
-    for roman, arabic in _ROMAN:
-        s = re.sub(rf"\b{roman}\b", arabic, s)
-    s = re.sub(r"\(TM\)|™|®", "", s, flags=re.IGNORECASE)
-    s = re.sub(r"[^a-zA-Z0-9]+", "", s)
-    return s.lower().strip()
+    """Merge key: the shared match-folding, spaceless.
+
+    Spaceless because platforms disagree about word breaks ("SOULCALIBUR" vs
+    "Soul Calibur") and that difference is never meaningful. The folding itself
+    lives in titles.normalize_for_match so the spreadsheet importer and this
+    path can't drift (#180).
+    """
+    return titles.normalize_for_match(name).replace(" ", "")
 
 
 # Sony appends this to old trophy-set names (e.g. "God of War II Trophies",

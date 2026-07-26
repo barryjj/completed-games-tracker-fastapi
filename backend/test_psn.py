@@ -1116,3 +1116,73 @@ def test_played_only_rows_still_use_the_played_name():
     played = [{"titleId": "CUSA9_00", "name": "Some Game", "category": "ps4_game", "playDuration": "PT1H"}]
     merged = psn.merge_library([], [], played)["merged"]
     assert merged[0]["name"] == "Some Game"
+
+
+# ─── shared match normalization (#180) ─────────────────────────────────────
+
+
+def test_normalize_folds_instead_of_deleting():
+    """The old PSN folding stripped non-alphanumerics, so accented and
+    non-Latin characters were DELETED: ABZÛ -> 'abz', NINJA GAIDEN Σ2 ->
+    'ninjagaiden2'. Every one of these was a real unmatched game."""
+    from backend.titles import normalize_for_match as n
+
+    def same(a, b):
+        return n(a).replace(" ", "") == n(b).replace(" ", "")
+
+    assert same("ABZÛ*#", "ABZU")  # accent + the sheet's own annotation chars
+    assert same("Söldner-X 2", "Soldner-X 2")
+    assert same("Ninja Gaiden Sigma 2", "NINJA GAIDEN Σ2")  # Greek, which NFKD leaves alone
+    assert same("Soul Calibur V", "SOULCALIBUR Ⅴ")  # U+2164, plus a word break
+    assert same("Super Street Fighter IV", "SUPER STREET FIGHTER Ⅳ")
+    assert same("Ratchet and Clank", "Ratchet & Clank")
+    assert same("Assassin's Creed", "Assassin’s Creed")  # curly apostrophe
+    # Trophy-set suffixes Sony appends
+    assert same("God of War II", "God of War® II Trophies")
+    assert same("Tekken 6", "TEKKEN 6 Trophy Set")
+    assert same("Slayaway Camp", "Slayaway Camp trophies")
+    # Port/edition markers and disambiguators either side may carry
+    assert same("Hitman (2016)", "HITMAN")
+    assert same("Resident Evil 4 HD", "resident evil 4")
+    assert same("PaRappa the Rapper", "PaRappa The Rapper Remastered")
+    # Titles really do ship with embedded newlines — they collapse to spaces
+    # rather than surviving into the key. (What's left here is a subtitle
+    # difference, which is a matching-strategy problem, not a folding one.)
+    assert n("The Legend of Dark Witch\n-Chronicle 2D ACT-") == "the legend of dark witch chronicle 2d act"
+
+
+def test_normalize_keeps_numbers_distinct():
+    """Numbers are identity, not noise — these must never collapse together."""
+    from backend.titles import normalize_for_match as n
+
+    assert n("Final Fantasy XII") != n("Final Fantasy XVI")
+    assert n("Street Fighter IV") != n("Street Fighter V")
+    assert n("Assassin's Creed") != n("Assassin's Creed II")
+    assert n("Uncharted 2") != n("Uncharted 3")
+    # Roman numerals fold to arabic so both spellings agree
+    assert n("God of War II") == n("God of War 2")
+
+
+def test_normalize_leaves_a_lone_letter_alone():
+    """The X in Soldner-X is part of the name. Converting single letters turned
+    it into 'soldner 10', which matched nothing."""
+    from backend.titles import normalize_for_match as n
+
+    assert "10" not in n("Soldner-X 2")
+    assert n("Street Fighter V") == n("STREET FIGHTER V")
+
+
+def test_normalize_survives_non_latin_titles():
+    """A Japanese title must fold to something, not to nothing."""
+    from backend.titles import normalize_for_match as n
+
+    assert n("閃乱カグラ SHINOVI VERSUS")
+    assert "shinovi versus" in n("閃乱カグラ SHINOVI VERSUS")
+
+
+def test_trademark_stripped_before_nfkd():
+    """Regression: NFKD expands ™ into the letters 'TM', so stripping after it
+    left 'Stellar Blade™' as 'stellarbladetm' and broke the Steam-dupe check."""
+    from backend.titles import normalize_for_match as n
+
+    assert n("Stellar Blade™") == n("Stellar Blade")

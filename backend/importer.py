@@ -14,14 +14,13 @@ import datetime
 import difflib
 import re
 import time
-import unicodedata
 from io import BytesIO
 
 import openpyxl
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from . import match_review, models
+from . import match_review, models, titles
 
 # Month name → number (full and abbreviated)
 _MONTH_MAP: dict[str, int] = {}
@@ -224,19 +223,13 @@ _WORD_NUMBERS = {
 
 
 def _normalize_title(title: str) -> str:
-    """Strip punctuation, collapse whitespace, and canonicalize number words
-    to digits for fuzzy matching and grouping."""
-    t = title.lower()
-    # Decompose accents and drop the combining marks (ABZÛ → abzu,
-    # Pokémon → pokemon) — \w keeps accented letters, so they'd otherwise
-    # survive normalization and never match their plain-ASCII sheet
-    # spellings. Non-Latin scripts pass through untouched (no combining
-    # marks to drop), so Japanese titles don't normalize to nothing.
-    t = unicodedata.normalize("NFKD", t)
-    t = "".join(c for c in t if not unicodedata.combining(c))
-    t = re.sub(r"[^\w\s]", " ", t)  # punctuation → space
-    t = re.sub(r"\s+", " ", t).strip()
-    return " ".join(_WORD_NUMBERS.get(w, w) for w in t.split())
+    """Fold a title for fuzzy matching and grouping.
+
+    Delegates to titles.normalize_for_match so this path and the PSN merge
+    share one implementation — they had drifted, and the PSN copy was deleting
+    accented characters rather than folding them (#180).
+    """
+    return titles.normalize_for_match(title)
 
 
 def _group_key(title: str, platform_id: int | None, raw_platform: str) -> str:
