@@ -1,0 +1,42 @@
+{# The review body — one view at a time, server-rendered. Swapped wholesale by
+   the view toggle and the platform filter. #}
+{% if not rows %}
+<div class="cgt-detail-block">
+  <p class="text-secondary mb-0">
+    {% if not has_snapshot %}
+    <em>No PSN snapshot yet &mdash; run <a href="/integrations/psn">Fetch library</a> first.</em>
+    {% elif platform %}
+    <em>Nothing left to review on {{ platform }}.</em>
+    {% else %}
+    <em>Nothing to review &mdash; every trophy set resolved to a single platform, or you&rsquo;ve decided them all.</em>
+    {% endif %}
+  </p>
+</div>
+{% elif view == "card" %}
+<div id="psn-stack" class="cgt-match-stage cgt-match-stage--import">
+  {% include "partials/_psn_review_cards.html" %}
+</div>
+{# Counter rather than dots — same reasoning as import review, and the same
+   sticky bar so the arrows stay reachable without scrolling. #}
+<div class="cgt-match-nav cgt-match-nav--sticky" id="psn-nav" data-total="{{ rows | length }}">
+  <button class="cgt-match-nav__btn" onclick="psnCardNav(-1)">&#8249;</button>
+  <span class="cgt-match-nav__counter" id="psn-nav-counter"></span>
+  <button class="cgt-match-nav__btn" onclick="psnCardNav(1)">&#8250;</button>
+</div>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm align-middle" id="psn-review-table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th class="text-nowrap">Trophies</th>
+        <th>Platforms owned</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% include "partials/_psn_review_rows.html" %}
+    </tbody>
+  </table>
+</div>
+{% endif %}

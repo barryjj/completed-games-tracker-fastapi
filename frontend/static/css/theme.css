@@ -2411,3 +2411,24 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
   font-size: 0.72rem;
   white-space: nowrap;
 }
+
+/* PSN review — a platform checkbox reads as a tickable badge, not a form
+   control with a label beside it: the badge IS the thing being chosen, and
+   these sit several-to-a-row in both the list and card layouts. */
+.cgt-psn-plat-check {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 6px 2px 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+.cgt-psn-plat-check:hover {
+  background: var(--ctp-surface1);
+  border-color: var(--ctp-surface2);
+}
+.cgt-psn-plat-check .form-check-input {
+  margin-top: 0;
+  flex: 0 0 auto;
+}

@@ -126,7 +126,7 @@
       {% if psn_review_pending %}
       {# PSN holds cross-play games back rather than importing them on a guess,
          so they land here until the platform is confirmed. #}
-      <a class="cgt-breakdown__row" href="/library/psn-review">
+      <a class="cgt-breakdown__row" href="/tools/psn-review">
         <span class="cgt-breakdown__num cgt-breakdown__num--yellow">{{ "{:,}".format(psn_review_pending) }}</span>
         <span class="cgt-breakdown__label">PSN · needs a platform</span>
       </a>
@@ -138,7 +138,7 @@
     <div class="cgt-tool-card__actions">
       {% if pending_matches %}<a href="/library/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
       {% if import_pending %}<a href="/library/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
-      {% if psn_review_pending %}<a href="/library/psn-review" class="btn btn-surface btn-sm">Review PSN</a>{% endif %}
+      {% if psn_review_pending %}<a href="/tools/psn-review" class="btn btn-surface btn-sm">Review PSN</a>{% endif %}
       <a href="/tools" class="btn btn-surface btn-sm">All tools</a>
     </div>
   </div>

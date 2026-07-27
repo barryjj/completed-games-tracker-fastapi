@@ -436,12 +436,21 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
     current = values()
     for t in titles:
         existing = _find_by_any_id(current, [t.get("npCommunicationId"), t.get("titleId"), t.get("productId")])
+        # How the trophy set reached its purchased row matters downstream. An id
+        # join is proof they're the same product; a name join is a guess, and a
+        # wrong one whenever a game has several sets — Crimsonland's PS4
+        # purchase and its 56m of ps4_game play both landed on the 90% set,
+        # which is the Vita one, because names were all there was to match on.
+        # Anything reasoning about platform has to know which kind it got.
+        join = "id" if existing is not None else None
         if existing is None:
             t_norm = _normalized_name(_item_name(t))
             existing = next(
                 (v for v in current if v.get("normalizedName") and v["normalizedName"] == t_norm and _platforms_compatible(v, t)),
                 None,
             )
+            if existing is not None:
+                join = "name"
         # Never fold two trophy sets into one item. A second npCommunicationId
         # is a genuinely separate record — a different platform's progress, or
         # an outright different game sharing a name (Demon's Souls PS3 vs the
@@ -468,6 +477,7 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             and occupant["npCommunicationId"] != t["npCommunicationId"]
         ):
             existing = None
+            join = None
             key = t["npCommunicationId"]
         merged = {
             **(existing or {}),
@@ -482,6 +492,7 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             "trophyIconUrl": t.get("trophyTitleIconUrl") or (existing or {}).get("trophyIconUrl"),
             "sources": sorted(set((existing or {}).get("sources", []) + ["titles"])),
             "platform": ((t.get("trophyTitlePlatform") or (existing or {}).get("platform") or "").upper() or None),
+            "trophyJoin": join,
         }
         merged["normalizedName"] = _normalized_name(merged.get("name"))
         merged["displayName"] = _display_name(merged.get("name"))
@@ -1075,62 +1086,165 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
     return rows
 
 
-def import_review_rows(db: Session, user_id: int) -> list[dict]:
-    """Everything the import can't settle on its own — one row per game, one
-    option per platform.
+def owned_platforms(snap: dict) -> set[str]:
+    """PlayStation consoles the snapshot PROVES the account owns.
 
-    A cross-play trophy set covers several platforms and never says which you
-    own, and cross-buy means the answer is often more than one (Shovel Knight:
-    Treasure Trove is a single PS3,PSVITA,PS4 set) — so platforms are
-    checkboxes, and unticking them all skips the game.
+    Two things prove hardware. A trophy set covering exactly one platform: you
+    cannot have a PS3-only set without a PS3. And a play record, whose category
+    names the console it ran on — logged time on ps5_native_game means a PS5.
+    (A cross-play set proves nothing on its own: it lists every platform the
+    game shipped on, not the ones you own.)
+
+    Union those and you get the hardware actually in play, which is the only
+    defensible default for the ambiguous sets — a Vita-only library defaults to
+    Vita, an account with evidence for all four defaults to all four.
+    """
+    proven: set[str] = set()
+    for item in snap.get("merged", []):
+        candidates = platform_candidates(item)
+        if len(candidates) == 1:
+            proven.add(candidates[0])
+        for platform, minutes in played_minutes_by_platform(item).items():
+            if minutes:
+                proven.add(platform)
+    return proven
+
+
+def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
+    """Whether an item's play history can be attributed to its trophy set.
+
+    Two ways it can't. A name join means the play record reached this set on
+    title alone, which is a guess. And a title with several sets makes the
+    attribution unknowable regardless of how the join happened — the play
+    record belongs to exactly one of them and nothing says which. Crimsonland
+    fails both: its PS4 purchase and 56m of ps4_game play landed on the 90%
+    set, which is the Vita one.
+
+    The count test is the load-bearing one for snapshots fetched before
+    `trophyJoin` existed, which have no join marker to check.
+    """
+    return item.get("trophyJoin") != "name" and sets_for_title < 2
+
+
+def import_review_rows(db: Session, user_id: int) -> list[dict]:
+    """Everything the import can't settle on its own — one row per trophy set,
+    one checkbox per platform that set covers.
+
+    A cross-play set covers several platforms and never says which you own, and
+    cross-buy means the answer is often more than one (Shovel Knight: Treasure
+    Trove is a single PS3,PSVITA,PS4 set) — so platforms are checkboxes,
+    pre-ticked with every platform in the set the account is known to own (see
+    `owned_platforms`), and unticking them all skips the game.
+
+    **One row per trophy set, not per game.** Sony hands out several sets for
+    the same title — Crimsonland has NPWR06670 at 90% and NPWR06085 at 23%,
+    both declaring the identical PS3,PSVITA,PS4 — and no field in any feed says
+    which set is which console. They are two real progress records that want
+    two library entries, so they get asked about separately and the row carries
+    its trophy progress, which is the only thing that tells them apart.
 
     Games the import can settle never appear, and neither do ones already
-    actioned: choosing here CREATES the entries, so a decided game leaves the
+    actioned: confirming here CREATES the entries, so a decided row leaves the
     list the way a merged pair leaves match review.
     """
     snap = load_snapshot(user_id)
     if not snap:
         return []
     decisions = snap.get("entry_decisions", {})
+    owned = owned_platforms(snap)
+    # Sets sharing a normalized title are the ones a user has to tell apart, and
+    # they're the ones that look like duplicates. Count them up front so the row
+    # can say "trophy set 1 of 2" instead of appearing twice for no stated reason.
+    by_name: dict[str, int] = {}
+    for item in snap.get("merged", []):
+        if is_played_only(item) or len(platform_candidates(item)) < 2:
+            continue
+        name = item.get("normalizedName") or ""
+        by_name[name] = by_name.get(name, 0) + 1
+    seen: dict[str, int] = {}
+
     rows = []
     for item in snap.get("merged", []):
         if is_played_only(item):
             continue
         candidates = platform_candidates(item)
-        if not candidates:
-            continue
-        # Ask when the platform is ambiguous OR the format is unknowable.
-        # A single-platform game already known to be digital needs nothing.
+        # A single-platform set answers itself; ask only when it's ambiguous.
         if len(candidates) < 2:
             continue
         ext_id = external_id_for(item)
-        if ext_id in decisions:
+        if not ext_id or ext_id in decisions:
             continue  # already actioned — its entries exist, or it was skipped
-        decided = {}
-        resolved, reason, _confident = resolve_platform_choice(item)
-        minutes = played_minutes_by_platform(item)
-        options = []
-        for platform in candidates:
-            chosen = decided.get(platform)
-            options.append(
-                {
-                    "platform": platform,
-                    # Pre-check what we can defend: a saved decision, else the
-                    # platform play history points at.
-                    "selected": bool(chosen) if decided else platform == resolved,
-                    "minutes": minutes.get(platform, 0),
-                }
-            )
+        name = item.get("normalizedName") or ""
+        seen[name] = seen.get(name, 0) + 1
+
+        sets_for_title = by_name.get(name, 1)
+        trusted = _trophy_hint_is_trustworthy(item, sets_for_title)
+        minutes = played_minutes_by_platform(item) if trusted else {}
+        if trusted:
+            _resolved, reason, _confident = resolve_platform_choice(item)
+        elif sets_for_title > 1:
+            # Say what's actually known rather than quoting a play stat that
+            # may belong to the other trophy set for the same game.
+            reason = f"{sets_for_title} trophy sets for this title — PSN doesn't say which platform each covers"
+        else:
+            reason = "Matched by title only — PSN gives no platform for this trophy set"
+
+        # Default: everything in the set that this account can actually play.
+        # Falling back to all candidates keeps a fresh account (nothing proven
+        # yet) from defaulting to nothing at all.
+        default = [p for p in candidates if p in owned] or candidates
+
+        earned = item.get("earnedTrophies") or {}
+        defined = item.get("trophies") or {}
         rows.append(
             {
+                "key": ext_id,
                 "external_id": ext_id,
                 "name": item.get("displayName") or item.get("name"),
                 "reason": reason,
-                "options": options,
+                "image": (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
+                "trophy_progress": item.get("trophyProgress"),
+                "trophy_earned": sum(v or 0 for v in earned.values()),
+                "trophy_defined": sum(v or 0 for v in defined.values()),
+                "trophy_last_updated": (item.get("trophyLastUpdated") or "")[:10],
+                # 1-based position among same-titled sets, and how many there
+                # are — only rendered when there's more than one.
+                "set_index": seen[name],
+                "set_count": by_name.get(name, 1),
+                "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
+                "total_minutes": sum(minutes.values()),
+                "options": [{"platform": p, "selected": p in default, "minutes": minutes.get(p, 0)} for p in candidates],
             }
         )
-    rows.sort(key=lambda r: (r["name"] or "").casefold())
+    rows.sort(key=lambda r: ((r["name"] or "").casefold(), r["set_index"]))
     return rows
+
+
+def _find_review_item(snap: dict, key: str) -> dict | None:
+    for item in snap.get("merged", []):
+        if external_id_for(item) == key and len(platform_candidates(item)) > 1 and not is_played_only(item):
+            return item
+    return None
+
+
+def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: list[str]) -> dict:
+    """Confirm one review row: record the chosen platforms for that trophy set
+    and create its entries. An empty list is a real decision (skip it)."""
+    snap = load_snapshot(user.id)
+    if not snap:
+        raise ValueError("No PSN snapshot found.")
+    item = _find_review_item(snap, key)
+    if item is None:
+        raise ValueError("That trophy set is not in the PSN review queue.")
+    result = apply_entry_decisions(db, user, {key: [{"platform": p} for p in platforms]})
+    result["name"] = item.get("displayName") or item.get("name") or key
+    return result
+
+
+def dismiss_entry_decision(db: Session, user: models.User, key: str) -> dict:
+    """Dismiss one review row — records "own it on nothing" so it stops asking,
+    and creates nothing."""
+    return confirm_entry_decision(db, user, key, [])
 
 
 def apply_entry_decisions(db: Session, user: models.User, decisions: dict[str, list[dict]]) -> dict:

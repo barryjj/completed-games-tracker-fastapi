@@ -1,0 +1,87 @@
+{# Card items for the PSN review's card view. Bare cards only — the
+   .cgt-match-stage wrapper and the nav live in _psn_review_content.html, same
+   split as _import_cards.html / _import_tab_content.html. #}
+{% for r in rows %}
+<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.key }}">
+  <div class="cgt-match-card__body">
+    {% if r.image %}
+    <div class="cgt-import-hero">
+      <img class="cgt-detail-hero__img" src="{{ r.image }}" alt="" loading="lazy">
+    </div>
+    {% endif %}
+
+    <div class="p-3">
+      <table class="cgt-source-table mb-2"><tbody>
+        <tr>
+          <td class="cgt-source-table__label">
+            {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
+          </td>
+          <td class="cgt-source-table__title"><h6 class="mb-0">{{ r.name }}</h6></td>
+          <td class="cgt-source-table__platform">
+            {% if r.trophy_defined %}
+            <span class="tag-badge tag-source">{{ r.trophy_progress }}% &middot; {{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody></table>
+
+      <p class="text-secondary small mb-3">{{ r.reason }}</p>
+
+      <div class="cgt-detail-block mb-0">
+        <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
+        <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
+          {% for o in r.options %}
+          <label class="cgt-psn-plat-check">
+            <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
+                   {% if o.selected %}checked{% endif %}>
+            <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
+            {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+
+      {% if r.trophy_last_updated or r.last_played %}
+      <div class="cgt-detail-block mb-0 mt-3">
+        <dl class="cgt-detail-meta small mb-0">
+          {% if r.trophy_last_updated %}
+          <dt>Trophies updated</dt>
+          <dd>{{ r.trophy_last_updated }}</dd>
+          {% endif %}
+          {% if r.last_played %}
+          <dt>Last played</dt>
+          <dd>{{ r.last_played }}</dd>
+          {% endif %}
+        </dl>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
+    <button class="btn btn-primary btn-sm"
+            hx-post="/tools/psn-review/{{ r.key }}/confirm"
+            hx-include="#psn-opts-{{ r.key }} input:checked"
+            hx-target="#psn-row-{{ r.key }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.key }}')">
+      Confirm
+    </button>
+    <button class="btn btn-surface btn-sm"
+            hx-post="/tools/psn-review/{{ r.key }}/dismiss"
+            hx-target="#psn-row-{{ r.key }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.key }}')">
+      Dismiss
+    </button>
+  </div>
+
+  {# Off-DOM anchor for the confirm/dismiss response — the buttons target the
+     list view's row id scheme so one server response serves both views, so it
+     has to exist here where there's no literal row. Same trick as
+     _import_cards.html. #}
+  <span id="psn-row-{{ r.key }}" hidden></span>
+</div>
+{% endfor %}

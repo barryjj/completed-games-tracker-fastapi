@@ -259,7 +259,7 @@ def home_page(
             "platform_breakdown": platform_breakdown,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
-            "psn_review_pending": len(_psn.import_review_rows(db, current_user)) if current_user.psn_npsso else 0,
+            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
             **_base_ctx(db, current_user),
         },
     )
@@ -285,7 +285,7 @@ def tools_page(
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
             "psn_counts": _psn_counts(db, current_user),
-            "psn_review_pending": len(_psn.import_review_rows(db, current_user)) if current_user.psn_npsso else 0,
+            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),
