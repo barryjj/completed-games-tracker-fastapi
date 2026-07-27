@@ -435,8 +435,9 @@ def psn_import_review_save(
     `decisions` is JSON: {externalId: [{platform}, ...]}. A game can resolve to
     several platforms (cross-buy), and an empty list means "don't import this
     one". Choices are validated against the item's own trophy set, stored on the
-    snapshot, and applied by the next import. Re-renders the review page so the
-    saved state shows in place.
+    snapshot AND the entries are created immediately — the review is the action,
+    same as match review merging on click. Re-renders the page so actioned games
+    drop off the list.
     """
     error = None
     try:
@@ -448,14 +449,21 @@ def psn_import_review_save(
         error = "No review selections submitted."
     if error is None:
         try:
-            written = psn.record_entry_decisions(current_user.id, parsed)
-            error = None if written else "No valid selections — platforms must be ones the trophy set covers."
+            result = psn.apply_entry_decisions(db, current_user, parsed)
         except ValueError as e:
             error = str(e)
         else:
-            if written:
-                flash = f"Saved choices for {written} game{'s' if written != 1 else ''} — run Import on the PSN page to apply."
+            if result["reviewed"]:
+                parts = []
+                if result["created"]:
+                    parts.append(f"created {result['created']} librar{'y entry' if result['created'] == 1 else 'ies'}")
+                if result["skipped"]:
+                    parts.append(f"skipped {result['skipped']}")
+                flash = f"Reviewed {result['reviewed']} game{'s' if result['reviewed'] != 1 else ''}" + (
+                    f" — {', '.join(parts)}." if parts else "."
+                )
                 return _psn_review_response(request, db, current_user, flash=flash)
+            error = "No valid selections — platforms must be ones the trophy set covers."
     return _psn_review_response(request, db, current_user, error=error)
 
 

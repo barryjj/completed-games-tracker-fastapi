@@ -1030,7 +1030,9 @@ def test_import_skips_a_game_with_an_empty_decision(db_session, monkeypatch, tmp
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_S_00").count() == 0
 
 
-def test_import_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
+def test_import_review_endpoint_creates_the_entries(client, db_session, monkeypatch, tmp_path):
+    """The review IS the action — choosing platforms creates the library
+    entries there and then, the way match review merges on click."""
     import json as _j
 
     _seed_platforms(db_session)
@@ -1038,15 +1040,62 @@ def test_import_review_endpoint_records_choices(client, db_session, monkeypatch,
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
     db_session.commit()
-    merged = [{"npCommunicationId": "NPWR_E_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    merged = [
+        {
+            "npCommunicationId": "NPWR_E_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        }
+    ]
     _write_snapshot(monkeypatch, tmp_path, user.id, merged)
 
-    payload = _j.dumps({"NPWR_E_00": [{"platform": "PS3"}]})
+    payload = _j.dumps({"NPWR_E_00": [{"platform": "PS3"}, {"platform": "PS4"}]})
     r = client.post("/integrations/psn/import-review", data={"decisions": payload})
     assert r.status_code == 200
-    assert b"Saved choices for 1 game" in r.content
-    assert psn.load_snapshot(user.id)["entry_decisions"]["NPWR_E_00"] == [{"platform": "PS3"}]
+    assert b"created 2" in r.content
 
+    # Both entries exist immediately — no second import needed.
+    rels = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_E_00").all()
+    assert {r_.platform_id for r_ in rels} == {
+        models.resolve_platform_id(db_session, "PS3"),
+        models.resolve_platform_id(db_session, "PS4"),
+    }
+    # ...and the game drops off the review list, like a merged pair does.
+    assert psn.import_review_rows(db_session, user.id) == []
+
+
+def test_import_review_endpoint_skip_is_a_real_decision(client, db_session, monkeypatch, tmp_path):
+    """Unticking every platform means don't import this one — recorded, so it
+    stops showing up as work."""
+    import json as _j
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_S2_00",
+            "name": "Skip Me",
+            "displayName": "Skip Me",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    client.post("/integrations/psn/import-review", data={"decisions": _j.dumps({"NPWR_S2_00": []})})
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_S2_00").count() == 0
+    assert psn.import_review_rows(db_session, user.id) == []
+
+
+def test_import_review_endpoint_rejects_empty_payload(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    _signup_and_login(client)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
     r = client.post("/integrations/psn/import-review", data={"decisions": ""})
     assert b"No review selections" in r.content
 

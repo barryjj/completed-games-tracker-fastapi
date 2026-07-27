@@ -18,7 +18,7 @@
     {% if not has_snapshot %}
     <em>No PSN snapshot yet &mdash; run <a href="/integrations/psn">Fetch Library</a> first.</em>
     {% else %}
-    <em>Nothing to review &mdash; every game resolved to a single platform. Run Import on the PSN page when you&rsquo;re ready.</em>
+    <em>Nothing to review &mdash; every game resolved to a single platform. Everything the import couldn&rsquo;t settle has been decided.</em>
     {% endif %}
   </p>
 </div>
@@ -69,14 +69,14 @@
 {% if rows %}
 {# Sticky footer so Save is reachable without scrolling a long list. #}
 <div class="cgt-sticky-actions">
-  <span class="small text-secondary me-auto">Tick every platform you own it on. Untick all to skip a game.</span>
+  <span class="small text-secondary me-auto">Tick every platform you own it on &mdash; these become library entries. Untick all to skip a game.</span>
   <button type="button" class="btn btn-primary"
           hx-post="/integrations/psn/import-review"
           hx-target="#psn-review-content"
           hx-select="#psn-review-content"
           hx-swap="outerHTML"
           hx-vals='js:{decisions: cgtPsnReviewDecisions()}'
-          hx-disabled-elt="this">Save choices</button>
+          hx-disabled-elt="this">Create entries</button>
   <a href="/integrations/psn" class="btn btn-surface">Back to PSN</a>
 </div>
 {% endif %}

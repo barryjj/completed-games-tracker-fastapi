@@ -1079,19 +1079,14 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
     """Everything the import can't settle on its own — one row per game, one
     option per platform.
 
-    Two kinds of uncertainty land here, because both are questions only the
-    user can answer and it would be daft to ask them in two places:
+    A cross-play trophy set covers several platforms and never says which you
+    own, and cross-buy means the answer is often more than one (Shovel Knight:
+    Treasure Trove is a single PS3,PSVITA,PS4 set) — so platforms are
+    checkboxes, and unticking them all skips the game.
 
-      * **which platform(s)** — a cross-play trophy set covers several and
-        never says which you own. Cross-buy means the answer is often more than
-        one (Shovel Knight: Treasure Trove is one PS3,PSVITA,PS4 set), so
-        platforms are checkboxes.
-      * **what format** — PSN can't see discs at all, so anything not in the
-        purchased feed has no defensible format. Each platform carries its own,
-        since you might have the PS4 disc and the Vita download.
-
-    Items the import is sure about (single platform, already known digital)
-    never appear. Unticking every platform skips the game entirely.
+    Games the import can settle never appear, and neither do ones already
+    actioned: choosing here CREATES the entries, so a decided game leaves the
+    list the way a merged pair leaves match review.
     """
     snap = load_snapshot(user_id)
     if not snap:
@@ -1109,7 +1104,9 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         if len(candidates) < 2:
             continue
         ext_id = external_id_for(item)
-        decided = {d["platform"]: d for d in decisions.get(ext_id, []) if d.get("platform")}
+        if ext_id in decisions:
+            continue  # already actioned — its entries exist, or it was skipped
+        decided = {}
         resolved, reason, _confident = resolve_platform_choice(item)
         minutes = played_minutes_by_platform(item)
         options = []
@@ -1130,11 +1127,42 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 "name": item.get("displayName") or item.get("name"),
                 "reason": reason,
                 "options": options,
-                "reviewed": ext_id in decisions,
             }
         )
-    rows.sort(key=lambda r: (r["reviewed"], (r["name"] or "").casefold()))
+    rows.sort(key=lambda r: (r["name"] or "").casefold())
     return rows
+
+
+def apply_entry_decisions(db: Session, user: models.User, decisions: dict[str, list[dict]]) -> dict:
+    """Record the reviewed platforms AND create the entries, in one action.
+
+    The review IS the action — match review merges on click, import review
+    confirms on click — not a staging step needing a second import run. An empty
+    platform list is a real decision (skip this game) and is recorded so it
+    stops appearing as work.
+    """
+    written = record_entry_decisions(user.id, decisions)
+    snap = load_snapshot(user.id)
+    by_ext = {external_id_for(i): i for i in (snap or {}).get("merged", [])}
+    stored = (snap or {}).get("entry_decisions", {})
+
+    created = skipped = 0
+    for ext_id in decisions:
+        item = by_ext.get(ext_id)
+        if item is None:
+            continue
+        choices = stored.get(ext_id) or []
+        if not choices:
+            skipped += 1
+            continue
+        for choice in choices:
+            platform_id = models.resolve_platform_id(db, choice["platform"])
+            if platform_id is None:
+                continue
+            if _import_one(db, user, item, platform_id) == "added":
+                created += 1
+    db.commit()
+    return {"reviewed": written, "created": created, "skipped": skipped}
 
 
 def record_entry_decisions(user_id: int, decisions: dict[str, list[dict]]) -> int:
