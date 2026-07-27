@@ -1353,3 +1353,43 @@ def test_psn_fetch_report_links_out_instead_of_embedding_the_review(client, db_s
     r = client.get("/integrations/psn/snapshot-report")
     assert b"/library/psn-review" in r.content  # links out
     assert b"cgt-review-platform" not in r.content  # no checkboxes embedded
+
+
+def test_import_holds_ambiguous_games_back_instead_of_guessing(db_session, monkeypatch, tmp_path):
+    """Import does the unambiguous work and funnels the rest to review. It
+    creates entries and cannot un-create them, so a wrong platform would need
+    manual cleanup — better to wait for the user."""
+    _seed_platforms(db_session)
+    user = models.User(name="h", username="h", password_hash="x", api_token="htok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [
+        {  # unambiguous — imports straight away
+            "titleId": "CUSA1111_00",
+            "name": "Clear",
+            "displayName": "Clear",
+            "platform": "PS4",
+            "sources": ["purchased"],
+        },
+        {  # cross-play with no decision — held back
+            "npCommunicationId": "NPWR_H_00",
+            "name": "Ambiguous",
+            "displayName": "Ambiguous",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    result = psn.import_snapshot(db_session, user)
+    assert result["added"] == 1
+    assert result["needs_review"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA1111_00").count() == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_H_00").count() == 0
+
+    # Once reviewed, the same import creates exactly what was chosen.
+    psn.record_entry_decisions(user.id, {"NPWR_H_00": [{"platform": "PS3"}]})
+    result = psn.import_snapshot(db_session, user)
+    assert result["needs_review"] == 0
+    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_H_00").one()
+    assert rel.platform_id == models.resolve_platform_id(db_session, "PS3")

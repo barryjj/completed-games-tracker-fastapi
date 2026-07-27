@@ -946,8 +946,9 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     sourced game (PS_PLUS included — completability is the criterion, per
     user decision 2026-07-18) becomes source='psn' rows. INSERTS ONLY for
     existing library data; re-runs update the psn rows idempotently.
-    Played-only rows are never touched here — they go through the per-row
-    review actions. Ends by chaining the match-review scan so overlaps with
+    Cross-play games whose platform is ambiguous are held back for the PSN
+    review page — importing them on a guess would create entries this function
+    has no way to remove. Played-only rows are likewise never touched here. Ends by chaining the match-review scan so overlaps with
     manual/historical entries surface immediately."""
     snap = load_snapshot(user.id)
     if not snap:
@@ -959,6 +960,7 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     skipped_non_game = 0
     skipped_conflict = 0
     skipped_pc_dupe = 0
+    needs_review = 0
     played_only = 0
     steam_keys = _steam_title_keys(db, user.id)
     entry_decisions = snap.get("entry_decisions", {})
@@ -985,6 +987,13 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         # each with the format picked at review time (#163). An empty decision
         # means "don't import this one".
         decided = entry_decisions.get(external_id_for(item))
+        # Cross-play games PSN can't settle are HELD BACK rather than imported
+        # on a guess: import creates entries and can't un-create them, so a
+        # wrong platform would need manual cleanup. They go to the review page
+        # and surface as needs-attention until the user decides.
+        if decided is None and len(platform_candidates(item)) > 1:
+            needs_review += 1
+            continue
         if decided is not None:
             for choice in decided:
                 platform_id = models.resolve_platform_id(db, choice["platform"])
@@ -1026,6 +1035,7 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         "skipped_non_game": skipped_non_game,
         "skipped_conflict": skipped_conflict,
         "skipped_pc_dupe": skipped_pc_dupe,
+        "needs_review": needs_review,
         "played_only_pending": played_only,
         "match_candidates": scan.get("candidates_added", 0),
     }

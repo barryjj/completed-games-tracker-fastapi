@@ -16,6 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, contains_eager
 
 from . import models, users
+from . import psn as _psn
 from .models import get_db
 from .pages_common import (
     _base_ctx,
@@ -258,6 +259,7 @@ def home_page(
             "platform_breakdown": platform_breakdown,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
+            "psn_review_pending": len(_psn.import_review_rows(db, current_user)) if current_user.psn_npsso else 0,
             **_base_ctx(db, current_user),
         },
     )
@@ -272,8 +274,6 @@ def tools_page(
     """Operations hub: recurring actions on the library (sync, match review,
     import, artwork) as cards. Replaces the action half of the old
     /integrations hub; configuration lives under /settings."""
-    from . import psn as _psn
-
     import_counts = _import_tab_counts(db, current_user.id)
     # Entries with no vertical cover (the canonical orientation) — same filter
     # the library's "Missing artwork" checkbox applies in grid_v.
