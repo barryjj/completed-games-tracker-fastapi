@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend import models, psn
 
 
@@ -1581,3 +1583,91 @@ def test_psn_review_card_view_has_the_carousel(client, db_session, monkeypatch, 
     # Per-card actions, same contract as the list rows.
     assert b"/tools/psn-review/NPWR_CARD_00/confirm" in body
     assert b"/tools/psn-review/NPWR_CARD_00/dismiss" in body
+
+
+def _sgdb_stub(monkeypatch, url="https://sgdb/psn-grid.png"):
+    from backend import steamgriddb
+
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [{"id": 1, "name": q}])
+    monkeypatch.setattr(
+        steamgriddb,
+        "get_grids_for_game",
+        lambda k, gid, orientation, page=0: [{"url": url}] if orientation == "h" else [],
+    )
+    return steamgriddb
+
+
+def test_review_thumbnail_gaps_only_asks_about_pending_rows(db_session, monkeypatch, tmp_path):
+    """Art is fetched for rows still awaiting a decision — not for settled
+    games, already-cached rows, or ones the user has actioned."""
+    merged = [
+        {"npCommunicationId": "NPWR_G1_00", "name": "Ask Me", "displayName": "Ask Me", "platform": "PS3,PS4", "sources": ["titles"]},
+        {  # already cached
+            "npCommunicationId": "NPWR_G2_00",
+            "name": "Got Art",
+            "displayName": "Got Art",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+            "sgdbThumbnail": "https://sgdb/already.png",
+        },
+        {  # unambiguous — never reaches the review at all
+            "npCommunicationId": "NPWR_G3_00",
+            "name": "Settled",
+            "displayName": "Settled",
+            "platform": "PS4",
+            "sources": ["titles"],
+        },
+        {"npCommunicationId": "NPWR_G4_00", "name": "Decided", "displayName": "Decided", "platform": "PS3,PS4", "sources": ["titles"]},
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    psn.record_entry_decisions(1, {"NPWR_G4_00": [{"platform": "PS4"}]})
+
+    assert [g["external_id"] for g in psn.review_thumbnail_gaps(1)] == ["NPWR_G1_00"]
+
+
+def test_fill_psn_review_thumbnails_caches_onto_the_snapshot(db_session, monkeypatch, tmp_path):
+    """Review rows have no library entry to hang art on, so the snapshot is the
+    cache — the same role ImportCandidate.thumbnail_url plays for spreadsheets."""
+    steamgriddb = _sgdb_stub(monkeypatch)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.commit()
+    merged = [{"npCommunicationId": "NPWR_A1_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    result = steamgriddb.fill_psn_review_thumbnails(db_session, user)
+    assert result == {"filled": 1, "no_candidate": 0, "errored": 0}
+
+    # Cached, and used in preference to PSN's square icon on the next render.
+    rows = psn.import_review_rows(db_session, user.id)
+    assert rows[0]["image"] == "https://sgdb/psn-grid.png"
+    # Re-running asks SGDB for nothing — the gap is closed.
+    assert psn.review_thumbnail_gaps(user.id) == []
+
+
+def test_review_row_prefers_sgdb_art_over_psns_square_icon(db_session, monkeypatch, tmp_path):
+    """PSN's own image is an icon0.png — the wrong shape for a review card and
+    the reason this queue looked nothing like the others."""
+    merged = [
+        {
+            "npCommunicationId": "NPWR_I_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+            "image": {"url": "https://psn/icon0.png"},
+            "sgdbThumbnail": "https://sgdb/grid.png",
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    assert psn.import_review_rows(db_session, 1)[0]["image"] == "https://sgdb/grid.png"
+
+
+def test_fill_psn_review_thumbnails_needs_an_sgdb_key(db_session, monkeypatch, tmp_path):
+    from backend import steamgriddb
+
+    user = models.User(name="t2", username="t2", password_hash="x", api_token="tok2")
+    db_session.add(user)
+    db_session.commit()
+    with pytest.raises(ValueError, match="SteamGridDB"):
+        steamgriddb.fill_psn_review_thumbnails(db_session, user)

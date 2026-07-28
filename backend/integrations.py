@@ -564,6 +564,14 @@ _STEAM_KINDS: dict[str, dict] = {
         "job_label": "PSN import",
         # Local-only (reads the snapshot from disk) — no NPSSO involved, no retry_path.
     },
+    "psn_review_art": {
+        "fn": "fill_psn_review_thumbnails",
+        "module": "steamgriddb",
+        "no_credentials": True,  # SGDB key is checked by the job itself
+        "started": "Fetching artwork for the PSN review queue — you'll see a toast when it finishes.",
+        "label": "Review artwork",
+        "job_label": "PSN review artwork",
+    },
     "psn_store_refresh": {
         "fn": "refresh_all_store_metadata",
         "module": "psn_store",
@@ -619,6 +627,9 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if result.get("played_only_pending"):
             lines.append(f"{result['played_only_pending']} played-only entries await review on the PSN page")
         return "\n".join(lines)
+
+    if kind == "psn_review_art":
+        return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
 
     if kind == "psn_snapshot":
         t = result["totals"]
@@ -682,7 +693,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        module = {"psn": psn, "psn_store": psn_store}.get(spec.get("module"), steam)
+        module = {"psn": psn, "psn_store": psn_store, "steamgriddb": sgdb}.get(spec.get("module"), steam)
         fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
@@ -699,6 +710,14 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             # with no native art. Re-scanning all 16k+ entries here never
             # finishes and buries the covers we actually need.
             asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
+        # The import is what discovers the uncertain ones, so it's what asks for
+        # their art. Gated on the count it just computed: no review queue, no
+        # reason to hit SGDB. Review rows have no library entry to borrow art
+        # from, so without this their cards fall back to PSN's square icon0.png
+        # and look nothing like every other review card.
+        if kind == "psn_import" and result.get("needs_review") and user.steamgriddb_api_key:
+            art_job = jobs.create(user_id=user.id, kind="psn_review_art", label="Review artwork")
+            asyncio.create_task(_run_sync_job(art_job.id, user.id, "psn_review_art"))
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.

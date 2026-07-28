@@ -501,6 +501,22 @@ def bulk_fill_all_missing(
     return {"per_type": per_type, **totals}
 
 
+def _placeholder_grid_url(api_key: str, title: str) -> str | None:
+    """Top horizontal SGDB grid for a raw title, or None if nothing matches.
+
+    Shared by the two review queues' placeholder fills. Neither has a Game,
+    GameRelease or appid to look art up by — rows there don't exist in the
+    library until they're confirmed — so a title guess is the only option, and
+    it only has to be good enough to review by, not canonical.
+    """
+    results = search_games(api_key, title)
+    sgdb_game = results[0] if results else None
+    if not sgdb_game:
+        return None
+    grids = get_grids_for_game(api_key, sgdb_game["id"], orientation="h")
+    return grids[0].get("url") if grids else None
+
+
 def fill_import_candidate_thumbnails(
     db: Session,
     user: models.User,
@@ -543,13 +559,7 @@ def fill_import_candidate_thumbnails(
             no_candidate += 1
             continue
         try:
-            results = search_games(api_key, candidate.raw_title)
-            sgdb_game = results[0] if results else None
-            if not sgdb_game:
-                no_candidate += 1
-                continue
-            grids = get_grids_for_game(api_key, sgdb_game["id"], orientation="h")
-            url = grids[0].get("url") if grids else None
+            url = _placeholder_grid_url(api_key, candidate.raw_title)
             if not url:
                 no_candidate += 1
                 continue
@@ -561,4 +571,61 @@ def fill_import_candidate_thumbnails(
             continue
 
     db.commit()
+    return {"filled": filled, "no_candidate": no_candidate, "errored": errored}
+
+
+def fill_psn_review_thumbnails(
+    db: Session,
+    user: models.User,
+    progress_callback=None,
+) -> dict:
+    """Background pass over pending PSN review rows: look up each title on SGDB
+    and cache the top horizontal grid as a placeholder thumbnail.
+
+    Same job as `fill_import_candidate_thumbnails`, for the other queue that
+    reviews games before they exist in the library. Nothing has a Game or
+    GameRelease yet (that only happens on confirm), so there's no appid or
+    existing art to look up — just a title guess, good enough to review by. The
+    snapshot JSON is the cache, standing in for `ImportCandidate.thumbnail_url`.
+
+    Without this the cards fall back to PSN's own `icon0.png`, which is a small
+    square and reads nothing like the hero art on every other review card.
+
+    Returns: {"filled": N, "no_candidate": N, "errored": N}
+    """
+    from . import psn
+
+    if not user.steamgriddb_api_key:
+        raise ValueError("User has no SteamGridDB API key set.")
+
+    api_key = user.steamgriddb_api_key
+    gaps = psn.review_thumbnail_gaps(user.id)
+    total = len(gaps)
+    thumbs: dict[str, str] = {}
+    filled = 0
+    no_candidate = 0
+    errored = 0
+
+    for i, gap in enumerate(gaps):
+        if progress_callback:
+            progress_callback(i, total, gap["title"])
+        try:
+            url = _placeholder_grid_url(api_key, gap["title"])
+            if not url:
+                no_candidate += 1
+                continue
+            thumbs[gap["external_id"]] = url
+            filled += 1
+        except Exception as e:
+            logger.warning("SGDB thumbnail fetch failed for PSN review row %s: %s", gap["external_id"], e)
+            errored += 1
+            continue
+        # Flush periodically so a long run shows art as it goes and survives a
+        # crash partway through — the snapshot is a single file rewrite, so this
+        # is batched rather than per-row.
+        if len(thumbs) >= 10:
+            psn.save_review_thumbnails(user.id, thumbs)
+            thumbs = {}
+
+    psn.save_review_thumbnails(user.id, thumbs)
     return {"filled": filled, "no_candidate": no_candidate, "errored": errored}

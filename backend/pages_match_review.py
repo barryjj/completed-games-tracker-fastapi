@@ -77,8 +77,11 @@ def psn_review_confirm(
 
     try:
         result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms])
-    except ValueError as e:
-        return Response(str(e), status_code=404)
+    except ValueError:
+        # Fixed text, not the exception's: a 404 here only ever means the row
+        # isn't in the queue (stale page, already actioned), and echoing an
+        # internal message back to the client is what CodeQL flags.
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",
@@ -99,8 +102,8 @@ def psn_review_dismiss(
 
     try:
         result = psn.dismiss_entry_decision(db, current_user, key)
-    except ValueError as e:
-        return Response(str(e), status_code=404)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",

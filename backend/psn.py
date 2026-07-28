@@ -1202,7 +1202,12 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 "external_id": ext_id,
                 "name": item.get("displayName") or item.get("name"),
                 "reason": reason,
-                "image": (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
+                # A cached SGDB horizontal grid first — PSN's own image is a
+                # square icon0.png, which is the wrong shape for a review card's
+                # hero and makes this queue look nothing like the others. Same
+                # placeholder-art idea as import review's candidate thumbnails,
+                # with the snapshot standing in for the candidate row.
+                "image": item.get("sgdbThumbnail") or (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
                 "trophy_progress": item.get("trophyProgress"),
                 "trophy_earned": sum(v or 0 for v in earned.values()),
                 "trophy_defined": sum(v or 0 for v in defined.values()),
@@ -1218,6 +1223,49 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         )
     rows.sort(key=lambda r: ((r["name"] or "").casefold(), r["set_index"]))
     return rows
+
+
+def review_thumbnail_gaps(user_id: int) -> list[dict]:
+    """Review rows with no cached art yet — {external_id, title} each.
+
+    Fed to the SGDB placeholder fill. Nothing exists in the DB to hang art on
+    (entries are only created when a row is confirmed), so the snapshot plays
+    the part `ImportCandidate.thumbnail_url` plays for the spreadsheet queue.
+    """
+    snap = load_snapshot(user_id)
+    if not snap:
+        return []
+    decisions = snap.get("entry_decisions", {})
+    gaps = []
+    for item in snap.get("merged", []):
+        if is_played_only(item) or len(platform_candidates(item)) < 2:
+            continue
+        ext_id = external_id_for(item)
+        if not ext_id or ext_id in decisions or item.get("sgdbThumbnail"):
+            continue
+        title = item.get("displayName") or item.get("name")
+        if title:
+            gaps.append({"external_id": ext_id, "title": title})
+    return gaps
+
+
+def save_review_thumbnails(user_id: int, thumbs: dict[str, str]) -> int:
+    """Cache SGDB thumbnail URLs onto the snapshot's merged items."""
+    if not thumbs:
+        return 0
+    snap = load_snapshot(user_id)
+    if not snap:
+        return 0
+    written = 0
+    for item in snap.get("merged", []):
+        url = thumbs.get(external_id_for(item))
+        if url:
+            item["sgdbThumbnail"] = url
+            written += 1
+    if written:
+        with open(snapshot_path(user_id), "w") as f:
+            json.dump(snap, f)
+    return written
 
 
 def _find_review_item(snap: dict, key: str) -> dict | None:
