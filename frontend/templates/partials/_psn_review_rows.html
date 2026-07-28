@@ -1,0 +1,71 @@
+{# List rows for the PSN cross-play review. One row per trophy set — Sony hands
+   out several sets for one title and never says which console each covers, so
+   two Crimsonland rows is correct data, not a duplicate. The trophy progress
+   column is what tells them apart, which is why it's a real column and not a
+   detail tucked into the card view. #}
+{% for r in rows %}
+<tr id="psn-row-{{ r.key }}">
+  <td class="align-middle">
+    <div class="d-flex align-items-center gap-2">
+      {% if r.image %}
+      <img class="cgt-list-row-thumb" src="{{ r.image }}" alt="" loading="lazy">
+      {% else %}
+      <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
+      {% endif %}
+      <div>
+        <span class="cgt-import-title">{{ r.name }}</span>
+        {% if r.set_count > 1 %}
+        <span class="tag-badge tag-source ms-1" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
+        {% endif %}
+        <div class="text-secondary small">{{ r.reason }}</div>
+      </div>
+    </div>
+  </td>
+  <td class="align-middle text-nowrap">
+    {% if r.trophy_defined %}
+    <span class="small">{{ r.trophy_progress }}%</span>
+    <span class="text-secondary small">{{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
+    {% else %}
+    <span class="text-secondary small">&mdash;</span>
+    {% endif %}
+  </td>
+  <td class="align-middle">
+    {# Pre-ticked with every platform in the set this account is known to own.
+       Unticking them all and confirming is the same as Dismiss. #}
+    <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-2">
+      {% for o in r.options %}
+      <label class="cgt-psn-plat-check">
+        <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
+               {% if o.selected %}checked{% endif %}>
+        <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
+        {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m</span>{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </td>
+  <td class="align-middle text-end">
+    <div class="btn-group btn-group-sm">
+      <button type="button" class="btn btn-primary btn-sm"
+              hx-post="/tools/psn-review/{{ r.key }}/confirm"
+              hx-include="#psn-opts-{{ r.key }} input:checked"
+              hx-target="#psn-row-{{ r.key }}"
+              hx-swap="outerHTML"
+              hx-disabled-elt="this"
+              hx-on::after-request="if(event.detail.successful) psnPendingDelta(-1)">Confirm</button>
+      <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
+              data-bs-toggle="dropdown"
+              data-bs-popper-config='{"strategy":"fixed"}'
+              aria-expanded="false">
+        <span class="visually-hidden">More actions</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end">
+        <li><a class="dropdown-item" href="#"
+               hx-post="/tools/psn-review/{{ r.key }}/dismiss"
+               hx-target="#psn-row-{{ r.key }}"
+               hx-swap="outerHTML"
+               hx-on::after-request="if(event.detail.successful) psnPendingDelta(-1)">Dismiss &mdash; I don&rsquo;t own this</a></li>
+      </ul>
+    </div>
+  </td>
+</tr>
+{% endfor %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}PSN Review{% endblock %}
+
+{% block content %}
+<div class="mb-3 d-flex align-items-start justify-content-between flex-wrap gap-2">
+  <div>
+    <h4 class="mb-0">PSN Review</h4>
+    <p class="text-secondary small mb-0">
+      Decisions the PSN import can&rsquo;t make for you. A cross-play trophy set covers several
+      platforms and PSN never says which you own &mdash; and with cross-buy the answer is often
+      more than one. Confirming creates the library entries.
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <span class="badge bg-secondary"><span id="psn-pending-count">{{ rows | length }}</span> pending</span>
+  </div>
+</div>
+
+<form id="psn-review-filters"
+      hx-get="/tools/psn-review"
+      hx-target="#psn-review-content"
+      hx-swap="innerHTML"
+      hx-push-url="true"
+      hx-trigger="submit">
+  <input type="hidden" name="view" id="psn-view-field" value="{{ view }}">
+  <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+    <div class="btn-group btn-group-sm" role="group" id="psn-view-toggle">
+      <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}"
+              onclick="psnSetView('list')" title="List view">&equiv;</button>
+      <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}"
+              onclick="psnSetView('card')" title="Card view">&#9638;</button>
+    </div>
+    <select class="form-select form-select-sm" name="platform" style="width:auto;"
+            onchange="htmx.trigger('#psn-review-filters', 'submit')"
+            title="Show only trophy sets offering this platform">
+      <option value="">All platforms</option>
+      {% for p in review_platforms %}
+      <option value="{{ p }}"{% if p == platform %} selected{% endif %}>{{ p }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<div id="psn-review-content">
+  {% include "partials/_psn_review_content.html" %}
+</div>
+
+<script>
+// Card stack — same mechanics as import review's (importShowCard et al), kept
+// separate rather than generalised because the two queues load on different
+// pages and share no markup ids.
+let psnCardIdx = 0;
+function psnCards() { return Array.from(document.querySelectorAll('#psn-stack .cgt-match-card')); }
+function psnShowCard(idx) {
+  const cards = psnCards();
+  if (!cards.length) return;
+  psnCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
+  cards.forEach(function(c, i) {
+    c.classList.toggle('cgt-match-card--hidden', i !== psnCardIdx);
+    c.classList.toggle('cgt-match-card--active', i === psnCardIdx);
+  });
+  var counter = document.getElementById('psn-nav-counter');
+  if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
+}
+window.psnCardNav = function(dir) { psnShowCard(psnCardIdx + dir); };
+
+window.psnRebuildNav = function(resetIndex) {
+  var cards = psnCards();
+  var nav = document.getElementById('psn-nav');
+  if (!cards.length) {
+    if (nav) nav.hidden = true;
+    var stack = document.getElementById('psn-stack');
+    if (stack) stack.innerHTML = '<p class="text-secondary p-3 mb-0">Nothing left to review.</p>';
+    return;
+  }
+  if (nav) nav.hidden = false;
+  psnShowCard(resetIndex ? 0 : Math.min(psnCardIdx, cards.length - 1));
+};
+
+// Called after a card's Confirm/Dismiss succeeds — drop it and advance.
+window.psnCardDone = function(key) {
+  var card = document.getElementById('psn-card-' + key);
+  if (card) card.remove();
+  psnPendingDelta(-1);
+  psnRebuildNav(false);
+};
+
+// Keep the header badge honest as rows leave, in both views.
+window.psnPendingDelta = function(d) {
+  var el = document.getElementById('psn-pending-count');
+  if (!el) return;
+  var n = parseInt(el.textContent, 10);
+  if (!isNaN(n)) el.textContent = Math.max(0, n + d);
+};
+
+function psnSetView(view) {
+  document.getElementById('psn-view-field').value = view;
+  htmx.trigger('#psn-review-filters', 'submit');
+}
+
+document.addEventListener('htmx:afterSwap', function(e) {
+  if (e.target && e.target.id === 'psn-review-content') {
+    // Repaint the toggle's active state — the buttons live outside the swap.
+    var view = document.getElementById('psn-view-field').value;
+    var btns = document.querySelectorAll('#psn-view-toggle .btn');
+    if (btns.length === 2) {
+      btns[0].classList.toggle('active', view === 'list');
+      btns[1].classList.toggle('active', view === 'card');
+    }
+    psnCardIdx = 0;
+    if (document.getElementById('psn-stack')) psnRebuildNav(true);
+  }
+});
+
+if (document.getElementById('psn-stack')) psnRebuildNav(true);
+</script>
+{% endblock %}

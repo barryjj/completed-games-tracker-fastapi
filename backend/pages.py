@@ -16,6 +16,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, contains_eager
 
 from . import models, users
+from . import psn as _psn
 from .models import get_db
 from .pages_common import (
     _base_ctx,
@@ -227,6 +228,7 @@ def home_page(
         else:
             label = raw_labels[key] or "Unknown"
             platform_breakdown.append({"label": label, "css": models._platform_heuristic_css(label), "value": label, "count": n})
+
     import_counts = _import_tab_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
@@ -257,6 +259,7 @@ def home_page(
             "platform_breakdown": platform_breakdown,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
+            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
             **_base_ctx(db, current_user),
         },
     )
@@ -282,6 +285,7 @@ def tools_page(
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
             "psn_counts": _psn_counts(db, current_user),
+            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),

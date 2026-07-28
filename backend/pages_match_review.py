@@ -23,6 +23,95 @@ from .pages_common import (
 router = APIRouter()
 
 
+# PSN review lives under /tools, not /library: it is an operations queue like
+# match review's sibling cards on the Tools hub, and the nav highlights by path
+# prefix — under /library it lit up "Library" while the user was on a Tools page.
+@router.get("/tools/psn-review")
+def psn_review_page(
+    request: Request,
+    view: str = Query("list"),
+    platform: str = Query(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Cross-play decisions from the PSN snapshot, as their own review queue.
+
+    Same shape as import review — one server-rendered view at a time (list or
+    card stack), per-row Confirm/Dismiss that take the action on click. The view
+    is server-side rather than a CSS toggle so the two layouts never both exist
+    in the DOM fighting over the same checkbox ids (#163).
+    """
+    from . import psn
+
+    rows = psn.import_review_rows(db, current_user.id)
+    review_platforms = sorted({o["platform"] for r in rows for o in r["options"]})
+    if platform:
+        rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
+    view = view if view in ("list", "card") else "list"
+    ctx = {
+        "current_user": current_user,
+        **_base_ctx(db, current_user),
+        "rows": rows,
+        "view": view,
+        "platform": platform,
+        "has_snapshot": psn.load_snapshot(current_user.id) is not None,
+        "review_platforms": review_platforms,
+    }
+    if request.headers.get("HX-Request"):
+        return templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context=ctx)
+    return templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
+
+
+@router.post("/tools/psn-review/{key}/confirm")
+def psn_review_confirm(
+    key: str,
+    request: Request,
+    platforms: list[str] = Form(default=[]),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Confirm one row: create the entries for the ticked platforms and retire
+    the row. Mirrors import review's per-candidate confirm — the click IS the
+    action, and the response is the row's replacement."""
+    from . import psn
+
+    try:
+        result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms])
+    except ValueError:
+        # Fixed text, not the exception's: a 404 here only ever means the row
+        # isn't in the queue (stale page, already actioned), and echoing an
+        # internal message back to the client is what CodeQL flags.
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_done.html",
+        context={"key": key, "name": result["name"], "created": result["created"]},
+        headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
+    )
+
+
+@router.post("/tools/psn-review/{key}/dismiss")
+def psn_review_dismiss(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Dismiss one row — records "own it on nothing" so it stops asking."""
+    from . import psn
+
+    try:
+        result = psn.dismiss_entry_decision(db, current_user, key)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_done.html",
+        context={"key": key, "name": result["name"], "created": 0},
+        headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
+    )
+
+
 @router.get("/library/match-review")
 def match_review_page(
     request: Request,

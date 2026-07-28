@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import json as _json
 import logging
 import os
 import re
@@ -360,19 +359,15 @@ def test_psn_token(
     return response
 
 
-@router.post("/psn/fetch-library")
-async def psn_fetch_library(request: Request, current_user: models.User = Depends(get_web_user)):
-    """Crawl + snapshot + report as a background job. Zero library writes —
-    importing the snapshot is its own explicit step below."""
-    return _kick_off_sync(request, current_user, "psn_snapshot")
+@router.post("/psn/sync")
+async def psn_sync_library(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Crawl PSN and add the unambiguous games, as one background job (#157).
 
-
-@router.post("/psn/import")
-async def psn_import_library(request: Request, current_user: models.User = Depends(get_web_user)):
-    """Import the reviewed snapshot into the library (background job).
-    Purchased/trophy-sourced games only — played-only rows go through the
-    per-row review actions. Chains the match-review scan on completion."""
-    return _kick_off_sync(request, current_user, "psn_import")
+    Purchased/trophy-sourced games with a settled platform become library
+    entries directly, the way Steam Sync works. Cross-play games PSN can't
+    place, played-only rows, and overlaps with existing entries go to their
+    review queues instead of blocking the write."""
+    return _kick_off_sync(request, current_user, "psn_sync")
 
 
 @router.post("/psn/refresh-store-metadata")
@@ -415,44 +410,12 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
             "report": (snap or {}).get("report"),
             "played_only": psn.played_only_rows(db, current_user.id),
             "import_review": _review,
-            "review_platforms": sorted({o["platform"] for r in _review for o in r["options"]}),
             "flash": flash,
             "flash_error": error,
         },
     )
     response.headers["Cache-Control"] = "no-store"
     return response
-
-
-@router.post("/psn/import-review")
-def psn_import_review_save(
-    request: Request,
-    decisions: str = Form(""),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    """Record reviewed platform + format choices for cross-play trophy sets (#163).
-
-    `decisions` is JSON: {externalId: [{platform}, ...]}. A game can resolve to
-    several platforms (cross-buy), and an empty list means "don't import this
-    one". Choices are validated against the item's own trophy set, stored on the
-    snapshot, and applied by the next import.
-    """
-    try:
-        parsed = _json.loads(decisions) if decisions.strip() else {}
-    except ValueError:
-        return _psn_report_response(request, db, current_user, error="Could not read the review selections.")
-    if not isinstance(parsed, dict) or not parsed:
-        return _psn_report_response(request, db, current_user, error="No review selections submitted.")
-    try:
-        written = psn.record_entry_decisions(current_user.id, parsed)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    if not written:
-        return _psn_report_response(request, db, current_user, error="No valid selections — platforms must be ones the trophy set covers.")
-    return _psn_report_response(
-        request, db, current_user, flash=f"Saved choices for {written} game{'s' if written != 1 else ''} — run Import to apply."
-    )
 
 
 @router.post("/psn/played-only/{external_id}/import")
@@ -577,24 +540,30 @@ _STEAM_KINDS: dict[str, dict] = {
     # PSN rides the same job table; "service"/"module" route credential checks
     # and dispatch away from the Steam defaults. Snapshot fetch writes NOTHING
     # to the library — it saves a reviewable report (import is a later step).
-    "psn_snapshot": {
-        "fn": "fetch_snapshot",
+    # One click: crawl, then add the unambiguous games (#157). The old
+    # fetch/import split existed to let the PS_PLUS in/out call be made against
+    # real counts before anything was written; that decision is settled, so the
+    # gate was friction. Questions that remain go to the review queues.
+    "psn_sync": {
+        "fn": "sync_library",
         "module": "psn",
         "service": "psn",
-        "started": "PSN library fetch started — this crawls purchased, trophy, and played lists. You'll see a toast when it finishes.",
-        "label": "Library fetch",
-        "job_label": "PSN library fetch",
+        "started": (
+            "PSN sync started — crawling your purchased, trophy, and played lists "
+            "and adding what's unambiguous. You'll see a toast when it finishes."
+        ),
+        "label": "Library sync",
+        "job_label": "PSN library sync",
         # POSTed by the desktop shell after it auto-refreshes an expired NPSSO.
-        "retry_path": "/integrations/psn/fetch-library",
+        "retry_path": "/integrations/psn/sync",
     },
-    "psn_import": {
-        "fn": "import_snapshot",
-        "module": "psn",
-        "service": "psn",
-        "started": "PSN import started — creating library entries from the snapshot. You'll see a toast when it finishes.",
-        "label": "Import",
-        "job_label": "PSN import",
-        # Local-only (reads the snapshot from disk) — no NPSSO involved, no retry_path.
+    "psn_review_art": {
+        "fn": "fill_psn_review_thumbnails",
+        "module": "steamgriddb",
+        "no_credentials": True,  # SGDB key is checked by the job itself
+        "started": "Fetching artwork for the PSN review queue — you'll see a toast when it finishes.",
+        "label": "Review artwork",
+        "job_label": "PSN review artwork",
     },
     "psn_store_refresh": {
         "fn": "refresh_all_store_metadata",
@@ -632,7 +601,7 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if result.get("no_product"):
             lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
         return "\n".join(lines)
-    if kind == "psn_import":
+    if kind == "psn_sync":
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
         if result["updated"]:
             parts.append(f"{result['updated']:,} updated")
@@ -641,24 +610,18 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         )
         if skipped:
             parts.append(f"{skipped} skipped")
-        lines = ["PSN import complete", " · ".join(parts)]
-        if result.get("skipped_pc_dupe"):
-            lines.append(f"{result['skipped_pc_dupe']} PC copies skipped — already in your Steam library")
+        lines = ["PSN sync complete", " · ".join(parts)]
+        # All three review queues in one place — the sync is now the only step,
+        # so its toast is the only chance to say what still needs a decision.
+        if result.get("needs_review"):
+            lines.append(f"{result['needs_review']} cross-play games need a platform — open Tools → PSN review")
+        if result.get("played_only_pending"):
+            lines.append(f"{result['played_only_pending']} played-only entries need a decision — open the PSN page")
         if result.get("match_candidates"):
             lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
-        if result.get("played_only_pending"):
-            lines.append(f"{result['played_only_pending']} played-only entries await review on the PSN page")
+        if result.get("skipped_pc_dupe"):
+            lines.append(f"{result['skipped_pc_dupe']} PC copies skipped — already in your Steam library")
         return "\n".join(lines)
-
-    if kind == "psn_snapshot":
-        t = result["totals"]
-        trophy = f"{t['trophy_fetched']:,}" + (f" of {t['trophy_reported']:,}" if t.get("trophy_reported") is not None else "")
-        played = f"{t['played_fetched']:,}" + (f" of {t['played_reported']:,}" if t.get("played_reported") is not None else "")
-        return (
-            "PSN fetch complete\n"
-            f"{result['merged_total']:,} merged games — {t['purchased_fetched']:,} purchased · {trophy} trophy · {played} played\n"
-            f"{result['new']:,} not yet imported — review the report on the PSN page"
-        )
 
     totals = _steam_counts(db, user) or {"games": 0, "dlc": 0, "total": 0}
     totals_line = f"{totals['games']:,} games · {totals['dlc']:,} DLC total"
@@ -712,7 +675,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        module = {"psn": psn, "psn_store": psn_store}.get(spec.get("module"), steam)
+        module = {"psn": psn, "psn_store": psn_store, "steamgriddb": sgdb}.get(spec.get("module"), steam)
         fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
@@ -723,12 +686,20 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         # PSN entries have no native artwork, so auto-fill from SGDB after an
         # import — as its own background job so the import toast isn't held up
         # by the (long) fill. Gated on an SGDB key; silently skipped without.
-        if kind == "psn_import" and user.steamgriddb_api_key:
+        if kind == "psn_sync" and user.steamgriddb_api_key:
             fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
             # Scope to PSN entries — those are the ones the import just added
             # with no native art. Re-scanning all 16k+ entries here never
             # finishes and buries the covers we actually need.
             asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
+        # The import is what discovers the uncertain ones, so it's what asks for
+        # their art. Gated on the count it just computed: no review queue, no
+        # reason to hit SGDB. Review rows have no library entry to borrow art
+        # from, so without this their cards fall back to PSN's square icon0.png
+        # and look nothing like every other review card.
+        if kind == "psn_sync" and result.get("needs_review") and user.steamgriddb_api_key:
+            art_job = jobs.create(user_id=user.id, kind="psn_review_art", label="Review artwork")
+            asyncio.create_task(_run_sync_job(art_job.id, user.id, "psn_review_art"))
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.

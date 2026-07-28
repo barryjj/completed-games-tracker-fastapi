@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from backend import models, psn
 
 
@@ -170,16 +172,16 @@ def _signup_and_login(client, username="testuser", password="testpass"):
     return r.cookies["session"]
 
 
-def test_fetch_library_requires_credentials(client, db_session):
+def test_sync_requires_credentials(client, db_session):
     token = _signup_and_login(client)
-    r = client.post("/integrations/psn/fetch-library")
+    r = client.post("/integrations/psn/sync")
     assert r.status_code == 422
     assert b"NPSSO" in r.content
 
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso = "x" * 64
     db_session.commit()
-    r = client.post("/integrations/psn/fetch-library")
+    r = client.post("/integrations/psn/sync")
     assert r.status_code == 422
     assert b"Online ID" in r.content
 
@@ -234,8 +236,8 @@ def test_psn_page_shows_fetch_button_when_token_saved(client, db_session):
     user.psn_online_id = "tester"
     db_session.commit()
     r = client.get("/integrations/psn")
-    assert b"Fetch Library" in r.content
-    assert b"/integrations/psn/fetch-library" in r.content
+    assert b"Sync PSN library" in r.content
+    assert b"/integrations/psn/sync" in r.content
 
 
 def test_psn_store_metadata_button_present_and_kicks_off_without_credentials(client, db_session):
@@ -823,7 +825,7 @@ def _psn_import_result():
     }
 
 
-def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
+def test_psn_sync_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
     import asyncio
 
     from backend import integrations, jobs
@@ -834,7 +836,7 @@ def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeyp
     db_session.add(user)
     db_session.commit()
 
-    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+    monkeypatch.setattr(psn_mod, "sync_library", lambda db, u: _psn_import_result())
 
     async def _noop(job_id, user_id):
         return None
@@ -842,14 +844,14 @@ def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeyp
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
     db_session.close = lambda: None
 
-    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    job = jobs.create(user_id=user.id, kind="psn_sync", label="Library sync")
     with patch("backend.integrations.SessionLocal", return_value=db_session):
-        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_sync"))
 
     assert any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
 
 
-def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
+def test_psn_sync_skips_sgdb_fill_without_key(db_session, monkeypatch):
     import asyncio
 
     from backend import integrations, jobs
@@ -860,12 +862,12 @@ def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
     db_session.add(user)
     db_session.commit()
 
-    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+    monkeypatch.setattr(psn_mod, "sync_library", lambda db, u: _psn_import_result())
     db_session.close = lambda: None
 
-    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    job = jobs.create(user_id=user.id, kind="psn_sync", label="Library sync")
     with patch("backend.integrations.SessionLocal", return_value=db_session):
-        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_sync"))
 
     assert not any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
 
@@ -977,9 +979,11 @@ def test_import_review_rows_lists_only_cross_play_games(db_session, monkeypatch,
     assert [r["name"] for r in rows] == ["Cross"]
     options = {o["platform"]: o for o in rows[0]["options"]}
     assert set(options) == {"PS4", "PS5"}
-    # Play history pre-ticks only the platform it can defend.
+    # Both are pre-ticked: PS4 is proven by the single-platform sets in this
+    # snapshot, PS5 by the logged play time. Defaulting to everything the
+    # account can actually run beats defaulting to one guess.
     assert options["PS5"]["selected"] is True
-    assert options["PS4"]["selected"] is False
+    assert options["PS4"]["selected"] is True
 
 
 def test_record_entry_decisions_validates_and_allows_multiple(monkeypatch, tmp_path):
@@ -1030,25 +1034,75 @@ def test_import_skips_a_game_with_an_empty_decision(db_session, monkeypatch, tmp
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_S_00").count() == 0
 
 
-def test_import_review_endpoint_records_choices(client, db_session, monkeypatch, tmp_path):
-    import json as _j
-
+def test_psn_review_confirm_creates_the_entries(client, db_session, monkeypatch, tmp_path):
+    """The review IS the action — confirming a row creates its library entries
+    there and then, the way match review merges on click."""
     _seed_platforms(db_session)
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
     db_session.commit()
-    merged = [{"npCommunicationId": "NPWR_E_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}]
+    merged = [
+        {
+            "npCommunicationId": "NPWR_E_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        }
+    ]
     _write_snapshot(monkeypatch, tmp_path, user.id, merged)
 
-    payload = _j.dumps({"NPWR_E_00": [{"platform": "PS3"}]})
-    r = client.post("/integrations/psn/import-review", data={"decisions": payload})
+    r = client.post("/tools/psn-review/NPWR_E_00/confirm", data={"platforms": ["PS3", "PS4"]})
     assert r.status_code == 200
-    assert b"Saved choices for 1 game" in r.content
-    assert psn.load_snapshot(user.id)["entry_decisions"]["NPWR_E_00"] == [{"platform": "PS3"}]
+    assert b"added 2" in r.content
+    # The response replaces that row in place, in either view.
+    assert b'id="psn-row-NPWR_E_00"' in r.content
+    assert r.headers["HX-Retarget"] == "#psn-row-NPWR_E_00"
 
-    r = client.post("/integrations/psn/import-review", data={"decisions": ""})
-    assert b"No review selections" in r.content
+    rels = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_E_00").all()
+    assert {r_.platform_id for r_ in rels} == {
+        models.resolve_platform_id(db_session, "PS3"),
+        models.resolve_platform_id(db_session, "PS4"),
+    }
+    # ...and the row drops off the review list, like a merged pair does.
+    assert psn.import_review_rows(db_session, user.id) == []
+
+
+def test_psn_review_dismiss_is_a_real_decision(client, db_session, monkeypatch, tmp_path):
+    """Dismiss means don't import this one — recorded, so it stops being work."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_S2_00",
+            "name": "Skip Me",
+            "displayName": "Skip Me",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    r = client.post("/tools/psn-review/NPWR_S2_00/dismiss")
+    assert r.status_code == 200
+    assert b"dismissed" in r.content
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_S2_00").count() == 0
+    assert psn.import_review_rows(db_session, user.id) == []
+
+
+def test_psn_review_confirm_rejects_an_unknown_row(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _write_snapshot(monkeypatch, tmp_path, user.id, [])
+    r = client.post("/tools/psn-review/NOPE_00/confirm", data={"platforms": ["PS4"]})
+    assert r.status_code == 404
 
 
 def test_two_trophy_sets_for_one_name_stay_separate():
@@ -1232,3 +1286,519 @@ def test_titles_match_contained_is_only_a_suggestion():
     assert m("Alan Wake II: Night Springs", "Alan Wake II") == "contained"
     assert m("Nioh 2 - The Tengu's Disciple", "Nioh 2") == "contained"
     assert m("Peggle Nights", "Peggle") == "contained"
+
+
+def test_purchased_fetch_asks_for_every_platform():
+    """The original port asked only for ps4/ps5, so every conclusion about
+    'PSN doesn't return PS3/Vita purchases' was really about our own filter
+    (#181)."""
+    import json as _j
+
+    page = {"data": {"purchasedTitlesRetrieve": {"games": []}}}
+    with patch("backend.psn._bearer_get", return_value=page) as mocked:
+        psn._fetch_purchased("tok", "acct")
+    variables = _j.loads(mocked.call_args.kwargs["params"]["variables"])
+    assert "ps3" in variables["platform"]
+    assert "ps vita" in variables["platform"]
+    assert "psp" in variables["platform"]
+
+
+def test_purchased_fetch_falls_back_when_sony_rejects_the_wider_list():
+    """A rejected platform token must not cost the user their whole crawl."""
+    import json as _j
+
+    good = {"data": {"purchasedTitlesRetrieve": {"games": [{"titleId": "CUSA1_00"}]}}}
+    calls = []
+
+    def fake(_token, _url, params=None):
+        platforms = _j.loads(params["variables"])["platform"]
+        calls.append(platforms)
+        if "ps3" in platforms:
+            return {"errors": [{"message": "unknown platform"}]}
+        return good
+
+    with patch("backend.psn._bearer_get", side_effect=fake):
+        out = psn._fetch_purchased("tok", "acct")
+    assert out == [{"titleId": "CUSA1_00"}]  # fallback result, not an exception
+    assert calls[0] != calls[-1]
+    assert calls[-1] == ["ps4", "ps5"]
+
+
+def test_psn_review_page_renders_with_both_layouts(client, db_session, monkeypatch, tmp_path):
+    """The cross-play decisions are their own page with a list/card toggle and
+    a sticky Save — matching match review and import review, not buried in the
+    fetch report."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_R_00",
+            "name": "Cross Play Game",
+            "displayName": "Cross Play Game",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    r = client.get("/tools/psn-review")
+    assert r.status_code == 200
+    body = r.content
+    assert b"Cross Play Game" in body
+    # list is the baseline view, with the import-review layout toggle
+    assert b"psn-view-toggle" in body
+    assert b"psn-review-table" in body
+    # a platform checkbox per candidate, in this row's own option group
+    assert b'id="psn-opts-NPWR_R_00"' in body
+    assert body.count(b'name="platforms"') == 2
+    # per-row actions that take effect on click, not a bulk-only save
+    assert b"/tools/psn-review/NPWR_R_00/confirm" in body
+    assert b"/tools/psn-review/NPWR_R_00/dismiss" in body
+
+
+def test_psn_review_page_empty_states(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    _signup_and_login(client)
+    # Point at an empty data dir — otherwise this reads the developer's real
+    # snapshot file and the "no snapshot" branch never renders.
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    r = client.get("/tools/psn-review")
+    assert b"No PSN snapshot yet" in r.content
+
+
+def test_tools_shows_the_psn_review_card(client, db_session, monkeypatch, tmp_path):
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_T_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    r = client.get("/tools")
+    assert b"PSN review" in r.content
+    assert b"/tools/psn-review" in r.content
+
+
+def test_psn_fetch_report_links_out_instead_of_embedding_the_review(client, db_session, monkeypatch, tmp_path):
+    """Creating library entries doesn't belong inside a summary of the crawl."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_L_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+    r = client.get("/integrations/psn/snapshot-report")
+    assert b"/tools/psn-review" in r.content  # links out
+    assert b'name="platforms"' not in r.content  # no checkboxes embedded
+
+
+def test_import_holds_ambiguous_games_back_instead_of_guessing(db_session, monkeypatch, tmp_path):
+    """Import does the unambiguous work and funnels the rest to review. It
+    creates entries and cannot un-create them, so a wrong platform would need
+    manual cleanup — better to wait for the user."""
+    _seed_platforms(db_session)
+    user = models.User(name="h", username="h", password_hash="x", api_token="htok")
+    db_session.add(user)
+    db_session.commit()
+    merged = [
+        {  # unambiguous — imports straight away
+            "titleId": "CUSA1111_00",
+            "name": "Clear",
+            "displayName": "Clear",
+            "platform": "PS4",
+            "sources": ["purchased"],
+        },
+        {  # cross-play with no decision — held back
+            "npCommunicationId": "NPWR_H_00",
+            "name": "Ambiguous",
+            "displayName": "Ambiguous",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    result = psn.import_snapshot(db_session, user)
+    assert result["added"] == 1
+    assert result["needs_review"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA1111_00").count() == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_H_00").count() == 0
+
+    # Once reviewed, the same import creates exactly what was chosen.
+    psn.record_entry_decisions(user.id, {"NPWR_H_00": [{"platform": "PS3"}]})
+    result = psn.import_snapshot(db_session, user)
+    assert result["needs_review"] == 0
+    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_H_00").one()
+    assert rel.platform_id == models.resolve_platform_id(db_session, "PS3")
+
+
+def test_two_trophy_sets_for_one_title_are_two_review_rows(db_session, monkeypatch, tmp_path):
+    """Sony returns two Crimsonland sets — 90% and 23% — both declaring the
+    identical PS3,PSVITA,PS4, and nothing anywhere says which console each
+    covers. They're two real progress records wanting two entries, so they get
+    asked about separately, labelled by the only thing that tells them apart."""
+    merged = [
+        {
+            "npCommunicationId": "NPWR06670_00",
+            "titleId": "CUSA00426_00",
+            "name": "Crimsonland",
+            "displayName": "Crimsonland",
+            "normalizedName": "crimsonland",
+            "platform": "PS3,PSVITA,PS4",
+            "trophyProgress": 90,
+            "trophies": {"bronze": 21},
+            "earnedTrophies": {"bronze": 19},
+            "playByCategory": {"ps4_game": 56},
+            "sources": ["played", "purchased", "titles"],
+        },
+        {
+            "npCommunicationId": "NPWR06085_00",
+            "name": "Crimsonland",
+            "displayName": "Crimsonland",
+            "normalizedName": "crimsonland",
+            "platform": "PS3,PSVITA,PS4",
+            "trophyProgress": 23,
+            "trophies": {"bronze": 21},
+            "earnedTrophies": {"bronze": 5},
+            "sources": ["titles"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    rows = psn.import_review_rows(db_session, 1)
+
+    assert len(rows) == 2
+    assert [r["set_index"] for r in rows] == [1, 2]
+    assert all(r["set_count"] == 2 for r in rows)
+    # Trophy progress is the discriminator, so it has to be on the row.
+    assert sorted(r["trophy_progress"] for r in rows) == [23, 90]
+    assert sorted((r["trophy_earned"], r["trophy_defined"]) for r in rows) == [(5, 21), (19, 21)]
+
+
+def test_playtime_is_not_attributed_across_several_trophy_sets(db_session, monkeypatch, tmp_path):
+    """The 56m of ps4_game play merged onto Crimsonland's 90% set by title
+    alone, and that set is the Vita one. With more than one set for a title the
+    attribution is unknowable, so the row must not quote it as a platform hint."""
+    merged = [
+        {
+            "npCommunicationId": "NPWR06670_00",
+            "name": "Crimsonland",
+            "displayName": "Crimsonland",
+            "normalizedName": "crimsonland",
+            "platform": "PS3,PSVITA,PS4",
+            "trophyProgress": 90,
+            "playByCategory": {"ps4_game": 56},
+            "sources": ["played", "purchased", "titles"],
+        },
+        {
+            "npCommunicationId": "NPWR06085_00",
+            "name": "Crimsonland",
+            "displayName": "Crimsonland",
+            "normalizedName": "crimsonland",
+            "platform": "PS3,PSVITA,PS4",
+            "trophyProgress": 23,
+            "sources": ["titles"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    rows = psn.import_review_rows(db_session, 1)
+
+    played_row = next(r for r in rows if r["trophy_progress"] == 90)
+    assert played_row["total_minutes"] == 0
+    assert all(o["minutes"] == 0 for o in played_row["options"])
+    assert "2 trophy sets" in played_row["reason"]
+    assert "PS4" not in played_row["reason"]
+
+
+def test_owned_platforms_narrows_the_default_to_hardware_you_have(db_session, monkeypatch, tmp_path):
+    """An account whose only evidence is Vita defaults a cross-play set to Vita
+    — not to every platform Sony lists on it."""
+    merged = [
+        {  # single-platform set: proof of a Vita
+            "npCommunicationId": "NPWR_V_00",
+            "name": "Vita Only",
+            "displayName": "Vita Only",
+            "platform": "PSVITA",
+            "sources": ["titles"],
+        },
+        {  # the ambiguous one
+            "npCommunicationId": "NPWR_C_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PSVITA,PS4",
+            "sources": ["titles"],
+        },
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    rows = psn.import_review_rows(db_session, 1)
+
+    row = next(r for r in rows if r["name"] == "Cross")
+    assert [o["platform"] for o in row["options"] if o["selected"]] == ["PSVITA"]
+
+
+def test_psn_review_card_view_has_the_carousel(client, db_session, monkeypatch, tmp_path):
+    """Card view is the same stack + sticky arrows + counter as the other
+    review queues, not a bespoke layout."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    merged = [
+        {
+            "npCommunicationId": "NPWR_CARD_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PSVITA",
+            "sources": ["titles"],
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    body = client.get("/tools/psn-review?view=card").content
+    assert b'id="psn-stack"' in body
+    assert b"cgt-match-stage" in body and b"cgt-match-card" in body
+    assert b"cgt-match-nav--sticky" in body
+    assert b"psnCardNav(-1)" in body and b"psnCardNav(1)" in body
+    assert b'id="psn-nav-counter"' in body
+    # Per-card actions, same contract as the list rows.
+    assert b"/tools/psn-review/NPWR_CARD_00/confirm" in body
+    assert b"/tools/psn-review/NPWR_CARD_00/dismiss" in body
+
+
+def _sgdb_stub(monkeypatch, url="https://sgdb/psn-grid.png"):
+    from backend import steamgriddb
+
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [{"id": 1, "name": q}])
+    monkeypatch.setattr(
+        steamgriddb,
+        "get_grids_for_game",
+        lambda k, gid, orientation, page=0: [{"url": url}] if orientation == "h" else [],
+    )
+    return steamgriddb
+
+
+def test_review_thumbnail_gaps_only_asks_about_pending_rows(db_session, monkeypatch, tmp_path):
+    """Art is fetched for rows still awaiting a decision — not for settled
+    games, already-cached rows, or ones the user has actioned."""
+    merged = [
+        {"npCommunicationId": "NPWR_G1_00", "name": "Ask Me", "displayName": "Ask Me", "platform": "PS3,PS4", "sources": ["titles"]},
+        {  # already cached
+            "npCommunicationId": "NPWR_G2_00",
+            "name": "Got Art",
+            "displayName": "Got Art",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+            "sgdbThumbnail": "https://sgdb/already.png",
+        },
+        {  # unambiguous — never reaches the review at all
+            "npCommunicationId": "NPWR_G3_00",
+            "name": "Settled",
+            "displayName": "Settled",
+            "platform": "PS4",
+            "sources": ["titles"],
+        },
+        {"npCommunicationId": "NPWR_G4_00", "name": "Decided", "displayName": "Decided", "platform": "PS3,PS4", "sources": ["titles"]},
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    psn.record_entry_decisions(1, {"NPWR_G4_00": [{"platform": "PS4"}]})
+
+    assert [g["external_id"] for g in psn.review_thumbnail_gaps(1)] == ["NPWR_G1_00"]
+
+
+def test_fill_psn_review_thumbnails_caches_onto_the_snapshot(db_session, monkeypatch, tmp_path):
+    """Review rows have no library entry to hang art on, so the snapshot is the
+    cache — the same role ImportCandidate.thumbnail_url plays for spreadsheets."""
+    steamgriddb = _sgdb_stub(monkeypatch)
+    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
+    db_session.add(user)
+    db_session.commit()
+    merged = [{"npCommunicationId": "NPWR_A1_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}]
+    _write_snapshot(monkeypatch, tmp_path, user.id, merged)
+
+    result = steamgriddb.fill_psn_review_thumbnails(db_session, user)
+    assert result == {"filled": 1, "no_candidate": 0, "errored": 0}
+
+    # Cached, and used in preference to PSN's square icon on the next render.
+    rows = psn.import_review_rows(db_session, user.id)
+    assert rows[0]["image"] == "https://sgdb/psn-grid.png"
+    # Re-running asks SGDB for nothing — the gap is closed.
+    assert psn.review_thumbnail_gaps(user.id) == []
+
+
+def test_review_row_prefers_sgdb_art_over_psns_square_icon(db_session, monkeypatch, tmp_path):
+    """PSN's own image is an icon0.png — the wrong shape for a review card and
+    the reason this queue looked nothing like the others."""
+    merged = [
+        {
+            "npCommunicationId": "NPWR_I_00",
+            "name": "Cross",
+            "displayName": "Cross",
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+            "image": {"url": "https://psn/icon0.png"},
+            "sgdbThumbnail": "https://sgdb/grid.png",
+        }
+    ]
+    _write_snapshot(monkeypatch, tmp_path, 1, merged)
+    assert psn.import_review_rows(db_session, 1)[0]["image"] == "https://sgdb/grid.png"
+
+
+def test_fill_psn_review_thumbnails_needs_an_sgdb_key(db_session, monkeypatch, tmp_path):
+    from backend import steamgriddb
+
+    user = models.User(name="t2", username="t2", password_hash="x", api_token="tok2")
+    db_session.add(user)
+    db_session.commit()
+    with pytest.raises(ValueError, match="SteamGridDB"):
+        steamgriddb.fill_psn_review_thumbnails(db_session, user)
+
+
+# ─── one-click sync (#157) ─────────────────────────────────────────────────
+
+
+def _stub_crawl(monkeypatch, purchased=None, titles_=None, played=None):
+    """Stub the three PSN feeds + auth so a sync can run end to end offline."""
+    monkeypatch.setattr(psn, "_exchange_npsso", lambda npsso: "tok")
+    monkeypatch.setattr(psn, "_resolve_profile", lambda tok, oid: ("acct-1", None))
+    monkeypatch.setattr(psn, "_fetch_purchased", lambda tok, acct: purchased or [])
+    monkeypatch.setattr(psn, "_fetch_trophy_titles", lambda tok, acct: (titles_ or [], len(titles_ or [])))
+    monkeypatch.setattr(psn, "_fetch_played", lambda tok, acct: (played or [], len(played or [])))
+
+
+def test_sync_library_crawls_and_creates_entries_in_one_step(db_session, monkeypatch, tmp_path):
+    """#157: one click crawls PSN and adds what it can place, the Steam way —
+    no separate import run standing between the crawl and the library."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="s", username="s", password_hash="x", api_token="stok", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    _stub_crawl(
+        monkeypatch,
+        purchased=[{"name": "Solo Game", "titleId": "CUSA1111_00", "platform": "PS4", "membership": "NONE"}],
+    )
+
+    result = psn.sync_library(db_session, user)
+
+    assert result["added"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA1111_00").count() == 1
+    # The crawl's report rides along so one toast can describe both halves.
+    assert result["report"]["merged_total"] == 1
+
+
+def test_sync_holds_ambiguous_games_back_for_review(db_session, monkeypatch, tmp_path):
+    """The write is unguarded now, so the safety has to live in the split: a
+    cross-play set PSN can't place is still never guessed at."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="s2", username="s2", password_hash="x", api_token="stok2", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    _stub_crawl(
+        monkeypatch,
+        titles_=[
+            {
+                "npCommunicationId": "NPWR_SY_00",
+                "trophyTitleName": "Cross Play",
+                "trophyTitlePlatform": "PS3,PSVITA,PS4",
+                "definedTrophies": {"bronze": 1},
+                "earnedTrophies": {"bronze": 1},
+                "progress": 100,
+            }
+        ],
+    )
+
+    result = psn.sync_library(db_session, user)
+
+    assert result["added"] == 0
+    assert result["needs_review"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_SY_00").count() == 0
+    assert [r["name"] for r in psn.import_review_rows(db_session, user.id)] == ["Cross Play"]
+
+
+def test_resync_keeps_review_decisions_and_cached_art(db_session, monkeypatch, tmp_path):
+    """A crawl rewrites the snapshot file, so anything the USER put there has to
+    survive it. Under one-click this runs routinely — losing it would re-ask
+    every settled cross-play question and re-hit SGDB on every single sync."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="s3", username="s3", password_hash="x", api_token="stok3", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    trophy_set = [
+        {
+            "npCommunicationId": "NPWR_RS_00",
+            "trophyTitleName": "Cross Play",
+            "trophyTitlePlatform": "PS3,PS4",
+            "definedTrophies": {"bronze": 1},
+            "earnedTrophies": {"bronze": 1},
+            "progress": 100,
+        }
+    ]
+    _stub_crawl(monkeypatch, titles_=trophy_set)
+    psn.sync_library(db_session, user)
+
+    # User answers the question, and the art job caches a grid.
+    psn.confirm_entry_decision(db_session, user, "NPWR_RS_00", ["PS4"])
+    psn.save_review_thumbnails(user.id, {"NPWR_RS_00": "https://sgdb/kept.png"})
+    assert psn.import_review_rows(db_session, user.id) == []
+
+    # Sync again — same feeds, fresh snapshot file.
+    psn.sync_library(db_session, user)
+
+    snap = psn.load_snapshot(user.id)
+    assert snap["entry_decisions"]["NPWR_RS_00"] == [{"platform": "PS4"}]
+    assert psn.import_review_rows(db_session, user.id) == []  # not re-asked
+    assert psn.review_thumbnail_gaps(user.id) == []  # art not re-fetched
+    assert any(i.get("sgdbThumbnail") == "https://sgdb/kept.png" for i in snap["merged"])
+
+
+def test_sync_toast_reports_every_review_queue(db_session):
+    """One job means one toast, so it's the only place the three queues can be
+    surfaced. A count silently missing here is work the user never hears about."""
+    from backend import integrations
+
+    user = models.User(name="s4", username="s4", password_hash="x", api_token="stok4")
+    db_session.add(user)
+    db_session.commit()
+    msg = integrations._format_sync_result(
+        db_session,
+        user,
+        "psn_sync",
+        {
+            "added": 12,
+            "updated": 3,
+            "skipped_no_platform": 0,
+            "skipped_no_id": 0,
+            "skipped_non_game": 0,
+            "skipped_conflict": 0,
+            "needs_review": 54,
+            "played_only_pending": 7,
+            "match_candidates": 9,
+        },
+    )
+    assert "PSN sync complete" in msg
+    assert "+12 entries" in msg
+    assert "54 cross-play games need a platform" in msg
+    assert "7 played-only entries" in msg
+    assert "9 possible duplicates" in msg
