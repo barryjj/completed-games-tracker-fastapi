@@ -644,6 +644,21 @@ def fetch_snapshot(db: Session, user: models.User) -> dict:
     }
     report = _build_report(db, result["merged"], result["filtered"], totals, purchased)
 
+    # A crawl replaces the snapshot file, so anything the USER put there has to
+    # be carried across or it's destroyed. That was survivable while fetching
+    # was a rare, deliberate step; now that a sync is one click and expected to
+    # be routine (#157), losing it would re-ask every cross-play and played-only
+    # question on every single sync. Cached review art rides along for the same
+    # reason — otherwise every sync re-hits SGDB for art it already had.
+    previous = load_snapshot(user.id) or {}
+    carried_art = {
+        ext: item["sgdbThumbnail"] for item in previous.get("merged", []) if (ext := external_id_for(item)) and item.get("sgdbThumbnail")
+    }
+    for item in result["merged"]:
+        url = carried_art.get(external_id_for(item))
+        if url:
+            item["sgdbThumbnail"] = url
+
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(snapshot_path(user.id), "w") as f:
         json.dump(
@@ -651,6 +666,9 @@ def fetch_snapshot(db: Session, user: models.User) -> dict:
                 "fetched_at": datetime.datetime.now(datetime.UTC).isoformat(),
                 "report": report,
                 "merged": result["merged"],
+                # Decisions are keyed by external_id, which survives a re-crawl.
+                "entry_decisions": previous.get("entry_decisions", {}),
+                "played_only_decisions": previous.get("played_only_decisions", {}),
                 "raw": {"purchased": purchased, "trophy_titles": titles, "played": played},
             },
             f,
@@ -963,7 +981,7 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     manual/historical entries surface immediately."""
     snap = load_snapshot(user.id)
     if not snap:
-        raise ValueError("No PSN snapshot found — run Fetch Library first.")
+        raise ValueError("No PSN snapshot found — run a PSN sync first.")
 
     added = updated = 0
     skipped_no_platform = 0
@@ -1050,6 +1068,24 @@ def import_snapshot(db: Session, user: models.User) -> dict:
         "played_only_pending": played_only,
         "match_candidates": scan.get("candidates_added", 0),
     }
+
+
+def sync_library(db: Session, user: models.User) -> dict:
+    """Crawl PSN and add the unambiguous games to the library, in one step.
+
+    The Steam mental model (#157): one button, entries appear, and the handful
+    of genuine questions land in review queues instead of gating the write
+    behind a second click. The old fetch→review-report→import sequence existed
+    so the PS_PLUS in/out call could be made against real counts before
+    anything was written; that decision is settled (import all), so the gate
+    was pure friction.
+
+    Returns the import's result with the crawl's report folded in, so one job
+    completion can report the library delta AND all three review queues.
+    """
+    report = fetch_snapshot(db, user)
+    result = import_snapshot(db, user)
+    return {**result, "report": report}
 
 
 # ─── Played-only review actions ────────────────────────────────────────────

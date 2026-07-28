@@ -38,17 +38,11 @@
   </div>
 
   <div class="cgt-detail-block mb-3">
-    <h6 class="cgt-detail-block__heading">Import</h6>
-    <p class="small text-secondary mb-2">Creates library entries for every purchased and trophy-backed game (PS Plus included — provenance is kept on each entry). Existing library rows are never modified; overlaps with manual entries are queued for match review. Played-only activity is excluded — review those below.</p>
-    <button
-      class="btn btn-primary btn-sm"
-      hx-post="/integrations/psn/import"
-      hx-target="#psn-flash"
-      hx-swap="innerHTML"
-      hx-disabled-elt="this"
-      hx-confirm="Import the PSN snapshot into your library? Existing entries are never modified; duplicates go to match review."
-      hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
-    >Import to Library</button>
+    <h6 class="cgt-detail-block__heading">What a sync adds</h6>
+    {# The old wording here claimed "existing library rows are never modified",
+       which was never true of PSN's own rows — a re-sync deliberately refreshes
+       their playtime and last-played. Only OTHER sources are untouched. #}
+    <p class="small text-secondary mb-0">Every purchased and trophy-backed game whose platform PSN settles (PS Plus included &mdash; provenance is kept on each entry). Re-syncing refreshes playtime and last-played on entries it created before; manual, Steam and spreadsheet entries are never touched, and overlaps with them are queued for match review. Cross-play games PSN can&rsquo;t place, and played-only activity, go to the review queues below.</p>
   </div>
 
   {% if import_review %}

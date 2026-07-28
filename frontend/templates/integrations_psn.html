@@ -103,18 +103,18 @@
          hx-disinherit="hx-select"
          hx-swap="outerHTML"
          hx-trigger="cgt:jobsDone from:body">
-    <p class="text-secondary mb-2"><small>Step 1 of the PSN sync: fetch your purchased, trophy, and played lists into a reviewable snapshot. <strong>Nothing is written to your library</strong> &mdash; the import step comes after you review the report.</small></p>
+    <p class="text-secondary mb-2"><small>Crawl your purchased, trophy, and played lists and <strong>add what PSN can place</strong> straight to your library, the same way Steam Sync does. Games PSN can&rsquo;t settle &mdash; cross-play trophy sets, played-only activity, overlaps with entries you already have &mdash; go to the review queues instead of being guessed at.</small></p>
     {# Swap target for the job-poller's OOB sync-progress indicator. #}
     <div id="sync-indicator"></div>
     <div class="mb-3">
       <button
         class="btn btn-primary"
-        hx-post="/integrations/psn/fetch-library"
+        hx-post="/integrations/psn/sync"
         hx-target="#psn-flash"
         hx-swap="innerHTML"
         hx-disabled-elt="this"
         hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
-      >Fetch Library (preview)</button>
+      >Sync PSN library</button>
     </div>
     <div hx-get="/integrations/psn/snapshot-report"
          hx-trigger="load"
@@ -135,7 +135,7 @@
       >Test Token</button>
     </div>
     {% else %}
-    <p class="text-secondary"><small>Save an NPSSO token to enable library fetch and the token test.</small></p>
+    <p class="text-secondary"><small>Save an NPSSO token to enable library sync and the token test.</small></p>
     {% endif %}
   </div>
   <div class="col-lg-6">

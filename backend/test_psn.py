@@ -172,16 +172,16 @@ def _signup_and_login(client, username="testuser", password="testpass"):
     return r.cookies["session"]
 
 
-def test_fetch_library_requires_credentials(client, db_session):
+def test_sync_requires_credentials(client, db_session):
     token = _signup_and_login(client)
-    r = client.post("/integrations/psn/fetch-library")
+    r = client.post("/integrations/psn/sync")
     assert r.status_code == 422
     assert b"NPSSO" in r.content
 
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso = "x" * 64
     db_session.commit()
-    r = client.post("/integrations/psn/fetch-library")
+    r = client.post("/integrations/psn/sync")
     assert r.status_code == 422
     assert b"Online ID" in r.content
 
@@ -236,8 +236,8 @@ def test_psn_page_shows_fetch_button_when_token_saved(client, db_session):
     user.psn_online_id = "tester"
     db_session.commit()
     r = client.get("/integrations/psn")
-    assert b"Fetch Library" in r.content
-    assert b"/integrations/psn/fetch-library" in r.content
+    assert b"Sync PSN library" in r.content
+    assert b"/integrations/psn/sync" in r.content
 
 
 def test_psn_store_metadata_button_present_and_kicks_off_without_credentials(client, db_session):
@@ -825,7 +825,7 @@ def _psn_import_result():
     }
 
 
-def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
+def test_psn_sync_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
     import asyncio
 
     from backend import integrations, jobs
@@ -836,7 +836,7 @@ def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeyp
     db_session.add(user)
     db_session.commit()
 
-    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+    monkeypatch.setattr(psn_mod, "sync_library", lambda db, u: _psn_import_result())
 
     async def _noop(job_id, user_id):
         return None
@@ -844,14 +844,14 @@ def test_psn_import_auto_triggers_sgdb_fill_when_key_present(db_session, monkeyp
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
     db_session.close = lambda: None
 
-    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    job = jobs.create(user_id=user.id, kind="psn_sync", label="Library sync")
     with patch("backend.integrations.SessionLocal", return_value=db_session):
-        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_sync"))
 
     assert any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
 
 
-def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
+def test_psn_sync_skips_sgdb_fill_without_key(db_session, monkeypatch):
     import asyncio
 
     from backend import integrations, jobs
@@ -862,12 +862,12 @@ def test_psn_import_skips_sgdb_fill_without_key(db_session, monkeypatch):
     db_session.add(user)
     db_session.commit()
 
-    monkeypatch.setattr(psn_mod, "import_snapshot", lambda db, u: _psn_import_result())
+    monkeypatch.setattr(psn_mod, "sync_library", lambda db, u: _psn_import_result())
     db_session.close = lambda: None
 
-    job = jobs.create(user_id=user.id, kind="psn_import", label="Import")
+    job = jobs.create(user_id=user.id, kind="psn_sync", label="Library sync")
     with patch("backend.integrations.SessionLocal", return_value=db_session):
-        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_import"))
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_sync"))
 
     assert not any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
 
@@ -1671,3 +1671,134 @@ def test_fill_psn_review_thumbnails_needs_an_sgdb_key(db_session, monkeypatch, t
     db_session.commit()
     with pytest.raises(ValueError, match="SteamGridDB"):
         steamgriddb.fill_psn_review_thumbnails(db_session, user)
+
+
+# ─── one-click sync (#157) ─────────────────────────────────────────────────
+
+
+def _stub_crawl(monkeypatch, purchased=None, titles_=None, played=None):
+    """Stub the three PSN feeds + auth so a sync can run end to end offline."""
+    monkeypatch.setattr(psn, "_exchange_npsso", lambda npsso: "tok")
+    monkeypatch.setattr(psn, "_resolve_profile", lambda tok, oid: ("acct-1", None))
+    monkeypatch.setattr(psn, "_fetch_purchased", lambda tok, acct: purchased or [])
+    monkeypatch.setattr(psn, "_fetch_trophy_titles", lambda tok, acct: (titles_ or [], len(titles_ or [])))
+    monkeypatch.setattr(psn, "_fetch_played", lambda tok, acct: (played or [], len(played or [])))
+
+
+def test_sync_library_crawls_and_creates_entries_in_one_step(db_session, monkeypatch, tmp_path):
+    """#157: one click crawls PSN and adds what it can place, the Steam way —
+    no separate import run standing between the crawl and the library."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="s", username="s", password_hash="x", api_token="stok", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    _stub_crawl(
+        monkeypatch,
+        purchased=[{"name": "Solo Game", "titleId": "CUSA1111_00", "platform": "PS4", "membership": "NONE"}],
+    )
+
+    result = psn.sync_library(db_session, user)
+
+    assert result["added"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA1111_00").count() == 1
+    # The crawl's report rides along so one toast can describe both halves.
+    assert result["report"]["merged_total"] == 1
+
+
+def test_sync_holds_ambiguous_games_back_for_review(db_session, monkeypatch, tmp_path):
+    """The write is unguarded now, so the safety has to live in the split: a
+    cross-play set PSN can't place is still never guessed at."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="s2", username="s2", password_hash="x", api_token="stok2", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    _stub_crawl(
+        monkeypatch,
+        titles_=[
+            {
+                "npCommunicationId": "NPWR_SY_00",
+                "trophyTitleName": "Cross Play",
+                "trophyTitlePlatform": "PS3,PSVITA,PS4",
+                "definedTrophies": {"bronze": 1},
+                "earnedTrophies": {"bronze": 1},
+                "progress": 100,
+            }
+        ],
+    )
+
+    result = psn.sync_library(db_session, user)
+
+    assert result["added"] == 0
+    assert result["needs_review"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_SY_00").count() == 0
+    assert [r["name"] for r in psn.import_review_rows(db_session, user.id)] == ["Cross Play"]
+
+
+def test_resync_keeps_review_decisions_and_cached_art(db_session, monkeypatch, tmp_path):
+    """A crawl rewrites the snapshot file, so anything the USER put there has to
+    survive it. Under one-click this runs routinely — losing it would re-ask
+    every settled cross-play question and re-hit SGDB on every single sync."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="s3", username="s3", password_hash="x", api_token="stok3", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    trophy_set = [
+        {
+            "npCommunicationId": "NPWR_RS_00",
+            "trophyTitleName": "Cross Play",
+            "trophyTitlePlatform": "PS3,PS4",
+            "definedTrophies": {"bronze": 1},
+            "earnedTrophies": {"bronze": 1},
+            "progress": 100,
+        }
+    ]
+    _stub_crawl(monkeypatch, titles_=trophy_set)
+    psn.sync_library(db_session, user)
+
+    # User answers the question, and the art job caches a grid.
+    psn.confirm_entry_decision(db_session, user, "NPWR_RS_00", ["PS4"])
+    psn.save_review_thumbnails(user.id, {"NPWR_RS_00": "https://sgdb/kept.png"})
+    assert psn.import_review_rows(db_session, user.id) == []
+
+    # Sync again — same feeds, fresh snapshot file.
+    psn.sync_library(db_session, user)
+
+    snap = psn.load_snapshot(user.id)
+    assert snap["entry_decisions"]["NPWR_RS_00"] == [{"platform": "PS4"}]
+    assert psn.import_review_rows(db_session, user.id) == []  # not re-asked
+    assert psn.review_thumbnail_gaps(user.id) == []  # art not re-fetched
+    assert any(i.get("sgdbThumbnail") == "https://sgdb/kept.png" for i in snap["merged"])
+
+
+def test_sync_toast_reports_every_review_queue(db_session):
+    """One job means one toast, so it's the only place the three queues can be
+    surfaced. A count silently missing here is work the user never hears about."""
+    from backend import integrations
+
+    user = models.User(name="s4", username="s4", password_hash="x", api_token="stok4")
+    db_session.add(user)
+    db_session.commit()
+    msg = integrations._format_sync_result(
+        db_session,
+        user,
+        "psn_sync",
+        {
+            "added": 12,
+            "updated": 3,
+            "skipped_no_platform": 0,
+            "skipped_no_id": 0,
+            "skipped_non_game": 0,
+            "skipped_conflict": 0,
+            "needs_review": 54,
+            "played_only_pending": 7,
+            "match_candidates": 9,
+        },
+    )
+    assert "PSN sync complete" in msg
+    assert "+12 entries" in msg
+    assert "54 cross-play games need a platform" in msg
+    assert "7 played-only entries" in msg
+    assert "9 possible duplicates" in msg
