@@ -3,7 +3,7 @@
    actions, which re-render it with a flash line. #}
 <div id="psn-snapshot-report">
 {% if not report %}
-  <p class="text-secondary mb-0"><small>No snapshot yet — Fetch library crawls PSN and builds a reviewable report here. Nothing is written to your library.</small></p>
+  <p class="text-secondary mb-0"><small>No sync yet &mdash; Sync PSN library crawls PSN, adds what it can place, and reports here on what it found.</small></p>
 {% else %}
   {% if flash %}
   <div class="alert alert-success py-2 mb-3"><small>{{ flash }}</small></div>
@@ -15,7 +15,7 @@
     <h6 class="cgt-detail-block__heading">Last fetch</h6>
     <dl class="cgt-detail-meta small mb-0">
       <dt>Fetched</dt>
-      <dd><span class="local-time" data-utc="{{ snapshot.fetched_at.split('+')[0] }}">{{ snapshot.fetched_at }}</span></dd>
+      <dd>{% if last_synced_at %}<span class="local-time" data-utc="{{ last_synced_at.isoformat() }}">{{ last_synced_at }}</span>{% else %}&mdash;{% endif %}</dd>
       <dt>Merged games</dt>
       <dd>{{ "{:,}".format(report.merged_total) }}</dd>
       <dt>Purchased</dt>

@@ -54,7 +54,7 @@ def psn_review_page(
         "rows": rows,
         "view": view,
         "platform": platform,
-        "has_snapshot": psn.load_snapshot(current_user.id) is not None,
+        "has_snapshot": psn.has_synced(db, current_user.id),
         "review_platforms": review_platforms,
     }
     if request.headers.get("HX-Request"):

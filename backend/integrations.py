@@ -398,16 +398,15 @@ def save_psn_token(
 
 
 def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
-    """Re-render the snapshot report block (used as the swap target by the
-    played-only review actions so the row list updates in place)."""
-    snap = psn.load_snapshot(current_user.id)
+    """Re-render the sync report block (the swap target for the played-only
+    review actions, so the row list updates in place)."""
     _review = psn.import_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
         context={
-            "snapshot": snap,
-            "report": (snap or {}).get("report"),
+            "report": current_user.psn_last_sync_report,
+            "last_synced_at": current_user.psn_last_synced_at,
             "played_only": psn.played_only_rows(db, current_user.id),
             "import_review": _review,
             "flash": flash,
@@ -496,12 +495,12 @@ def psn_snapshot_report(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Render the stored snapshot's report (or an empty state) for the PSN
-    configure page, including the played-only review rows.
+    """Render the last sync's report (or an empty state) for the PSN configure
+    page, including the played-only review rows.
 
     no-store: the desktop shell's WKWebView heuristically caches GETs that
-    carry no cache headers, which can pin a stale/pre-snapshot response in a
-    context with no user-facing reload."""
+    carry no cache headers, which can pin a stale response in a context with no
+    user-facing reload."""
     return _psn_report_response(request, db, current_user)
 
 

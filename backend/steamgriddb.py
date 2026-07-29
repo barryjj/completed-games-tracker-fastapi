@@ -585,8 +585,7 @@ def fill_psn_review_thumbnails(
     Same job as `fill_import_candidate_thumbnails`, for the other queue that
     reviews games before they exist in the library. Nothing has a Game or
     GameRelease yet (that only happens on confirm), so there's no appid or
-    existing art to look up — just a title guess, good enough to review by. The
-    snapshot JSON is the cache, standing in for `ImportCandidate.thumbnail_url`.
+    existing art to look up — just a title guess, good enough to review by.
 
     Without this the cards fall back to PSN's own `icon0.png`, which is a small
     square and reads nothing like the hero art on every other review card.
@@ -599,7 +598,7 @@ def fill_psn_review_thumbnails(
         raise ValueError("User has no SteamGridDB API key set.")
 
     api_key = user.steamgriddb_api_key
-    gaps = psn.review_thumbnail_gaps(user.id)
+    gaps = psn.review_thumbnail_gaps(db, user.id)
     total = len(gaps)
     thumbs: dict[str, str] = {}
     filled = 0
@@ -621,11 +620,10 @@ def fill_psn_review_thumbnails(
             errored += 1
             continue
         # Flush periodically so a long run shows art as it goes and survives a
-        # crash partway through — the snapshot is a single file rewrite, so this
-        # is batched rather than per-row.
+        # crash partway through.
         if len(thumbs) >= 10:
-            psn.save_review_thumbnails(user.id, thumbs)
+            psn.save_review_thumbnails(db, user.id, thumbs)
             thumbs = {}
 
-    psn.save_review_thumbnails(user.id, thumbs)
+    psn.save_review_thumbnails(db, user.id, thumbs)
     return {"filled": filled, "no_candidate": no_candidate, "errored": errored}
