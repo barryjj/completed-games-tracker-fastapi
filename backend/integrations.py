@@ -1422,6 +1422,29 @@ async def steamgriddb_fill_missing(
     )
 
 
+def kick_psn_enrichment(user: models.User) -> list[str]:
+    """Enrich the entries a review just created — artwork, then store metadata.
+
+    A sync chains these itself, but rows confirmed afterwards arrive too late
+    for that pass, which used to mean "sync again" purely as a chore. Fired when
+    the review queue EMPTIES rather than per confirm: clicking through 54 rows
+    would otherwise spawn 54 pairs of jobs.
+
+    Both jobs self-gate — the fill only touches entries missing art, and
+    store_is_stale() skips anything already enriched — so a firing that turns
+    out to have nothing to do costs almost nothing.
+    """
+    kinds = []
+    if user.steamgriddb_api_key:
+        fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
+        asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
+        kinds.append("sgdb_fill_all")
+    store_job = jobs.create(user_id=user.id, kind="psn_store_refresh", label="Store metadata")
+    asyncio.create_task(_run_sync_job(store_job.id, user.id, "psn_store_refresh"))
+    kinds.append("psn_store_refresh")
+    return kinds
+
+
 async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | None = None) -> None:
     """Background runner: fill all four SGDB artwork types in one pass.
 

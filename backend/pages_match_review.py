@@ -79,6 +79,21 @@ def psn_review_page(
     return templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
 
 
+def _maybe_enrich(db: Session, user: models.User) -> None:
+    """Once the review queue is empty, enrich what it created.
+
+    Entries confirmed here arrive after the sync's own enrichment pass has run,
+    so without this they sit with no store metadata and no artwork until the
+    next sync — "sync again" purely as a chore. Fired on the queue emptying
+    rather than per confirm, so clicking through 54 rows spawns one pass, not
+    54. Both jobs self-gate, so an empty pass is nearly free.
+    """
+    from . import integrations, psn
+
+    if psn.review_pending_count(db, user.id) == 0:
+        integrations.kick_psn_enrichment(user)
+
+
 def _played_only_done(request: Request, key: str, name: str, verb: str):
     """Row replacement after a played-only action — same contract as the
     cross-play confirm: the click IS the action, the response retires the row."""
@@ -91,7 +106,7 @@ def _played_only_done(request: Request, key: str, name: str, verb: str):
 
 
 @router.post("/tools/psn-review/{key}/played-only/import")
-def psn_played_only_import(
+async def psn_played_only_import(
     key: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -104,11 +119,12 @@ def psn_played_only_import(
         name = psn.import_played_only(db, current_user, key)
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
+    _maybe_enrich(db, current_user)
     return _played_only_done(request, key, name, "added to your library")
 
 
 @router.post("/tools/psn-review/{key}/played-only/skip")
-def psn_played_only_skip(
+async def psn_played_only_skip(
     key: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -122,11 +138,12 @@ def psn_played_only_skip(
         psn.skip_played_only(db, current_user, key)
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
+    _maybe_enrich(db, current_user)
     return _played_only_done(request, key, rows.get(key, key), "skipped")
 
 
 @router.post("/tools/psn-review/{key}/played-only/attach")
-def psn_played_only_attach(
+async def psn_played_only_attach(
     key: str,
     request: Request,
     entry_id: int = Form(...),
@@ -143,11 +160,12 @@ def psn_played_only_attach(
         name = psn.attach_played_only(db, current_user, key, entry_id)
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
+    _maybe_enrich(db, current_user)
     return _played_only_done(request, key, name, "play stats attached")
 
 
 @router.post("/tools/psn-review/{key}/confirm")
-def psn_review_confirm(
+async def psn_review_confirm(
     key: str,
     request: Request,
     platforms: list[str] = Form(default=[]),
@@ -166,6 +184,7 @@ def psn_review_confirm(
         # isn't in the queue (stale page, already actioned), and echoing an
         # internal message back to the client is what CodeQL flags.
         return Response("That row is no longer in the PSN review queue.", status_code=404)
+    _maybe_enrich(db, current_user)
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",
@@ -175,7 +194,7 @@ def psn_review_confirm(
 
 
 @router.post("/tools/psn-review/{key}/dismiss")
-def psn_review_dismiss(
+async def psn_review_dismiss(
     key: str,
     request: Request,
     db: Session = Depends(get_db),
@@ -188,6 +207,9 @@ def psn_review_dismiss(
         result = psn.dismiss_entry_decision(db, current_user, key)
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
+    # A dismiss creates nothing itself, but it can be the click that empties the
+    # queue — and earlier confirms in the same session did create entries.
+    _maybe_enrich(db, current_user)
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",

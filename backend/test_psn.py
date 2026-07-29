@@ -1918,3 +1918,56 @@ def test_review_tabs_carry_the_view_and_reset_the_platform_filter(client, db_ses
     # The filter form carries the kind so the view toggle doesn't drop the tab.
     assert b'id="psn-kind-field"' in body
     assert b"psnSetKind" in body
+
+
+def test_enrichment_fires_only_once_the_review_queue_empties(db_session, monkeypatch):
+    """Rows confirmed after a sync miss its enrichment pass, so the review runs
+    one itself — when the LAST row is decided, not on every click. Clicking
+    through 54 rows must not spawn 54 pairs of jobs."""
+    from backend import integrations, jobs
+    from backend import pages_match_review as pmr
+
+    _seed_platforms(db_session)
+    jobs.clear_all()
+    user = _user(db_session, "enrich")
+    _seed_review(
+        db_session,
+        user,
+        [
+            {"npCommunicationId": "NPWR_E1_00", "name": "One", "displayName": "One", "platform": "PS3,PS4", "sources": ["titles"]},
+            {"npCommunicationId": "NPWR_E2_00", "name": "Two", "displayName": "Two", "platform": "PS3,PS4", "sources": ["titles"]},
+        ],
+    )
+
+    fired = []
+    monkeypatch.setattr(integrations, "kick_psn_enrichment", lambda u: fired.append(u.id))
+
+    # One row left pending — nothing fires yet.
+    psn.confirm_entry_decision(db_session, user, "NPWR_E1_00", ["PS4"])
+    pmr._maybe_enrich(db_session, user)
+    assert fired == []
+
+    # Last row decided — one pass.
+    psn.confirm_entry_decision(db_session, user, "NPWR_E2_00", ["PS4"])
+    pmr._maybe_enrich(db_session, user)
+    assert fired == [user.id]
+
+
+def test_review_pending_count_spans_both_queues(db_session):
+    _seed_platforms(db_session)
+    user = _user(db_session, "count")
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_PC_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    _seed_review(
+        db_session,
+        user,
+        [{"titleId": "PPSA_PC_00", "name": "Disc", "displayName": "Disc", "category": "ps5_native_game", "sources": ["played"]}],
+        kind="played_only",
+    )
+    assert psn.review_pending_count(db_session, user.id) == 2
+
+    psn.dismiss_entry_decision(db_session, user, "NPWR_PC_00")
+    assert psn.review_pending_count(db_session, user.id) == 1

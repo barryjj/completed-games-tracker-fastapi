@@ -1355,6 +1355,15 @@ def save_review_thumbnails(db: Session, user_id: int, thumbs: dict[str, str]) ->
     return written
 
 
+def review_pending_count(db: Session, user_id: int) -> int:
+    """Rows still awaiting a decision, across both queues."""
+    return (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.status == "pending")
+        .count()
+    )
+
+
 def _pending_candidate(db: Session, user_id: int, key: str, kind: str = "cross_play") -> models.PsnReviewCandidate | None:
     return (
         db.query(models.PsnReviewCandidate)
