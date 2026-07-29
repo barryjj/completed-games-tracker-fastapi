@@ -398,8 +398,7 @@ def save_psn_token(
 
 
 def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
-    """Re-render the sync report block (the swap target for the played-only
-    review actions, so the row list updates in place)."""
+    """Re-render the sync report block for the PSN configure page."""
     _review = psn.import_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
@@ -407,7 +406,6 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
         context={
             "report": current_user.psn_last_sync_report,
             "last_synced_at": current_user.psn_last_synced_at,
-            "played_only": psn.played_only_rows(db, current_user.id),
             "import_review": _review,
             "flash": flash,
             "flash_error": error,
@@ -415,49 +413,6 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
     )
     response.headers["Cache-Control"] = "no-store"
     return response
-
-
-@router.post("/psn/played-only/{external_id}/import")
-def psn_played_only_import(
-    external_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    try:
-        name = psn.import_played_only(db, current_user, external_id)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    return _psn_report_response(request, db, current_user, flash=f"Imported {name}.")
-
-
-@router.post("/psn/played-only/{external_id}/skip")
-def psn_played_only_skip(
-    external_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    try:
-        psn.skip_played_only(db, current_user, external_id)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    return _psn_report_response(request, db, current_user, flash="Skipped.")
-
-
-@router.post("/psn/played-only/{external_id}/attach")
-def psn_played_only_attach(
-    external_id: str,
-    request: Request,
-    entry_id: int = Form(...),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    try:
-        name = psn.attach_played_only(db, current_user, external_id, entry_id)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    return _psn_report_response(request, db, current_user, flash=f"Play stats attached to {name}.")
 
 
 @router.get("/psn/attach-search")
@@ -496,7 +451,7 @@ def psn_snapshot_report(
     current_user: models.User = Depends(get_web_user),
 ):
     """Render the last sync's report (or an empty state) for the PSN configure
-    page, including the played-only review rows.
+    page.
 
     no-store: the desktop shell's WKWebView heuristically caches GETs that
     carry no cache headers, which can pin a stale response in a context with no
@@ -615,7 +570,7 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if result.get("needs_review"):
             lines.append(f"{result['needs_review']} cross-play games need a platform — open Tools → PSN review")
         if result.get("played_only_pending"):
-            lines.append(f"{result['played_only_pending']} played-only entries need a decision — open the PSN page")
+            lines.append(f"{result['played_only_pending']} played-only games need a decision — open Tools → PSN review")
         if result.get("match_candidates"):
             lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
         if result.get("skipped_pc_dupe"):

@@ -538,7 +538,9 @@ def test_import_skips_pc_only_game_already_in_steam(db_session, monkeypatch, tmp
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="PPSA03016_00").count() == 1
 
 
-def test_played_only_actions(client, db_session, monkeypatch, tmp_path):
+def test_played_only_actions(client, db_session):
+    """The played-only queue is a tab of the PSN review page, with the same
+    per-row-action contract as the cross-play tab (#157)."""
     _seed_platforms(db_session)
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
@@ -567,40 +569,43 @@ def test_played_only_actions(client, db_session, monkeypatch, tmp_path):
             "sources": ["played"],
         },
     ]
-    user.psn_last_sync_report = _report_fixture(len(merged))
-    db_session.commit()
     _seed_review(db_session, user, merged, kind="played_only")
 
     # Suggestions: disc signature -> import; ps_plus + tiny -> skip.
-    rows = psn.played_only_rows(db_session, user.id)
-    by_id = {r["external_id"]: r for r in rows}
+    by_id = {r["external_id"]: r for r in psn.played_only_rows(db_session, user.id)}
     assert by_id["PPSA01442_00"]["suggested"] == "import"
     assert "disc" in by_id["PPSA01442_00"]["reason"]
     assert by_id["CUSA17670_00"]["suggested"] == "skip"
 
-    # Report page shows the review section.
-    r = client.get("/integrations/psn/snapshot-report")
-    assert b"Played-only activity" in r.content
-    assert b"Devil May Cry 5 Series" in r.content
+    # The tab renders them, and the cross-play tab does not.
+    body = client.get("/tools/psn-review?kind=played_only").content
+    assert b"Devil May Cry 5 Series" in body
+    assert b"psn-tabs" in body
+    assert b"Devil May Cry 5 Series" not in client.get("/tools/psn-review").content
 
-    # Import one.
-    r = client.post("/integrations/psn/played-only/PPSA01442_00/import")
+    # Import one — the row retires in place.
+    r = client.post("/tools/psn-review/PPSA01442_00/played-only/import")
     assert r.status_code == 200
-    assert b"Imported Devil May Cry 5 Series" in r.content
+    assert b"added to your library" in r.content
+    assert r.headers["HX-Retarget"] == "#psn-row-PPSA01442_00"
     rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="PPSA01442_00").one()
     entry = db_session.query(models.UserLibraryEntry).filter_by(release_id=rel.id).one()
     assert entry.playtime_minutes == 1823
 
     # Skip the other.
-    r = client.post("/integrations/psn/played-only/CUSA17670_00/skip")
-    assert b"Skipped" in r.content
-    rows = psn.played_only_rows(db_session, user.id)
-    by_id = {r["external_id"]: r for r in rows}
-    assert by_id["PPSA01442_00"]["decision"]["action"] == "imported"
-    assert by_id["CUSA17670_00"]["decision"]["action"] == "skipped"
+    r = client.post("/tools/psn-review/CUSA17670_00/played-only/skip")
+    assert r.status_code == 200
+    assert b"skipped" in r.content
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA17670_00").count() == 0
+
+    # Both decided — the queue is empty and stays that way.
+    assert [r_["external_id"] for r_ in psn.played_only_rows(db_session, user.id) if not r_["decision"]] == []
 
 
-def test_attach_played_only_to_existing_entry(client, db_session, monkeypatch, tmp_path):
+def test_attach_played_only_to_existing_entry(client, db_session):
+    """The DMC5-SE-on-disc case: 30h of playtime that exists nowhere else, on a
+    row whose Sony name doesn't match the game you own. Attach moves the stats
+    onto the entry you already have instead of minting a second one."""
     _seed_platforms(db_session)
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
@@ -630,16 +635,14 @@ def test_attach_played_only_to_existing_entry(client, db_session, monkeypatch, t
             "sources": ["played"],
         }
     ]
-    user.psn_last_sync_report = _report_fixture(len(merged))
-    db_session.commit()
     _seed_review(db_session, user, merged, kind="played_only")
 
     # The attach-search picker finds the SE entry.
     r = client.get("/integrations/psn/attach-search", params={"external_id": "PPSA01442_00", "q": "devil"})
     assert b"Devil May Cry 5 Special Edition" in r.content
 
-    r = client.post("/integrations/psn/played-only/PPSA01442_00/attach", data={"entry_id": target.id})
-    assert b"Play stats attached to Devil May Cry 5 Special Edition" in r.content
+    r = client.post("/tools/psn-review/PPSA01442_00/played-only/attach", data={"entry_id": target.id})
+    assert b"play stats attached" in r.content
     db_session.refresh(target)
     assert target.playtime_minutes == 1823
     assert target.last_played_at is not None
@@ -1377,14 +1380,13 @@ def test_psn_review_page_renders_with_both_layouts(client, db_session, monkeypat
     assert b"/tools/psn-review/NPWR_R_00/dismiss" in body
 
 
-def test_psn_review_page_empty_states(client, db_session, monkeypatch, tmp_path):
+def test_psn_review_page_empty_states(client, db_session):
+    """Empty state now reads the library and queue, not a file on disk — a
+    restored database and the page can't disagree (#157)."""
     _seed_platforms(db_session)
     _signup_and_login(client)
-    # Point at an empty data dir — otherwise this reads the developer's real
-    # snapshot file and the "no snapshot" branch never renders.
-    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
     r = client.get("/tools/psn-review")
-    assert b"No PSN snapshot yet" in r.content
+    assert b"No PSN sync yet" in r.content
 
 
 def test_tools_shows_the_psn_review_card(client, db_session, monkeypatch, tmp_path):
@@ -1806,7 +1808,7 @@ def test_sync_toast_reports_every_review_queue(db_session):
     assert "PSN sync complete" in msg
     assert "+12 entries" in msg
     assert "54 cross-play games need a platform" in msg
-    assert "7 played-only entries" in msg
+    assert "7 played-only games" in msg
     assert "9 possible duplicates" in msg
 
 
@@ -1845,3 +1847,74 @@ def test_sync_skips_store_metadata_when_nothing_was_added(db_session, monkeypatc
     user = _user(db_session, "nochain")
     kinds = _run_psn_sync_job(db_session, monkeypatch, user, {**_psn_import_result(), "added": 0})
     assert "psn_store_refresh" not in kinds
+
+
+def test_tools_card_counts_both_review_queues(client, db_session):
+    """Two tabs, one card — a count covering only cross-play would under-report
+    the work and send the user to a page with more waiting than it promised."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_TC_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "PPSA_TC_00",
+                "name": "Disc Game",
+                "displayName": "Disc Game",
+                "category": "ps5_native_game",
+                "playDuration": "PT20H0M0S",
+                "playCount": 30,
+                "sources": ["played"],
+            }
+        ],
+        kind="played_only",
+    )
+
+    from backend.pages import _psn_pending
+
+    assert _psn_pending(db_session, user) == 2
+    assert b"Need a decision" in client.get("/tools").content
+
+
+def test_review_tabs_carry_the_view_and_reset_the_platform_filter(client, db_session):
+    """A platform chosen on the cross-play tab means nothing on played-only and
+    would silently empty it."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "PPSA_TB_00",
+                "name": "Disc Game",
+                "displayName": "Disc Game",
+                "category": "ps5_native_game",
+                "playDuration": "PT20H0M0S",
+                "playCount": 30,
+                "sources": ["played"],
+            }
+        ],
+        kind="played_only",
+    )
+
+    body = client.get("/tools/psn-review?kind=played_only&view=card").content
+    assert b'id="psn-stack"' in body
+    assert b"cgt-match-nav--sticky" in body
+    assert b"/tools/psn-review/PPSA_TB_00/played-only/import" in body
+    # The filter form carries the kind so the view toggle doesn't drop the tab.
+    assert b'id="psn-kind-field"' in body
+    assert b"psnSetKind" in body

@@ -1,0 +1,57 @@
+{# List rows for the played-only queue: activity with no purchase and no trophy
+   set behind it. A disc, a demo, someone else's account on your console —
+   Sony's data can't tell them apart, so nothing here imports without a click.
+   Attach exists because the playtime is sometimes the only copy that survives
+   (DMC5 Special Edition on disc: 30h with no entitlement anywhere). #}
+{% for r in rows %}
+<tr id="psn-row-{{ r.external_id }}">
+  <td class="align-middle">
+    <span class="cgt-import-title">{{ r.name }}</span>
+    <div class="text-secondary small">{{ r.category or "" }}{% if r.service and r.service != "other" %} &middot; via {{ r.service }}{% endif %}</div>
+  </td>
+  <td class="align-middle text-nowrap">
+    <span class="small">{{ r.minutes // 60 }}h{{ "%02d" % (r.minutes % 60) }}m</span>
+    <div class="text-secondary small">{{ r.play_count }} session{{ "s" if r.play_count != 1 }}</div>
+  </td>
+  <td class="align-middle text-nowrap">
+    <span class="text-secondary small">{{ r.first_played }}{% if r.last_played != r.first_played %} &rarr; {{ r.last_played }}{% endif %}</span>
+  </td>
+  <td class="align-middle"><span class="text-secondary small">{{ r.reason }}</span></td>
+  <td class="align-middle text-end">
+    <div class="btn-group btn-group-sm">
+      {# The suggestion picks which action gets primary styling — it's a nudge,
+         never a default that acts on its own. #}
+      <button type="button" class="btn btn-sm {{ 'btn-primary' if r.suggested == 'import' else 'btn-surface' }}"
+              hx-post="/tools/psn-review/{{ r.external_id }}/played-only/import"
+              hx-target="#psn-row-{{ r.external_id }}"
+              hx-swap="outerHTML"
+              hx-disabled-elt="this"
+              hx-on::after-request="if(event.detail.successful) psnPendingDelta(-1)">Import</button>
+      <button type="button" class="btn btn-sm {{ 'btn-primary' if r.suggested == 'skip' else 'btn-surface' }}"
+              hx-post="/tools/psn-review/{{ r.external_id }}/played-only/skip"
+              hx-target="#psn-row-{{ r.external_id }}"
+              hx-swap="outerHTML"
+              hx-disabled-elt="this"
+              hx-on::after-request="if(event.detail.successful) psnPendingDelta(-1)">Skip</button>
+      <button type="button" class="btn btn-sm btn-surface"
+              onclick="document.getElementById('psn-attach-{{ r.external_id }}').classList.toggle('d-none')">Attach&hellip;</button>
+    </div>
+  </td>
+</tr>
+<tr id="psn-attach-{{ r.external_id }}" class="d-none">
+  <td colspan="5">
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <small class="text-secondary flex-shrink-0">Attach play stats to:</small>
+      <input type="search" class="form-control form-control-sm" style="max-width:280px;"
+             placeholder="Search your library&hellip;"
+             name="q"
+             hx-get="/integrations/psn/attach-search"
+             hx-vals='{"external_id": "{{ r.external_id }}"}'
+             hx-trigger="input changed delay:300ms"
+             hx-target="next .psn-attach-results"
+             hx-swap="innerHTML">
+    </div>
+    <div class="psn-attach-results"></div>
+  </td>
+</tr>
+{% endfor %}

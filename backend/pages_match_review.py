@@ -26,32 +26,49 @@ router = APIRouter()
 # PSN review lives under /tools, not /library: it is an operations queue like
 # match review's sibling cards on the Tools hub, and the nav highlights by path
 # prefix — under /library it lit up "Library" while the user was on a Tools page.
+# The two PSN queues are tabs of one page: both are "PSN couldn't settle this,
+# you decide", both are rows of the same psn_review_candidates table, and having
+# one on Tools and the other buried in the config page was the scattered flow
+# (#157). Under /tools, not /library — the nav highlights by path prefix.
+_PSN_REVIEW_KINDS = ("cross_play", "played_only")
+
+
 @router.get("/tools/psn-review")
 def psn_review_page(
     request: Request,
+    kind: str = Query("cross_play"),
     view: str = Query("list"),
     platform: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Cross-play decisions from the PSN snapshot, as their own review queue.
+    """PSN decisions the sync can't make for you, as their own review queue.
 
     Same shape as import review — one server-rendered view at a time (list or
-    card stack), per-row Confirm/Dismiss that take the action on click. The view
-    is server-side rather than a CSS toggle so the two layouts never both exist
-    in the DOM fighting over the same checkbox ids (#163).
+    card stack), per-row actions that take effect on click. The view is
+    server-side rather than a CSS toggle so the two layouts never both exist in
+    the DOM fighting over the same element ids (#163).
     """
     from . import psn
 
-    rows = psn.import_review_rows(db, current_user.id)
-    review_platforms = sorted({o["platform"] for r in rows for o in r["options"]})
-    if platform:
-        rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
+    kind = kind if kind in _PSN_REVIEW_KINDS else "cross_play"
     view = view if view in ("list", "card") else "list"
+
+    cross_rows = psn.import_review_rows(db, current_user.id)
+    played_rows = [r for r in psn.played_only_rows(db, current_user.id) if not r["decision"]]
+    counts = {"cross_play": len(cross_rows), "played_only": len(played_rows)}
+
+    rows = cross_rows if kind == "cross_play" else played_rows
+    review_platforms = sorted({o["platform"] for r in cross_rows for o in r["options"]})
+    if kind == "cross_play" and platform:
+        rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
+
     ctx = {
         "current_user": current_user,
         **_base_ctx(db, current_user),
         "rows": rows,
+        "kind": kind,
+        "counts": counts,
         "view": view,
         "platform": platform,
         "has_snapshot": psn.has_synced(db, current_user.id),
@@ -60,6 +77,73 @@ def psn_review_page(
     if request.headers.get("HX-Request"):
         return templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context=ctx)
     return templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
+
+
+def _played_only_done(request: Request, key: str, name: str, verb: str):
+    """Row replacement after a played-only action — same contract as the
+    cross-play confirm: the click IS the action, the response retires the row."""
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_done.html",
+        context={"key": key, "name": name, "detail": verb},
+        headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
+    )
+
+
+@router.post("/tools/psn-review/{key}/played-only/import")
+def psn_played_only_import(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Import one played-only row as its own library entry."""
+    from . import psn
+
+    try:
+        name = psn.import_played_only(db, current_user, key)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return _played_only_done(request, key, name, "added to your library")
+
+
+@router.post("/tools/psn-review/{key}/played-only/skip")
+def psn_played_only_skip(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Skip one played-only row so it stops asking."""
+    from . import psn
+
+    rows = {r["external_id"]: r["name"] for r in psn.played_only_rows(db, current_user.id)}
+    try:
+        psn.skip_played_only(db, current_user, key)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return _played_only_done(request, key, rows.get(key, key), "skipped")
+
+
+@router.post("/tools/psn-review/{key}/played-only/attach")
+def psn_played_only_attach(
+    key: str,
+    request: Request,
+    entry_id: int = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Attach a played-only row's play stats to an entry you already own.
+
+    The DMC5-SE-on-disc case: the activity row and the owned game wear
+    different Sony names, and the playtime exists nowhere else."""
+    from . import psn
+
+    try:
+        name = psn.attach_played_only(db, current_user, key, entry_id)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return _played_only_done(request, key, name, "play stats attached")
 
 
 @router.post("/tools/psn-review/{key}/confirm")

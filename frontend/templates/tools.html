@@ -253,11 +253,11 @@
     <div class="cgt-tool-stats">
       <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if psn_review_pending else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ psn_review_pending or 0 }}</div>
-        <div class="cgt-tool-stat__label">Need a platform</div>
+        <div class="cgt-tool-stat__label">Need a decision</div>
       </div>
     </div>
     <div class="small text-secondary">
-      Cross-play trophy sets cover several platforms and PSN doesn't say which you own.{% if not psn_review_pending %} Nothing waiting.{% endif %}
+      Cross-play trophy sets PSN can't place, and games you played with nothing behind them.{% if not psn_review_pending %} Nothing waiting.{% endif %}
     </div>
     <div class="cgt-tool-card__actions">
       <a href="/tools/psn-review" class="btn btn-primary btn-sm">Open review</a>

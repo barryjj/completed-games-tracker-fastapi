@@ -143,6 +143,16 @@ def _psn_counts(db: Session, user: models.User) -> dict | None:
     return {"games": total or 0}
 
 
+def _psn_pending(db: Session, user: models.User) -> int:
+    """Games waiting on a PSN decision — both queues, since they're two tabs of
+    one page and a card showing only half the work is a card that lies."""
+    if not user.psn_npsso:
+        return 0
+    cross = len(_psn.import_review_rows(db, user.id))
+    played = len([r for r in _psn.played_only_rows(db, user.id) if not r["decision"]])
+    return cross + played
+
+
 # TODO(phase 3): user-configurable yearly goal — hardcoded until widget
 # customization lands (see ROADMAP "Home / Tools / Settings restructure").
 _YEARLY_GOAL = 52
@@ -259,7 +269,7 @@ def home_page(
             "platform_breakdown": platform_breakdown,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
-            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
+            "psn_review_pending": _psn_pending(db, current_user),
             **_base_ctx(db, current_user),
         },
     )
@@ -285,7 +295,7 @@ def tools_page(
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
             "psn_counts": _psn_counts(db, current_user),
-            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
+            "psn_review_pending": _psn_pending(db, current_user),
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),
