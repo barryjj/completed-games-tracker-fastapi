@@ -699,6 +699,29 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         if kind == "psn_sync" and result.get("needs_review") and user.steamgriddb_api_key:
             art_job = jobs.create(user_id=user.id, kind="psn_review_art", label="Review artwork")
             asyncio.create_task(_run_sync_job(art_job.id, user.id, "psn_review_art"))
+        # Store metadata is part of syncing, not a thing to remember to do
+        # afterwards. Chained rather than inlined because it's rate-limited to
+        # ~1s per release: the sync toast (and the review queue) should not wait
+        # on it. store_is_stale() gates the work, so a re-sync of an already
+        # enriched library skips almost everything.
+        if kind == "psn_sync" and result.get("added"):
+            store_job = jobs.create(user_id=user.id, kind="psn_store_refresh", label="Store metadata")
+            asyncio.create_task(_run_sync_job(store_job.id, user.id, "psn_store_refresh"))
+        # Store metadata RETITLES — the sparse "Batman" becomes "Batman: The
+        # Telltale Series". The duplicate scan inside the import already ran, on
+        # the sparse titles, so anything only recognisable under the corrected
+        # one was invisible to it. Re-scan now that the titles are right;
+        # scan_for_matches keys off (manual_entry, source, external_id) and
+        # updates in place, so a second pass adds no duplicates.
+        if kind == "psn_store_refresh" and result.get("retitled"):
+            scan = await asyncio.to_thread(_match_review.scan_for_matches, db, user)
+            db.commit()
+            if scan.get("candidates_added"):
+                jobs.mark_done(
+                    job_id,
+                    _format_sync_result(db, user, kind, result)
+                    + f"\n{scan['candidates_added']:,} new possible duplicates found from corrected titles",
+                )
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.

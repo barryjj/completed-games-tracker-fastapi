@@ -1808,3 +1808,40 @@ def test_sync_toast_reports_every_review_queue(db_session):
     assert "54 cross-play games need a platform" in msg
     assert "7 played-only entries" in msg
     assert "9 possible duplicates" in msg
+
+
+def _run_psn_sync_job(db_session, monkeypatch, user, result):
+    """Drive _run_sync_job for a stubbed psn_sync and return the jobs it spawned."""
+    import asyncio
+
+    from backend import integrations, jobs
+    from backend import psn as psn_mod
+
+    jobs.clear_all()
+    monkeypatch.setattr(psn_mod, "sync_library", lambda db, u: result)
+
+    async def _noop(*a, **k):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
+    db_session.close = lambda: None
+
+    job = jobs.create(user_id=user.id, kind="psn_sync", label="Library sync")
+    with patch("backend.integrations.SessionLocal", return_value=db_session):
+        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_sync"))
+    return {j.kind for j in jobs.active_jobs_for(user.id)}
+
+
+def test_sync_chains_store_metadata_when_it_added_entries(db_session, monkeypatch):
+    """Store metadata is part of syncing, not a step to remember afterwards."""
+    user = _user(db_session, "chain")
+    kinds = _run_psn_sync_job(db_session, monkeypatch, user, {**_psn_import_result(), "added": 5})
+    assert "psn_store_refresh" in kinds
+
+
+def test_sync_skips_store_metadata_when_nothing_was_added(db_session, monkeypatch):
+    """Nothing new means nothing to enrich — don't spend a rate-limited crawl
+    over the store for a no-op sync."""
+    user = _user(db_session, "nochain")
+    kinds = _run_psn_sync_job(db_session, monkeypatch, user, {**_psn_import_result(), "added": 0})
+    assert "psn_store_refresh" not in kinds
