@@ -107,19 +107,19 @@
        tabs so the widget tells you where the work actually is. Zeros go
        muted so quiet buckets don't beg for attention. #}
     <div class="cgt-breakdown small">
-      <a class="cgt-breakdown__row" href="/library/match-review">
+      <a class="cgt-breakdown__row" href="/tools/match-review">
         <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if pending_matches else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(pending_matches or 0) }}</span>
         <span class="cgt-breakdown__label">sync matches</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=add_to_existing">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=add_to_existing">
         <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--green' if import_counts.add_to_existing else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
         <span class="cgt-breakdown__label">imports · add to existing</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=create_new">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=create_new">
         <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--blue' if import_counts.create_new else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.create_new) }}</span>
         <span class="cgt-breakdown__label">imports · create new</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=needs_review">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=needs_review">
         <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--pink' if import_counts.needs_review else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.needs_review) }}</span>
         <span class="cgt-breakdown__label">imports · needs review</span>
       </a>
@@ -137,8 +137,8 @@
     <div class="small text-secondary">All caught up.</div>
     {% endif %}
     <div class="cgt-tool-card__actions">
-      {% if pending_matches %}<a href="/library/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
-      {% if import_pending %}<a href="/library/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
+      {% if pending_matches %}<a href="/tools/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
+      {% if import_pending %}<a href="/tools/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
       {% if psn_review_pending %}<a href="/tools/psn-review" class="btn btn-surface btn-sm">Review PSN</a>{% endif %}
       <a href="/tools" class="btn btn-surface btn-sm">All tools</a>
     </div>

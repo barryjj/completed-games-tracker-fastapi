@@ -1720,7 +1720,7 @@ def test_reopen_deletes_linked_completion_and_flips_pending(client, db_session):
     entry = _make_plain_entry(db_session, user.id)
     cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
     comp_id, cand_id = comp.id, cand.id
-    r = client.post(f"/library/import/{cand_id}/reopen")
+    r = client.post(f"/tools/import/{cand_id}/reopen")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.Completion, comp_id) is None
@@ -1737,7 +1737,7 @@ def test_reopen_legacy_candidate_matches_by_row_fields(client, db_session):
     entry = _make_plain_entry(db_session, user.id)
     cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=False)
     comp_id, cand_id = comp.id, cand.id
-    r = client.post(f"/library/import/{cand_id}/reopen")
+    r = client.post(f"/tools/import/{cand_id}/reopen")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.Completion, comp_id) is None
@@ -1751,7 +1751,7 @@ def test_reopen_rejects_pending_candidate(client, db_session):
     cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
     cand.status = "pending"
     db_session.commit()
-    assert client.post(f"/library/import/{cand.id}/reopen").status_code == 404
+    assert client.post(f"/tools/import/{cand.id}/reopen").status_code == 404
 
 
 def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
@@ -1759,9 +1759,9 @@ def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
     user = db_session.query(models.User).first()
     entry = _make_plain_entry(db_session, user.id)
     cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
-    r = client.get("/library/import/review?tab=confirmed", headers=_HX)
+    r = client.get("/tools/import/review?tab=confirmed", headers=_HX)
     assert r.status_code == 200
-    assert f"/library/import/{cand.id}/reopen".encode() in r.content
+    assert f"/tools/import/{cand.id}/reopen".encode() in r.content
 
 
 def _make_import_candidate(db, user_id, title, platform_obj, action="create_new"):
@@ -1826,7 +1826,7 @@ def test_confirm_endpoint_rejects_non_add_to_existing(client, db_session):
     db_session.flush()
     cand = _make_import_candidate(db_session, user.id, "Some Game", plat, action="create_new")
     db_session.commit()
-    r = client.post(f"/library/import/{cand.id}/confirm")
+    r = client.post(f"/tools/import/{cand.id}/confirm")
     assert r.status_code == 400
 
 
@@ -1900,12 +1900,12 @@ def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_sess
     client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
 
     # create_new: cookie applies, no query param needed — server renders filtered
-    r = client.get("/library/import/review?tab=create_new", headers=_HX)
+    r = client.get("/tools/import/review?tab=create_new", headers=_HX)
     assert "Steam Game" in r.text
     assert "Switch Game" not in r.text
 
     # needs_review: the create_new cookie must NOT leak here
-    r2 = client.get("/library/import/review?tab=needs_review", headers=_HX)
+    r2 = client.get("/tools/import/review?tab=needs_review", headers=_HX)
     assert "Other Steam" in r2.text
 
 
@@ -1925,13 +1925,13 @@ def test_platform_filter_narrows_results_and_marks_selection(client, db_session)
 
     # HX filter-change response: only the filtered rows (selects are not
     # re-emitted on a plain filter change — see the OOB test below).
-    r = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}", headers=_HX)
+    r = client.get(f"/tools/import/review?tab=create_new&platform=pid:{steam.id}", headers=_HX)
     assert r.status_code == 200
     assert "Steam Game" in r.text
     assert "Switch Game" not in r.text
 
     # Full page render carries the selects inline, with the chosen option marked.
-    full = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}")
+    full = client.get(f"/tools/import/review?tab=create_new&platform=pid:{steam.id}")
     assert "Steam Game" in full.text
     assert "Switch Game" not in full.text
     assert f'value="pid:{steam.id}" selected' in full.text
@@ -1951,7 +1951,7 @@ def test_filter_selects_self_trigger_so_oob_replacement_keeps_them_working(clien
     _make_import_candidate(db_session, user.id, "Steam Game", steam)
     db_session.commit()
 
-    full = client.get("/library/import/review?tab=create_new")
+    full = client.get("/tools/import/review?tab=create_new")
     body = full.text
     # the platform select block itself carries hx-get (self-triggering)
     seg = body[body.index('id="import-platform-filter"') :]
@@ -1973,10 +1973,10 @@ def test_tab_switch_refreshes_selects_oob_but_filter_change_does_not(client, db_
     _make_import_candidate(db_session, user.id, "Steam Game", steam)
     db_session.commit()
 
-    with_refresh = client.get("/library/import/review?tab=create_new&refresh_filters=1", headers=_HX)
+    with_refresh = client.get("/tools/import/review?tab=create_new&refresh_filters=1", headers=_HX)
     assert 'hx-swap-oob="true"' in with_refresh.text
 
-    without = client.get("/library/import/review?tab=create_new", headers=_HX)
+    without = client.get("/tools/import/review?tab=create_new", headers=_HX)
     assert 'hx-swap-oob="true"' not in without.text
 
 
@@ -1992,7 +1992,7 @@ def test_full_page_load_never_duplicates_selects_even_with_refresh_flag(client, 
     _make_import_candidate(db_session, user.id, "Steam Game", steam)
     db_session.commit()
 
-    r = client.get("/library/import/review?tab=create_new&refresh_filters=1")
+    r = client.get("/tools/import/review?tab=create_new&refresh_filters=1")
     assert r.status_code == 200
     assert 'hx-swap-oob="true"' not in r.text
     assert r.text.count('id="import-platform-filter"') == 1
@@ -2030,7 +2030,7 @@ def test_confirmed_tab_filter_dropdowns_populate_from_confirmed_candidates(clien
     db_session.commit()
 
     # Full render of the confirmed tab: selects carry the confirmed set's options
-    full = client.get("/library/import/review?tab=confirmed")
+    full = client.get("/tools/import/review?tab=confirmed")
     assert full.status_code == 200
     assert f'value="pid:{snes.id}"' in full.text
     assert 'value="2009"' in full.text
@@ -2038,7 +2038,7 @@ def test_confirmed_tab_filter_dropdowns_populate_from_confirmed_candidates(clien
     assert 'value="2021"' not in full.text
 
     # and the platform filter actually narrows the confirmed list
-    r = client.get(f"/library/import/review?tab=confirmed&platform=pid:{snes.id}", headers=_HX)
+    r = client.get(f"/tools/import/review?tab=confirmed&platform=pid:{snes.id}", headers=_HX)
     assert "Old Game" in r.text
 
 
@@ -2079,7 +2079,7 @@ def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
     ids = f"{a.id},{b.id},{c.id},99999"
     a_id, b_id, c_id = a.id, b.id, c.id
 
-    r = client.post("/library/import/confirm-bulk", data={"ids": ids})
+    r = client.post("/tools/import/confirm-bulk", data={"ids": ids})
     assert r.status_code == 200
     assert b"Confirmed 2 candidates" in r.content
     db_session.expire_all()
@@ -2095,7 +2095,7 @@ def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
 
 def test_bulk_confirm_requires_ids(client):
     _signup_and_login(client)
-    assert client.post("/library/import/confirm-bulk", data={"ids": ""}).status_code == 422
+    assert client.post("/tools/import/confirm-bulk", data={"ids": ""}).status_code == 422
 
 
 def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
@@ -2113,7 +2113,7 @@ def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
     db_session.add(cand)
     db_session.commit()
     cand_id = cand.id
-    r = client.post("/library/import/dismiss-bulk", data={"ids": str(cand_id)})
+    r = client.post("/tools/import/dismiss-bulk", data={"ids": str(cand_id)})
     assert r.status_code == 200
     assert b"Dismissed 1 candidate" in r.content
     db_session.expire_all()
@@ -2148,7 +2148,7 @@ def test_link_confirms_immediately(client, db_session):
     db_session.commit()
     cand_id, row_id, entry_id = cand.id, row.id, entry.id
 
-    r = client.post(f"/library/import/{cand_id}/link", data={"library_entry_id": str(entry_id)})
+    r = client.post(f"/tools/import/{cand_id}/link", data={"library_entry_id": str(entry_id)})
     assert r.status_code == 200
     assert b"Confirmed against" in r.content
     db_session.expire_all()
@@ -2160,7 +2160,7 @@ def test_link_confirms_immediately(client, db_session):
     # linkage stamped -> reopenable
     assert db_session.get(models.ImportRow, row_id).created_completion_id == comp.id
     # link modal only offered for pending candidates
-    assert client.get(f"/library/import/{cand_id}/link").status_code == 404
+    assert client.get(f"/tools/import/{cand_id}/link").status_code == 404
 
 
 def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
@@ -2188,7 +2188,7 @@ def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
     cand_id, row_id = cand.id, row.id
 
     r = client.post(
-        f"/library/import/{cand_id}/edit",
+        f"/tools/import/{cand_id}/edit",
         data={
             "raw_title": "Some Unmatched Game",
             "raw_platform": "",
@@ -2216,13 +2216,13 @@ def test_confirm_and_dismiss_are_noops_on_confirmed_candidate(client, db_session
     cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
     cand_id, comp_id = cand.id, comp.id
 
-    r = client.post(f"/library/import/{cand_id}/confirm")
+    r = client.post(f"/tools/import/{cand_id}/confirm")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
     assert db_session.query(models.Completion).count() == 1
 
-    r = client.post(f"/library/import/{cand_id}/dismiss")
+    r = client.post(f"/tools/import/{cand_id}/dismiss")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
@@ -2412,3 +2412,48 @@ def test_bulk_edit_ignores_other_users_entries(client, db_session):
     r = client.post("/library/entries/bulk-edit", data={"ids": str(theirs.id), "is_hidden": "true"})
     assert r.status_code == 404
     db_session.refresh(theirs)
+
+
+def test_stale_filter_cookie_is_dropped_not_silently_applied(client, db_session):
+    """A remembered filter only survives while it's still an option for the tab.
+
+    The dropdowns are built from the tab's own candidates, so confirming the
+    last row on a platform drops it from the list — but the cookie still named
+    it. The server kept filtering by it while the select, having no option to
+    render, showed "All platforms": a queue that read as empty with no filter
+    visible to clear, fixable only by changing the filter and changing back."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    # A cookie naming a platform this tab has no candidates for.
+    client.cookies.set("cgt-import-create_new-platform", "pid%3A999999")
+    body = client.get("/tools/import/review?tab=create_new").text
+    client.cookies.delete("cgt-import-create_new-platform")
+
+    assert "Steam Game" in body
+    assert "Nothing matches these filters" not in body
+
+
+def test_valid_filter_cookie_is_still_honoured(client, db_session):
+    """The fix must not break stickiness itself — a cookie naming a real option
+    still filters."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Nintendo Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
+    body = client.get("/tools/import/review?tab=create_new").text
+    client.cookies.delete("cgt-import-create_new-platform")
+    assert "Steam Game" in body
+    assert "Switch Game" not in body

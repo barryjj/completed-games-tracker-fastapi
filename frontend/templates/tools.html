@@ -7,14 +7,6 @@
   <p class="text-secondary small mb-0">Sync, import, and review operations on your library.</p>
 </div>
 
-{# Landing zone for the job poller's OOB "sync in progress" indicator. Page
-   level, NOT inside a card: the id is global and the poller swaps into
-   whichever one exists, so nesting it in the Steam card rendered "PSN library
-   sync in progress" inside Steam's box. It also has to sit OUTSIDE #tools-cards,
-   which replaces its own outerHTML on every job event and would otherwise
-   delete the indicator mid-run. #}
-<div id="sync-indicator"></div>
-
 {# Refetches itself when the job poller reports any finished job, so the
    sync/match/import/artwork numbers update without a manual refresh. #}
 <div class="cgt-tool-grid" id="tools-cards"
@@ -76,6 +68,8 @@
     <div hx-get="/integrations/steam/enrichment-status"
          hx-trigger="load"
          hx-swap="outerHTML"></div>
+    {# Per-service progress: this card shows Steam's job and nothing else. #}
+    <div id="sync-indicator-steam"></div>
     {% else %}
     <div class="small text-secondary">Import your Steam library and playtime. Set up your Steam sign-in and credentials first.</div>
     {% endif %}
@@ -116,8 +110,9 @@
     <div class="small text-secondary">
       Synced games that look like existing manual entries.{% if not pending_matches %} All caught up.{% endif %}
     </div>
+    <div id="sync-indicator-match"></div>
     <div class="cgt-tool-card__actions">
-      <a href="/library/match-review" class="btn btn-primary btn-sm">Open review</a>
+      <a href="/tools/match-review" class="btn btn-primary btn-sm">Open review</a>
       <button class="btn btn-surface btn-sm"
               hx-post="/integrations/match-review/scan"
               hx-swap="none"
@@ -141,15 +136,15 @@
       </div>
     </div>
     <div class="cgt-breakdown small">
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=add_to_existing">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=add_to_existing">
         <span class="cgt-breakdown__num cgt-breakdown__num--green">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
         <span class="cgt-breakdown__label">add to existing</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=create_new">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=create_new">
         <span class="cgt-breakdown__num cgt-breakdown__num--blue">{{ "{:,}".format(import_counts.create_new) }}</span>
         <span class="cgt-breakdown__label">create new</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=needs_review">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=needs_review">
         <span class="cgt-breakdown__num cgt-breakdown__num--pink">{{ "{:,}".format(import_counts.needs_review) }}</span>
         <span class="cgt-breakdown__label">needs review</span>
       </a>
@@ -161,11 +156,11 @@
     {% endif %}
     <div class="cgt-tool-card__actions">
       {% if import_pending %}
-      <a href="/library/import/review" class="btn btn-primary btn-sm">Open review</a>
-      <a href="/library/import" class="btn btn-surface btn-sm">Upload sheet</a>
+      <a href="/tools/import/review" class="btn btn-primary btn-sm">Open review</a>
+      <a href="/tools/import" class="btn btn-surface btn-sm">Upload sheet</a>
       {% else %}
-      <a href="/library/import" class="btn btn-primary btn-sm">Upload sheet</a>
-      <a href="/library/import/review" class="btn btn-surface btn-sm">Open review</a>
+      <a href="/tools/import" class="btn btn-primary btn-sm">Upload sheet</a>
+      <a href="/tools/import/review" class="btn btn-surface btn-sm">Open review</a>
       {% endif %}
     </div>
   </div>
@@ -232,6 +227,7 @@
     </div>
     {% endif %}
     <div class="small text-secondary">Fetch your PlayStation library and trophy history, then import into your library.</div>
+    <div id="sync-indicator-psn"></div>
     {% else %}
     <div class="small text-secondary">Capture your PlayStation sign-in to sync your library and trophy history.</div>
     {% endif %}

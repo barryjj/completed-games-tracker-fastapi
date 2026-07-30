@@ -817,6 +817,32 @@ async def refresh_steam_app_catalog(request: Request, current_user: models.User 
     return _kick_off_sync(request, current_user, "steam_refresh_catalog")
 
 
+# Which service a job belongs to, so each card can show its OWN progress.
+# #sync-indicator was a single global id and the poller rendered active_jobs[0]
+# into it, so a PSN sync and an artwork fill running together left one of them
+# invisible — and on Tools the one indicator sat inside the Steam card,
+# captioning PSN work as Steam's.
+_JOB_SERVICE = {
+    "steam_sync_full": "steam",
+    "steam_sync_games": "steam",
+    "steam_sync_dlc": "steam",
+    "steam_refresh_catalog": "steam",
+    "psn_sync": "psn",
+    "psn_store_refresh": "psn",
+    "psn_review_art": "psn",
+    "sgdb_fill_all": "artwork",
+    "sgdb_fill": "artwork",
+    "match_scan": "match",
+    "import_xlsx": "import",
+}
+
+
+def job_service(kind: str) -> str:
+    """Service bucket for a job kind; unknown kinds fall back to the generic
+    indicator so a new kind is never silently invisible."""
+    return _JOB_SERVICE.get(kind, "other")
+
+
 @router.get("/jobs/poll")
 def jobs_poll(
     request: Request,
@@ -842,6 +868,9 @@ def jobs_poll(
             "active_jobs": active,
             "completed_import": completed_import,
             "retry_paths": retry_paths,
+            # First active job per service — each card renders its own, instead
+            # of one global indicator that whichever job polled first wins.
+            "active_by_service": {job_service(j.kind): j for j in reversed(active)},
         },
     )
     triggers = []

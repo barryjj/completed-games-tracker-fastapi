@@ -133,14 +133,14 @@
   {% if candidate.status == 'pending' %}
   <div class="ms-auto d-flex gap-2">
     <button class="btn btn-surface btn-sm"
-            hx-post="/library/match-review/{{ candidate.id }}/skip"
+            hx-post="/tools/match-review/{{ candidate.id }}/skip"
             hx-swap="none"
             hx-vals='{"note": "Dismissed from preview"}'
             hx-on::after-request="closeMatchReviewDetail(); cgtMultiDismiss && cgtMultiDismiss('{{ candidate.id }}'); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
       Dismiss
     </button>
     <button class="btn btn-primary btn-sm"
-            hx-post="/library/match-review/{{ candidate.id }}/merge"
+            hx-post="/tools/match-review/{{ candidate.id }}/merge"
             hx-swap="none"
             hx-on::after-request="closeMatchReviewDetail(); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
       Confirm

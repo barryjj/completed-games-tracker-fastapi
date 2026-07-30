@@ -2469,3 +2469,57 @@ def test_bulk_mode_button_only_where_it_applies(client, db_session):
     assert b'id="psn-select-toggle" hidden' not in body.replace(b"\n", b" ")
     # Card view hides it.
     assert b"hidden" in client.get("/tools/psn-review?view=card").content
+
+
+def test_each_service_gets_its_own_progress_indicator(client, db_session):
+    """#sync-indicator was one global id and the poller rendered active_jobs[0]
+    into it, so concurrent jobs overwrote each other — and on Tools that one
+    indicator sat inside the Steam card, captioning PSN work as Steam's."""
+    from backend import jobs
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    jobs.clear_all()
+    jobs.update(jobs.create(user_id=user.id, kind="psn_sync", label="Library sync").id, status=jobs.JobStatus.RUNNING)
+    jobs.update(jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill").id, status=jobs.JobStatus.RUNNING)
+
+    body = client.get("/integrations/jobs/poll").text
+    # Split rather than regex: each block contains nested divs, so a non-greedy
+    # match to the first </div> stops inside the spinner.
+    blocks = {}
+    for chunk in body.split('<div id="sync-indicator-')[1:]:
+        name, _, rest = chunk.partition('"')
+        blocks[name] = rest.split('<div id="sync-indicator')[0]
+
+    # Both run at once and each lands in its own target.
+    assert "Library sync in progress" in blocks["psn"]
+    assert "Artwork fill in progress" in blocks["artwork"]
+    # Steam has nothing running — its target is still emitted (empty), so a
+    # finished job's spinner is actively cleared rather than left behind.
+    assert "steam" in blocks
+    assert "in progress" not in blocks["steam"]
+    jobs.clear_all()
+
+
+def test_job_service_falls_back_rather_than_hiding_a_new_kind():
+    """An unmapped kind must land somewhere visible, not vanish."""
+    from backend import integrations
+
+    assert integrations.job_service("psn_sync") == "psn"
+    assert integrations.job_service("steam_sync_full") == "steam"
+    assert integrations.job_service("something_new") == "other"
+
+
+def test_js_toast_markup_matches_the_server_toast():
+    """All toast styling hangs off .toast-success / .toast-danger. The JS
+    builder used its own markup with an inline colour and no kind class, so
+    every JS-raised toast (cookie refresh, NPSSO refresh) rendered with no
+    background — the transparent green one."""
+    js = open("frontend/static/js/app.js").read()
+    fn = js[js.index("function cgtToast(") : js.index("function _initToast(")]
+    assert "'toast toast-' + kind + ' align-items-center show'" in fn
+    assert "btn-close-white" not in fn
+    assert 'style="color:' not in fn
+    # Messages interpolate shell error strings — never parsed as markup.
+    assert ".textContent = message" in fn

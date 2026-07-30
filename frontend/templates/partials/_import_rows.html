@@ -86,7 +86,7 @@
     <div class="btn-group">
       {% if c.proposed_action == "add_to_existing" %}
       <button type="button" class="btn btn-primary btn-sm"
-              hx-post="/library/import/{{ c.id }}/confirm"
+              hx-post="/tools/import/{{ c.id }}/confirm"
               hx-target="#import-row-{{ c.id }}"
               hx-swap="outerHTML">Confirm</button>
       {% else %}
@@ -108,14 +108,14 @@
         <li><a class="dropdown-item" href="#" onclick="openImportEdit({{ c.id }}); return false;">Edit</a></li>
         <li><a class="dropdown-item" href="#" onclick="openImportLink({{ c.id }}); return false;">Link to library…</a></li>
         <li><a class="dropdown-item" href="#"
-               hx-post="/library/import/{{ c.id }}/dismiss"
+               hx-post="/tools/import/{{ c.id }}/dismiss"
                hx-target="#import-row-{{ c.id }}"
                hx-swap="outerHTML">Dismiss</a></li>
       </ul>
     </div>
     {% elif c.status == "confirmed" %}
     <button type="button" class="btn btn-sm btn-surface"
-            hx-post="/library/import/{{ c.id }}/reopen"
+            hx-post="/tools/import/{{ c.id }}/reopen"
             hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
             hx-target="#import-row-{{ c.id }}"
             hx-swap="outerHTML">Reopen</button>
@@ -131,7 +131,7 @@
    counter bookkeeping raced htmx's immediate 'revealed' activation on
    freshly swapped sentinels and produced duplicate fetch windows. #}
 <tr id="import-load-more"
-    hx-get="/library/import/review?tab={{ tab }}&rows_only=1&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
+    hx-get="/tools/import/review?tab={{ tab }}&rows_only=1&q={{ q | urlencode }}&platform={{ platform | urlencode }}&year={{ year | urlencode }}&sort={{ sort | urlencode }}"
     hx-vals='js:{offset: document.querySelectorAll("#import-table tbody tr[id^=import-row-]").length}'
     hx-trigger="revealed"
     hx-sync="this:drop"

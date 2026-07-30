@@ -593,7 +593,7 @@ class SyncMatchCandidate(Base):
     """Potential duplicate match between a manual library entry and a synced platform game.
 
     Created by the match-detection pass (run automatically after sync, or on demand).
-    Reviewed by the user on /library/match-review.
+    Reviewed by the user on /tools/match-review.
 
     status values:
       pending       – awaiting review

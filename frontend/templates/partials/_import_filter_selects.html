@@ -12,7 +12,7 @@
    so a change sends the full filter state. #}
 <select id="import-platform-filter" name="platform" class="form-select form-select-sm" style="max-width:180px"
         data-filter="platform" onchange="importRememberFilter(this)"
-        hx-get="/library/import/review" hx-include="#import-filters-form [name]"
+        hx-get="/tools/import/review" hx-include="#import-filters-form [name]"
         hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true"{% if oob %} hx-swap-oob="true"{% endif %}>
   <option value="">All platforms</option>
   {% for opt in platform_options %}
@@ -21,7 +21,7 @@
 </select>
 <select id="import-year-filter" name="year" class="form-select form-select-sm" style="max-width:140px"
         data-filter="year" onchange="importRememberFilter(this)"
-        hx-get="/library/import/review" hx-include="#import-filters-form [name]"
+        hx-get="/tools/import/review" hx-include="#import-filters-form [name]"
         hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true"{% if oob %} hx-swap-oob="true"{% endif %}>
   <option value="">All years</option>
   {% for y in year_options %}
@@ -30,7 +30,7 @@
 </select>
 <select id="import-sort" name="sort" class="form-select form-select-sm" style="max-width:180px"
         data-filter="sort" onchange="importRememberFilter(this)"
-        hx-get="/library/import/review" hx-include="#import-filters-form [name]"
+        hx-get="/tools/import/review" hx-include="#import-filters-form [name]"
         hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true"{% if oob %} hx-swap-oob="true"{% endif %}>
   <option value="id" {% if sort == 'id' %}selected{% endif %}>Upload order</option>
   <option value="date_desc" {% if sort == 'date_desc' %}selected{% endif %}>Completion date (newest)</option>

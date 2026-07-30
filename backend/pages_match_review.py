@@ -346,7 +346,7 @@ async def psn_review_dismiss(
     )
 
 
-@router.get("/library/match-review")
+@router.get("/tools/match-review")
 def match_review_page(
     request: Request,
     show_skipped: bool = Query(False),
@@ -412,7 +412,7 @@ def match_review_page(
     )
 
 
-@router.post("/library/match-review/{candidate_id}/merge")
+@router.post("/tools/match-review/{candidate_id}/merge")
 def match_review_merge(
     candidate_id: int,
     request: Request,
@@ -438,7 +438,7 @@ def match_review_merge(
     )
 
 
-@router.post("/library/match-review/{candidate_id}/skip")
+@router.post("/tools/match-review/{candidate_id}/skip")
 def match_review_skip(
     candidate_id: int,
     request: Request,
@@ -463,7 +463,7 @@ def match_review_skip(
     )
 
 
-@router.get("/library/match-review/{candidate_id}/preview")
+@router.get("/tools/match-review/{candidate_id}/preview")
 def match_review_preview(
     candidate_id: int,
     request: Request,
@@ -538,7 +538,7 @@ def match_review_preview(
     )
 
 
-@router.post("/library/match-review/merge-bulk")
+@router.post("/tools/match-review/merge-bulk")
 def match_review_merge_bulk(
     request: Request,
     candidate_ids: str = Form(...),
@@ -572,7 +572,7 @@ def match_review_merge_bulk(
     )
 
 
-@router.post("/library/match-review/clear-dismissed")
+@router.post("/tools/match-review/clear-dismissed")
 def match_review_clear_dismissed(
     request: Request,
     db: Session = Depends(get_db),

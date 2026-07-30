@@ -181,18 +181,27 @@ document.addEventListener('htmx:afterSettle', function(e) {
 // - A 6s autohide via Bootstrap.Toast options
 // - A 'hidden.bs.toast' listener that removes the element from the DOM so
 //   the container doesn't accumulate stale toasts over a long session.
+// Must produce the SAME markup as partials/_toast.html. All the styling —
+// background, border, the 4px left accent — hangs off .toast-success /
+// .toast-danger, so a toast built without those classes renders with no
+// background at all: the transparent green one that didn't match anything.
 function cgtToast(message, type) {
   var container = document.getElementById('toast-container');
   if (!container) return;
-  var color = type === 'error' ? 'var(--ctp-red)' : 'var(--ctp-green)';
+  var kind = type === 'error' || type === 'danger' ? 'danger' : 'success';
   var el = document.createElement('div');
-  el.className = 'toast align-items-center border-0';
-  el.setAttribute('role', 'status');
+  el.className = 'toast toast-' + kind + ' align-items-center show';
+  el.setAttribute('role', kind === 'danger' ? 'alert' : 'status');
+  el.setAttribute('aria-live', kind === 'danger' ? 'assertive' : 'polite');
+  el.setAttribute('aria-atomic', 'true');
   el.innerHTML =
     '<div class="d-flex">' +
-    '<div class="toast-body small" style="color:' + color + ';">' + message + '</div>' +
-    '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+    '<div class="toast-body"></div>' +
+    '<button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>' +
     '</div>';
+  // textContent, not innerHTML: messages interpolate error strings from the
+  // shell, which must never be parsed as markup.
+  el.querySelector('.toast-body').textContent = message;
   container.appendChild(el);
   _initToast(el);
 }

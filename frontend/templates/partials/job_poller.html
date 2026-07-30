@@ -18,13 +18,31 @@
   {% include "partials/_toast.html" %}
 {% endfor %}
 
-{# OOB sync indicator — swaps #sync-indicator on the integrations page if present. #}
+{# OOB sync indicators. One per service AND a generic one: the configure pages
+   only ever run their own service so they keep #sync-indicator, while Tools
+   shows several cards at once and each needs its own — a single global id meant
+   concurrent jobs overwrote each other and PSN progress appeared inside the
+   Steam card. Every target is emitted every poll, including empty, so a
+   finished job's spinner is actively cleared rather than left behind. #}
+{% for service in ["steam", "psn", "artwork", "match", "import", "other"] %}
+{% set job = active_by_service.get(service) %}
+<div id="sync-indicator-{{ service }}" hx-swap-oob="true">
+{% if job %}
+  <div class="d-flex align-items-center gap-2 text-secondary small mb-2">
+    <div class="spinner-border spinner-border-sm text-secondary" role="status" style="width:.85rem;height:.85rem;border-width:2px;"></div>
+    {{ job.label or "Sync" }} in progress&hellip;
+  </div>
+{% endif %}
+</div>
+{% endfor %}
+
+{# Generic target for pages that show a single service (the configure pages). #}
 <div id="sync-indicator" hx-swap-oob="true">
 {% if active_jobs %}
   {% set job = active_jobs[0] %}
   <div class="d-flex align-items-center gap-2 text-secondary small mb-3">
     <div class="spinner-border spinner-border-sm text-secondary" role="status" style="width:.85rem;height:.85rem;border-width:2px;"></div>
-    {{ job.label or "Sync" }} in progress…
+    {{ job.label or "Sync" }} in progress&hellip;
   </div>
 {% endif %}
 </div>
@@ -47,7 +65,7 @@
         {% endif %}
       </span>
       <button class="btn btn-sm btn-surface ms-auto"
-              hx-post="/library/import/cancel"
+              hx-post="/tools/import/cancel"
               hx-swap="none"
               hx-disabled-elt="this">
         Cancel
@@ -62,7 +80,7 @@
 {% elif completed_import and completed_import.status.value == "done" %}
   <div class="mt-3 pt-3 border-top d-flex align-items-center gap-2">
     <span class="text-secondary small">Import complete —</span>
-    <a href="/library/import/review" class="btn btn-sm btn-primary">Review pending</a>
+    <a href="/tools/import/review" class="btn btn-sm btn-primary">Review pending</a>
   </div>
 {% endif %}
 </div>

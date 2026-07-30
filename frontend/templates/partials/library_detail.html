@@ -435,14 +435,14 @@
   {% if candidate %}
   {% set _cid = candidate.id %}
   <button class="btn btn-sm btn-primary ms-auto"
-          hx-post="/library/import/{{ _cid }}/confirm"
+          hx-post="/tools/import/{{ _cid }}/confirm"
           hx-target="#import-row-{{ _cid }}"
           hx-swap="outerHTML"
           hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose(null); }">
     Confirm
   </button>
   <button class="btn btn-sm btn-surface"
-          hx-post="/library/import/{{ _cid }}/dismiss"
+          hx-post="/tools/import/{{ _cid }}/dismiss"
           hx-target="#import-row-{{ _cid }}"
           hx-swap="outerHTML"
           hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose(null); }">

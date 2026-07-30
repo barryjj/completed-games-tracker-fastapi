@@ -118,7 +118,7 @@
 
   <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
     <button class="btn btn-primary btn-sm"
-            hx-post="/library/import/{{ c.id }}/confirm"
+            hx-post="/tools/import/{{ c.id }}/confirm"
             hx-target="#import-row-{{ c.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"
@@ -127,7 +127,7 @@
     </button>
     <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
     <button class="btn btn-surface btn-sm"
-            hx-post="/library/import/{{ c.id }}/dismiss"
+            hx-post="/tools/import/{{ c.id }}/dismiss"
             hx-target="#import-row-{{ c.id }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"
