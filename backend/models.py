@@ -741,9 +741,13 @@ class PsnReviewCandidate(Base):
     # Platforms the user picked on confirm. [] is a real answer ("own it on
     # nothing") and is why this is nullable-JSON rather than a delimited string.
     chosen_platforms: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    # SGDB grid fetched by title — these rows have no library entry to borrow
-    # art from, exactly like ImportCandidate.thumbnail_url.
+    # SGDB art fetched by title — these rows have no library entry to borrow it
+    # from, exactly like ImportCandidate.thumbnail_url. Three types because the
+    # two views want different shapes: the list shows a horizontal grid, the
+    # card shows a hero with the logo overlaid, same as every other review card.
     thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    hero_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # The merged crawl item. Display fields (candidate platforms, trophy
     # progress, play history) are derived from this at render time rather than
     # flattened into columns, the same way GameRelease.raw_data works.

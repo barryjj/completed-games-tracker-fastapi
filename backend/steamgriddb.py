@@ -517,6 +517,42 @@ def _placeholder_grid_url(api_key: str, title: str) -> str | None:
     return grids[0].get("url") if grids else None
 
 
+def _placeholder_art(api_key: str, title: str) -> dict:
+    """Grid + hero + logo for a raw title. {} when the title matches nothing.
+
+    Three shapes because the two review views want different things: the list
+    shows a horizontal grid, the card shows a hero (~1920x620) with the logo
+    overlaid — which is what every other card in the app shows. Cropping a grid
+    into the hero box instead sliced half the image away.
+
+    The SGDB game is resolved ONCE and reused across all three, the same way
+    bulk_fill_all_missing does it, rather than searching per art type.
+    """
+    results = search_games(api_key, title)
+    sgdb_game = results[0] if results else None
+    if not sgdb_game:
+        return {}
+    art: dict = {}
+    grids = get_grids_for_game(api_key, sgdb_game["id"], orientation="h")
+    if grids:
+        art["thumbnail_url"] = grids[0].get("url")
+    # Hero and logo are cosmetic extras — a failure on either must not cost the
+    # thumbnail that's already in hand.
+    try:
+        heroes = get_heroes_for_game(api_key, sgdb_game["id"])
+        if heroes:
+            art["hero_url"] = heroes[0].get("url")
+    except Exception as e:
+        logger.warning("SGDB hero fetch failed for %r: %s", title, e)
+    try:
+        logos = get_logos_for_game(api_key, sgdb_game["id"])
+        if logos:
+            art["logo_url"] = logos[0].get("url")
+    except Exception as e:
+        logger.warning("SGDB logo fetch failed for %r: %s", title, e)
+    return art
+
+
 def fill_import_candidate_thumbnails(
     db: Session,
     user: models.User,
@@ -609,11 +645,11 @@ def fill_psn_review_thumbnails(
         if progress_callback:
             progress_callback(i, total, gap["title"])
         try:
-            url = _placeholder_grid_url(api_key, gap["title"])
-            if not url:
+            art = _placeholder_art(api_key, gap["title"])
+            if not art.get("thumbnail_url"):
                 no_candidate += 1
                 continue
-            thumbs[gap["external_id"]] = url
+            thumbs[gap["external_id"]] = art
             filled += 1
         except Exception as e:
             logger.warning("SGDB thumbnail fetch failed for PSN review row %s: %s", gap["external_id"], e)

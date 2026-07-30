@@ -4,9 +4,15 @@
 {% for r in rows %}
 <div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.key }}">
   <div class="cgt-match-card__body">
-    {% if r.image %}
+    {# Hero + logo overlay, same as import review's cards and the library detail
+       pane. The hero is SGDB's ~1920x620 art, which is what the 96/22 box is
+       shaped for — a horizontal grid cropped into it lost half the image. #}
+    {% if r.hero %}
     <div class="cgt-import-hero">
-      <img class="cgt-detail-hero__img" src="{{ r.image }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__img" src="{{ r.hero }}" alt="" loading="lazy">
+      {% if r.logo %}
+      <img class="cgt-detail-hero__logo" src="{{ r.logo }}" alt="" loading="lazy">
+      {% endif %}
     </div>
     {% endif %}
 

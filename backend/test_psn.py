@@ -1631,6 +1631,8 @@ def _sgdb_stub(monkeypatch, url="https://sgdb/psn-grid.png"):
         "get_grids_for_game",
         lambda k, gid, orientation, page=0: [{"url": url}] if orientation == "h" else [],
     )
+    monkeypatch.setattr(steamgriddb, "get_heroes_for_game", lambda k, gid, page=0: [{"url": "https://sgdb/psn-hero.png"}])
+    monkeypatch.setattr(steamgriddb, "get_logos_for_game", lambda k, gid, page=0: [{"url": "https://sgdb/psn-logo.png"}])
     return steamgriddb
 
 
@@ -1645,7 +1647,9 @@ def test_review_thumbnail_gaps_only_asks_about_pending_rows(db_session):
         {"npCommunicationId": "NPWR_G4_00", "name": "Decided", "displayName": "Decided", "platform": "PS3,PS4", "sources": ["titles"]},
     ]
     _seed_review(db_session, user, merged)
-    psn.save_review_thumbnails(db_session, user.id, {"NPWR_G2_00": "https://sgdb/already.png"})
+    psn.save_review_thumbnails(
+        db_session, user.id, {"NPWR_G2_00": {"thumbnail_url": "https://sgdb/already.png", "hero_url": "https://sgdb/h.png"}}
+    )
     psn.confirm_entry_decision(db_session, user, "NPWR_G4_00", ["PS4"])
 
     assert [g["external_id"] for g in psn.review_thumbnail_gaps(db_session, user.id)] == ["NPWR_G1_00"]
@@ -1665,9 +1669,12 @@ def test_fill_psn_review_thumbnails_caches_onto_the_row(db_session, monkeypatch)
     result = steamgriddb.fill_psn_review_thumbnails(db_session, user)
     assert result == {"filled": 1, "no_candidate": 0, "errored": 0}
 
-    # Cached, and used in preference to PSN's square icon on the next render.
+    # The list gets the grid; the card gets a hero with the logo over it, which
+    # is what every other review card shows.
     rows = psn.import_review_rows(db_session, user.id)
     assert rows[0]["image"] == "https://sgdb/psn-grid.png"
+    assert rows[0]["hero"] == "https://sgdb/psn-hero.png"
+    assert rows[0]["logo"] == "https://sgdb/psn-logo.png"
     # Re-running asks SGDB for nothing — the gap is closed.
     assert psn.review_thumbnail_gaps(db_session, user.id) == []
 
@@ -1688,7 +1695,9 @@ def test_review_row_prefers_sgdb_art_over_psns_square_icon(db_session):
         }
     ]
     _seed_review(db_session, user, merged)
-    psn.save_review_thumbnails(db_session, user.id, {"NPWR_I_00": "https://sgdb/grid.png"})
+    psn.save_review_thumbnails(
+        db_session, user.id, {"NPWR_I_00": {"thumbnail_url": "https://sgdb/grid.png", "hero_url": "https://sgdb/h.png"}}
+    )
     assert psn.import_review_rows(db_session, user.id)[0]["image"] == "https://sgdb/grid.png"
 
 
@@ -1787,7 +1796,9 @@ def test_resync_keeps_review_decisions_and_cached_art(db_session, monkeypatch, t
 
     # User answers the question, and the art job caches a grid.
     psn.confirm_entry_decision(db_session, user, "NPWR_RS_00", ["PS4"])
-    psn.save_review_thumbnails(db_session, user.id, {"NPWR_RS_00": "https://sgdb/kept.png"})
+    psn.save_review_thumbnails(
+        db_session, user.id, {"NPWR_RS_00": {"thumbnail_url": "https://sgdb/kept.png", "hero_url": "https://sgdb/h.png"}}
+    )
     assert psn.import_review_rows(db_session, user.id) == []
 
     psn.sync_library(db_session, user)
@@ -2281,3 +2292,69 @@ def test_review_page_is_never_cached(client, db_session):
     db_session.commit()
     assert client.get("/tools/psn-review").headers["cache-control"] == "no-store"
     assert client.get("/tools/psn-review", headers={"HX-Request": "true"}).headers["cache-control"] == "no-store"
+
+
+def test_card_art_is_a_hero_with_a_logo_not_a_cropped_grid(db_session, monkeypatch):
+    """The card hero box is shaped 96/22 for SGDB hero art (~1920x620). Feeding
+    it a horizontal grid (460x215) cropped half the image away — titles came out
+    sliced through the middle. Fetch the right shape rather than reshaping the
+    box: hero plus logo overlay, same as import review and the detail pane."""
+    steamgriddb = _sgdb_stub(monkeypatch)
+    _seed_platforms(db_session)
+    user = _user(db_session, "hero")
+    user.steamgriddb_api_key = "sgdb-key"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_H1_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    steamgriddb.fill_psn_review_thumbnails(db_session, user)
+
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(user_id=user.id, external_id="NPWR_H1_00").one()
+    assert cand.hero_url == "https://sgdb/psn-hero.png"
+    assert cand.logo_url == "https://sgdb/psn-logo.png"
+    assert cand.thumbnail_url == "https://sgdb/psn-grid.png"
+
+
+def test_rows_cached_before_hero_art_get_topped_up(db_session, monkeypatch):
+    """Rows filled when only a grid was fetched have a thumbnail but no hero.
+    They must still count as gaps or they'd never get card art at all."""
+    steamgriddb = _sgdb_stub(monkeypatch)
+    _seed_platforms(db_session)
+    user = _user(db_session, "topup")
+    user.steamgriddb_api_key = "sgdb-key"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_T1_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    # Simulate the old cache shape: grid only.
+    psn.save_review_thumbnails(db_session, user.id, {"NPWR_T1_00": {"thumbnail_url": "https://sgdb/old-grid.png"}})
+    assert [g["external_id"] for g in psn.review_thumbnail_gaps(db_session, user.id)] == ["NPWR_T1_00"]
+
+    steamgriddb.fill_psn_review_thumbnails(db_session, user)
+    assert psn.review_thumbnail_gaps(db_session, user.id) == []
+
+
+def test_hero_fetch_failure_keeps_the_thumbnail(db_session, monkeypatch):
+    """Hero and logo are cosmetic extras — losing them must not cost the
+    thumbnail already in hand, or a flaky call blanks the list view too."""
+    from backend import steamgriddb
+
+    _seed_platforms(db_session)
+    user = _user(db_session, "flaky")
+    user.steamgriddb_api_key = "sgdb-key"
+    db_session.commit()
+    monkeypatch.setattr(steamgriddb, "search_games", lambda k, q: [{"id": 1, "name": q}])
+    monkeypatch.setattr(steamgriddb, "get_grids_for_game", lambda k, gid, orientation, page=0: [{"url": "https://sgdb/g.png"}])
+
+    def boom(*a, **k):
+        raise RuntimeError("SGDB 503")
+
+    monkeypatch.setattr(steamgriddb, "get_heroes_for_game", boom)
+    monkeypatch.setattr(steamgriddb, "get_logos_for_game", boom)
+
+    art = steamgriddb._placeholder_art("sgdb-key", "Anything")
+    assert art == {"thumbnail_url": "https://sgdb/g.png"}

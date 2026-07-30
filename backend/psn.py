@@ -29,6 +29,7 @@ from collections import Counter
 from urllib.parse import parse_qsl, urlparse
 
 import httpx
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from . import models, titles
@@ -1443,6 +1444,11 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 # SGDB grid first — PSN's own image is a square icon0.png, the
                 # wrong shape for a review card's hero.
                 "image": cand.thumbnail_url or (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
+                # Card view shows a hero with the logo over it, like every other
+                # review card. Falls back to the grid so a row whose hero fetch
+                # failed still renders something rather than an empty box.
+                "hero": cand.hero_url or cand.thumbnail_url or (item.get("image") or {}).get("url"),
+                "logo": cand.logo_url,
                 "trophy_progress": item.get("trophyProgress"),
                 "trophy_earned": sum(v or 0 for v in earned.values()),
                 "trophy_defined": sum(v or 0 for v in defined.values()),
@@ -1472,24 +1478,30 @@ def review_thumbnail_gaps(db: Session, user_id: int) -> list[dict]:
         .filter(
             models.PsnReviewCandidate.user_id == user_id,
             models.PsnReviewCandidate.status == "pending",
-            models.PsnReviewCandidate.thumbnail_url.is_(None),
+            # hero_url too: rows cached before the card used hero art have a
+            # thumbnail but no hero, and would otherwise never be topped up.
+            sa.or_(models.PsnReviewCandidate.thumbnail_url.is_(None), models.PsnReviewCandidate.hero_url.is_(None)),
         )
         .all()
         if c.title
     ]
 
 
-def save_review_thumbnails(db: Session, user_id: int, thumbs: dict[str, str]) -> int:
-    """Cache SGDB thumbnail URLs onto the review rows."""
-    if not thumbs:
+def save_review_thumbnails(db: Session, user_id: int, art: dict[str, dict]) -> int:
+    """Cache SGDB art onto the review rows. Values are {thumbnail_url, hero_url,
+    logo_url} — the list view wants the grid, the card wants hero + logo."""
+    if not art:
         return 0
     written = 0
     for cand in (
         db.query(models.PsnReviewCandidate)
-        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.external_id.in_(list(thumbs)))
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.external_id.in_(list(art)))
         .all()
     ):
-        cand.thumbnail_url = thumbs[cand.external_id]
+        row = art[cand.external_id]
+        cand.thumbnail_url = row.get("thumbnail_url") or cand.thumbnail_url
+        cand.hero_url = row.get("hero_url") or cand.hero_url
+        cand.logo_url = row.get("logo_url") or cand.logo_url
         written += 1
     db.commit()
     return written

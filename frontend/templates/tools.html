@@ -7,6 +7,14 @@
   <p class="text-secondary small mb-0">Sync, import, and review operations on your library.</p>
 </div>
 
+{# Landing zone for the job poller's OOB "sync in progress" indicator. Page
+   level, NOT inside a card: the id is global and the poller swaps into
+   whichever one exists, so nesting it in the Steam card rendered "PSN library
+   sync in progress" inside Steam's box. It also has to sit OUTSIDE #tools-cards,
+   which replaces its own outerHTML on every job event and would otherwise
+   delete the indicator mid-run. #}
+<div id="sync-indicator"></div>
+
 {# Refetches itself when the job poller reports any finished job, so the
    sync/match/import/artwork numbers update without a manual refresh. #}
 <div class="cgt-tool-grid" id="tools-cards"
@@ -68,10 +76,6 @@
     <div hx-get="/integrations/steam/enrichment-status"
          hx-trigger="load"
          hx-swap="outerHTML"></div>
-    {# Landing zone for the job poller's OOB "sync in progress" indicator —
-       lived on the old integrations hub; without this div the running-sync
-       spinner had nowhere to render since the hub was retired. #}
-    <div id="sync-indicator"></div>
     {% else %}
     <div class="small text-secondary">Import your Steam library and playtime. Set up your Steam sign-in and credentials first.</div>
     {% endif %}
