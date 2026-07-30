@@ -1971,3 +1971,25 @@ def test_review_pending_count_spans_both_queues(db_session):
 
     psn.dismiss_entry_decision(db_session, user, "NPWR_PC_00")
     assert psn.review_pending_count(db_session, user.id) == 1
+
+
+def test_tools_psn_card_syncs_from_the_card_like_steam(client, db_session):
+    """Parity with the Steam card. Sending the user to a config page to press
+    the button they came for is what made this feel two-step (#157)."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    body = client.get("/tools").content
+    assert b'hx-post="/integrations/psn/sync"' in body
+    assert b"Configure" in body
+
+
+def test_tools_psn_card_offers_setup_not_sync_without_credentials(client, db_session):
+    """No credentials, no Sync button — it could only fail."""
+    _seed_platforms(db_session)
+    _signup_and_login(client)
+    body = client.get("/tools").content
+    assert b'hx-post="/integrations/psn/sync"' not in body

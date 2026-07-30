@@ -124,11 +124,12 @@
         <span class="cgt-breakdown__label">imports · needs review</span>
       </a>
       {% if psn_review_pending %}
-      {# PSN holds cross-play games back rather than importing them on a guess,
-         so they land here until the platform is confirmed. #}
+      {# Both PSN queues: cross-play games held back rather than imported on a
+         guess, and played-only activity with no purchase or trophy behind it.
+         One number because they're one page. #}
       <a class="cgt-breakdown__row" href="/tools/psn-review">
         <span class="cgt-breakdown__num cgt-breakdown__num--yellow">{{ "{:,}".format(psn_review_pending) }}</span>
-        <span class="cgt-breakdown__label">PSN · needs a platform</span>
+        <span class="cgt-breakdown__label">PSN · needs a decision</span>
       </a>
       {% endif %}
     </div>

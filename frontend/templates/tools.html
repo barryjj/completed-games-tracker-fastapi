@@ -232,8 +232,17 @@
     <div class="small text-secondary">Capture your PlayStation sign-in to sync your library and trophy history.</div>
     {% endif %}
     <div class="cgt-tool-card__actions">
+      {# Parity with the Steam card: sync from the card, configure elsewhere.
+         Sending the user to a config page to press the button they came for is
+         the thing that made this integration feel two-step (#157). #}
+      {% if current_user.psn_npsso and current_user.psn_online_id %}
+      <button class="btn btn-primary btn-sm"
+              hx-post="/integrations/psn/sync"
+              hx-swap="none"
+              hx-disabled-elt="this">Sync</button>
+      {% endif %}
       {% if current_user.psn_npsso %}
-      <a href="/integrations/psn" class="btn btn-primary btn-sm">Open PSN sync</a>
+      <a href="/integrations/psn" class="btn btn-surface btn-sm">Configure</a>
       {% else %}
       <a href="/integrations/psn" class="btn btn-surface btn-sm">Set up</a>
       {% endif %}
