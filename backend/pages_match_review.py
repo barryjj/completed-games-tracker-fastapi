@@ -110,8 +110,15 @@ def psn_review_page(
         # oob: the sort select is outside the swap target and its options are
         # per-queue, so it has to ride along or a tab switch leaves the other
         # queue's options in place.
-        return templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context={**ctx, "oob": True})
-    return templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
+        response = templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context={**ctx, "oob": True})
+    else:
+        response = templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
+    # no-store: rows are derived live from the candidates and the cross-buy
+    # reference on every render, so a reload IS the refresh — but the desktop
+    # shell's WKWebView heuristically caches GETs that carry no cache headers,
+    # which would pin a stale queue in a context with no user-facing reload.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 def _maybe_enrich(db: Session, user: models.User) -> None:

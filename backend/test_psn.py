@@ -2268,3 +2268,16 @@ def test_regional_overrides_beat_the_eu_bulk_list_without_catching_siblings():
         hit = psn.cross_buy_exception({"displayName": name})
         assert hit["cross_buy"] is True and hit["restricts"] is False, name
     psn._cross_buy_cache = None
+
+
+def test_review_page_is_never_cached(client, db_session):
+    """Rows are derived live from the candidates and the cross-buy reference, so
+    a reload is the refresh — but WKWebView caches header-less GETs and would
+    pin a stale queue in a shell with no user-facing reload."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    assert client.get("/tools/psn-review").headers["cache-control"] == "no-store"
+    assert client.get("/tools/psn-review", headers={"HX-Request": "true"}).headers["cache-control"] == "no-store"
