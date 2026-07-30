@@ -2,11 +2,11 @@
    reports what happened rather than staging anything for a later run, same
    contract as match review's merge and import review's confirm. #}
 <tr id="psn-row-{{ key }}" class="cgt-review-row--done">
-  <td colspan="5" class="text-secondary small py-2">
+  <td colspan="6" class="text-secondary small py-2">
     {% if detail %}
     <strong>{{ name }}</strong> &mdash; {{ detail }}.
     {% elif created %}
-    <strong>{{ name }}</strong> &mdash; added {{ created }} librar{{ 'ies' if created != 1 else 'y' }} entr{{ 'ies' if created != 1 else 'y' }}.
+    <strong>{{ name }}</strong> &mdash; added {{ created }} library entr{{ 'ies' if created != 1 else 'y' }}.
     {% else %}
     <strong>{{ name }}</strong> &mdash; dismissed, nothing added.
     {% endif %}

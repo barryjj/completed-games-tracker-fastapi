@@ -2433,3 +2433,9 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
   flex: 0 0 auto;
 }
 
+
+/* PSN review bulk-select. Checkboxes live in the markup always but only show
+   while the table is in select mode, so ordinary review stays checkbox-free —
+   same mechanic as import review's bulk mode. */
+#psn-review-table .psn-bulk-cell { display: none; }
+#psn-review-table.psn-select-mode .psn-bulk-cell { display: table-cell; width: 2.2rem; }

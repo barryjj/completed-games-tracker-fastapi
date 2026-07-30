@@ -1393,7 +1393,9 @@ def test_psn_review_page_renders_with_both_layouts(client, db_session, monkeypat
     assert b"psn-review-table" in body
     # a platform checkbox per candidate, in this row's own option group
     assert b'id="psn-opts-NPWR_R_00"' in body
-    assert body.count(b'name="platforms"') == 2
+    # Count the rendered checkboxes, not every occurrence of the string — the
+    # bulk-select JS also contains an input[name="platforms"] selector.
+    assert body.count(b"cgt-psn-plat-check") == 2
     # per-row actions that take effect on click, not a bulk-only save
     assert b"/tools/psn-review/NPWR_R_00/confirm" in body
     assert b"/tools/psn-review/NPWR_R_00/dismiss" in body
@@ -2358,3 +2360,112 @@ def test_hero_fetch_failure_keeps_the_thumbnail(db_session, monkeypatch):
 
     art = steamgriddb._placeholder_art("sgdb-key", "Anything")
     assert art == {"thumbnail_url": "https://sgdb/g.png"}
+
+
+def test_bulk_confirm_uses_each_row_s_own_platform_selection(client, db_session):
+    """The point of the cross-buy reference is that most rows arrive pre-ticked
+    correctly, so bulk confirm carries a per-row platform list rather than just
+    ids — otherwise it could only guess what to create."""
+    import json as _j
+
+    _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
+    db_session.commit()
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {"npCommunicationId": "NPWR_BC1_00", "name": "Both", "displayName": "Both", "platform": "PS4,PSVITA", "sources": ["titles"]},
+            {"npCommunicationId": "NPWR_BC2_00", "name": "One", "displayName": "One", "platform": "PS4,PSVITA", "sources": ["titles"]},
+            {
+                "npCommunicationId": "NPWR_BC3_00",
+                "name": "Untouched",
+                "displayName": "Untouched",
+                "platform": "PS4,PS3",
+                "sources": ["titles"],
+            },
+        ],
+    )
+
+    payload = _j.dumps({"NPWR_BC1_00": ["PS4", "PSVITA"], "NPWR_BC2_00": ["PS4"]})
+    r = client.post("/tools/psn-review/bulk-confirm", data={"selections": payload})
+    assert r.status_code == 200
+    assert b"Confirmed 2 games" in r.content
+    assert b"added 3 library entries" in r.content
+
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_BC1_00").count() == 2
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_BC2_00").count() == 1
+    # An unselected row is untouched and stays in the queue.
+    assert [r_["external_id"] for r_ in psn.import_review_rows(db_session, user.id)] == ["NPWR_BC3_00"]
+
+
+def test_bulk_confirm_drops_platforms_the_trophy_set_does_not_cover(client, db_session):
+    """A stale page can post anything, and an entry this can't un-create is the
+    expensive mistake — so the per-row validation still applies in bulk."""
+    import json as _j
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_BV_00", "name": "Guard", "displayName": "Guard", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    client.post("/tools/psn-review/bulk-confirm", data={"selections": _j.dumps({"NPWR_BV_00": ["PS5", "PS4"]})})
+    rels = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR_BV_00").all()
+    assert [r.platform_id for r in rels] == [models.resolve_platform_id(db_session, "PS4")]
+
+
+def test_bulk_dismiss_clears_rows_without_creating_anything(client, db_session):
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {"npCommunicationId": "NPWR_BD1_00", "name": "A", "displayName": "A", "platform": "PS3,PS4", "sources": ["titles"]},
+            {"npCommunicationId": "NPWR_BD2_00", "name": "B", "displayName": "B", "platform": "PS3,PS4", "sources": ["titles"]},
+        ],
+    )
+    r = client.post("/tools/psn-review/bulk-dismiss", data={"keys": "NPWR_BD1_00,NPWR_BD2_00"})
+    assert b"Dismissed 2 games" in r.content
+    assert db_session.query(models.GameRelease).filter_by(source="psn").count() == 0
+    assert psn.import_review_rows(db_session, user.id) == []
+
+
+def test_bulk_endpoints_reject_an_empty_payload(client, db_session):
+    _seed_platforms(db_session)
+    _signup_and_login(client)
+    assert client.post("/tools/psn-review/bulk-confirm", data={"selections": ""}).status_code == 422
+    assert client.post("/tools/psn-review/bulk-confirm", data={"selections": "{not json"}).status_code == 422
+    assert client.post("/tools/psn-review/bulk-dismiss", data={"keys": ""}).status_code == 422
+
+
+def test_bulk_mode_button_only_where_it_applies(client, db_session):
+    """Card view shows one row at a time and played-only rows take three
+    different actions — neither has anything to bulk."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_BM_00", "name": "A", "displayName": "A", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    body = client.get("/tools/psn-review").content
+    assert b'id="psn-select-toggle"' in body
+    assert b'id="psn-select-toggle" hidden' not in body.replace(b"\n", b" ")
+    # Card view hides it.
+    assert b"hidden" in client.get("/tools/psn-review?view=card").content

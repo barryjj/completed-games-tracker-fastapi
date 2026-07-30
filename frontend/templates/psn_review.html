@@ -63,8 +63,39 @@
     {# Sort options differ per queue: trophy progress is what tells two sets of
        the same game apart, playtime is what matters for played-only. #}
     {% include "partials/_psn_sort_select.html" %}
+    {# Bulk mode: reveals row checkboxes; the bar below holds the actions that
+       operate on the selection. List view only — the card stack shows one row
+       at a time, so there is nothing to select across. Cross-play only, since
+       played-only rows take three different actions rather than one. #}
+    <button type="button" id="psn-select-toggle" class="btn btn-sm btn-surface"
+            {% if view != 'list' or kind != 'cross_play' %}hidden{% endif %}
+            onclick="psnToggleSelect()">Bulk mode</button>
   </div>
 </form>
+
+{# Most rows arrive pre-ticked correctly from the cross-buy reference, so bulk
+   confirm sends each row's OWN platform selection rather than just its id. #}
+<div id="psn-bulk-bar" class="d-flex align-items-center gap-2 mb-3" hidden>
+  <span class="small text-secondary"><span id="psn-bulk-count">0</span> selected</span>
+  <button type="button" class="btn btn-sm btn-surface" onclick="psnSelectAll(true)">Select all</button>
+  {# Native hx attributes, not htmx.ajax(): the JS API's promise doesn't settle
+     reliably on swap-none responses, which froze import review's buttons
+     mid-flight. hx-vals js: reads the ticked platforms at click time. #}
+  <button type="button" id="psn-bulk-confirm" class="btn btn-sm btn-primary" disabled
+          hx-post="/tools/psn-review/bulk-confirm"
+          hx-vals='js:{selections: psnCheckedSelections()}'
+          hx-confirm="Confirm the selected games? Library entries are created for each ticked platform."
+          hx-swap="none"
+          hx-disabled-elt="this"
+          hx-on::after-request="psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Confirm selected</button>
+  <button type="button" id="psn-bulk-dismiss" class="btn btn-sm btn-surface" disabled
+          hx-post="/tools/psn-review/bulk-dismiss"
+          hx-vals='js:{keys: psnCheckedKeys()}'
+          hx-confirm="Dismiss the selected games? Nothing is added to your library."
+          hx-swap="none"
+          hx-disabled-elt="this"
+          hx-on::after-request="psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Dismiss selected</button>
+</div>
 
 <div id="psn-review-content">
   {% include "partials/_psn_review_content.html" %}
@@ -131,6 +162,62 @@ window.psnSetKind = function(kind) {
   htmx.trigger('#psn-review-filters', 'submit');
 };
 
+// ─── Bulk-select mode ──────────────────────────────────────────────────
+window.psnToggleSelect = function() {
+  var table = document.getElementById('psn-review-table');
+  if (!table) return;
+  if (table.classList.contains('psn-select-mode')) { psnExitSelect(); return; }
+  table.classList.add('psn-select-mode');
+  document.getElementById('psn-select-toggle').classList.add('active');
+  document.getElementById('psn-bulk-bar').hidden = false;
+  psnBulkSync();
+};
+
+window.psnExitSelect = function() {
+  var table = document.getElementById('psn-review-table');
+  if (table) {
+    table.classList.remove('psn-select-mode');
+    table.querySelectorAll('.psn-bulk-check:checked').forEach(function(cb) { cb.checked = false; });
+  }
+  var btn = document.getElementById('psn-select-toggle');
+  if (btn) btn.classList.remove('active');
+  var bar = document.getElementById('psn-bulk-bar');
+  if (bar) bar.hidden = true;
+};
+
+window.psnBulkSync = function() {
+  var n = document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').length;
+  var count = document.getElementById('psn-bulk-count');
+  if (count) count.textContent = n;
+  ['psn-bulk-confirm', 'psn-bulk-dismiss'].forEach(function(id) {
+    var b = document.getElementById(id);
+    if (b) b.disabled = n === 0;
+  });
+};
+
+window.psnSelectAll = function(on) {
+  document.querySelectorAll('#psn-review-table .psn-bulk-check').forEach(function(cb) { cb.checked = on; });
+  psnBulkSync();
+};
+
+window.psnCheckedKeys = function() {
+  return Array.from(document.querySelectorAll('#psn-review-table .psn-bulk-check:checked'))
+    .map(function(cb) { return cb.value; }).join(',');
+};
+
+// Each row carries its own platform ticks — that pre-ticking is the point of
+// the cross-buy reference, so bulk confirm has to send it per row, not just ids.
+window.psnCheckedSelections = function() {
+  var out = {};
+  document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
+    var opts = document.getElementById('psn-opts-' + cb.value);
+    out[cb.value] = opts
+      ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
+      : [];
+  });
+  return JSON.stringify(out);
+};
+
 function psnSetView(view) {
   document.getElementById('psn-view-field').value = view;
   htmx.trigger('#psn-review-filters', 'submit');
@@ -147,6 +234,12 @@ document.addEventListener('htmx:afterSwap', function(e) {
     }
     psnCardIdx = 0;
     if (document.getElementById('psn-stack')) psnRebuildNav(true);
+    // The toggle lives outside the swap, so re-evaluate whether it applies to
+    // whatever just rendered — card view and played-only have nothing to bulk.
+    var kind = document.getElementById('psn-kind-field').value;
+    var toggle = document.getElementById('psn-select-toggle');
+    if (toggle) toggle.hidden = !(view === 'list' && kind === 'cross_play');
+    psnExitSelect();
   }
 });
 

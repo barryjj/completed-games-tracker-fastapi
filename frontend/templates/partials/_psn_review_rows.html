@@ -5,6 +5,11 @@
    detail tucked into the card view. #}
 {% for r in rows %}
 <tr id="psn-row-{{ r.key }}">
+  {# Only visible while the table carries .psn-select-mode, so normal review
+     stays checkbox-free. Same mechanic as import review's bulk mode. #}
+  <td class="align-middle psn-bulk-cell">
+    <input class="form-check-input psn-bulk-check" type="checkbox" value="{{ r.key }}" onchange="psnBulkSync()">
+  </td>
   <td class="align-middle">
     <div class="d-flex align-items-center gap-2">
       {% if r.image %}

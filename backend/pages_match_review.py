@@ -5,6 +5,8 @@ Moved verbatim out of `pages.py` — no behaviour changes. The review logic itse
 lives in `match_review.py`; this module is only the HTTP surface for it.
 """
 
+import json as _json
+
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import Response
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -26,10 +28,12 @@ router = APIRouter()
 # PSN review lives under /tools, not /library: it is an operations queue like
 # match review's sibling cards on the Tools hub, and the nav highlights by path
 # prefix — under /library it lit up "Library" while the user was on a Tools page.
+#
 # The two PSN queues are tabs of one page: both are "PSN couldn't settle this,
 # you decide", both are rows of the same psn_review_candidates table, and having
-# one on Tools and the other buried in the config page was the scattered flow
-# (#157). Under /tools, not /library — the nav highlights by path prefix.
+# one on Tools with the other buried in the config page was the scattered flow
+# (#157).
+
 # Per-queue sort options. Trophy progress is the discriminator for cross-play
 # rows (two Crimsonland sets differ only by it); playtime is the one for
 # played-only, where "did I actually play this" is the whole question.
@@ -134,6 +138,88 @@ def _maybe_enrich(db: Session, user: models.User) -> None:
 
     if psn.review_pending_count(db, user.id) == 0:
         integrations.kick_psn_enrichment(user)
+
+
+@router.post("/tools/psn-review/bulk-confirm")
+async def psn_review_bulk_confirm(
+    request: Request,
+    selections: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Confirm a batch of cross-play rows, each with its own ticked platforms.
+
+    Not just a list of ids like import review's bulk confirm: the whole value
+    here is that most rows arrive pre-ticked correctly from the cross-buy
+    reference, so the selection has to travel per row. Payload is JSON,
+    {external_id: [platform, ...]}.
+
+    Rows already decided, or platforms a trophy set doesn't cover, are dropped
+    by confirm_entry_decision rather than trusted — a stale page can post
+    anything, and an entry this can't un-create is the expensive mistake.
+    """
+    from . import integrations, psn
+
+    try:
+        parsed = _json.loads(selections) if selections.strip() else {}
+    except ValueError:
+        parsed = None
+    if not isinstance(parsed, dict) or not parsed:
+        return Response("No rows selected.", status_code=422)
+
+    confirmed = created = 0
+    for key, platforms in parsed.items():
+        if not isinstance(platforms, list):
+            continue
+        try:
+            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms])
+        except ValueError:
+            continue  # already decided, or no longer in the queue
+        confirmed += 1
+        created += result["created"]
+
+    if confirmed and psn.review_pending_count(db, current_user.id) == 0:
+        integrations.kick_psn_enrichment(current_user)
+
+    entries = f"{created} library entr{'ies' if created != 1 else 'y'}"
+    body = f"Confirmed {confirmed} game{'s' if confirmed != 1 else ''} — added {entries}."
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={
+            "kind": "success" if confirmed else "error",
+            "body": body if confirmed else "Nothing was confirmed — those rows are no longer pending.",
+        },
+    )
+
+
+@router.post("/tools/psn-review/bulk-dismiss")
+async def psn_review_bulk_dismiss(
+    request: Request,
+    keys: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Dismiss a batch of rows — "own it on nothing", creating nothing."""
+    from . import integrations, psn
+
+    key_list = [k for k in keys.split(",") if k.strip()]
+    if not key_list:
+        return Response("No rows selected.", status_code=422)
+    dismissed = 0
+    for key in key_list:
+        try:
+            psn.dismiss_entry_decision(db, current_user, key.strip())
+        except ValueError:
+            continue
+        dismissed += 1
+    if dismissed and psn.review_pending_count(db, current_user.id) == 0:
+        integrations.kick_psn_enrichment(current_user)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success" if dismissed else "error", "body": f"Dismissed {dismissed} game{'s' if dismissed != 1 else ''}."},
+    )
 
 
 def _played_only_done(request: Request, key: str, name: str, verb: str):
