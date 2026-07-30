@@ -89,7 +89,7 @@ def test_merge_trophy_only_history_survives():
 
 def test_merge_accumulates_all_play_categories():
     """A game played both natively and on PC keeps BOTH categories, so it isn't
-    mistaken for a PC-only copy (Spider-Man 2: 28h PS5 + a 37min PC touch)."""
+    mistaken for a PC copy (Spider-Man 2: 28h PS5 + a 37min PC touch)."""
     titles = [{"npCommunicationId": "NPWR700_00", "trophyTitleName": "Cross Play Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 50}]
     played = [
         {"npCommunicationId": "NPWR700_00", "name": "Cross Play Game", "category": "ps5_native_game", "playDuration": "PT28H"},
@@ -97,21 +97,40 @@ def test_merge_accumulates_all_play_categories():
     ]
     item = psn.merge_library([], titles, played)["merged"][0]
     assert item["playCategories"] == ["ps5_native_game", "pspc_game"]
-    assert psn.is_pc_only(item) is False
+    assert psn.is_pc_copy(item, {psn._normalized_name("Cross Play Game")}) is False
 
 
-def test_is_pc_only_true_for_pspc_only():
-    """Only PC play evidence, no native PlayStation record → PC/Steam copy."""
+def test_is_pc_copy_uses_evidence_not_sonys_platform_string():
+    """Sony is not consistent here: Stellar Blade came back PSPC-only while the
+    Until Dawn remake came back "PS5,PSPC" for the identical situation — a game
+    owned on Steam, played on PC, never owned on a PlayStation. Requiring the
+    set to be PC-ONLY missed the second one and minted a phantom PS5 entry.
+
+    The test is: mentions PSPC, already in the Steam library, and no
+    PlayStation-side evidence (no purchase, no native play time)."""
+    steam_keys = {psn._normalized_name("PC Only Game")}
     titles = [{"npCommunicationId": "NPWR701_00", "trophyTitleName": "PC Only Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 100}]
     played = [{"npCommunicationId": "NPWR701_00", "name": "PC Only Game", "category": "pspc_game", "playDuration": "PT80H"}]
     item = psn.merge_library([], titles, played)["merged"][0]
     assert item["playCategories"] == ["pspc_game"]
-    assert psn.is_pc_only(item) is True
-    # No play evidence at all is never PC-only.
-    assert psn.is_pc_only({"platform": "PS5", "sources": ["purchased"]}) is False
+    assert psn.is_pc_copy(item, steam_keys) is True
 
+    # The Until Dawn shape: trophy-only, no play record at all, PS5,PSPC.
+    # 100% trophies prove it was PLAYED, never on which platform — so trophies
+    # alone must not save it from the skip.
+    remake = psn.merge_library(
+        [],
+        [{"npCommunicationId": "NPWR37139_00", "trophyTitleName": "PC Only Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 100}],
+        [],
+    )["merged"][0]
+    assert psn.is_pc_copy(remake, steam_keys) is True
 
-# ─── auth + pagination ─────────────────────────────────────────────────────
+    # Not in the Steam library → not a duplicate of anything; keep it.
+    assert psn.is_pc_copy(remake, set()) is False
+    # A real purchase is PlayStation-side evidence; keep it.
+    assert psn.is_pc_copy({**remake, "sources": ["purchased", "titles"]}, steam_keys) is False
+    # No PSPC anywhere → never in scope.
+    assert psn.is_pc_copy({"platform": "PS5", "sources": ["purchased"]}, steam_keys) is False
 
 
 def test_exchange_npsso_expired_raises_typed_error():
@@ -1993,3 +2012,187 @@ def test_tools_psn_card_offers_setup_not_sync_without_credentials(client, db_ses
     _signup_and_login(client)
     body = client.get("/tools").content
     assert b'hx-post="/integrations/psn/sync"' not in body
+
+
+def test_owned_platforms_matches_trophy_tokens_to_real_platform_rows(db_session):
+    """Trophy feeds say "PSVITA"; the platforms table says "PlayStation Vita".
+    An uppercase-and-strip-spaces comparison proved nothing for PS3 or Vita and
+    left most review rows defaulting to PS4 alone — resolve ids instead."""
+    _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
+    db_session.commit()
+    user = _user(db_session, "tok")
+
+    # One settled Vita game — that's proof of a Vita, and nothing else.
+    psn.import_merged(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_OV_00", "name": "Vita Only", "displayName": "Vita Only", "platform": "PSVITA", "sources": ["titles"]}],
+    )
+    assert "PSVITA" in psn.owned_platforms(db_session, user.id)
+
+
+def test_review_search_and_sort(client, db_session):
+    """Same filter affordances as import review: search by title, plus a sort
+    whose options differ per queue."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": "NPWR_S1_00",
+                "name": "Alpha Game",
+                "displayName": "Alpha Game",
+                "platform": "PS3,PS4",
+                "trophyProgress": 10,
+                "sources": ["titles"],
+            },
+            {
+                "npCommunicationId": "NPWR_S2_00",
+                "name": "Zeta Game",
+                "displayName": "Zeta Game",
+                "platform": "PS3,PS4",
+                "trophyProgress": 90,
+                "sources": ["titles"],
+            },
+        ],
+    )
+
+    # Search narrows to one.
+    body = client.get("/tools/psn-review?q=zeta").content
+    assert b"Zeta Game" in body and b"Alpha Game" not in body
+
+    # Default sort is title; progress sort puts the 90% row first.
+    order = client.get("/tools/psn-review?sort=progress").content
+    assert order.index(b"Zeta Game") < order.index(b"Alpha Game")
+    order = client.get("/tools/psn-review?sort=name").content
+    assert order.index(b"Alpha Game") < order.index(b"Zeta Game")
+
+    # An unknown sort key falls back to title rather than arbitrary order.
+    order = client.get("/tools/psn-review?sort=nonsense").content
+    assert order.index(b"Alpha Game") < order.index(b"Zeta Game")
+
+    # Sort options are per-queue, and ride along OOB on an HX swap because the
+    # select lives outside the swap target.
+    hx = client.get("/tools/psn-review?kind=played_only", headers={"HX-Request": "true"}).content
+    assert b'hx-swap-oob="true"' in hx
+    assert b"Playtime" in hx and b"Trophy progress" not in hx
+
+
+def test_cross_buy_reference_restricts_defaults_on_both_axes(db_session, monkeypatch, tmp_path):
+    """The reference file exists for what Sony's API can't express. Two
+    independent axes break the offer-everything default, and either one is
+    enough: separate trophy lists (this set covers ONE platform) or separate
+    purchases (owning one implies nothing about the rest)."""
+    import json as _j
+
+    ref = tmp_path / "psn_cross_buy.json"
+    ref.write_text(
+        _j.dumps(
+            {
+                "titles": [
+                    {"title": "Split Lists", "shared_trophies": False, "cross_buy": None, "notes": "Separate lists."},
+                    {"title": "Paid Twice", "shared_trophies": True, "cross_buy": False, "notes": "Sold separately."},
+                    {"title": "Real Cross Buy", "shared_trophies": True, "cross_buy": True, "notes": "One purchase, both."},
+                ]
+            }
+        )
+    )
+    monkeypatch.setattr(psn, "_CROSS_BUY_PATH", str(ref))
+    monkeypatch.setattr(psn, "_cross_buy_cache", None)
+
+    _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
+    db_session.commit()
+    user = _user(db_session, "xbuy")
+
+    def row(name, **extra):
+        return {
+            "npCommunicationId": f"NPWR_{abs(hash(name)) % 9999}_00",
+            "name": name,
+            "displayName": name,
+            "normalizedName": psn._normalized_name(name),
+            "platform": "PS4,PSVITA",
+            "sources": ["titles"],
+            **extra,
+        }
+
+    _seed_review(db_session, user, [row("Split Lists"), row("Paid Twice"), row("Real Cross Buy")])
+    by_name = {r["name"]: r for r in psn.import_review_rows(db_session, user.id)}
+
+    # Both restricted rows offer every platform but pre-tick none — no evidence.
+    for name in ("Split Lists", "Paid Twice"):
+        r = by_name[name]
+        assert [o["platform"] for o in r["options"]] == ["PS4", "PSVITA"]
+        assert [o["platform"] for o in r["options"] if o["selected"]] == []
+        assert r["restricted"] is True
+    assert "Separate trophy list" in by_name["Split Lists"]["reason"]
+    assert "Sold separately" in by_name["Paid Twice"]["reason"]
+
+    # A confirmed cross-buy title changes nothing — that's already the default.
+    assert all(o["selected"] for o in by_name["Real Cross Buy"]["options"])
+    assert by_name["Real Cross Buy"]["restricted"] is False
+
+
+def test_restricted_row_still_credits_the_platform_you_bought(db_session, monkeypatch, tmp_path):
+    """A purchase names the SKU bought — the only per-platform entitlement
+    signal left once a trophy set has overwritten the platform string. Without
+    it a bought-on-PS4 row would pre-tick nothing at all."""
+    import json as _j
+
+    ref = tmp_path / "psn_cross_buy.json"
+    ref.write_text(_j.dumps({"titles": [{"title": "Split Lists", "shared_trophies": False, "cross_buy": None, "notes": ""}]}))
+    monkeypatch.setattr(psn, "_CROSS_BUY_PATH", str(ref))
+    monkeypatch.setattr(psn, "_cross_buy_cache", None)
+
+    _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
+    db_session.commit()
+    user = _user(db_session, "bought")
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": "NPWR_B_00",
+                "titleId": "CUSA02052_00",
+                "name": "Split Lists",
+                "displayName": "Split Lists",
+                "normalizedName": psn._normalized_name("Split Lists"),
+                "platform": "PS4,PSVITA",
+                "sources": ["purchased", "titles"],
+            }
+        ],
+    )
+    row = psn.import_review_rows(db_session, user.id)[0]
+    assert [o["platform"] for o in row["options"] if o["selected"]] == ["PS4"]
+
+
+def test_missing_cross_buy_reference_degrades_to_no_exceptions(monkeypatch, tmp_path):
+    """A sync must never fail because reference data is absent or malformed."""
+    monkeypatch.setattr(psn, "_CROSS_BUY_PATH", str(tmp_path / "nope.json"))
+    monkeypatch.setattr(psn, "_cross_buy_cache", None)
+    assert psn.cross_buy_exception({"displayName": "Anything"}) is None
+
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    monkeypatch.setattr(psn, "_CROSS_BUY_PATH", str(bad))
+    monkeypatch.setattr(psn, "_cross_buy_cache", None)
+    assert psn.cross_buy_exception({"displayName": "Anything"}) is None
+
+
+def test_shipped_cross_buy_reference_is_valid_and_ignores_unverified():
+    """The file that actually ships parses, and `_unverified` never applies."""
+    psn._cross_buy_cache = None
+    index = psn._load_cross_buy()
+    assert index["by_title"], "shipped reference should carry entries"
+    assert psn.cross_buy_exception({"displayName": "Dragon's Crown"})["cross_buy"] is False
+    # Parked claims must not take effect.
+    assert psn.cross_buy_exception({"displayName": "Terraria"}) is None
+    assert psn.cross_buy_exception({"displayName": "Sly Cooper: Thieves in Time"}) is None
+    psn._cross_buy_cache = None

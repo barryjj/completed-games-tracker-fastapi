@@ -534,7 +534,7 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
         # Keep the full set of play categories, not just the last one merged. A
         # game can have several play records (e.g. ps5_native_game + pspc_game);
         # the single `category` field can't tell "played natively on PS5 and
-        # briefly on PC" from "only ever played on PC" — is_pc_only needs all of
+        # briefly on PC" from "only ever played on PC" — is_pc_copy needs all of
         # them to skip Steam duplicates without dropping real PlayStation entries.
         # Read the live lib[key] (not the pre-loop `existing`) so categories from
         # an earlier play record for the same game aren't lost.
@@ -725,18 +725,36 @@ def is_played_only(item: dict) -> bool:
 _NATIVE_PS_CAT_RE = re.compile(r"ps[345]", re.IGNORECASE)
 
 
-def is_pc_only(item: dict) -> bool:
-    """True when the only play evidence is a PC (pspc) playthrough with no
-    native PlayStation play record — a Steam/PC copy surfacing through PSN's PC
-    integration (Stellar Blade, the Until Dawn remake). Not a PlayStation entry."""
+def is_pc_copy(item: dict, steam_keys: set[str]) -> bool:
+    """True when this is the PC copy of a game, surfacing through PSN's PC
+    integration rather than anything you own on a PlayStation.
+
+    The test is evidence, not Sony's platform string, because Sony is not
+    consistent about it: Stellar Blade came back PSPC-only while the Until Dawn
+    remake came back "PS5,PSPC" for the identical situation. Requiring the set
+    to be PC-ONLY therefore missed the second one and minted a phantom PS5
+    entry for a game only owned on Steam.
+
+    So: the set mentions PSPC, the title is already in the Steam library, and
+    there is no PlayStation-side evidence — no purchase, and no play time under
+    a native console category. Trophies alone prove the game was played, never
+    which platform it ran on, so they are deliberately not evidence here.
+    """
+    plats = {p.strip().upper() for p in str(item.get("platform") or "").split(",") if p.strip()}
     cats = list(item.get("playCategories") or [])
     if not cats and item.get("category"):
         cats = [item["category"]]
-    if not cats:
+    if "PSPC" not in plats and not any("pspc" in str(c).lower() for c in cats):
         return False
-    has_pc = any("pspc" in str(c).lower() for c in cats)
-    has_native = any(_NATIVE_PS_CAT_RE.search(str(c)) for c in cats)
-    return has_pc and not has_native
+    if (item.get("normalizedName") or _normalized_name(item.get("name"))) not in steam_keys:
+        return False
+    if "purchased" in (item.get("sources") or []):
+        return False
+    if any(_NATIVE_PS_CAT_RE.search(str(c)) for c in cats):
+        return False
+    # PSPC minutes are PC minutes — the very thing being skipped — so only
+    # console platforms count as evidence of a PlayStation copy.
+    return not any(minutes for platform, minutes in played_minutes_by_platform(item).items() if platform != "PSPC")
 
 
 def _steam_title_keys(db: Session, user_id: int) -> set[str]:
@@ -791,6 +809,88 @@ _CATEGORY_PLATFORM = {"ps5": "PS5", "ps4": "PS4", "ps3": "PS3", "pspc": "PSPC"}
 # quit rather than "this is the version I played" (Forbidden West: 73h on PS5
 # vs 14min on PS4).
 _SUBSTANTIAL_MINUTES = 60
+
+
+# ─── Cross-buy reference data ──────────────────────────────────────────────
+
+REFERENCE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "reference"))
+_CROSS_BUY_PATH = os.path.join(REFERENCE_DIR, "psn_cross_buy.json")
+_cross_buy_cache: dict | None = None
+
+
+def _load_cross_buy() -> dict:
+    """Known exceptions to the cross-buy assumption, indexed for lookup.
+
+    Sony's feeds cannot express whether a shared trophy list came with a shared
+    entitlement, nor whether a set spanning three platforms is really one list
+    or three — so this is hand-maintained reference data. See the _README in the
+    file. Cached per process; a missing or malformed file degrades to "nothing
+    known", never to a failed sync.
+    """
+    global _cross_buy_cache
+    if _cross_buy_cache is not None:
+        return _cross_buy_cache
+    index: dict = {"by_npcomm": {}, "by_title": []}
+    try:
+        with open(_CROSS_BUY_PATH) as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        _logger.warning("PSN cross-buy reference unreadable at %s — proceeding with no known exceptions", _CROSS_BUY_PATH)
+        _cross_buy_cache = index
+        return index
+    for row in raw.get("titles") or []:
+        entry = {
+            "title": row.get("title", ""),
+            "shared_trophies": row.get("shared_trophies"),
+            "cross_buy": row.get("cross_buy"),
+            "notes": row.get("notes", ""),
+        }
+        # Either axis being false breaks the offer-everything default: separate
+        # lists mean this set covers one platform, separate purchases mean
+        # owning one says nothing about the rest.
+        entry["restricts"] = entry["shared_trophies"] is False or entry["cross_buy"] is False
+        for npcomm in row.get("npcomm") or []:
+            index["by_npcomm"][npcomm] = entry
+        if entry["title"]:
+            index["by_title"].append((titles.normalize_for_match(entry["title"]), entry))
+    _cross_buy_cache = index
+    return index
+
+
+# Store SKU prefixes. Not a general platform oracle — Sony reuses CUSA on a
+# handful of Vita/PS3 listings — but for a row we know was PURCHASED it names
+# the SKU that was bought, which is the only per-platform entitlement evidence
+# the feeds carry once a trophy set has overwritten the platform string.
+_TITLEID_PLATFORM = {"CUSA": "PS4", "PPSA": "PS5", "PCSA": "PSVITA", "PCSB": "PSVITA", "PCSE": "PSVITA", "PCSF": "PSVITA", "PCSG": "PSVITA"}
+
+
+def purchased_platform(item: dict) -> str | None:
+    """Platform of the SKU actually bought, or None when nothing was purchased."""
+    if "purchased" not in (item.get("sources") or []):
+        return None
+    tid = str(item.get("titleId") or "")
+    return _TITLEID_PLATFORM.get(tid[:4].upper())
+
+
+def cross_buy_exception(item: dict) -> dict | None:
+    """The reference entry for this item, or None when nothing is known.
+
+    npCommunicationId wins when present — it identifies a trophy set exactly.
+    Title matching falls back to the shared normalizer, so ™, casing, subtitles
+    and edition suffixes don't have to be reproduced in the file.
+    """
+    index = _load_cross_buy()
+    hit = index["by_npcomm"].get(item.get("npCommunicationId"))
+    if hit:
+        return hit
+    name = item.get("displayName") or item.get("name")
+    if not name:
+        return None
+    key = titles.normalize_for_match(name)
+    for ref_key, entry in index["by_title"]:
+        if titles.titles_match(key, ref_key):
+            return entry
+    return None
 
 
 def platform_candidates(item: dict) -> list[str]:
@@ -1054,7 +1154,7 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
         # A pspc (PC) game already in the Steam library is the same copy showing
         # up through PSN's PC integration — skip it rather than mint a phantom
         # PlayStation entry (e.g. Stellar Blade, the Until Dawn remake).
-        if is_pc_only(item) and (item.get("normalizedName") or _normalized_name(item.get("name"))) in steam_keys:
+        if is_pc_copy(item, steam_keys):
             skipped_pc_dupe += 1
             continue
         if not external_id_for(item):
@@ -1186,23 +1286,21 @@ def owned_platforms(db: Session, user_id: int) -> set[str]:
     game shipped on, not the ones you own. Which is why those are the rows
     being asked about.
 
-    Union them and you get the hardware actually in play, the only defensible
-    default for the ambiguous rows: a Vita-only library defaults to Vita, an
-    account with evidence for all four defaults to all four.
+    Comparison goes through resolve_platform_id, NOT string munging: trophy
+    feeds say "PSVITA" while the platforms table says "PlayStation Vita", so
+    an earlier uppercase-and-strip-spaces version silently proved nothing for
+    PS3 or Vita and left most rows defaulting to PS4 alone.
     """
-    proven: set[str] = set()
-    rows = (
-        db.query(models.Platform.name)
-        .join(models.GameRelease, models.GameRelease.platform_id == models.Platform.id)
+    owned_ids = {
+        pid
+        for (pid,) in db.query(models.GameRelease.platform_id)
         .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
         .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
         .distinct()
         .all()
-    )
-    for (name,) in rows:
-        if name:
-            # Platform rows read "PS Vita"; trophy platforms read "PSVITA".
-            proven.add(name.upper().replace(" ", ""))
+        if pid
+    }
+    proven = {token for token in _PS_PLATFORM_RANK if models.resolve_platform_id(db, token) in owned_ids}
     for cand in (
         db.query(models.PsnReviewCandidate)
         .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.status == "pending")
@@ -1288,10 +1386,28 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         else:
             reason = "Matched by title only — PSN gives no platform for this trophy set"
 
-        # Default: everything in the set this account can actually play. Falling
-        # back to all options keeps a fresh account (nothing proven yet) from
-        # defaulting to nothing at all.
+        # Default: everything in the set this account can actually play.
+        # Absence of evidence is not evidence of absence — PSN reports play data
+        # only for PS4 and later, so a PS3 or Vita copy can never be confirmed
+        # or denied from the feeds. Over-offering costs a row you delete;
+        # under-offering costs a completion with nowhere to attach.
         default = [p for p in options if p in owned] or options
+
+        # ...unless the reference file knows this title breaks that assumption:
+        # separate trophy lists (so this set covers ONE platform) or separate
+        # purchases (so owning one implies nothing). Then only platforms with
+        # actual play evidence are pre-ticked, and the row says why — a wrong
+        # reference entry must be visible and correctable, never silent.
+        exception = cross_buy_exception(item)
+        if exception and exception["restricts"]:
+            # Evidence here means an entitlement or play time on THAT platform —
+            # a purchase names the SKU bought, which is the only per-platform
+            # ownership signal left once a trophy set has overwritten the
+            # platform string. Without it a bought-on-PS4 row pre-ticks nothing.
+            bought = purchased_platform(item)
+            default = [p for p in options if minutes.get(p) or p == bought]
+            why = "Separate trophy list per platform" if exception["shared_trophies"] is False else "Sold separately per platform"
+            reason = f"{why} — {exception['notes']}" if exception["notes"] else f"{why} — tick only what you own"
 
         earned = item.get("earnedTrophies") or {}
         defined = item.get("trophies") or {}
@@ -1312,6 +1428,7 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 "set_count": sets_for_title,
                 "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
                 "total_minutes": sum(minutes.values()),
+                "restricted": bool(exception and exception["restricts"]),
                 "options": [{"platform": p, "selected": p in default, "minutes": minutes.get(p, 0)} for p in options],
             }
         )

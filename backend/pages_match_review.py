@@ -30,6 +30,29 @@ router = APIRouter()
 # you decide", both are rows of the same psn_review_candidates table, and having
 # one on Tools and the other buried in the config page was the scattered flow
 # (#157). Under /tools, not /library — the nav highlights by path prefix.
+# Per-queue sort options. Trophy progress is the discriminator for cross-play
+# rows (two Crimsonland sets differ only by it); playtime is the one for
+# played-only, where "did I actually play this" is the whole question.
+_PSN_SORTS = {
+    "cross_play": [("name", "Title"), ("progress", "Trophy progress"), ("platforms", "Platform count")],
+    "played_only": [("name", "Title"), ("playtime", "Playtime"), ("recent", "Last played")],
+}
+
+
+def _sort_review_rows(rows: list[dict], sort: str, kind: str) -> list[dict]:
+    """Sort a review queue. Unknown keys fall back to title, so a stale URL
+    can't produce an arbitrarily ordered page."""
+    if sort == "progress":
+        return sorted(rows, key=lambda r: (-(r.get("trophy_progress") or 0), (r["name"] or "").casefold()))
+    if sort == "platforms":
+        return sorted(rows, key=lambda r: (-len(r.get("options") or []), (r["name"] or "").casefold()))
+    if sort == "playtime":
+        return sorted(rows, key=lambda r: (-(r.get("minutes") or 0), (r["name"] or "").casefold()))
+    if sort == "recent":
+        return sorted(rows, key=lambda r: (r.get("last_played") or "", (r["name"] or "").casefold()), reverse=True)
+    return sorted(rows, key=lambda r: ((r["name"] or "").casefold(), r.get("set_index", 0)))
+
+
 _PSN_REVIEW_KINDS = ("cross_play", "played_only")
 
 
@@ -39,6 +62,8 @@ def psn_review_page(
     kind: str = Query("cross_play"),
     view: str = Query("list"),
     platform: str = Query(""),
+    q: str = Query(""),
+    sort: str = Query("name"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -62,6 +87,10 @@ def psn_review_page(
     review_platforms = sorted({o["platform"] for r in cross_rows for o in r["options"]})
     if kind == "cross_play" and platform:
         rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
+    if q:
+        needle = q.casefold()
+        rows = [r for r in rows if needle in (r["name"] or "").casefold()]
+    rows = _sort_review_rows(rows, sort, kind)
 
     ctx = {
         "current_user": current_user,
@@ -71,11 +100,17 @@ def psn_review_page(
         "counts": counts,
         "view": view,
         "platform": platform,
+        "q": q,
+        "sort": sort,
+        "sorts": _PSN_SORTS[kind],
         "has_snapshot": psn.has_synced(db, current_user.id),
         "review_platforms": review_platforms,
     }
     if request.headers.get("HX-Request"):
-        return templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context=ctx)
+        # oob: the sort select is outside the swap target and its options are
+        # per-queue, so it has to ride along or a tab switch leaves the other
+        # queue's options in place.
+        return templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context={**ctx, "oob": True})
     return templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
 
 

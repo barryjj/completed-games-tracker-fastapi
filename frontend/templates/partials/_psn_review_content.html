@@ -1,3 +1,5 @@
+{# The sort select sits outside this swap target, so it rides along OOB. #}
+{% if oob %}{% include "partials/_psn_sort_select.html" %}{% endif %}
 {# The review body — one queue and one view at a time, server-rendered.
    Swapped wholesale by the tab buttons, the view toggle and the filter. #}
 {% if not rows %}

@@ -39,7 +39,7 @@
       hx-target="#psn-review-content"
       hx-swap="innerHTML"
       hx-push-url="true"
-      hx-trigger="submit">
+      hx-trigger="submit, input changed delay:300ms from:#psn-search">
   <input type="hidden" name="view" id="psn-view-field" value="{{ view }}">
   <input type="hidden" name="kind" id="psn-kind-field" value="{{ kind }}">
   <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
@@ -58,6 +58,11 @@
       <option value="{{ p }}"{% if p == platform %} selected{% endif %}>{{ p }}</option>
       {% endfor %}
     </select>
+    <input id="psn-search" name="q" type="search" class="form-control form-control-sm"
+           placeholder="Search title&hellip;" style="max-width:220px" value="{{ q }}" autocomplete="off">
+    {# Sort options differ per queue: trophy progress is what tells two sets of
+       the same game apart, playtime is what matters for played-only. #}
+    {% include "partials/_psn_sort_select.html" %}
   </div>
 </form>
 
@@ -118,6 +123,11 @@ window.psnSetKind = function(kind) {
   // A platform filter from the other tab would silently empty this one.
   var sel = document.querySelector('#psn-review-filters select[name="platform"]');
   if (sel) sel.value = '';
+  var search = document.getElementById('psn-search');
+  if (search) search.value = '';
+  // Sort keys are per-queue ("progress" means nothing on played-only).
+  var sortSel = document.querySelector('#psn-review-filters select[name="sort"]');
+  if (sortSel) sortSel.value = 'name';
   htmx.trigger('#psn-review-filters', 'submit');
 };
 

@@ -1,0 +1,11 @@
+{# Sort options are per-queue, and this select lives OUTSIDE the swapped
+   content — so the tab switch re-renders it out-of-band rather than leaving the
+   previous queue's options behind ("Trophy progress" on the played-only tab).
+   hx-swap-oob is set only on the partial responses, never the full page. #}
+<select class="form-select form-select-sm" name="sort" id="psn-sort" style="width:auto;"
+        {% if oob %}hx-swap-oob="true"{% endif %}
+        onchange="htmx.trigger('#psn-review-filters', 'submit')" title="Sort">
+  {% for value, label in sorts %}
+  <option value="{{ value }}"{% if value == sort %} selected{% endif %}>{{ label }}</option>
+  {% endfor %}
+</select>
