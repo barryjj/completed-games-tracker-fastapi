@@ -838,6 +838,15 @@ def _load_cross_buy() -> dict:
         _logger.warning("PSN cross-buy reference unreadable at %s — proceeding with no known exceptions", _CROSS_BUY_PATH)
         _cross_buy_cache = index
         return index
+    # Bulk confirmations first, so an explicit `titles` entry (which can carry
+    # cross_buy=false) overwrites rather than being overwritten.
+    for title in (raw.get("cross_buy_confirmed") or {}).get("titles") or []:
+        index["by_title"].append(
+            (
+                titles.normalize_for_match(title),
+                {"title": title, "shared_trophies": None, "cross_buy": True, "notes": "", "restricts": False},
+            )
+        )
     for row in raw.get("titles") or []:
         entry = {
             "title": row.get("title", ""),
@@ -845,10 +854,13 @@ def _load_cross_buy() -> dict:
             "cross_buy": row.get("cross_buy"),
             "notes": row.get("notes", ""),
         }
-        # Either axis being false breaks the offer-everything default: separate
-        # lists mean this set covers one platform, separate purchases mean
-        # owning one says nothing about the rest.
-        entry["restricts"] = entry["shared_trophies"] is False or entry["cross_buy"] is False
+        # ONLY cross_buy=false restricts. Ownership is the criterion for putting
+        # a row in the library, and separate trophy lists don't make you own the
+        # game less — Axiom Verge and Bastion have per-platform lists AND
+        # cross-buy, so you own both copies and both belong. shared_trophies is
+        # kept as information (it decides which entry the trophy data actually
+        # describes, for #136) but must not suppress an entry.
+        entry["restricts"] = entry["cross_buy"] is False
         for npcomm in row.get("npcomm") or []:
             index["by_npcomm"][npcomm] = entry
         if entry["title"]:
@@ -887,10 +899,18 @@ def cross_buy_exception(item: dict) -> dict | None:
     if not name:
         return None
     key = titles.normalize_for_match(name)
+    # Exact beats fuzzy, and an explicit entry beats a bulk confirmation — a
+    # curated cross_buy=false must never lose to the confirmed-cross-buy list.
+    best = None
     for ref_key, entry in index["by_title"]:
-        if titles.titles_match(key, ref_key):
+        tier = titles.titles_match(key, ref_key)
+        if not tier:
+            continue
+        if entry["notes"] or entry["cross_buy"] is False:
             return entry
-    return None
+        if best is None or tier == "exact":
+            best = entry
+    return best
 
 
 def platform_candidates(item: dict) -> list[str]:
@@ -1406,7 +1426,7 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
             # platform string. Without it a bought-on-PS4 row pre-ticks nothing.
             bought = purchased_platform(item)
             default = [p for p in options if minutes.get(p) or p == bought]
-            why = "Separate trophy list per platform" if exception["shared_trophies"] is False else "Sold separately per platform"
+            why = "Sold separately per platform"
             reason = f"{why} — {exception['notes']}" if exception["notes"] else f"{why} — tick only what you own"
 
         earned = item.get("earnedTrophies") or {}

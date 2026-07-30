@@ -2125,14 +2125,18 @@ def test_cross_buy_reference_restricts_defaults_on_both_axes(db_session, monkeyp
     _seed_review(db_session, user, [row("Split Lists"), row("Paid Twice"), row("Real Cross Buy")])
     by_name = {r["name"]: r for r in psn.import_review_rows(db_session, user.id)}
 
-    # Both restricted rows offer every platform but pre-tick none — no evidence.
-    for name in ("Split Lists", "Paid Twice"):
-        r = by_name[name]
-        assert [o["platform"] for o in r["options"]] == ["PS4", "PSVITA"]
-        assert [o["platform"] for o in r["options"] if o["selected"]] == []
-        assert r["restricted"] is True
-    assert "Separate trophy list" in by_name["Split Lists"]["reason"]
-    assert "Sold separately" in by_name["Paid Twice"]["reason"]
+    # Only the not-cross-buy row restricts. Separate trophy lists say nothing
+    # about OWNERSHIP — Axiom Verge and Bastion have per-platform lists AND
+    # cross-buy, so both copies are genuinely owned and both belong.
+    paid = by_name["Paid Twice"]
+    assert [o["platform"] for o in paid["options"]] == ["PS4", "PSVITA"]
+    assert [o["platform"] for o in paid["options"] if o["selected"]] == []
+    assert paid["restricted"] is True
+    assert "Sold separately" in paid["reason"]
+
+    split = by_name["Split Lists"]
+    assert split["restricted"] is False
+    assert all(o["selected"] for o in split["options"])
 
     # A confirmed cross-buy title changes nothing — that's already the default.
     assert all(o["selected"] for o in by_name["Real Cross Buy"]["options"])
@@ -2146,7 +2150,7 @@ def test_restricted_row_still_credits_the_platform_you_bought(db_session, monkey
     import json as _j
 
     ref = tmp_path / "psn_cross_buy.json"
-    ref.write_text(_j.dumps({"titles": [{"title": "Split Lists", "shared_trophies": False, "cross_buy": None, "notes": ""}]}))
+    ref.write_text(_j.dumps({"titles": [{"title": "Split Lists", "shared_trophies": True, "cross_buy": False, "notes": ""}]}))
     monkeypatch.setattr(psn, "_CROSS_BUY_PATH", str(ref))
     monkeypatch.setattr(psn, "_cross_buy_cache", None)
 
@@ -2192,7 +2196,48 @@ def test_shipped_cross_buy_reference_is_valid_and_ignores_unverified():
     index = psn._load_cross_buy()
     assert index["by_title"], "shipped reference should carry entries"
     assert psn.cross_buy_exception({"displayName": "Dragon's Crown"})["cross_buy"] is False
-    # Parked claims must not take effect.
-    assert psn.cross_buy_exception({"displayName": "Terraria"}) is None
-    assert psn.cross_buy_exception({"displayName": "Sly Cooper: Thieves in Time"}) is None
+    # Parked claims must never RESTRICT. Some are separately confirmed as
+    # cross-buy by the bulk list (Sly Cooper), which is fine — that only
+    # reinforces the permissive default. What's parked is the unverified
+    # *restriction* (its claimed one-way asymmetry), and that must not apply.
+    for name in ("Terraria", "Sly Cooper: Thieves in Time", "Volume", "Helldivers"):
+        hit = psn.cross_buy_exception({"displayName": name})
+        assert hit is None or hit["restricts"] is False, name
+    psn._cross_buy_cache = None
+
+
+def test_curated_exception_beats_the_bulk_cross_buy_list(db_session, monkeypatch, tmp_path):
+    """The confirmed-cross-buy list is bulk reference data; a curated entry is a
+    deliberate correction. If both match, the correction has to win — otherwise
+    a title appearing on both lists would silently lose its restriction."""
+    import json as _j
+
+    ref = tmp_path / "psn_cross_buy.json"
+    ref.write_text(
+        _j.dumps(
+            {
+                "titles": [{"title": "Contested Game", "shared_trophies": True, "cross_buy": False, "notes": "Sold separately."}],
+                "cross_buy_confirmed": {"titles": ["Contested Game", "Plain Game"]},
+            }
+        )
+    )
+    monkeypatch.setattr(psn, "_CROSS_BUY_PATH", str(ref))
+    monkeypatch.setattr(psn, "_cross_buy_cache", None)
+
+    contested = psn.cross_buy_exception({"displayName": "Contested Game"})
+    assert contested["cross_buy"] is False and contested["restricts"] is True
+    plain = psn.cross_buy_exception({"displayName": "Plain Game"})
+    assert plain["cross_buy"] is True and plain["restricts"] is False
+    psn._cross_buy_cache = None
+
+
+def test_shipped_reference_confirms_the_bulk_list_without_restricting():
+    """A confirmed cross-buy title reinforces the default; it must never
+    restrict, since restricting is what costs the user an entry they own."""
+    psn._cross_buy_cache = None
+    hit = psn.cross_buy_exception({"displayName": "Spelunky"})
+    assert hit["cross_buy"] is True
+    assert hit["restricts"] is False
+    # ...while a curated no-cross-buy title still restricts.
+    assert psn.cross_buy_exception({"displayName": "Dragon's Crown"})["restricts"] is True
     psn._cross_buy_cache = None
