@@ -863,8 +863,11 @@ def _load_cross_buy() -> dict:
         entry["restricts"] = entry["cross_buy"] is False
         for npcomm in row.get("npcomm") or []:
             index["by_npcomm"][npcomm] = entry
-        if entry["title"]:
-            index["by_title"].append((titles.normalize_for_match(entry["title"]), entry))
+        # `aliases` exist because one product ships under several names across
+        # regions and re-releases (The Sly Trilogy / The Sly Collection).
+        for name in [entry["title"], *(row.get("aliases") or [])]:
+            if name:
+                index["by_title"].append((titles.normalize_for_match(name), entry))
     _cross_buy_cache = index
     return index
 

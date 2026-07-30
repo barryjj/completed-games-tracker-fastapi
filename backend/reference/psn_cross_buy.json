@@ -37,7 +37,14 @@
     "SOURCES: vitaplayer.co.uk/playstation-vita-ps3-ps4-cross-buy-guide (382 titles, EU list,",
     "as of 2024-07-07). Cross-buy was a publisher decision far more often than a regional",
     "one, so the EU list holds for the Americas in the large majority of cases. It only",
-    "ever REINFORCES the permissive default; the inverse inference is NOT safe and unused."
+    "ever REINFORCES the permissive default; the inverse inference is NOT safe and unused.",
+    "",
+    "REGION. Cross-buy was usually a publisher decision, so the EU and NA lists agree for",
+    "the large majority. The known exceptions are Sony's late PS2-collection Vita ports —",
+    "the Ratchet & Clank, Jak and Daxter and Sly trilogies — which were cross-buy in EU and",
+    "not in North America. Those carry cross_buy=false here, which beats the bulk list.",
+    "Entries whose behaviour differs by region say REGIONAL in their notes; this file is",
+    "currently written from a North American perspective."
   ],
   "titles": [
     {
@@ -303,6 +310,51 @@
       "shared_trophies": true,
       "cross_buy": false,
       "notes": "Single shared list, separate purchase per platform."
+    },
+    {
+      "title": "The Ratchet & Clank Trilogy",
+      "aliases": [
+        "Ratchet & Clank Collection",
+        "The Ratchet and Clank Trilogy",
+        "Ratchet and Clank Collection"
+      ],
+      "platforms": [
+        "PS3",
+        "PS Vita"
+      ],
+      "shared_trophies": true,
+      "cross_buy": false,
+      "notes": "REGIONAL: the Vita port was cross-buy in EU but NOT in North America. Does not apply to Ratchet & Clank: Full Frontal Assault / Q-Force, which was cross-buy in both."
+    },
+    {
+      "title": "The Jak and Daxter Trilogy",
+      "aliases": [
+        "Jak and Daxter Collection",
+        "The Jak & Daxter Trilogy",
+        "Jak & Daxter Collection"
+      ],
+      "platforms": [
+        "PS3",
+        "PS Vita"
+      ],
+      "shared_trophies": true,
+      "cross_buy": false,
+      "notes": "REGIONAL: the Vita port was cross-buy in EU but NOT in North America."
+    },
+    {
+      "title": "The Sly Trilogy",
+      "aliases": [
+        "The Sly Collection",
+        "Sly Cooper Collection",
+        "The Sly Cooper Collection"
+      ],
+      "platforms": [
+        "PS3",
+        "PS Vita"
+      ],
+      "shared_trophies": true,
+      "cross_buy": false,
+      "notes": "REGIONAL: the Vita port was cross-buy in EU but NOT in North America. Does not apply to Sly Cooper: Thieves in Time, a separate 2013 game that WAS cross-buy in both."
     }
   ],
   "_unverified": {

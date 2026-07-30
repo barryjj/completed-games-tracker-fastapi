@@ -2241,3 +2241,30 @@ def test_shipped_reference_confirms_the_bulk_list_without_restricting():
     # ...while a curated no-cross-buy title still restricts.
     assert psn.cross_buy_exception({"displayName": "Dragon's Crown"})["restricts"] is True
     psn._cross_buy_cache = None
+
+
+def test_regional_overrides_beat_the_eu_bulk_list_without_catching_siblings():
+    """Sony's late PS2-collection Vita ports were cross-buy in EU and not in
+    North America — the one place the two source lists genuinely disagree. The
+    curated cross_buy=false has to beat the EU bulk confirmation.
+
+    And it must not bleed onto the similarly-named separate games: Thieves in
+    Time and Full Frontal Assault were cross-buy in both regions."""
+    psn._cross_buy_cache = None
+    for name in (
+        "The Sly Trilogy",
+        "The Sly Collection",
+        "The Jak and Daxter Trilogy",
+        "Jak and Daxter Collection",
+        "The Ratchet & Clank Trilogy",
+        "Ratchet & Clank Collection",
+    ):
+        hit = psn.cross_buy_exception({"displayName": name})
+        assert hit is not None, name
+        assert hit["cross_buy"] is False and hit["restricts"] is True, name
+        assert "REGIONAL" in hit["notes"], name
+
+    for name in ("Sly Cooper: Thieves in Time", "Ratchet & Clank: Full Frontal Assault"):
+        hit = psn.cross_buy_exception({"displayName": name})
+        assert hit["cross_buy"] is True and hit["restricts"] is False, name
+    psn._cross_buy_cache = None
