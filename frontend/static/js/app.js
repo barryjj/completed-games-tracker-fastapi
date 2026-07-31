@@ -202,11 +202,13 @@ document.addEventListener('htmx:beforeSwap', function(evt) {
 function cgtToast(message, type) {
   var container = document.getElementById('toast-container');
   if (!container) return;
-  var kind = type === 'error' || type === 'danger' ? 'danger' : 'success';
+  var KINDS = {error: 'danger', danger: 'danger', warning: 'warning', warn: 'warning', info: 'info'};
+  var kind = KINDS[type] || 'success';
   var el = document.createElement('div');
   el.className = 'toast toast-' + kind + ' align-items-center show';
-  el.setAttribute('role', kind === 'danger' ? 'alert' : 'status');
-  el.setAttribute('aria-live', kind === 'danger' ? 'assertive' : 'polite');
+  var urgent = kind === 'danger' || kind === 'warning';
+  el.setAttribute('role', urgent ? 'alert' : 'status');
+  el.setAttribute('aria-live', urgent ? 'assertive' : 'polite');
   el.setAttribute('aria-atomic', 'true');
   el.innerHTML =
     '<div class="d-flex">' +

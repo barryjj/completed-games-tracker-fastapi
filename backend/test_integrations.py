@@ -1980,7 +1980,8 @@ def test_sync_kickoff_reports_as_a_toast(client, db_session):
     r = client.post("/integrations/psn/sync")
     assert r.status_code == 409
     assert b'hx-swap-oob="beforeend:#toast-container"' in r.content
-    assert b"toast-danger" in r.content
+    # Warning, not danger: nothing broke, it just didn't happen.
+    assert b"toast-warning" in r.content
     assert b"Steam sync is already running" in r.content
     jobs.clear_all()
 
@@ -1993,3 +1994,57 @@ def test_htmx_is_told_to_deliver_those_error_toasts():
     seg = js[js.index("htmx:beforeSwap") : js.index("function cgtToast(")]
     assert "409" in seg and "422" in seg
     assert "shouldSwap = true" in seg
+
+
+def test_kickoff_and_completion_use_distinct_toast_kinds(client, db_session):
+    """Starting a sync is information, not success — nothing has finished yet.
+    Being turned away is a warning, not a failure."""
+    from backend import jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    jobs.clear_all()
+
+    started = client.post("/integrations/psn/sync")
+    assert started.status_code == 200
+    assert b"toast-info" in started.content
+    assert b"toast-success" not in started.content
+
+    rejected = client.post("/integrations/psn/sync")
+    assert rejected.status_code == 409
+    assert b"toast-warning" in rejected.content
+    jobs.clear_all()
+
+
+def test_unhandled_job_kind_never_claims_to_be_steam(db_session):
+    """The fallback used to read "Steam job complete" for ANY unmapped kind, so
+    psn_review_art — chained off a PSN sync — announced itself as a finished
+    Steam sync with Steam totals attached."""
+    from backend import integrations, models
+
+    user = db_session.query(models.User).first() or models.User(name="f", username="f", password_hash="x", api_token="ftok")
+    if user.id is None:
+        db_session.add(user)
+        db_session.commit()
+
+    msg = integrations._format_sync_result(db_session, user, "psn_review_art", {"filled": 3, "no_candidate": 1})
+    assert msg.startswith("PSN review artwork complete")
+    assert "Steam" not in msg
+
+    unknown = integrations._format_sync_result(db_session, user, "brand_new_kind", {})
+    assert "Steam" not in unknown
+    assert "complete" in unknown
+
+
+def test_js_toast_supports_the_same_kinds_as_the_server():
+    """Both builders must agree, or a JS-raised warning silently renders as a
+    success — which is how the transparent-green toast happened."""
+    js = open("frontend/static/js/app.js").read()
+    fn = js[js.index("function cgtToast(") : js.index("function _initToast(")]
+    for kind in ("danger", "warning", "info"):
+        assert f"'{kind}'" in fn, kind
+    css = open("frontend/static/css/theme.css").read()
+    for kind in ("success", "danger", "warning", "info"):
+        assert f".toast.toast-{kind}" in css, kind

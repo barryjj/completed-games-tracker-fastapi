@@ -555,6 +555,9 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if result.get("no_product"):
             lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
         return "\n".join(lines)
+    if kind == "psn_review_art":
+        return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
+
     if kind == "psn_sync":
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
         if result["updated"]:
@@ -604,7 +607,12 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         added = result.get("dlc_added", 0)
         delta = f"+{added:,} DLC" if added else "No new DLC"
     else:
-        return f"Steam job complete\n{totals_line}"
+        # Never assert a service the job didn't come from. This fallback used to
+        # say "Steam job complete" for ANY unhandled kind, so psn_review_art —
+        # chained off a PSN sync — announced itself as a finished Steam sync,
+        # complete with Steam totals.
+        spec = _STEAM_KINDS.get(kind) or {}
+        return f"{spec.get('job_label') or spec.get('label') or kind} complete"
 
     return f"{header}\n{delta}\n{totals_line}"
 
@@ -722,11 +730,11 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
     active = jobs.active_jobs_for(current_user.id)
     if active:
         running = active[0].label or "A sync"
-        return _kickoff_toast(request, f"{running} is already running — wait for it to finish.", kind="danger", status=409)
+        return _kickoff_toast(request, f"{running} is already running — try again once it finishes.", kind="warning", status=409)
     job_label = spec.get("job_label") or f"Steam {spec['label'].lower()}"
     job = jobs.create(user_id=current_user.id, kind=kind, label=job_label)
     asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
-    return _kickoff_toast(request, spec["started"], kind="success")
+    return _kickoff_toast(request, spec["started"], kind="info")
 
 
 def _credential_error(current_user: models.User, kind: str) -> str | None:
