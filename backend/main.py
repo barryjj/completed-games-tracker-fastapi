@@ -99,9 +99,17 @@ templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 
 def _compute_static_version() -> str:
-    """Hash of the mtimes of files under static/ — used as a cache-bust query
-    string on <link> / <script> tags so browsers always fetch the freshest CSS
-    and JS without us having to bump a manual version number on every change."""
+    """Newest mtime under static/ — the cache-bust query string on <link> and
+    <script> tags, so browsers fetch the freshest CSS and JS without a manual
+    version bump.
+
+    Computed PER RENDER, not once at import. `uvicorn --reload` watches .py
+    only, so a CSS- or JS-only edit produced no restart, no new version, and a
+    browser that correctly kept serving the old file — which cost this project
+    three separate bug hunts (stale app.js, a stale review queue, and an
+    unstyled toast) for changes that had already shipped. Six files and ~0.07 ms
+    per call; there was never a reason to cache it.
+    """
     try:
         latest = max(os.path.getmtime(os.path.join(root, f)) for root, _, files in os.walk(STATIC_DIR) for f in files)
         return str(int(latest))
@@ -109,6 +117,8 @@ def _compute_static_version() -> str:
         return "dev"
 
 
+# Kept as a module attribute for callers that want a snapshot; templates use the
+# callable below so they always see the current one.
 STATIC_VERSION = _compute_static_version()
 
 
@@ -143,6 +153,25 @@ async def requires_login_handler(request: Request, exc: RequiresLoginException):
     return RedirectResponse("/login", status_code=302)
 
 
+@app.middleware("http")
+async def _no_store_html(request, call_next):
+    """Never let a browser cache an HTML response.
+
+    The asset version lives in the PAGE (<link ...?v=...>), so a cached page
+    pins a stale stylesheet no matter how current the file on disk is — the
+    WebView never even asks for the new one. That is the mechanism behind every
+    "your fix didn't work" in this project so far, and per-route headers didn't
+    catch it: exactly one of nine pages had them.
+
+    HTML only. /static stays hard-cacheable, which is the whole point of
+    versioning it — a changed file gets a new URL.
+    """
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
 # Import and register the pages router after app is created to avoid circular imports
 from . import integrations, pages, pages_account, pages_completions, pages_import, pages_library, pages_match_review  # noqa: E402
 
@@ -151,7 +180,9 @@ from . import integrations, pages, pages_account, pages_completions, pages_impor
 # The page modules all share pages_common's instance, so `pages.templates` covers
 # pages_match_review too.
 for _t in (templates, pages.templates, integrations.templates):
-    _t.env.globals["static_version"] = STATIC_VERSION
+    # A callable, so every render re-stats static/ rather than baking in the
+    # value from process start. base.html calls it: {{ static_version() }}.
+    _t.env.globals["static_version"] = _compute_static_version
 app.include_router(pages.router)
 app.include_router(pages_match_review.router)
 app.include_router(pages_import.router)

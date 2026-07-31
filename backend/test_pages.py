@@ -2457,3 +2457,54 @@ def test_valid_filter_cookie_is_still_honoured(client, db_session):
     client.cookies.delete("cgt-import-create_new-platform")
     assert "Steam Game" in body
     assert "Switch Game" not in body
+
+
+def test_html_is_never_cached_but_static_still_is(client, db_session):
+    """The asset version lives in the PAGE, so a cached page pins a stale
+    stylesheet and the browser never even asks for the new one — the mechanism
+    behind three separate false bug hunts in this project. Per-route headers
+    didn't catch it: one page of nine had them."""
+    _signup_and_login(client)
+    for path in ("/", "/tools", "/library", "/completions", "/tools/psn-review", "/tools/import/review", "/tools/match-review"):
+        r = client.get(path)
+        assert r.headers.get("cache-control") == "no-store", path
+
+    # HTMX partials are dynamic data too.
+    partial = client.get("/tools/psn-review", headers={"HX-Request": "true"})
+    assert partial.headers.get("cache-control") == "no-store"
+
+    # /static stays cacheable — versioning it is the whole point.
+    css = client.get("/static/css/theme.css")
+    assert css.status_code == 200
+    assert css.headers.get("cache-control") != "no-store"
+
+
+def test_static_version_tracks_edits_without_a_restart(tmp_path, monkeypatch):
+    """uvicorn --reload watches .py only, so a CSS-only edit produced no
+    restart, no new version, and a browser correctly serving the old file.
+    Recomputing per render is ~0.07ms over six files."""
+    import os
+    import time
+
+    from backend import main
+
+    static = tmp_path / "static"
+    (static / "css").mkdir(parents=True)
+    asset = static / "css" / "theme.css"
+    asset.write_text("a{}")
+    monkeypatch.setattr(main, "STATIC_DIR", str(static))
+
+    first = main._compute_static_version()
+    time.sleep(0.01)
+    asset.write_text("b{}")
+    os.utime(asset, (time.time() + 5, time.time() + 5))
+
+    assert main._compute_static_version() != first, "a CSS edit must change the version"
+
+
+def test_base_template_calls_the_version_rather_than_baking_it_in():
+    """{{ static_version }} on a callable renders its repr, silently producing a
+    constant cache-bust — guard the call parentheses."""
+    html = open("frontend/templates/base.html").read()
+    assert "?v={{ static_version }}" not in html
+    assert html.count("?v={{ static_version() }}") == 5
