@@ -10,12 +10,15 @@
      hx-trigger="every 10s"
      hx-target="#enrichment-status"
      hx-swap="outerHTML">
-  <div class="d-flex align-items-center gap-2 mb-1">
+  {# Label first, then the bar: the caption says what is happening and the bar
+     quantifies it, so reading top-to-bottom asks the question before answering
+     it. Matches the job indicators, which lead with their label too. #}
+  <small class="text-secondary">Enriching metadata&hellip;</small>
+  <div class="d-flex align-items-center gap-2 mt-1">
     <div class="progress flex-grow-1" style="height: 4px;">
       <div class="progress-bar" role="progressbar" style="width: {{ pct }}%; background-color: var(--ctp-mauve);"></div>
     </div>
     <small class="text-secondary text-nowrap">{{ "{:,}".format(done) }} / {{ "{:,}".format(total) }}</small>
   </div>
-  <small class="text-secondary">Enriching metadata&hellip;</small>
 </div>
 {% endif %}
