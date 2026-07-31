@@ -33,7 +33,7 @@ async def _enrichment_worker():
     await asyncio.sleep(15)  # let the app finish starting up first
     while True:
         try:
-            if worker_state.enrichment_paused:
+            if worker_state.is_paused():
                 await asyncio.sleep(1)
                 continue
             db = SessionLocal()
@@ -71,7 +71,7 @@ async def _artwork_verification_worker():
     await asyncio.sleep(30)  # let enrichment worker start first
     while True:
         try:
-            if worker_state.enrichment_paused:
+            if worker_state.is_paused():
                 await asyncio.sleep(1)
                 continue
             db = SessionLocal()

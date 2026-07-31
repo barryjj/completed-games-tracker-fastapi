@@ -2439,3 +2439,10 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
    same mechanic as import review's bulk mode. */
 #psn-review-table .psn-bulk-cell { display: none; }
 #psn-review-table.psn-select-mode .psn-bulk-cell { display: table-cell; width: 2.2rem; }
+
+/* Progress indicator inside a tool card. Reserves its own height so a card is
+   the same size running or idle — otherwise starting a sync grew the card and
+   shoved the rest of the grid around. */
+[id^="sync-indicator-"] {
+  min-height: 1.5rem;
+}

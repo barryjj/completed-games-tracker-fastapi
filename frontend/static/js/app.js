@@ -185,6 +185,20 @@ document.addEventListener('htmx:afterSettle', function(e) {
 // background, border, the 4px left accent — hangs off .toast-success /
 // .toast-danger, so a toast built without those classes renders with no
 // background at all: the transparent green one that didn't match anything.
+// htmx drops non-2xx responses on the floor by default, including their OOB
+// content. Sync kickoff answers 409 ("already running") and 422 (missing
+// credentials) as OOB toasts, so without this the Tools cards' Sync buttons —
+// which post with hx-swap="none" and no target — silently did nothing when
+// rejected. Allow these two to swap so the toast is delivered; everything else
+// keeps htmx's default error behaviour.
+document.addEventListener('htmx:beforeSwap', function(evt) {
+  var status = evt.detail.xhr && evt.detail.xhr.status;
+  if (status === 409 || status === 422) {
+    evt.detail.shouldSwap = true;
+    evt.detail.isError = false;
+  }
+});
+
 function cgtToast(message, type) {
   var container = document.getElementById('toast-container');
   if (!container) return;

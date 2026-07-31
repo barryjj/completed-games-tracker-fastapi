@@ -1927,3 +1927,69 @@ def test_sgdb_fill_all_endpoint_requires_key(client, db_session, monkeypatch):
     db_session.commit()
     r = client.post("/integrations/steamgriddb/fill-all")
     assert r.status_code == 200
+
+
+def test_enrichment_pause_is_refcounted_not_a_flag(monkeypatch):
+    """A PSN sync chains follow-up jobs that deliberately overlap. With a plain
+    bool, the FIRST to finish resumed the enrichment and artwork-verification
+    workers while the others were still writing — three writers on one SQLite
+    connection, which is the contention behind the post-import freeze."""
+    from backend import worker_state
+
+    monkeypatch.setattr(worker_state, "_pause_depth", 0)
+    assert worker_state.is_paused() is False
+
+    worker_state.pause_enrichment()  # sync starts
+    worker_state.pause_enrichment()  # chained artwork fill starts
+    assert worker_state.is_paused() is True
+
+    worker_state.resume_enrichment()  # the fast one finishes first
+    assert worker_state.is_paused() is True, "still paused while the other job writes"
+
+    worker_state.resume_enrichment()  # last one finishes
+    assert worker_state.is_paused() is False
+
+
+def test_resume_cannot_drive_the_counter_negative(monkeypatch):
+    """An unbalanced resume must not leave the worker permanently paused."""
+    from backend import worker_state
+
+    monkeypatch.setattr(worker_state, "_pause_depth", 0)
+    worker_state.resume_enrichment()
+    worker_state.resume_enrichment()
+    worker_state.pause_enrichment()
+    assert worker_state.is_paused() is True
+    worker_state.resume_enrichment()
+    assert worker_state.is_paused() is False
+
+
+def test_sync_kickoff_reports_as_a_toast(client, db_session):
+    """The Tools cards post with hx-swap="none" and no target, so an inline
+    flash body had nowhere to land — pressing Sync during another sync did
+    nothing visible. Kickoff answers with an OOB toast instead."""
+    from backend import jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    jobs.clear_all()
+
+    # Something already running -> 409, and the reason arrives as a toast.
+    jobs.update(jobs.create(user_id=user.id, kind="steam_sync_full", label="Steam sync").id, status=jobs.JobStatus.RUNNING)
+    r = client.post("/integrations/psn/sync")
+    assert r.status_code == 409
+    assert b'hx-swap-oob="beforeend:#toast-container"' in r.content
+    assert b"toast-danger" in r.content
+    assert b"Steam sync is already running" in r.content
+    jobs.clear_all()
+
+
+def test_htmx_is_told_to_deliver_those_error_toasts():
+    """htmx drops non-2xx responses by default, OOB content included — so the
+    toast above would never render without an explicit beforeSwap allowance."""
+    js = open("frontend/static/js/app.js").read()
+    assert "htmx:beforeSwap" in js
+    seg = js[js.index("htmx:beforeSwap") : js.index("function cgtToast(")]
+    assert "409" in seg and "422" in seg
+    assert "shouldSwap = true" in seg

@@ -621,7 +621,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         return
 
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
-    worker_state.enrichment_paused = True
+    worker_state.pause_enrichment()
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -693,8 +693,24 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         _logger.exception("Job %s (%s) failed", job_id, kind)
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
-        worker_state.enrichment_paused = False
+        worker_state.resume_enrichment()
         db.close()
+
+
+def _kickoff_toast(request: Request, body: str, kind: str = "success", status: int = 200):
+    """Report a sync kickoff as an OOB toast, the way completion already is.
+
+    The Tools cards post with hx-swap="none" and no target, so an inline flash
+    body had nowhere to land — pressing Sync during another sync did nothing
+    visible at all. An OOB toast surfaces from any button regardless of target,
+    and makes start, rejection and completion all speak the same way.
+    """
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": kind, "body": body},
+        status_code=status,
+    )
 
 
 def _kick_off_sync(request: Request, current_user: models.User, kind: str):
@@ -702,28 +718,15 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
     spec = _STEAM_KINDS[kind]
     err = _credential_error(current_user, kind)
     if err:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": err},
-            status_code=422,
-        )
+        return _kickoff_toast(request, err, kind="danger", status=422)
     active = jobs.active_jobs_for(current_user.id)
     if active:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": "A sync job is already running — please wait for it to finish."},
-            status_code=409,
-        )
+        running = active[0].label or "A sync"
+        return _kickoff_toast(request, f"{running} is already running — wait for it to finish.", kind="danger", status=409)
     job_label = spec.get("job_label") or f"Steam {spec['label'].lower()}"
     job = jobs.create(user_id=current_user.id, kind=kind, label=job_label)
     asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/integrations_flash.html",
-        context={"message": spec["started"]},
-    )
+    return _kickoff_toast(request, spec["started"], kind="success")
 
 
 def _credential_error(current_user: models.User, kind: str) -> str | None:
@@ -1485,7 +1488,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | 
     # duration. Otherwise three background writers (this fill, Steam metadata
     # enrichment, URL verification) serialize against the one SQLite writer and
     # the foreground app crawls — the post-PSN-import freeze.
-    worker_state.enrichment_paused = True
+    worker_state.pause_enrichment()
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -1512,7 +1515,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | 
         _logger.exception("SGDB fill-all job %s failed", job_id)
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
-        worker_state.enrichment_paused = False
+        worker_state.resume_enrichment()
         db.close()
 
 
