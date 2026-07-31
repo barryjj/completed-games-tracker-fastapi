@@ -1996,10 +1996,14 @@ def test_htmx_is_told_to_deliver_those_error_toasts():
     assert "shouldSwap = true" in seg
 
 
-def test_kickoff_and_completion_use_distinct_toast_kinds(client, db_session):
+def test_kickoff_and_completion_use_distinct_toast_kinds(client, db_session, monkeypatch):
     """Starting a sync is information, not success — nothing has finished yet.
-    Being turned away is a warning, not a failure."""
-    from backend import jobs, models
+    Being turned away is a warning, not a failure.
+
+    The kickoff is stubbed rather than really launched: a live background task
+    races the assertions (it can finish, or die on no network, before the second
+    request lands) and outlives the test database."""
+    from backend import integrations, jobs, models
 
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
@@ -2007,11 +2011,18 @@ def test_kickoff_and_completion_use_distinct_toast_kinds(client, db_session):
     db_session.commit()
     jobs.clear_all()
 
+    async def _noop(job_id, user_id, kind):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _noop)
+
     started = client.post("/integrations/psn/sync")
     assert started.status_code == 200
     assert b"toast-info" in started.content
     assert b"toast-success" not in started.content
 
+    # That job is still pending, so a second request is turned away.
+    jobs.update(jobs.active_jobs_for(user.id)[0].id, status=jobs.JobStatus.RUNNING)
     rejected = client.post("/integrations/psn/sync")
     assert rejected.status_code == 409
     assert b"toast-warning" in rejected.content
