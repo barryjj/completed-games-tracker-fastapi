@@ -705,6 +705,12 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         db.close()
 
 
+# Crawls: user-initiated, hit an external API, and two at once is genuinely
+# unwise. Everything else (artwork, store metadata, review art) is chained
+# enrichment that overlaps by design and must never block a crawl.
+_PRIMARY_SYNC_KINDS = frozenset({"steam_sync_full", "steam_sync_games", "steam_sync_dlc", "steam_refresh_catalog", "psn_sync"})
+
+
 def _kickoff_toast(request: Request, body: str, kind: str = "success", status: int = 200):
     """Report a sync kickoff as an OOB toast, the way completion already is.
 
@@ -727,9 +733,15 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
     err = _credential_error(current_user, kind)
     if err:
         return _kickoff_toast(request, err, kind="danger", status=422)
-    active = jobs.active_jobs_for(current_user.id)
-    if active:
-        running = active[0].label or "A sync"
+    # Only another CRAWL blocks a crawl. The follow-up jobs a sync chains —
+    # artwork fill, store metadata, review art — are designed to overlap and can
+    # run for many minutes (store metadata is rate-limited to ~1s per release),
+    # so counting them here meant a background trickle silently refused a button
+    # the user pressed. Refusing on those was also incoherent: the app runs
+    # three chained jobs at once but wouldn't let you start one.
+    blocking = [j for j in jobs.active_jobs_for(current_user.id) if j.kind in _PRIMARY_SYNC_KINDS]
+    if blocking:
+        running = blocking[0].label or "A sync"
         return _kickoff_toast(request, f"{running} is already running — try again once it finishes.", kind="warning", status=409)
     job_label = spec.get("job_label") or f"Steam {spec['label'].lower()}"
     job = jobs.create(user_id=current_user.id, kind=kind, label=job_label)

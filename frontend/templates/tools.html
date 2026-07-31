@@ -9,6 +9,11 @@
 
 {# Refetches itself when the job poller reports any finished job, so the
    sync/match/import/artwork numbers update without a manual refresh. #}
+{# Catch-all for job kinds with no card of their own — job_service() falls back
+   to "other" precisely so a new kind is never invisible. #}
+<div id="sync-indicator-other"></div>
+<div id="sync-indicator-import"></div>
+
 <div class="cgt-tool-grid" id="tools-cards"
      hx-get="/tools"
      hx-select="#tools-cards"
@@ -181,6 +186,9 @@
       Bulk artwork tools need a SteamGridDB API key — add one under Settings → Integrations.
       {% endif %}
     </div>
+    {# The artwork fill is chained off a PSN sync, so it starts without anyone
+       pressing anything — it has to be visible or it's a job you can't see. #}
+    <div id="sync-indicator-artwork"></div>
     <div class="cgt-tool-card__actions">
       <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">
         {% if current_user.steamgriddb_api_key %}Open artwork tools{% else %}Configure{% endif %}

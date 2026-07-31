@@ -2059,3 +2059,71 @@ def test_js_toast_supports_the_same_kinds_as_the_server():
     css = open("frontend/static/css/theme.css").read()
     for kind in ("success", "danger", "warning", "info"):
         assert f".toast.toast-{kind}" in css, kind
+
+
+def test_chained_enrichment_does_not_block_a_sync(client, db_session, monkeypatch):
+    """A PSN sync chains artwork, store metadata and review art. Store metadata
+    is rate-limited to ~1s per release, so on a real library that is many
+    minutes during which a Steam sync was simply refused — by a job the user
+    never started and, worse, couldn't see."""
+    from backend import integrations, jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    async def _noop(job_id, user_id, kind):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _noop)
+
+    for kind, label in (("sgdb_fill_all", "Artwork fill"), ("psn_store_refresh", "Store metadata"), ("psn_review_art", "Review artwork")):
+        jobs.clear_all()
+        jobs.update(jobs.create(user_id=user.id, kind=kind, label=label).id, status=jobs.JobStatus.RUNNING)
+        r = client.post("/integrations/psn/sync")
+        assert r.status_code == 200, f"{kind} should not block a crawl"
+    jobs.clear_all()
+
+
+def test_another_crawl_still_blocks(client, db_session, monkeypatch):
+    """Two crawls at once is the case the guard exists for."""
+    from backend import integrations, jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    async def _noop(job_id, user_id, kind):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _noop)
+    jobs.clear_all()
+    jobs.update(jobs.create(user_id=user.id, kind="steam_sync_full", label="Steam sync").id, status=jobs.JobStatus.RUNNING)
+    r = client.post("/integrations/psn/sync")
+    assert r.status_code == 409
+    assert b"Steam sync is already running" in r.content
+    jobs.clear_all()
+
+
+def test_every_job_service_has_somewhere_to_report(client, db_session):
+    """The poller emits one OOB target per service. A service with no landing
+    element on the page is a job that runs invisibly — which is how the chained
+    artwork fill ended up blocking a button with nothing on screen to explain
+    it."""
+    import re
+
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # Both cards must be in their connected branch — that's where the
+    # per-service indicators live, and it's the only state where those jobs run.
+    user.steam_id64, user.steam_api_key = "7656119", "k" * 32
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    poller = client.get("/integrations/jobs/poll").text
+    emitted = set(re.findall(r'id="sync-indicator-(\w+)"', poller))
+    tools = set(re.findall(r'id="sync-indicator-(\w+)"', client.get("/tools").text))
+    assert emitted <= tools, f"no landing element for: {sorted(emitted - tools)}"
