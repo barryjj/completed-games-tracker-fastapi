@@ -2212,7 +2212,7 @@ html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, 
 .cgt-thumb-sm--empty { background-color: var(--ctp-surface0); }
 
 /* Month bar strip (This-year Home widget): 12 columns, completions per
-   month in the goal accent (flamingo). One series, one hue; zero months
+   month in the goal accent (blue). One series, one hue; zero months
    show a faint stub (lighter step, same idea as an unfilled track), future
    months fainter still. Exact counts live in the column title tooltip. */
 .cgt-month-bars {
