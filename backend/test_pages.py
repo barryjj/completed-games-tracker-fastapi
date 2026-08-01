@@ -2593,3 +2593,16 @@ def test_home_pairs_the_short_widgets_into_one_column(client, db_session):
     # Tools keeps the plain uniform grid — this is a Home-only layout.
     tools = client.get("/tools").text
     assert "cgt-tool-grid--paired" not in tools
+
+
+def test_home_rows_share_one_hover_treatment():
+    """Home had three: a mauve tint on the list rows, an underline with no
+    background on the Needs-attention rows, and a flat surface fill on the
+    linked stats. Same page, same gesture, three answers."""
+    css = open("frontend/static/css/theme.css").read()
+    tint = "color-mix(in srgb, var(--ctp-mauve) 10%, transparent)"
+    for selector in (".cgt-detail-list-row:hover", "a.cgt-breakdown__row:hover", "a.cgt-tool-stat--link:hover"):
+        block = css[css.index(selector) :][:200]
+        assert tint in block, selector
+    # The underline-only treatment is gone.
+    assert "text-decoration: underline;" not in css[css.index(".cgt-breakdown__row {") :][:600]

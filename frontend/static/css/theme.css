@@ -2397,10 +2397,18 @@ html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, 
   gap: 8px;
   color: inherit;
   text-decoration: none;
+  /* Same padded shape as .cgt-detail-list-row so the hover target matches the
+     other widgets' rows — this used to underline the label with no background,
+     a third hover treatment on one page. */
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 4px;
+}
+a.cgt-breakdown__row:hover {
+  background-color: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
 }
 a.cgt-breakdown__row:hover .cgt-breakdown__label {
   color: var(--ctp-text);
-  text-decoration: underline;
 }
 .cgt-breakdown__num {
   min-width: 3.2em;
@@ -2477,7 +2485,7 @@ a.cgt-tool-stat--link {
   transition: background-color .12s ease;
 }
 a.cgt-tool-stat--link:hover {
-  background-color: var(--ctp-surface0);
+  background-color: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
 }
 a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   color: var(--ctp-text);
@@ -2511,4 +2519,13 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   .cgt-tool-grid--paired .cgt-tool-card--tall {
     grid-row: auto;
   }
+}
+
+/* Completion date in the Recently-completed rows. Deliberately smaller than the
+   title: the list is ordered newest-first, so the exact date is context rather
+   than the point, and at the same size it crowded the titles it sits beside. */
+.cgt-list-row-date {
+  font-size: 0.7rem;
+  color: var(--ctp-overlay0);
+  white-space: nowrap;
 }

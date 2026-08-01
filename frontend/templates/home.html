@@ -148,7 +148,7 @@
         {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
         {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
         <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
-        <span class="text-secondary small flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
+        <span class="cgt-list-row-date flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
       </a>
       {% endfor %}
     </div>
