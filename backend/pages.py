@@ -204,7 +204,9 @@ def home_page(
             models.Completion.sort_order.asc().nulls_last(),
             models.Completion.id.desc(),
         )
-        .limit(5)
+        # Eight rather than five: the widget's footer button is gone, so the
+        # space goes to the content the button used to point at.
+        .limit(8)
         .all()
     )
     library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()
@@ -240,6 +242,10 @@ def home_page(
             platform_breakdown.append({"label": label, "css": models._platform_heuristic_css(label), "value": label, "count": n})
 
     import_counts = _import_tab_counts(db, current_user.id)
+    # Derived from what's already loaded — no extra queries. Fills the space the
+    # "Open completions" button used to occupy.
+    best_month_n = max(completions_by_month) if completions_by_month else 0
+    best_month = completions_by_month.index(best_month_n) if best_month_n else None
     return templates.TemplateResponse(
         request=request,
         name="home.html",
@@ -248,6 +254,9 @@ def home_page(
             "year": year,
             "yearly_goal": _YEARLY_GOAL,
             "completions_this_year": completions_this_year,
+            "completions_remaining": max(0, _YEARLY_GOAL - completions_this_year),
+            "best_month_index": best_month,
+            "best_month_count": best_month_n,
             "completions_by_month": completions_by_month,
             "current_month": datetime.date.today().month,
             "month_names": [

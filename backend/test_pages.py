@@ -2508,3 +2508,48 @@ def test_base_template_calls_the_version_rather_than_baking_it_in():
     html = open("frontend/templates/base.html").read()
     assert "?v={{ static_version }}" not in html
     assert html.count("?v={{ static_version() }}") == 5
+
+
+def test_home_widgets_use_linked_numbers_not_footer_buttons(client, db_session):
+    """The footer buttons duplicated destinations the numbers already imply, and
+    at three per row they wrapped — cluttered and asymmetric. The numbers are the
+    links now, and the reclaimed space goes to content."""
+    _signup_and_login(client)
+    body = client.get("/").text
+
+    assert "cgt-tool-card__actions" not in body, "no footer buttons on Home"
+    # The headline stats are the links.
+    assert 'class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions"' in body
+    assert 'class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library"' in body
+    # Undecorated, with the hover carrying the affordance.
+    css = open("frontend/static/css/theme.css").read()
+    assert "a.cgt-tool-stat--link {" in css
+    assert "text-decoration: none;" in css[css.index("a.cgt-tool-stat--link {") :][:400]
+    assert "a.cgt-tool-stat--link:hover" in css
+
+
+def test_this_year_widget_carries_derived_stats(client, db_session):
+    """Space freed by the button goes to stats derived from data already loaded
+    — no extra queries."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    import datetime
+
+    entry = _make_named_entry(db_session, user.id, "Done Game")
+    year = datetime.date.today().year
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(year, 3, 14)))
+    db_session.commit()
+
+    body = client.get("/").text
+    assert "To go" in body
+    assert "Best &mdash; Mar" in body or "Best — Mar" in body
+
+
+def test_best_month_is_omitted_when_nothing_is_logged(client, db_session):
+    """A 'best month' of zero is noise, not a stat."""
+    _signup_and_login(client)
+    body = client.get("/").text
+    assert "To go" in body
+    assert "Best &mdash;" not in body and "Best —" not in body

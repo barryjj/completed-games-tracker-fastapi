@@ -2463,3 +2463,22 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
 [id^="sync-indicator-"] {
   min-height: 1.5rem;
 }
+
+/* A stat that is also a link. Undecorated on purpose — it has to keep reading
+   as a number, not a link — with the hover doing the whole job of saying it's
+   clickable. Replaces the footer buttons on the Home widgets, which duplicated
+   destinations the numbers already imply and wrapped to a second row. */
+a.cgt-tool-stat--link {
+  text-decoration: none;
+  color: inherit;
+  border-radius: 6px;
+  margin: -0.15rem -0.4rem;
+  padding: 0.15rem 0.4rem;
+  transition: background-color .12s ease;
+}
+a.cgt-tool-stat--link:hover {
+  background-color: var(--ctp-surface0);
+}
+a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
+  color: var(--ctp-text);
+}

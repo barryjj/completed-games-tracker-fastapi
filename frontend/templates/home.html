@@ -20,14 +20,27 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">This year</div>
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--blue">
+      {# The number IS the link — buttons in the footer made the cards cluttered
+         and, at three per row, asymmetric. Undecorated so it still reads as a
+         stat, with a hover to say it's clickable. #}
+      <a class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions">
         <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
         <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
-      </div>
+      </a>
       <div class="cgt-tool-stat cgt-tool-stat--muted">
         <div class="cgt-tool-stat__value">{{ yearly_goal }}</div>
         <div class="cgt-tool-stat__label">Goal</div>
       </div>
+      <div class="cgt-tool-stat cgt-tool-stat--muted">
+        <div class="cgt-tool-stat__value">{{ completions_remaining }}</div>
+        <div class="cgt-tool-stat__label">To go</div>
+      </div>
+      {% if best_month_index is not none %}
+      <div class="cgt-tool-stat cgt-tool-stat--muted">
+        <div class="cgt-tool-stat__value">{{ best_month_count }}</div>
+        <div class="cgt-tool-stat__label">Best &mdash; {{ month_names[best_month_index][:3] }}</div>
+      </div>
+      {% endif %}
     </div>
     {# Completions per month, current year. Single series, one hue; future
        months render as faint stubs. Tooltip carries the exact count. #}
@@ -44,39 +57,33 @@
       </div>
       {% endfor %}
     </div>
-    <div class="cgt-tool-card__actions">
-      <a href="/completions" class="btn btn-surface btn-sm">Open completions</a>
-    </div>
   </div>
 
   {# ── Library ────────────────────────────────────────────────────────── #}
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">Library</div>
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+      <a class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
         <div class="cgt-tool-stat__label">Games</div>
-      </div>
+      </a>
     </div>
     {% if platform_breakdown %}
     <div>
-      {% for row in platform_breakdown[:6] %}
+      {% for row in platform_breakdown[:10] %}
       <a class="cgt-detail-list-row d-flex align-items-center gap-2"
          href="/library?platform={{ row.value | urlencode }}">
         <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
         <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
       </a>
       {% endfor %}
-      {% if platform_breakdown | length > 6 %}
+      {% if platform_breakdown | length > 10 %}
       <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
-        <span class="small text-secondary">…and {{ platform_breakdown | length - 6 }} more</span>
+        <span class="small text-secondary">…and {{ platform_breakdown | length - 10 }} more</span>
       </a>
       {% endif %}
     </div>
     {% endif %}
-    <div class="cgt-tool-card__actions">
-      <a href="/library" class="btn btn-surface btn-sm">Open library</a>
-    </div>
   </div>
 
   {# ── Recently completed ─────────────────────────────────────────────── #}
@@ -136,12 +143,6 @@
     {% if not pending_matches and not import_pending and not psn_review_pending %}
     <div class="small text-secondary">All caught up.</div>
     {% endif %}
-    <div class="cgt-tool-card__actions">
-      {% if pending_matches %}<a href="/tools/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
-      {% if import_pending %}<a href="/tools/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
-      {% if psn_review_pending %}<a href="/tools/psn-review" class="btn btn-surface btn-sm">Review PSN</a>{% endif %}
-      <a href="/tools" class="btn btn-surface btn-sm">All tools</a>
-    </div>
   </div>
 
 </div>
