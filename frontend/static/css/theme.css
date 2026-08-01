@@ -2235,7 +2235,11 @@ html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, 
 .cgt-month-bars__bar {
   width: 100%;
   min-height: 3px;
-  background: var(--ctp-flamingo);
+  /* Matches the headline stat above it — one widget, one hue. Blue because
+     it was the only unused colour in the palette; every other pastel is
+     already carrying a meaning somewhere (lavender = library/PSN, yellow =
+     pending, green = connected/success). */
+  background: var(--ctp-blue);
   border-radius: 2px 2px 0 0;
 }
 .cgt-month-bars__bar--zero   { background: var(--ctp-surface1); }
