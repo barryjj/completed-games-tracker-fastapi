@@ -2553,3 +2553,21 @@ def test_best_month_is_omitted_when_nothing_is_logged(client, db_session):
     body = client.get("/").text
     assert "To go" in body
     assert "Best &mdash;" not in body and "Best —" not in body
+
+
+def test_needs_attention_surfaces_missing_artwork(client, db_session):
+    """Every card is forced to the tallest one's height, so a sparse card is
+    dead space. Missing artwork is real work and already links somewhere."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _make_named_entry(db_session, user.id, "Artless Game")
+    db_session.commit()
+
+    body = client.get("/").text
+    assert "library &middot; missing artwork" in body or "library · missing artwork" in body
+    assert "/library?missing_art=true" in body
+    # ...and it counts toward "caught up", or the card would claim done with
+    # work still listed under it.
+    assert "All caught up." not in body

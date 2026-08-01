@@ -2228,7 +2228,7 @@ html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, 
   min-width: 0;
 }
 .cgt-month-bars__track {
-  height: 44px;
+  height: 88px;
   display: flex;
   align-items: flex-end;
 }

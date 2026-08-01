@@ -170,6 +170,7 @@ def home_page(
     year = datetime.date.today().year
     comp_base = db.query(models.Completion).filter(models.Completion.user_id == current_user.id)
     completions_this_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year)).count()
+    completions_last_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year - 1)).count()
     # Per-month counts for the current year (mini bar strip on the This-year
     # widget). Always 12 slots; future months render as stubs client-side.
     month_rows = (
@@ -204,9 +205,10 @@ def home_page(
             models.Completion.sort_order.asc().nulls_last(),
             models.Completion.id.desc(),
         )
-        # Eight rather than five: the widget's footer button is gone, so the
-        # space goes to the content the button used to point at.
-        .limit(8)
+        # Twelve: the footer button is gone AND every card is forced to the
+        # tallest one's height (grid-auto-rows: 1fr), so a short list here is
+        # dead space rather than a tidy card.
+        .limit(12)
         .all()
     )
     library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()
@@ -257,6 +259,7 @@ def home_page(
             "completions_remaining": max(0, _YEARLY_GOAL - completions_this_year),
             "best_month_index": best_month,
             "best_month_count": best_month_n,
+            "completions_last_year": completions_last_year,
             "completions_by_month": completions_by_month,
             "current_month": datetime.date.today().month,
             "month_names": [
@@ -279,6 +282,7 @@ def home_page(
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "psn_review_pending": _psn_pending(db, current_user),
+            "missing_covers": _build_lib_query(db, current_user, "", "", "default", "name", False, True, "grid_v")[0].count(),
             **_base_ctx(db, current_user),
         },
     )

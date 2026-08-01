@@ -41,6 +41,12 @@
         <div class="cgt-tool-stat__label">Best &mdash; {{ month_names[best_month_index][:3] }}</div>
       </div>
       {% endif %}
+      {% if completions_last_year %}
+      <div class="cgt-tool-stat cgt-tool-stat--muted">
+        <div class="cgt-tool-stat__value">{{ completions_last_year }}</div>
+        <div class="cgt-tool-stat__label">{{ year - 1 }} total</div>
+      </div>
+      {% endif %}
     </div>
     {# Completions per month, current year. Single series, one hue; future
        months render as faint stubs. Tooltip carries the exact count. #}
@@ -139,8 +145,14 @@
         <span class="cgt-breakdown__label">PSN · needs a decision</span>
       </a>
       {% endif %}
+      {% if missing_covers %}
+      <a class="cgt-breakdown__row" href="/library?missing_art=true">
+        <span class="cgt-breakdown__num cgt-breakdown__num--muted">{{ "{:,}".format(missing_covers) }}</span>
+        <span class="cgt-breakdown__label">library &middot; missing artwork</span>
+      </a>
+      {% endif %}
     </div>
-    {% if not pending_matches and not import_pending and not psn_review_pending %}
+    {% if not pending_matches and not import_pending and not psn_review_pending and not missing_covers %}
     <div class="small text-secondary">All caught up.</div>
     {% endif %}
   </div>
