@@ -680,27 +680,28 @@ tr:focus-within .row-actions {
   border-left-width: 4px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
+/* Colour lives entirely in the 4px left accent. A tinted background was tried
+   and pulled: at a readable strength only PEACH was visible, because it's the
+   one warm hue against a cool #181825 base — green, red and sapphire all sank
+   into it. So the tint wasn't coding anything, it was just making warnings
+   look different in kind from the other three. */
 .toast.toast-success {
   border-left-color: var(--ctp-green);
-  background-color: color-mix(in srgb, var(--ctp-green) 12%, var(--ctp-mantle));
 }
 .toast.toast-danger {
   border-left-color: var(--ctp-red);
-  background-color: color-mix(in srgb, var(--ctp-red) 12%, var(--ctp-mantle));
 }
 /* Warning = "didn't happen, but nothing broke" — a rejected sync while another
    runs. Peach rather than yellow: yellow is already the pending-badge accent on
    the Tools cards, and a toast that matched it read as a count. */
 .toast.toast-warning {
   border-left-color: var(--ctp-peach);
-  background-color: color-mix(in srgb, var(--ctp-peach) 12%, var(--ctp-mantle));
 }
 /* Info = "here's what's happening", no action needed. Sapphire over blue: blue
    is the link colour, and lavender/mauve are already load-bearing for
    PlayStation and primary buttons. */
 .toast.toast-info {
   border-left-color: var(--ctp-sapphire);
-  background-color: color-mix(in srgb, var(--ctp-sapphire) 12%, var(--ctp-mantle));
 }
 html[data-bs-theme="light"] .toast.toast-success,
 html[data-bs-theme="light"] .toast.toast-danger,
@@ -708,20 +709,8 @@ html[data-bs-theme="light"] .toast.toast-warning,
 html[data-bs-theme="light"] .toast.toast-info {
   box-shadow: 0 4px 12px rgba(76, 79, 105, 0.15);
 }
-html[data-bs-theme="light"] .toast.toast-success {
-  background-color: color-mix(in srgb, var(--ctp-green) 18%, var(--ctp-base));
-}
-html[data-bs-theme="light"] .toast.toast-warning {
-  background-color: color-mix(in srgb, var(--ctp-peach) 18%, var(--ctp-base));
-}
-html[data-bs-theme="light"] .toast.toast-info {
-  background-color: color-mix(in srgb, var(--ctp-sapphire) 18%, var(--ctp-base));
-}
-html[data-bs-theme="light"] .toast.toast-danger {
-  background-color: color-mix(in srgb, var(--ctp-red) 18%, var(--ctp-base));
-}
 /* Bootstrap's btn-close uses a white SVG by default; flip it for light theme
-   so it remains visible against the tinted background. */
+   so it stays visible against the light toast background. */
 html[data-bs-theme="light"] .toast .btn-close { filter: none; }
 html[data-bs-theme="dark"]  .toast .btn-close { filter: invert(1) grayscale(100%) brightness(2); }
 /* Render \n in toast messages as actual line breaks. Lets the server emit
