@@ -6,8 +6,17 @@
 {% for r in rows %}
 <tr id="psn-row-{{ r.external_id }}">
   <td class="align-middle">
-    <span class="cgt-import-title">{{ r.name }}</span>
-    <div class="text-secondary small">{{ r.category or "" }}{% if r.service and r.service != "other" %} &middot; via {{ r.service }}{% endif %}</div>
+    <div class="d-flex align-items-center gap-2">
+      {% if r.image %}
+      <img class="cgt-list-row-thumb" src="{{ r.image }}" alt="" loading="lazy">
+      {% else %}
+      <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
+      {% endif %}
+      <div>
+        <span class="cgt-import-title">{{ r.name }}</span>
+        <div class="text-secondary small">{{ r.category or "" }}{% if r.service and r.service != "other" %} &middot; via {{ r.service }}{% endif %}</div>
+      </div>
+    </div>
   </td>
   <td class="align-middle text-nowrap">
     <span class="small">{{ r.minutes // 60 }}h{{ "%02d" % (r.minutes % 60) }}m</span>

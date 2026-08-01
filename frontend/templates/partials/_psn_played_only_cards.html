@@ -3,6 +3,16 @@
 {% for r in rows %}
 <div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.external_id }}">
   <div class="cgt-match-card__body">
+    {# Hero + logo, same as the cross-play cards — same table, same art columns,
+       and the fill job was already populating them. #}
+    {% if r.hero %}
+    <div class="cgt-import-hero">
+      <img class="cgt-detail-hero__img" src="{{ r.hero }}" alt="" loading="lazy">
+      {% if r.logo %}
+      <img class="cgt-detail-hero__logo" src="{{ r.logo }}" alt="" loading="lazy">
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="p-3">
       <h6 class="mb-1">{{ r.name }}</h6>
       <p class="text-secondary small mb-3">{{ r.reason }}</p>

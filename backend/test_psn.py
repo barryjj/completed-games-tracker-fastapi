@@ -2523,3 +2523,53 @@ def test_js_toast_markup_matches_the_server_toast():
     assert 'style="color:' not in fn
     # Messages interpolate shell error strings — never parsed as markup.
     assert ".textContent = message" in fn
+
+
+def test_played_only_rows_carry_the_same_art_as_cross_play(db_session, monkeypatch):
+    """Both queues are rows of the same table with the same art columns, and the
+    fill job never distinguished them — only the templates did, which left one
+    queue looking unfinished next to the other."""
+    steamgriddb = _sgdb_stub(monkeypatch)
+    _seed_platforms(db_session)
+    user = _user(db_session, "poart")
+    user.steamgriddb_api_key = "sgdb-key"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"titleId": "PPSA_ART_00", "name": "Disc Game", "displayName": "Disc Game", "category": "ps5_native_game", "sources": ["played"]}],
+        kind="played_only",
+    )
+    steamgriddb.fill_psn_review_thumbnails(db_session, user)
+
+    row = psn.played_only_rows(db_session, user.id)[0]
+    assert row["image"] == "https://sgdb/psn-grid.png"
+    assert row["hero"] == "https://sgdb/psn-hero.png"
+    assert row["logo"] == "https://sgdb/psn-logo.png"
+
+
+def test_both_review_queues_render_their_art(client, db_session, monkeypatch):
+    """Guards the templates, not just the data — the art was already being
+    fetched for played-only rows and simply never shown."""
+    steamgriddb = _sgdb_stub(monkeypatch)
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id, user.steamgriddb_api_key = "n" * 64, "dude", "sgdb-key"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"titleId": "PPSA_T_00", "name": "Disc Game", "displayName": "Disc Game", "category": "ps5_native_game", "sources": ["played"]}],
+        kind="played_only",
+    )
+    steamgriddb.fill_psn_review_thumbnails(db_session, user)
+
+    rows = client.get("/tools/psn-review?kind=played_only").content
+    assert b"cgt-list-row-thumb" in rows
+    assert b"https://sgdb/psn-grid.png" in rows
+
+    cards = client.get("/tools/psn-review?kind=played_only&view=card").content
+    assert b"cgt-import-hero" in cards
+    assert b"https://sgdb/psn-hero.png" in cards
+    assert b"cgt-detail-hero__logo" in cards

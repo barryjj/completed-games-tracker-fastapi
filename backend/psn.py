@@ -1284,6 +1284,12 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
             {
                 "external_id": cand.external_id,
                 "name": cand.title,
+                # Same art the cross-play rows get — these are rows of the same
+                # table and the fill job never distinguished them; only the
+                # templates did, which made one queue look unfinished.
+                "image": cand.thumbnail_url or (item.get("image") or {}).get("url"),
+                "hero": cand.hero_url or cand.thumbnail_url,
+                "logo": cand.logo_url,
                 "category": item.get("category"),
                 "service": item.get("service"),
                 "minutes": duration_to_minutes(item.get("playDuration")) or 0,
