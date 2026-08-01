@@ -9,7 +9,7 @@
 
 {# Same refetch-on-jobs-done as the Tools grid — sync results and pending
    counts stay live on the landing page. #}
-<div class="cgt-tool-grid" id="home-widgets"
+<div class="cgt-tool-grid cgt-tool-grid--paired" id="home-widgets"
      hx-get="/"
      hx-select="#home-widgets"
      hx-disinherit="hx-select"
@@ -65,54 +65,6 @@
     </div>
   </div>
 
-  {# ── Library ────────────────────────────────────────────────────────── #}
-  <div class="cgt-tool-card">
-    <div class="cgt-tool-card__title">Library</div>
-    <div class="cgt-tool-stats">
-      <a class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library">
-        <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
-        <div class="cgt-tool-stat__label">Games</div>
-      </a>
-    </div>
-    {% if platform_breakdown %}
-    <div>
-      {% for row in platform_breakdown[:10] %}
-      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
-         href="/library?platform={{ row.value | urlencode }}">
-        <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
-        <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
-      </a>
-      {% endfor %}
-      {% if platform_breakdown | length > 10 %}
-      <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
-        <span class="small text-secondary">…and {{ platform_breakdown | length - 10 }} more</span>
-      </a>
-      {% endif %}
-    </div>
-    {% endif %}
-  </div>
-
-  {# ── Recently completed ─────────────────────────────────────────────── #}
-  <div class="cgt-tool-card">
-    <div class="cgt-tool-card__title">Recently completed</div>
-    {% if recent_completions %}
-    <div>
-      {% for c in recent_completions %}
-      {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
-      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
-         href="/completions?detail={{ c.id }}">
-        {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
-        {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
-        <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
-        <span class="text-secondary small flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
-      </a>
-      {% endfor %}
-    </div>
-    {% else %}
-    <div class="small text-secondary">Completions you log will show up here.</div>
-    {% endif %}
-  </div>
-
   {# ── Needs attention ────────────────────────────────────────────────── #}
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">Needs attention</div>
@@ -156,6 +108,55 @@
     <div class="small text-secondary">All caught up.</div>
     {% endif %}
   </div>
+
+  {# ── Library ────────────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card cgt-tool-card--tall">
+    <div class="cgt-tool-card__title">Library</div>
+    <div class="cgt-tool-stats">
+      <a class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
+        <div class="cgt-tool-stat__label">Games</div>
+      </a>
+    </div>
+    {% if platform_breakdown %}
+    <div>
+      {% for row in platform_breakdown[:10] %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
+         href="/library?platform={{ row.value | urlencode }}">
+        <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
+        <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
+      </a>
+      {% endfor %}
+      {% if platform_breakdown | length > 10 %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
+        <span class="small text-secondary">…and {{ platform_breakdown | length - 10 }} more</span>
+      </a>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  {# ── Recently completed ─────────────────────────────────────────────── #}
+  <div class="cgt-tool-card cgt-tool-card--tall">
+    <div class="cgt-tool-card__title">Recently completed</div>
+    {% if recent_completions %}
+    <div>
+      {% for c in recent_completions %}
+      {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2"
+         href="/completions?detail={{ c.id }}">
+        {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
+        {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
+        <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
+        <span class="text-secondary small flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="small text-secondary">Completions you log will show up here.</div>
+    {% endif %}
+  </div>
+
 
 </div>
 {% endblock %}

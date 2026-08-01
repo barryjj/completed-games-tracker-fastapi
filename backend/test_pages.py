@@ -2571,3 +2571,25 @@ def test_needs_attention_surfaces_missing_artwork(client, db_session):
     # ...and it counts toward "caught up", or the card would claim done with
     # work still listed under it.
     assert "All caught up." not in body
+
+
+def test_home_pairs_the_short_widgets_into_one_column(client, db_session):
+    """Every card used to be forced to the tallest one's height, so widening the
+    Library list handed the two short cards a screenful of dead space. They
+    share a column now; the list-shaped cards span both rows.
+
+    Source order matters: the grid flows by column, so the two short cards have
+    to be adjacent in the markup to land in the same one."""
+    _signup_and_login(client)
+    body = client.get("/").text
+
+    assert "cgt-tool-grid--paired" in body
+    # Scope to the grid — "Library" also appears in the nav, ahead of it.
+    grid = body[body.index('id="home-widgets"') :]
+    order = [grid.index(t) for t in ("This year", "Needs attention", "Library", "Recently completed")]
+    assert order == sorted(order), "short widgets must be adjacent, before the tall ones"
+    assert grid.count("cgt-tool-card--tall") == 2
+
+    # Tools keeps the plain uniform grid — this is a Home-only layout.
+    tools = client.get("/tools").text
+    assert "cgt-tool-grid--paired" not in tools

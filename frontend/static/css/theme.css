@@ -2482,3 +2482,33 @@ a.cgt-tool-stat--link:hover {
 a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   color: var(--ctp-text);
 }
+
+/* Paired layout: two short widgets share a column, list-shaped ones take the
+   full height beside them. The first real size tier — before this, every card
+   was forced to the tallest one's height, so widening one list handed the
+   short cards a screenful of dead space.
+   Column flow, so source order fills top-to-bottom within a column before
+   moving right; the two short cards are adjacent in the markup for that reason. */
+.cgt-tool-grid--paired {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(2, minmax(0, auto));
+  grid-auto-columns: minmax(300px, 1fr);
+  grid-auto-rows: auto;
+  align-items: stretch;
+}
+.cgt-tool-grid--paired .cgt-tool-card--tall {
+  grid-row: span 2;
+}
+/* Below two columns' worth there's nothing to pair — fall back to a plain
+   stack, or column flow would run the cards off the side. */
+@media (max-width: 900px) {
+  .cgt-tool-grid--paired {
+    grid-auto-flow: row;
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+  .cgt-tool-grid--paired .cgt-tool-card--tall {
+    grid-row: auto;
+  }
+}
