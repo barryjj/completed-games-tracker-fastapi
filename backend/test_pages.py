@@ -2641,3 +2641,18 @@ def test_missing_artwork_count_survives_a_null_release_id(client, db_session):
     after = _build_lib_query(db_session, user, "", "", "default", "name", False, True, "grid_v")[0].count()
     assert after == before, "a NULL release_id must not zero the whole count"
     assert entry is not None
+
+
+def test_light_theme_defines_its_own_stat_yellow():
+    """Yellow is the one palette colour that can't survive the light-theme
+    treatment: mixing it toward --ctp-text (a blue-grey) desaturates it into
+    olive-brown, and Latte's yellow used straight only reaches 2.3:1 on the
+    background. Light defines a purpose-picked amber instead of deriving one."""
+    css = open("frontend/static/css/theme.css").read()
+    assert "--cgt-stat-yellow: var(--ctp-yellow);" in css, "dark uses the palette value"
+    assert "--cgt-stat-yellow: #b86f00;" in css, "light defines its own"
+    # The old mix is gone, and the stat rule reads the variable.
+    assert "color-mix(in srgb, var(--ctp-yellow)   65%" not in css
+    assert "color: var(--cgt-stat-yellow);" in css
+    # CSS files can't carry Jinja comments.
+    assert "{#" not in css
