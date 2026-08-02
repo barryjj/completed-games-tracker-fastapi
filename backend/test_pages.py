@@ -2643,16 +2643,33 @@ def test_missing_artwork_count_survives_a_null_release_id(client, db_session):
     assert entry is not None
 
 
-def test_light_theme_defines_its_own_stat_yellow():
-    """Yellow is the one palette colour that can't survive the light-theme
-    treatment: mixing it toward --ctp-text (a blue-grey) desaturates it into
-    olive-brown, and Latte's yellow used straight only reaches 2.3:1 on the
-    background. Light defines a purpose-picked amber instead of deriving one."""
+def test_warm_stat_accents_define_their_own_light_values():
+    """Light-theme accents are derived by mixing the dark value 65% toward
+    --ctp-text, a blue-grey. Cool hues survive that — a darker green is still
+    green — but WARM ones turn brown, which is why only yellow and peach need
+    their own light values rather than a derived one."""
     css = open("frontend/static/css/theme.css").read()
-    assert "--cgt-stat-yellow: var(--ctp-yellow);" in css, "dark uses the palette value"
-    assert "--cgt-stat-yellow: #b86f00;" in css, "light defines its own"
-    # The old mix is gone, and the stat rule reads the variable.
-    assert "color-mix(in srgb, var(--ctp-yellow)   65%" not in css
-    assert "color: var(--cgt-stat-yellow);" in css
+    for var, light in (("--cgt-stat-yellow", "#b86f00"), ("--cgt-stat-peach", "#d94f00")):
+        assert f"{var}: var(--ctp-{var.split('-')[-1]});" in css, f"{var}: dark uses the palette value"
+        assert f"{var}: {light};" in css, f"{var}: light defines its own"
+        assert f"color: var({var});" in css, f"{var}: the stat rule reads it"
+    # Scope to the stat-accent rules: tag badges and alerts legitimately tint
+    # with these same colours and must not be caught by this.
+    stats = css[css.index(".cgt-tool-stat--teal") :]
+    stats = stats[: stats.index("/* ", stats.index('data-bs-theme="light"')) + 400]
+    for accent in ("yellow", "peach"):
+        assert f"color-mix(in srgb, var(--ctp-{accent})" not in stats, f"{accent} is still derived"
+    # Cool accents still are, and should be.
+    assert "color-mix(in srgb, var(--ctp-green)" in stats
     # CSS files can't carry Jinja comments.
     assert "{#" not in css
+
+
+def test_pending_badge_does_not_repeat_the_stat_colour():
+    """The badge shows the same number as the headline stat directly below it,
+    so a filled accent pill put the figure twice in the same hue and the two
+    competed."""
+    css = open("frontend/static/css/theme.css").read()
+    block = css[css.index(".cgt-pending-badge {") :][:260]
+    assert "var(--ctp-surface1)" in block
+    assert "var(--ctp-yellow)" not in block

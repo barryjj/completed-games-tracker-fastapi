@@ -14,6 +14,7 @@ html[data-bs-theme="dark"] {
      it into olive-brown, and using Latte's yellow straight only reaches 2.3:1 on
      --ctp-base. Light gets a purpose-picked amber instead — see below. */
   --cgt-stat-yellow: var(--ctp-yellow);
+  --cgt-stat-peach: var(--ctp-peach);
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #1e1e2e;
@@ -82,6 +83,12 @@ html[data-bs-theme="light"] {
      saturation 1.00 against its 0.38, which is the whole difference between
      "gold" and "brown". */
   --cgt-stat-yellow: #b86f00;
+  /* Same reasoning as yellow: darkening a WARM hue toward the blue-grey text
+     ink turns it brown. Cool accents survive it — a darker green is still
+     green — which is why only these two need their own light values.
+     #d94f00 is 3.66:1 at saturation 1.00; the mix it replaces was 3.83:1 at
+     0.63, i.e. the same readability with a third of the colour drained out. */
+  --cgt-stat-peach: #d94f00;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #eff1f5;
@@ -873,9 +880,12 @@ a.cgt-completion-record:hover {
 }
 
 /* ─── Pending matches indicator ─────────────────────────────────────────── */
+/* Count chip beside a card title. Neutral on purpose: the same number is the
+   card's headline stat directly below, so a filled accent pill put the figure
+   twice in the same colour and the two competed. */
 .cgt-pending-badge {
-  background: var(--ctp-yellow) !important;
-  color: var(--ctp-crust) !important;
+  background: var(--ctp-surface1) !important;
+  color: var(--ctp-subtext) !important;
   font-size: .65rem;
   padding: .2em .45em;
 }
@@ -2188,7 +2198,7 @@ body:has(.cgt-match-nav--sticky) {
   white-space: nowrap;
 }
 :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: var(--ctp-teal); }
-:is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--ctp-peach); }
+:is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--cgt-stat-peach); }
 :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: var(--ctp-lavender); }
 :is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: var(--cgt-stat-yellow); }
 :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: var(--ctp-green); }
@@ -2200,9 +2210,10 @@ body:has(.cgt-match-nav--sticky) {
 /* Latte's accents miss 3:1 contrast for large text on the card surface —
    mix each toward text ink (same spirit as the light-mode button shades). */
 html[data-bs-theme="light"] :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
 html[data-bs-theme="light"] :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
-/* yellow deliberately absent here — --cgt-stat-yellow is defined per theme */
+/* yellow and peach deliberately absent — the two warm accents define their own
+   light values (--cgt-stat-yellow, --cgt-stat-peach) rather than being derived
+   by darkening, which browns them. */
 html[data-bs-theme="light"] :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
 html[data-bs-theme="light"] :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
 html[data-bs-theme="light"] :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
