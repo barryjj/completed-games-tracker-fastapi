@@ -1,0 +1,15 @@
+{# The tab bar lives OUTSIDE #psn-review-content, so a tab switch swaps the body
+   but would leave these buttons showing the old selection. Re-emitted
+   out-of-band on every partial response, same as the sort select — which also
+   keeps the counts honest as rows are confirmed away. #}
+<div class="btn-group btn-group-sm mb-3" role="group" id="psn-tabs"
+     {% if oob %}hx-swap-oob="true"{% endif %}>
+  <button type="button" class="btn btn-surface{% if kind == 'cross_play' %} active{% endif %}"
+          onclick="psnSetKind('cross_play')">
+    Cross-play <span class="badge bg-secondary ms-1">{{ counts.cross_play }}</span>
+  </button>
+  <button type="button" class="btn btn-surface{% if kind == 'played_only' %} active{% endif %}"
+          onclick="psnSetKind('played_only')">
+    Played-only <span class="badge bg-secondary ms-1">{{ counts.played_only }}</span>
+  </button>
+</div>

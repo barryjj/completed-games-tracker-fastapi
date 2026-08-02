@@ -17,33 +17,40 @@
       <h6 class="mb-1">{{ r.name }}</h6>
       <p class="text-secondary small mb-3">{{ r.reason }}</p>
 
-      <div class="cgt-detail-block mb-0">
-        <dl class="cgt-detail-meta small mb-0">
-          <dt>Played</dt>
-          <dd>{{ r.minutes // 60 }}h{{ "%02d" % (r.minutes % 60) }}m over {{ r.play_count }} session{{ "s" if r.play_count != 1 }}</dd>
-          {% if r.first_played %}
-          <dt>Window</dt>
-          <dd>{{ r.first_played }}{% if r.last_played != r.first_played %} &rarr; {{ r.last_played }}{% endif %}</dd>
-          {% endif %}
-          <dt>Category</dt>
-          <dd>{{ r.category or "&mdash;" }}</dd>
-          <dt>Via</dt>
-          <dd>{{ r.service or "&mdash;" }}</dd>
-        </dl>
-      </div>
+      {# Side by side rather than stacked: the card is a fixed height, and
+         stacking pushed the attach search below the fold so the row's most
+         useful action was the one you couldn't see. #}
+      <div class="cgt-psn-card-split">
+        <div class="cgt-detail-block mb-0">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Played</dt>
+            <dd>{{ r.minutes // 60 }}h{{ "%02d" % (r.minutes % 60) }}m over {{ r.play_count }} session{{ "s" if r.play_count != 1 }}</dd>
+            {% if r.first_played %}
+            <dt>Window</dt>
+            <dd>{{ r.first_played }}{% if r.last_played != r.first_played %} &rarr; {{ r.last_played }}{% endif %}</dd>
+            {% endif %}
+            <dt>Category</dt>
+            {# Literal, not "{{ x or '&mdash;' }}" — Jinja escapes the entity and
+               it renders as the text &mdash; on screen. #}
+            <dd>{% if r.category %}{{ r.category }}{% else %}&mdash;{% endif %}</dd>
+            <dt>Via</dt>
+            <dd>{% if r.service %}{{ r.service }}{% else %}&mdash;{% endif %}</dd>
+          </dl>
+        </div>
 
-      <div class="cgt-detail-block mb-0 mt-3">
-        <h6 class="cgt-detail-block__heading">Already own this?</h6>
-        <p class="text-secondary small mb-2">Attach the play stats to that entry instead of creating a second one &mdash; the activity row and the game you own often wear different Sony names.</p>
-        <input type="search" class="form-control form-control-sm" style="max-width:320px;"
-               placeholder="Search your library&hellip;"
-               name="q"
-               hx-get="/integrations/psn/attach-search"
-               hx-vals='{"external_id": "{{ r.external_id }}"}'
-               hx-trigger="input changed delay:300ms"
-               hx-target="next .psn-attach-results"
-               hx-swap="innerHTML">
-        <div class="psn-attach-results mt-2"></div>
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Already own this?</h6>
+          <p class="text-secondary small mb-2">Attach the play stats to that entry instead of creating a second one &mdash; the activity row and the game you own often wear different Sony names.</p>
+          <input type="search" class="form-control form-control-sm"
+                 placeholder="Search your library&hellip;"
+                 name="q"
+                 hx-get="/integrations/psn/attach-search"
+                 hx-vals='{"external_id": "{{ r.external_id }}"}'
+                 hx-trigger="input changed delay:300ms"
+                 hx-target="next .psn-attach-results"
+                 hx-swap="innerHTML">
+          <div class="psn-attach-results mt-2"></div>
+        </div>
       </div>
     </div>
   </div>

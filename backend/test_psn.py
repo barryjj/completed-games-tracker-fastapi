@@ -2573,3 +2573,55 @@ def test_both_review_queues_render_their_art(client, db_session, monkeypatch):
     assert b"cgt-import-hero" in cards
     assert b"https://sgdb/psn-hero.png" in cards
     assert b"cgt-detail-hero__logo" in cards
+
+
+def test_card_dashes_render_as_dashes_not_entity_text(client, db_session):
+    """{{ x or "&mdash;" }} escapes the entity and prints the literal characters
+    &mdash; on screen. Jinja autoescaping applies to the fallback too."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        # No category, no service — both fall back to a dash.
+        [{"titleId": "PPSA_D_00", "name": "Bare", "displayName": "Bare", "sources": ["played"]}],
+        kind="played_only",
+    )
+    body = client.get("/tools/psn-review?kind=played_only&view=card").text
+    assert "&amp;mdash;" not in body, "entity was double-escaped and shows as text"
+
+
+def test_review_tabs_repaint_on_switch(client, db_session):
+    """The tab bar sits outside the swap target, so a tab switch replaced the
+    body but left the previous tab highlighted. It rides along out-of-band now,
+    which also keeps the counts current as rows are confirmed away."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_TB_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+    _seed_review(
+        db_session,
+        user,
+        [{"titleId": "PPSA_TB_00", "name": "Disc", "displayName": "Disc", "sources": ["played"]}],
+        kind="played_only",
+    )
+
+    hx = client.get("/tools/psn-review?kind=played_only", headers={"HX-Request": "true"}).text
+    tabs = hx[hx.index('id="psn-tabs"') :]
+    tabs = tabs[: tabs.index("</div>")]
+    # The attribute follows the id on the next line.
+    assert 'hx-swap-oob="true"' in tabs[:120]
+    # Played-only is the active one; cross-play is not.
+    cross_btn = tabs[tabs.index("psnSetKind('cross_play')") - 200 : tabs.index("Cross-play")]
+    played_btn = tabs[tabs.index("psnSetKind('played_only')") - 200 : tabs.index("Played-only")]
+    assert "active" in played_btn
+    assert "active" not in cross_btn

@@ -23,16 +23,7 @@
 
 {# Both queues are "PSN couldn't settle this, you decide" and both are rows of
    the same table — tabs, not two pages. #}
-<div class="btn-group btn-group-sm mb-3" role="group" id="psn-tabs">
-  <button type="button" class="btn btn-surface{% if kind == 'cross_play' %} active{% endif %}"
-          onclick="psnSetKind('cross_play')">
-    Cross-play <span class="badge bg-secondary ms-1">{{ counts.cross_play }}</span>
-  </button>
-  <button type="button" class="btn btn-surface{% if kind == 'played_only' %} active{% endif %}"
-          onclick="psnSetKind('played_only')">
-    Played-only <span class="badge bg-secondary ms-1">{{ counts.played_only }}</span>
-  </button>
-</div>
+{% include "partials/_psn_tabs.html" %}
 
 <form id="psn-review-filters"
       hx-get="/tools/psn-review"

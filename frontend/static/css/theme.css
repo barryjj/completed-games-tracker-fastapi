@@ -2529,3 +2529,17 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   color: var(--ctp-overlay0);
   white-space: nowrap;
 }
+
+/* Played-only card body: metadata left, "already own this" right. The card is a
+   fixed height (.cgt-match-card--import), so stacking these pushed the attach
+   search below the fold — the row's most useful action was the one you had to
+   scroll for. Collapses to a stack when there isn't width for two. */
+.cgt-psn-card-split {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 1rem;
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .cgt-psn-card-split { grid-template-columns: 1fr; }
+}
