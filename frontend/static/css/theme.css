@@ -2593,3 +2593,22 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   color: var(--ctp-text);
   font-weight: 600;
 }
+
+/* A platform another trophy set for the same title already claimed. Dimmed, not
+   disabled: Sony gives nothing to tell sibling sets apart, so the app's guess
+   at which set owns which platform is only ever a default worth overriding. */
+.cgt-psn-plat-check--claimed { opacity: 0.55; }
+.cgt-psn-plat-check--claimed:hover { opacity: 1; }
+.cgt-psn-claimed-note {
+  margin-left: 4px;
+  font-size: 0.68rem;
+  color: var(--ctp-peach);
+  white-space: nowrap;
+}
+
+/* Attach-search results. Capped so a long list scrolls inside its own box
+   instead of growing the card and pushing the actions out of reach. */
+.psn-attach-results {
+  max-height: 190px;
+  overflow-y: auto;
+}

@@ -425,16 +425,37 @@ def psn_attach_search(
 ):
     """Inline entry picker for the attach action: search the user's library,
     return buttons that POST the attach directly."""
+    # PlayStation family only. You're attaching PSN playtime to a PSN-family
+    # record, so a Steam row is never the answer — and searching the whole
+    # library meant "devil" returned eight Devil May Cry 5 DLC rows
+    # alphabetically and pushed the Special Edition past the limit, making the
+    # entry you wanted unreachable.
     query = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
         .join(models.Game)
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "psn",
+        )
     )
     qn = q.strip()
     if qn:
         query = query.filter(models.Game.title.ilike(f"%{qn}%"))
-    entries = query.order_by(models.Game.title).limit(8).all()
+    entries = query.all()
+    if qn:
+        # Rank before truncating: alphabetical order buried exact matches under
+        # whatever happened to sort first.
+        needle = qn.casefold()
+
+        def rank(e):
+            title = (e.release.game.display_name or e.release.game.title or "").casefold()
+            return (0 if title == needle else 1 if title.startswith(needle) else 2, len(title), title)
+
+        entries.sort(key=rank)
+    else:
+        entries.sort(key=lambda e: (e.release.game.display_name or e.release.game.title or "").casefold())
+    entries = entries[:8]
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_attach_results.html",

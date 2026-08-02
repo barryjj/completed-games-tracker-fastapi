@@ -335,7 +335,14 @@ async def psn_review_confirm(
         request=request,
         name="partials/_psn_review_done.html",
         context={"key": key, "name": result["name"], "created": result["created"], **_review_chrome_ctx(db, current_user, "cross_play")},
-        headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
+        headers={
+            "HX-Retarget": f"#psn-row-{key}",
+            "HX-Reswap": "outerHTML",
+            # A sibling set for the same title is already on screen offering
+            # platforms this row just claimed. Re-render the queue rather than
+            # leave it stale.
+            **({"HX-Trigger-After-Settle": "cgt:psnSiblingsStale"} if result.get("siblings_stale") else {}),
+        },
     )
 
 

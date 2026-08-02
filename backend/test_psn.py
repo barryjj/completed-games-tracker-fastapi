@@ -2905,3 +2905,99 @@ def test_card_title_is_not_the_faintest_thing_on_the_card(client, db_session):
     # old table's label cell kept its padding even when empty.
     cards = open("frontend/templates/partials/_psn_review_cards.html").read()
     assert "cgt-source-table__label" not in cards
+
+
+def test_sibling_sets_cannot_silently_claim_the_same_platform(db_session):
+    """Both Crimsonland sets declare the identical PS3,PSVITA,PS4 — nothing in
+    Sony's data tells them apart. Confirming both with overlapping platforms
+    made _import_one drop the second as a (game, platform) conflict, so the 90%
+    set's data vanished and Vita ended up showing 23%."""
+    _seed_platforms(db_session)
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
+    db_session.commit()
+    user = _user(db_session, "sib")
+    merged = [
+        {
+            "npCommunicationId": f"NPWR_SIB{i}_00",
+            "name": "Twinned",
+            "displayName": "Twinned",
+            "normalizedName": psn._normalized_name("Twinned"),
+            "platform": "PS3,PSVITA,PS4",
+            "trophyProgress": p,
+            "sources": ["titles"],
+        }
+        for i, p in enumerate((90, 23))
+    ]
+    _seed_review(db_session, user, merged)
+
+    rows = psn.import_review_rows(db_session, user.id)
+    assert [r["set_count"] for r in rows] == [2, 2]
+    assert all(o["claimed_by"] is None for r in rows for o in r["options"])
+
+    # Claim Vita on the first set.
+    psn.confirm_entry_decision(db_session, user, "NPWR_SIB0_00", ["PSVITA"])
+
+    survivor = psn.import_review_rows(db_session, user.id)[0]
+    opts = {o["platform"]: o for o in survivor["options"]}
+    # Vita is marked taken and no longer pre-ticked...
+    assert opts["PSVITA"]["claimed_by"] == "set 1"
+    assert opts["PSVITA"]["selected"] is False
+    # ...but is still offered, because Sony gives nothing to prove which set
+    # owns it and the user may know better.
+    assert "PSVITA" in opts
+    # The untaken platforms are what's pre-ticked now.
+    assert opts["PS4"]["selected"] is True
+    # And "set 1 of 2" keeps saying 2 after one is decided.
+    assert survivor["set_count"] == 2
+
+
+def test_confirm_reports_when_siblings_need_re_rendering(db_session):
+    """The sibling card is already on screen offering platforms this row just
+    claimed — the response has to say so or it sits there stale."""
+    _seed_platforms(db_session)
+    user = _user(db_session, "stale")
+    merged = [
+        {
+            "npCommunicationId": f"NPWR_ST{i}_00",
+            "name": "Twinned",
+            "displayName": "Twinned",
+            "normalizedName": psn._normalized_name("Twinned"),
+            "platform": "PS3,PS4",
+            "sources": ["titles"],
+        }
+        for i in range(2)
+    ]
+    _seed_review(db_session, user, merged)
+    assert psn.confirm_entry_decision(db_session, user, "NPWR_ST0_00", ["PS4"])["siblings_stale"] is True
+    # Nothing left to go stale once the sibling is decided too.
+    assert psn.confirm_entry_decision(db_session, user, "NPWR_ST1_00", ["PS3"])["siblings_stale"] is False
+
+
+def test_attach_search_is_scoped_to_playstation_and_ranked(client, db_session):
+    """Searching the whole library returned eight Devil May Cry 5 DLC rows
+    alphabetically and pushed the Special Edition past the limit — the entry the
+    user wanted was structurally unreachable, so they hit Import and got a
+    duplicate game instead."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    def add(title, source, platform="PS5"):
+        g = models.Game(title=title)
+        db_session.add(g)
+        db_session.flush()
+        rel = models.GameRelease(
+            game_id=g.id, platform=platform, platform_id=models.resolve_platform_id(db_session, platform), source=source, external_id=title
+        )
+        db_session.add(rel)
+        db_session.flush()
+        db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id))
+
+    for i in range(9):
+        add(f"Devil May Cry 5 - Alt Colors {i}", "steam", "Steam")
+    add("Devil May Cry 5 Special Edition", "psn")
+    db_session.commit()
+
+    body = client.get("/integrations/psn/attach-search", params={"external_id": "X", "q": "devil"}).text
+    assert "Devil May Cry 5 Special Edition" in body
+    assert "Alt Colors" not in body, "Steam DLC is never an attach target"

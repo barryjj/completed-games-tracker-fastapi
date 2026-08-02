@@ -312,6 +312,12 @@ document.addEventListener('htmx:afterSwap', function(e) {
   }, 1600);
 });
 
+// Confirming one set changes what its siblings may claim, and they're already
+// rendered — re-render the queue so their options reflect it.
+document.body.addEventListener('cgt:psnSiblingsStale', function() {
+  htmx.trigger('#psn-review-filters', 'submit');
+});
+
 document.addEventListener('htmx:afterSwap', function(e) {
   if (e.target && e.target.id === 'psn-review-content') {
     // Repaint the toggle's active state — the buttons live outside the swap.

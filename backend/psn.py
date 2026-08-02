@@ -1387,13 +1387,35 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         .all()
     )
     owned = owned_platforms(db, user_id)
-    # Sets sharing a normalized title are the ones that look like duplicates.
-    # Count them up front so a row can say "set 1 of 2" rather than appearing
-    # twice for no stated reason.
-    by_name: dict[str, int] = {}
-    for cand in candidates:
-        by_name[(cand.raw_data or {}).get("normalizedName") or ""] = by_name.get((cand.raw_data or {}).get("normalizedName") or "", 0) + 1
-    seen: dict[str, int] = {}
+
+    # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
+    # INCLUDED. Two things need them:
+    #
+    #   1. "Set 1 of 2" has to keep saying 2 after one is confirmed, or the
+    #      surviving row stops explaining why it looked like a duplicate.
+    #   2. A platform a sibling already claimed is spoken for. Both Crimsonland
+    #      sets declare the identical PS3,PSVITA,PS4 — nothing distinguishes
+    #      them — so without this both could claim the same platform and
+    #      _import_one would silently drop the second as a (game, platform)
+    #      conflict. That's how the 90% set's data vanished and Vita ended up
+    #      showing 23%.
+    siblings: dict[str, list] = {}
+    for cand in (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind == "cross_play")
+        .all()
+    ):
+        siblings.setdefault((cand.raw_data or {}).get("normalizedName") or "", []).append(cand)
+    for group in siblings.values():
+        group.sort(key=lambda c: c.external_id or "")
+
+    claimed_by: dict[str, dict[str, str]] = {}
+    for name, group in siblings.items():
+        for pos, cand in enumerate(group):
+            if cand.status == "pending":
+                continue
+            for platform in cand.chosen_platforms or []:
+                claimed_by.setdefault(name, {})[platform] = f"set {pos + 1}"
 
     rows = []
     for cand in candidates:
@@ -1402,8 +1424,10 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         if not options:
             continue
         name = item.get("normalizedName") or ""
-        seen[name] = seen.get(name, 0) + 1
-        sets_for_title = by_name.get(name, 1)
+        group = siblings.get(name, [])
+        sets_for_title = len(group) or 1
+        set_index = next((i + 1 for i, c in enumerate(group) if c.external_id == cand.external_id), 1)
+        taken = claimed_by.get(name, {})
 
         trusted = _trophy_hint_is_trustworthy(item, sets_for_title)
         minutes = played_minutes_by_platform(item) if trusted else {}
@@ -1422,6 +1446,10 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         # or denied from the feeds. Over-offering costs a row you delete;
         # under-offering costs a completion with nowhere to attach.
         default = [p for p in options if p in owned] or options
+        # Never pre-tick a platform a sibling set already took. It stays
+        # offered — you might know something the data doesn't — but choosing it
+        # is now a deliberate override rather than the path of least resistance.
+        default = [p for p in default if p not in taken] or [p for p in options if p not in taken]
 
         # ...unless the reference file knows this title breaks that assumption:
         # separate trophy lists (so this set covers ONE platform) or separate
@@ -1468,12 +1496,14 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                     if defined.get(tier)
                 ],
                 "trophy_last_updated": (item.get("trophyLastUpdated") or "")[:10],
-                "set_index": seen[name],
+                "set_index": set_index,
                 "set_count": sets_for_title,
                 "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
                 "total_minutes": sum(minutes.values()),
                 "restricted": bool(exception and exception["restricts"]),
-                "options": [{"platform": p, "selected": p in default, "minutes": minutes.get(p, 0)} for p in options],
+                "options": [
+                    {"platform": p, "selected": p in default, "minutes": minutes.get(p, 0), "claimed_by": taken.get(p)} for p in options
+                ],
             }
         )
     rows.sort(key=lambda r: ((r["name"] or "").casefold(), r["set_index"]))
@@ -1573,7 +1603,23 @@ def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: 
     cand.chosen_platforms = chosen
     cand.reviewed_at = datetime.datetime.now(datetime.UTC)
     db.commit()
-    return {"name": cand.title, "created": created, "platforms": chosen}
+
+    # Sibling sets for the same title are already rendered, and their platform
+    # options just changed — what this row claimed is no longer free. The caller
+    # refreshes the queue rather than leaving stale cards offering platforms
+    # that are now spoken for.
+    name = (item.get("normalizedName") or "").strip()
+    stale = bool(name) and any(
+        (c.raw_data or {}).get("normalizedName") == name
+        for c in db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user.id,
+            models.PsnReviewCandidate.kind == "cross_play",
+            models.PsnReviewCandidate.status == "pending",
+        )
+        .all()
+    )
+    return {"name": cand.title, "created": created, "platforms": chosen, "siblings_stale": stale}
 
 
 def dismiss_entry_decision(db: Session, user: models.User, key: str) -> dict:

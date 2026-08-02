@@ -33,14 +33,25 @@
       <div class="cgt-psn-card-split">
         <div class="cgt-detail-block mb-0">
           <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
+          {% if r.set_count > 1 %}
+          {# Sony declares the SAME platform list on every set for this title, so
+             nothing but this says they're competing. Without it two sets can
+             claim one platform and the second is silently dropped as a
+             (game, platform) conflict. #}
+          <div class="cgt-completion-record cgt-completion-record--peach mt-2">
+            <span class="small">{{ r.set_count }} trophy sets share this title &mdash; platforms you assign here won&rsquo;t be offered on the {% if r.set_count == 2 %}other{% else %}others{% endif %}.</span>
+          </div>
+          {% endif %}
           <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
             {% for o in r.options %}
-            <label class="cgt-psn-plat-check">
+            <label class="cgt-psn-plat-check{% if o.claimed_by %} cgt-psn-plat-check--claimed{% endif %}"
+                   {% if o.claimed_by %}title="Already assigned to {{ o.claimed_by }} — tick to claim it here anyway"{% endif %}>
               <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
                      onchange="psnRememberDraft('{{ r.key }}')"
                      {% if o.selected %}checked{% endif %}>
               <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-              {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
+              {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken by {{ o.claimed_by }}</span>
+              {% elif o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
             </label>
             {% endfor %}
           </div>

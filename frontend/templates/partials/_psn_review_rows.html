@@ -39,12 +39,14 @@
        Unticking them all and confirming is the same as Dismiss. #}
     <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-2">
       {% for o in r.options %}
-      <label class="cgt-psn-plat-check">
+      <label class="cgt-psn-plat-check{% if o.claimed_by %} cgt-psn-plat-check--claimed{% endif %}"
+             {% if o.claimed_by %}title="Already assigned to {{ o.claimed_by }} — tick to claim it here anyway"{% endif %}>
         <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
                onchange="psnRememberDraft('{{ r.key }}')"
                {% if o.selected %}checked{% endif %}>
         <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-        {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m</span>{% endif %}
+        {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken</span>
+        {% elif o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m</span>{% endif %}
       </label>
       {% endfor %}
     </div>
