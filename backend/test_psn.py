@@ -2803,3 +2803,27 @@ def test_stack_pages_do_not_call_deferred_helpers_at_parse_time():
     assert "DOMContentLoaded" in psn_page
     # The bare top-level call is what blanked the stage.
     assert "\npsnRebuildNav(true);" not in psn_page
+
+
+def test_card_position_is_remembered_per_queue(client, db_session):
+    """Position already survived view and tab switches in memory; this makes it
+    survive a reload. Stored per queue — the two stacks are different lists, so
+    one slot would have each tab trying to restore the other's card."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_CP_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+
+    page = client.get("/tools/psn-review?view=card").text
+    assert "psnRememberCard(" in page
+    assert "psnReadCardMemory()[psnCurrentKind()]" in page
+    # Restored on first render, not only after a swap.
+    head = page[page.index("DOMContentLoaded") :][:400]
+    assert "psnReadCardMemory" in head
+    assert "psnRebuildNav(false)" in head, "must not reset to the top"

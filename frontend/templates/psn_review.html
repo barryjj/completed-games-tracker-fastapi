@@ -90,8 +90,26 @@
 // separate rather than generalised because the two queues load on different
 // pages and share no markup ids.
 let psnCardIdx = 0;
-// Which card was on screen, so a swap can put you back rather than at the top.
+// Which card was on screen, so a swap — or a return to the page — puts you back
+// rather than at the top. Stored per queue: the two stacks are different lists,
+// and a single slot would have each tab trying to restore the other's card.
+const PSN_CARD_KEY = 'cgt-psn-card';
 let psnLastCardKey = null;
+
+function psnCurrentKind() {
+  var f = document.getElementById('psn-kind-field');
+  return (f && f.value) || 'cross_play';
+}
+function psnReadCardMemory() {
+  try { return JSON.parse(localStorage.getItem(PSN_CARD_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function psnRememberCard(key) {
+  psnLastCardKey = key;
+  var m = psnReadCardMemory();
+  m[psnCurrentKind()] = key;
+  try { localStorage.setItem(PSN_CARD_KEY, JSON.stringify(m)); } catch (e) { /* full or blocked */ }
+}
 function psnCards() { return Array.from(document.querySelectorAll('#psn-stack .cgt-match-card')); }
 function psnShowCard(idx) {
   const cards = psnCards();
@@ -101,7 +119,7 @@ function psnShowCard(idx) {
     c.classList.toggle('cgt-match-card--hidden', i !== psnCardIdx);
     c.classList.toggle('cgt-match-card--active', i === psnCardIdx);
   });
-  psnLastCardKey = (cards[psnCardIdx].id || '').replace('psn-card-', '');
+  psnRememberCard((cards[psnCardIdx].id || '').replace('psn-card-', ''));
   // Only the cards near this one load their art; see cgtHydrateCards.
   cgtHydrateWhenReady(cards, psnCardIdx);
   var counter = document.getElementById('psn-nav-counter');
@@ -312,7 +330,8 @@ document.addEventListener('htmx:afterSwap', function(e) {
     // place on every tab switch — and since card 1 still shows the server's
     // defaults, it read as the draft having been discarded.
     if (document.getElementById('psn-stack')) {
-      var back = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + psnLastCardKey; });
+      var remembered = psnLastCardKey || psnReadCardMemory()[psnCurrentKind()];
+      var back = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + remembered; });
       psnCardIdx = back > -1 ? back : 0;
       psnRebuildNav(false);
     }
@@ -330,7 +349,12 @@ document.addEventListener('htmx:afterSwap', function(e) {
 // --active, and left all 54 hidden: a blank stage. DOMContentLoaded fires
 // after deferred scripts, so everything exists by then.
 document.addEventListener('DOMContentLoaded', function() {
-  if (document.getElementById('psn-stack')) psnRebuildNav(true);
+  if (document.getElementById('psn-stack')) {
+    var want = psnReadCardMemory()[psnCurrentKind()];
+    var at = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + want; });
+    psnCardIdx = at > -1 ? at : 0;
+    psnRebuildNav(false);
+  }
   psnApplyDrafts();
 });
 </script>
