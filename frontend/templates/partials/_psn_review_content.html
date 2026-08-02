@@ -1,7 +1,6 @@
-{# The tab bar and sort select sit outside this swap target, so they ride along
-   OOB — otherwise a tab switch leaves the old tab highlighted and the other
-   queue's sort options in place. #}
-{% if oob %}{% include "partials/_psn_tabs.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
+{# Everything outside this swap target that describes the current queue rides
+   along OOB — tabs, pending count, blurb, and the per-queue sort options. #}
+{% if oob %}{% include "partials/_psn_review_chrome.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
 {# The review body — one queue and one view at a time, server-rendered.
    Swapped wholesale by the tab buttons, the view toggle and the filter. #}
 {% if not rows %}

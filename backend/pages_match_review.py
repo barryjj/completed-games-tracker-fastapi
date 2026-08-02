@@ -222,13 +222,31 @@ async def psn_review_bulk_dismiss(
     )
 
 
-def _played_only_done(request: Request, key: str, name: str, verb: str):
+def _review_chrome_ctx(db: Session, user: models.User, kind: str) -> dict:
+    """Counts + kind for the out-of-band chrome on a row-action response.
+
+    Without it the tab badges and the pending count only refresh on a full
+    swap, so deciding rows left both showing the number you started with.
+    """
+    from . import psn
+
+    return {
+        "oob": True,
+        "kind": kind,
+        "counts": {
+            "cross_play": len(psn.import_review_rows(db, user.id)),
+            "played_only": len([r for r in psn.played_only_rows(db, user.id) if not r["decision"]]),
+        },
+    }
+
+
+def _played_only_done(request: Request, db: Session, user: models.User, key: str, name: str, verb: str):
     """Row replacement after a played-only action — same contract as the
     cross-play confirm: the click IS the action, the response retires the row."""
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",
-        context={"key": key, "name": name, "detail": verb},
+        context={"key": key, "name": name, "detail": verb, **_review_chrome_ctx(db, user, "played_only")},
         headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
     )
 
@@ -248,7 +266,7 @@ async def psn_played_only_import(
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
     _maybe_enrich(db, current_user)
-    return _played_only_done(request, key, name, "added to your library")
+    return _played_only_done(request, db, current_user, key, name, "added to your library")
 
 
 @router.post("/tools/psn-review/{key}/played-only/skip")
@@ -267,7 +285,7 @@ async def psn_played_only_skip(
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
     _maybe_enrich(db, current_user)
-    return _played_only_done(request, key, rows.get(key, key), "skipped")
+    return _played_only_done(request, db, current_user, key, rows.get(key, key), "skipped")
 
 
 @router.post("/tools/psn-review/{key}/played-only/attach")
@@ -289,7 +307,7 @@ async def psn_played_only_attach(
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
     _maybe_enrich(db, current_user)
-    return _played_only_done(request, key, name, "play stats attached")
+    return _played_only_done(request, db, current_user, key, name, "play stats attached")
 
 
 @router.post("/tools/psn-review/{key}/confirm")
@@ -316,7 +334,7 @@ async def psn_review_confirm(
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",
-        context={"key": key, "name": result["name"], "created": result["created"]},
+        context={"key": key, "name": result["name"], "created": result["created"], **_review_chrome_ctx(db, current_user, "cross_play")},
         headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
     )
 
@@ -341,7 +359,7 @@ async def psn_review_dismiss(
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_done.html",
-        context={"key": key, "name": result["name"], "created": 0},
+        context={"key": key, "name": result["name"], "created": 0, **_review_chrome_ctx(db, current_user, "cross_play")},
         headers={"HX-Retarget": f"#psn-row-{key}", "HX-Reswap": "outerHTML"},
     )
 

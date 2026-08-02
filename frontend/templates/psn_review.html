@@ -5,19 +5,12 @@
 <div class="mb-3 d-flex align-items-start justify-content-between flex-wrap gap-2">
   <div>
     <h4 class="mb-0">PSN Review</h4>
-    <p class="text-secondary small mb-0">
-      {% if kind == "played_only" %}
-      Games you played with no purchase or trophy set behind them &mdash; a disc, a demo, someone
-      else&rsquo;s account on your console. Sony can&rsquo;t tell those apart, so nothing here is
-      imported without your click.
-      {% else %}
-      A cross-play trophy set covers several platforms and PSN never says which you own &mdash; and
-      with cross-buy the answer is often more than one. Confirming creates the library entries.
-      {% endif %}
+    <p id="psn-review-blurb" class="text-secondary small mb-0">
+      {% include "partials/_psn_review_blurb.html" %}
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
-    <span class="badge bg-secondary"><span id="psn-pending-count">{{ rows | length }}</span> pending</span>
+    <span class="badge bg-secondary"><span id="psn-pending-count">{{ counts[kind] }}</span> pending</span>
   </div>
 </div>
 
@@ -213,6 +206,19 @@ function psnSetView(view) {
   document.getElementById('psn-view-field').value = view;
   htmx.trigger('#psn-review-filters', 'submit');
 }
+
+// A decided row says what happened, then gets out of the way. Leaving them in
+// place turns the queue into a list of things you already dealt with, which is
+// what you end up reading past to find the ones you haven't.
+document.addEventListener('htmx:afterSwap', function(e) {
+  var row = e.target && e.target.matches && e.target.matches('[data-retire]') ? e.target : null;
+  if (!row) return;
+  setTimeout(function() {
+    row.style.transition = 'opacity .3s ease';
+    row.style.opacity = '0';
+    setTimeout(function() { row.remove(); }, 300);
+  }, 1600);
+});
 
 document.addEventListener('htmx:afterSwap', function(e) {
   if (e.target && e.target.id === 'psn-review-content') {

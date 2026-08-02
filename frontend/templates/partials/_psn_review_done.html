@@ -1,7 +1,10 @@
 {# Replacement for a row that's been actioned. The click IS the action — this
    reports what happened rather than staging anything for a later run, same
    contract as match review's merge and import review's confirm. #}
-<tr id="psn-row-{{ key }}" class="cgt-review-row--done">
+{# Retires itself: says what happened, then removes the row. A decided row that
+   sits there forever turns the queue into a list of things you already dealt
+   with, which is what you were reading past to find the ones you hadn't. #}
+<tr id="psn-row-{{ key }}" class="cgt-review-row--done" data-retire="1">
   <td colspan="6" class="text-secondary small py-2">
     {% if detail %}
     <strong>{{ name }}</strong> &mdash; {{ detail }}.
@@ -12,3 +15,4 @@
     {% endif %}
   </td>
 </tr>
+{% include "partials/_psn_review_chrome.html" %}

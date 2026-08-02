@@ -2625,3 +2625,66 @@ def test_review_tabs_repaint_on_switch(client, db_session):
     played_btn = tabs[tabs.index("psnSetKind('played_only')") - 200 : tabs.index("Played-only")]
     assert "active" in played_btn
     assert "active" not in cross_btn
+
+
+def test_switching_tabs_updates_the_count_and_the_blurb(client, db_session):
+    """The pending badge and the description live outside the swap target and
+    both describe the CURRENT queue — a switch to Played-only left "54 pending"
+    and the cross-play blurb sitting above seven rows."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_C{i}_00",
+                "name": f"Cross {i}",
+                "displayName": f"Cross {i}",
+                "platform": "PS3,PS4",
+                "sources": ["titles"],
+            }
+            for i in range(3)
+        ],
+    )
+    _seed_review(
+        db_session,
+        user,
+        [{"titleId": "PPSA_PO_00", "name": "Disc", "displayName": "Disc", "sources": ["played"]}],
+        kind="played_only",
+    )
+
+    hx = client.get("/tools/psn-review?kind=played_only", headers={"HX-Request": "true"}).text
+    assert 'id="psn-pending-count" hx-swap-oob="true">1<' in hx.replace("\n", "")
+    assert "no purchase or trophy set behind them" in hx
+    assert "cross-buy the answer is often more than one" not in hx
+
+
+def test_row_actions_refresh_the_counts_and_retire_the_row(client, db_session):
+    """Deciding a row left the tab badges and pending count showing the number
+    you started with until a full swap. And a decided row that sits there
+    forever turns the queue into a list of things you already dealt with."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {"npCommunicationId": "NPWR_R1_00", "name": "One", "displayName": "One", "platform": "PS3,PS4", "sources": ["titles"]},
+            {"npCommunicationId": "NPWR_R2_00", "name": "Two", "displayName": "Two", "platform": "PS3,PS4", "sources": ["titles"]},
+        ],
+    )
+
+    r = client.post("/tools/psn-review/NPWR_R1_00/dismiss")
+    body = r.content.decode()
+    # The row retires itself rather than lingering.
+    assert 'data-retire="1"' in body
+    # ...and the chrome comes back with one fewer.
+    assert 'id="psn-tabs"' in body and 'hx-swap-oob="true"' in body
+    assert 'id="psn-pending-count" hx-swap-oob="true">1<' in body.replace("\n", "")
