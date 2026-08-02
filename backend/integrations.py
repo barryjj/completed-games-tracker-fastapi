@@ -638,6 +638,48 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
     return f"{header}\n{delta}\n{totals_line}"
 
 
+async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, has_sgdb_key: bool) -> None:
+    """Post-sync enrichment, run ONE AT A TIME.
+
+    These used to be three concurrent tasks. SQLite in WAL mode allows a single
+    writer, each of these holds its transaction across an HTTP call, and
+    busy_timeout is 10s — so a writer queued behind the other two plus their
+    network round-trips blew straight past it and the job died on
+    "database is locked". Serialising removes the contention instead of raising
+    the timeout, which would only have turned a visible failure into a slow one.
+
+    Order is deliberate. Store metadata goes FIRST because it retitles — sparse
+    "Batman" becomes "Batman: The Telltale Series" — and both artwork passes
+    look SGDB up BY TITLE. Running it last meant every cover was fetched against
+    whatever name PSN happened to return.
+
+    Each step self-gates (store_is_stale, missing-art filters), so a re-run
+    costs almost nothing and a skipped step is free.
+    """
+    steps: list[tuple[str, str]] = []
+    if added:
+        steps.append(("psn_store_refresh", "Store metadata"))
+    if has_sgdb_key:
+        # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
+        # the covers actually being waited on.
+        steps.append(("sgdb_fill_all", "Artwork fill"))
+        if needs_review:
+            # Review rows have no library entry to borrow art from, so without
+            # this their cards fall back to PSN's square icon0.png.
+            steps.append(("psn_review_art", "Review artwork"))
+
+    for kind, label in steps:
+        job = jobs.create(user_id=user_id, kind=kind, label=label)
+        try:
+            if kind == "sgdb_fill_all":
+                await _run_sgdb_fill_all_job(job.id, user_id, sources={"psn"})
+            else:
+                await _run_sync_job(job.id, user_id, kind)
+        except Exception:
+            # One step failing must not strand the rest of the chain.
+            _logger.exception("PSN follow-up %s failed for user %s", kind, user_id)
+
+
 async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
     """
     Background runner for a Steam job (any sync or catalog refresh).
@@ -666,31 +708,16 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
-        # PSN entries have no native artwork, so auto-fill from SGDB after an
-        # import — as its own background job so the import toast isn't held up
-        # by the (long) fill. Gated on an SGDB key; silently skipped without.
-        if kind == "psn_sync" and user.steamgriddb_api_key:
-            fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
-            # Scope to PSN entries — those are the ones the import just added
-            # with no native art. Re-scanning all 16k+ entries here never
-            # finishes and buries the covers we actually need.
-            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
-        # The import is what discovers the uncertain ones, so it's what asks for
-        # their art. Gated on the count it just computed: no review queue, no
-        # reason to hit SGDB. Review rows have no library entry to borrow art
-        # from, so without this their cards fall back to PSN's square icon0.png
-        # and look nothing like every other review card.
-        if kind == "psn_sync" and result.get("needs_review") and user.steamgriddb_api_key:
-            art_job = jobs.create(user_id=user.id, kind="psn_review_art", label="Review artwork")
-            asyncio.create_task(_run_sync_job(art_job.id, user.id, "psn_review_art"))
-        # Store metadata is part of syncing, not a thing to remember to do
-        # afterwards. Chained rather than inlined because it's rate-limited to
-        # ~1s per release: the sync toast (and the review queue) should not wait
-        # on it. store_is_stale() gates the work, so a re-sync of an already
-        # enriched library skips almost everything.
-        if kind == "psn_sync" and result.get("added"):
-            store_job = jobs.create(user_id=user.id, kind="psn_store_refresh", label="Store metadata")
-            asyncio.create_task(_run_sync_job(store_job.id, user.id, "psn_store_refresh"))
+        # One chain, not three tasks. See _run_psn_followups.
+        if kind == "psn_sync":
+            asyncio.create_task(
+                _run_psn_followups(
+                    user.id,
+                    added=bool(result.get("added")),
+                    needs_review=bool(result.get("needs_review")),
+                    has_sgdb_key=bool(user.steamgriddb_api_key),
+                )
+            )
         # Store metadata RETITLES — the sparse "Batman" becomes "Batman: The
         # Telltale Series". The duplicate scan inside the import already ran, on
         # the sparse titles, so anything only recognisable under the corrected
@@ -1507,15 +1534,11 @@ def kick_psn_enrichment(user: models.User) -> list[str]:
     store_is_stale() skips anything already enriched — so a firing that turns
     out to have nothing to do costs almost nothing.
     """
-    kinds = []
-    if user.steamgriddb_api_key:
-        fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
-        asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
-        kinds.append("sgdb_fill_all")
-    store_job = jobs.create(user_id=user.id, kind="psn_store_refresh", label="Store metadata")
-    asyncio.create_task(_run_sync_job(store_job.id, user.id, "psn_store_refresh"))
-    kinds.append("psn_store_refresh")
-    return kinds
+    # Same chain as after a sync, and serialised for the same reason: two
+    # writers holding transactions across HTTP calls exhaust SQLite's
+    # busy_timeout and one dies on "database is locked".
+    asyncio.create_task(_run_psn_followups(user.id, added=True, needs_review=False, has_sgdb_key=bool(user.steamgriddb_api_key)))
+    return ["psn_store_refresh"] + (["sgdb_fill_all"] if user.steamgriddb_api_key else [])
 
 
 async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | None = None) -> None:

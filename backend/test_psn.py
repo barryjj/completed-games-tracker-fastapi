@@ -852,30 +852,91 @@ def _psn_import_result():
     }
 
 
-def test_psn_sync_auto_triggers_sgdb_fill_when_key_present(db_session, monkeypatch):
+def test_psn_sync_followups_run_in_sequence_store_metadata_first(db_session, monkeypatch):
+    """These were three concurrent tasks. SQLite in WAL mode allows one writer,
+    each holds its transaction across an HTTP call, and busy_timeout is 10s — so
+    a writer queued behind the other two died on "database is locked".
+
+    Order matters too: store metadata retitles, and both artwork passes look
+    SGDB up BY TITLE, so running it last fetched covers against whatever name
+    PSN happened to return."""
     import asyncio
 
     from backend import integrations, jobs
-    from backend import psn as psn_mod
 
     jobs.clear_all()
-    user = models.User(name="t", username="t", password_hash="x", api_token="tok", steamgriddb_api_key="sgdb-key")
-    db_session.add(user)
+    user = _user(db_session, "chain2")
+    user.steamgriddb_api_key = "sgdb-key"
     db_session.commit()
 
-    monkeypatch.setattr(psn_mod, "sync_library", lambda db, u: _psn_import_result())
+    ran = []
 
-    async def _noop(job_id, user_id):
-        return None
+    async def _fake_sync_job(job_id, user_id, kind):
+        ran.append(kind)
 
-    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _noop)
-    db_session.close = lambda: None
+    async def _fake_fill(job_id, user_id, sources=None):
+        ran.append("sgdb_fill_all")
 
-    job = jobs.create(user_id=user.id, kind="psn_sync", label="Library sync")
-    with patch("backend.integrations.SessionLocal", return_value=db_session):
-        asyncio.run(integrations._run_sync_job(job.id, user.id, "psn_sync"))
+    monkeypatch.setattr(integrations, "_run_sync_job", _fake_sync_job)
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
-    assert any(j.kind == "sgdb_fill_all" for j in jobs.active_jobs_for(user.id))
+    asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
+    assert ran == ["psn_store_refresh", "sgdb_fill_all", "psn_review_art"]
+    jobs.clear_all()
+
+
+def test_psn_followups_skip_what_does_not_apply(db_session, monkeypatch):
+    """Nothing added means nothing to enrich; no SGDB key means no art passes."""
+    import asyncio
+
+    from backend import integrations, jobs
+
+    jobs.clear_all()
+    user = _user(db_session, "chain3")
+    ran = []
+
+    async def _fake_sync_job(job_id, user_id, kind):
+        ran.append(kind)
+
+    async def _fake_fill(job_id, user_id, sources=None):
+        ran.append("sgdb_fill_all")
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _fake_sync_job)
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
+
+    asyncio.run(integrations._run_psn_followups(user.id, added=False, needs_review=False, has_sgdb_key=False))
+    assert ran == []
+
+    ran.clear()
+    asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=False))
+    assert ran == ["psn_store_refresh"], "no key, no artwork passes"
+    jobs.clear_all()
+
+
+def test_one_failing_followup_does_not_strand_the_rest(db_session, monkeypatch):
+    """A chain is only worth serialising if a broken link doesn't stop it."""
+    import asyncio
+
+    from backend import integrations, jobs
+
+    jobs.clear_all()
+    user = _user(db_session, "chain4")
+    ran = []
+
+    async def _fake_sync_job(job_id, user_id, kind):
+        if kind == "psn_store_refresh":
+            raise RuntimeError("store is down")
+        ran.append(kind)
+
+    async def _fake_fill(job_id, user_id, sources=None):
+        ran.append("sgdb_fill_all")
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _fake_sync_job)
+    monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
+
+    asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
+    assert ran == ["sgdb_fill_all", "psn_review_art"]
+    jobs.clear_all()
 
 
 def test_psn_sync_skips_sgdb_fill_without_key(db_session, monkeypatch):
