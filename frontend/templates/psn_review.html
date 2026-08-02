@@ -90,6 +90,8 @@
 // separate rather than generalised because the two queues load on different
 // pages and share no markup ids.
 let psnCardIdx = 0;
+// Which card was on screen, so a swap can put you back rather than at the top.
+let psnLastCardKey = null;
 function psnCards() { return Array.from(document.querySelectorAll('#psn-stack .cgt-match-card')); }
 function psnShowCard(idx) {
   const cards = psnCards();
@@ -99,6 +101,7 @@ function psnShowCard(idx) {
     c.classList.toggle('cgt-match-card--hidden', i !== psnCardIdx);
     c.classList.toggle('cgt-match-card--active', i === psnCardIdx);
   });
+  psnLastCardKey = (cards[psnCardIdx].id || '').replace('psn-card-', '');
   var counter = document.getElementById('psn-nav-counter');
   if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
 }
@@ -192,7 +195,10 @@ window.psnApplyDrafts = function() {
     opts.querySelectorAll('input[name="platforms"]').forEach(function(cb) {
       cb.checked = want.indexOf(cb.value) !== -1;
     });
-    opts.closest('tr, .cgt-match-card').classList.add('cgt-psn-drafted');
+    var host = opts.closest('tr, .cgt-match-card');
+    // Defensive: a throw here aborts the forEach, so one odd row would silently
+    // cost every draft after it.
+    if (host) host.classList.add('cgt-psn-drafted');
     touched++;
   });
   return touched;
@@ -288,9 +294,15 @@ document.addEventListener('htmx:afterSwap', function(e) {
       btns[0].classList.toggle('active', view === 'list');
       btns[1].classList.toggle('active', view === 'card');
     }
-    psnCardIdx = 0;
-    if (document.getElementById('psn-stack')) psnRebuildNav(true);
     psnApplyDrafts();
+    // Return to the card you were on. Resetting to the first of 54 lost your
+    // place on every tab switch — and since card 1 still shows the server's
+    // defaults, it read as the draft having been discarded.
+    if (document.getElementById('psn-stack')) {
+      var back = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + psnLastCardKey; });
+      psnCardIdx = back > -1 ? back : 0;
+      psnRebuildNav(false);
+    }
     // The toggle lives outside the swap, so re-evaluate whether it applies to
     // whatever just rendered — card view and played-only have nothing to bulk.
     var kind = document.getElementById('psn-kind-field').value;
