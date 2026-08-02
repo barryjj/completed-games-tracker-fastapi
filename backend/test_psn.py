@@ -2883,40 +2883,6 @@ def test_trophyless_row_says_so_rather_than_rendering_an_empty_box(db_session, c
     assert b"No trophy data." in client.get("/tools/psn-review?view=card").content
 
 
-def test_platinum_uses_its_own_glyph(client, db_session):
-    """Platinum is a different design from gold/silver/bronze, not a recolour —
-    so it can't share their glyph and be told apart by tint alone."""
-    _seed_platforms(db_session)
-    token = _signup_and_login(client)
-    user = db_session.query(models.User).filter_by(api_token=token).first()
-    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
-    db_session.commit()
-    _seed_review(
-        db_session,
-        user,
-        [
-            {
-                "npCommunicationId": "NPWR_PL_00",
-                "name": "Platted",
-                "displayName": "Platted",
-                "platform": "PS3,PS4",
-                "trophyProgress": 100,
-                "trophies": {"bronze": 2, "platinum": 1},
-                "earnedTrophies": {"bronze": 2, "platinum": 1},
-                "sources": ["titles"],
-            }
-        ],
-    )
-    body = client.get("/tools/psn-review?view=card").text
-    plat = open("frontend/templates/partials/_icon_trophy_platinum.svg").read()
-    generic = open("frontend/templates/partials/_icon_trophy.svg").read()
-    # Both glyphs render, and they are genuinely different paths.
-    plat_path = plat[plat.index('d="') + 3 : plat.index('"', plat.index('d="') + 3)]
-    gen_path = generic[generic.index('d="') + 3 : generic.index('"', generic.index('d="') + 3)]
-    assert plat_path != gen_path
-    assert plat_path in body and gen_path in body
-
-
 def test_card_title_is_not_the_faintest_thing_on_the_card(client, db_session):
     """A bare h6 inherits the body colour and read fainter than the small-caps
     block headings under it — on a card whose job is naming one game."""

@@ -59,9 +59,7 @@
             {% for t in r.trophy_tiers %}
             <span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}{% if t.earned == t.defined %} cgt-trophy-tier--complete{% endif %}"
                   title="{{ t.tier | capitalize }} — {{ t.earned }} of {{ t.defined }}">
-              {% if t.tier == "platinum" %}{% include "partials/_icon_trophy_platinum.svg" %}
-              {%- else %}{% include "partials/_icon_trophy.svg" %}{% endif -%}
-              {{ t.earned }}/{{ t.defined }}
+              {% include "partials/_icon_trophy.svg" %}{{ t.earned }}/{{ t.defined }}
             </span>
             {% endfor %}
           </div>
