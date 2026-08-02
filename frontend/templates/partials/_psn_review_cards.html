@@ -23,45 +23,54 @@
             {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
           </td>
           <td class="cgt-source-table__title"><h6 class="mb-0">{{ r.name }}</h6></td>
-          <td class="cgt-source-table__platform">
-            {% if r.trophy_defined %}
-            <span class="tag-badge tag-source">{{ r.trophy_progress }}% &middot; {{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
-            {% endif %}
-          </td>
+          <td class="cgt-source-table__platform"></td>
         </tr>
       </tbody></table>
 
       <p class="text-secondary small mb-3">{{ r.reason }}</p>
 
-      <div class="cgt-detail-block mb-0">
-        <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
-        <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
-          {% for o in r.options %}
-          <label class="cgt-psn-plat-check">
-            <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
-                   onchange="psnRememberDraft('{{ r.key }}')"
-                   {% if o.selected %}checked{% endif %}>
-            <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-            {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
-          </label>
-          {% endfor %}
+      {# Side by side, matching the played-only card. The question you're here
+         to answer goes left; the evidence for answering it goes right. #}
+      <div class="cgt-psn-card-split">
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
+          <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
+            {% for o in r.options %}
+            <label class="cgt-psn-plat-check">
+              <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
+                     onchange="psnRememberDraft('{{ r.key }}')"
+                     {% if o.selected %}checked{% endif %}>
+              <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
+              {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Trophies</h6>
+          {% if r.trophy_defined %}
+          <div class="d-flex align-items-baseline gap-2 mt-2 mb-2">
+            <span class="cgt-trophy-progress">{{ r.trophy_progress }}%</span>
+            <span class="text-secondary small">{{ r.trophy_earned }} of {{ r.trophy_defined }}</span>
+          </div>
+          <dl class="cgt-trophy-tiers mb-0">
+            {% for t in r.trophy_tiers %}
+            <dt class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}">{{ t.tier }}</dt>
+            <dd{% if t.earned == t.defined %} class="cgt-trophy-tier--complete"{% endif %}>{{ t.earned }}/{{ t.defined }}</dd>
+            {% endfor %}
+          </dl>
+          {% else %}
+          <p class="text-secondary small mb-0 mt-2">No trophy data.</p>
+          {% endif %}
+          {% if r.trophy_last_updated or r.last_played %}
+          <div class="cgt-trophy-meta">
+            {% if r.trophy_last_updated %}Updated {{ r.trophy_last_updated }}{% endif %}
+            {% if r.last_played %}{% if r.trophy_last_updated %} &middot; {% endif %}played {{ r.last_played }}{% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
-
-      {% if r.trophy_last_updated or r.last_played %}
-      <div class="cgt-detail-block mb-0 mt-3">
-        <dl class="cgt-detail-meta small mb-0">
-          {% if r.trophy_last_updated %}
-          <dt>Trophies updated</dt>
-          <dd>{{ r.trophy_last_updated }}</dd>
-          {% endif %}
-          {% if r.last_played %}
-          <dt>Last played</dt>
-          <dd>{{ r.last_played }}</dd>
-          {% endif %}
-        </dl>
-      </div>
-      {% endif %}
     </div>
   </div>
 

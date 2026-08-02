@@ -1458,6 +1458,15 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 "trophy_progress": item.get("trophyProgress"),
                 "trophy_earned": sum(v or 0 for v in earned.values()),
                 "trophy_defined": sum(v or 0 for v in defined.values()),
+                # Per-tier, Sony's own order. The feed already carries this and
+                # a summed chip threw it away — it's also the shape trophy
+                # tracking (#136) needs, so surfacing it now is a step toward
+                # that rather than decoration.
+                "trophy_tiers": [
+                    {"tier": tier, "earned": earned.get(tier) or 0, "defined": defined.get(tier) or 0}
+                    for tier in ("platinum", "gold", "silver", "bronze")
+                    if defined.get(tier)
+                ],
                 "trophy_last_updated": (item.get("trophyLastUpdated") or "")[:10],
                 "set_index": seen[name],
                 "set_count": sets_for_title,

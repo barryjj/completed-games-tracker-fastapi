@@ -2827,3 +2827,57 @@ def test_card_position_is_remembered_per_queue(client, db_session):
     head = page[page.index("DOMContentLoaded") :][:400]
     assert "psnReadCardMemory" in head
     assert "psnRebuildNav(false)" in head, "must not reset to the top"
+
+
+def test_card_shows_the_trophy_tiers_not_a_summed_chip(client, db_session):
+    """The feed carries per-tier counts and a summed chip threw them away. This
+    is also the shape trophy tracking (#136) needs, so it's a step toward that
+    rather than decoration."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": "NPWR_TT_00",
+                "name": "Tiered",
+                "displayName": "Tiered",
+                "platform": "PS3,PS4",
+                "trophyProgress": 60,
+                "trophies": {"bronze": 31, "silver": 8, "gold": 7, "platinum": 1},
+                "earnedTrophies": {"bronze": 20, "silver": 4, "gold": 2, "platinum": 0},
+                "sources": ["titles"],
+            }
+        ],
+    )
+
+    row = psn.import_review_rows(db_session, user.id)[0]
+    # Sony's order, and tiers the game doesn't have are omitted entirely.
+    assert [t["tier"] for t in row["trophy_tiers"]] == ["platinum", "gold", "silver", "bronze"]
+    assert row["trophy_tiers"][3] == {"tier": "bronze", "earned": 20, "defined": 31}
+
+    body = client.get("/tools/psn-review?view=card").text
+    assert "cgt-trophy-tier--platinum" in body
+    assert "20/31" in body
+    # Both halves sit side by side, matching the played-only card.
+    assert "cgt-psn-card-split" in body
+
+
+def test_trophyless_row_says_so_rather_than_rendering_an_empty_box(db_session, client):
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"titleId": "CUSA_NT_00", "name": "Bare", "displayName": "Bare", "platform": "PS3,PS4", "sources": ["purchased"]}],
+    )
+    row = psn.import_review_rows(db_session, user.id)[0]
+    assert row["trophy_tiers"] == []
+    assert b"No trophy data." in client.get("/tools/psn-review?view=card").content
