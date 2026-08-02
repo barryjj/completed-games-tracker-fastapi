@@ -288,7 +288,7 @@ function importShowCard(idx) {
   cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
   // Same windowing as the PSN stack — this queue renders 253 cards, so it was
   // the worse offender; it only looked fine because Steam art was cached.
-  cgtHydrateCards(cards, importCardIdx);
+  if (window.cgtHydrateCards) cgtHydrateCards(cards, importCardIdx);
   var counter = document.getElementById('import-nav-counter');
   if (counter) {
     var nav = document.getElementById('import-nav');

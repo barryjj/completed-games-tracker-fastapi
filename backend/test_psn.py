@@ -2778,3 +2778,24 @@ def test_every_card_stack_uses_the_shared_window():
         body = open(tpl).read()
         assert "data-src=" in body, tpl
         assert 'hero__img" src=' not in body, tpl
+
+
+def test_stack_pages_do_not_call_deferred_helpers_at_parse_time():
+    """app.js is loaded with defer, so it has NOT executed while an inline
+    script in the body runs. Calling into it there threw, which aborted
+    psnShowCard before any card got --active and left the whole stack hidden —
+    a blank card view.
+
+    Two guards: the call site is defensive, and the initial render waits for
+    DOMContentLoaded, which fires after deferred scripts."""
+    base = open("frontend/templates/base.html").read()
+    assert "app.js" in base and "defer" in base, "premise: app.js is deferred"
+
+    psn_page = open("frontend/templates/psn_review.html").read()
+    assert "if (window.cgtHydrateCards) cgtHydrateCards(" in psn_page
+    assert "DOMContentLoaded" in psn_page
+    # The bare top-level call is what broke it.
+    assert "\npsnRebuildNav(true);" not in psn_page
+
+    imp = open("frontend/templates/import_review.html").read()
+    assert "if (window.cgtHydrateCards) cgtHydrateCards(" in imp

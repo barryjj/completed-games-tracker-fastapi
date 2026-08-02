@@ -103,7 +103,7 @@ function psnShowCard(idx) {
   });
   psnLastCardKey = (cards[psnCardIdx].id || '').replace('psn-card-', '');
   // Only the cards near this one load their art; see cgtHydrateCards.
-  cgtHydrateCards(cards, psnCardIdx);
+  if (window.cgtHydrateCards) cgtHydrateCards(cards, psnCardIdx);
   var counter = document.getElementById('psn-nav-counter');
   if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
 }
@@ -314,7 +314,13 @@ document.addEventListener('htmx:afterSwap', function(e) {
   }
 });
 
-if (document.getElementById('psn-stack')) psnRebuildNav(true);
-psnApplyDrafts();
+// app.js is deferred, so it has NOT executed while this inline script runs —
+// calling into it here threw, aborted psnShowCard before any card got
+// --active, and left all 54 hidden: a blank stage. DOMContentLoaded fires
+// after deferred scripts, so everything exists by then.
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('psn-stack')) psnRebuildNav(true);
+  psnApplyDrafts();
+});
 </script>
 {% endblock %}
