@@ -2715,3 +2715,66 @@ def test_review_rows_wire_up_draft_persistence(client, db_session):
     assert "psnApplyDrafts" in js and "psnWriteDrafts" in js
     # Bulk actions clear what they acted on.
     assert "psnClearActedDrafts" in js
+
+
+def test_card_stacks_defer_their_images(client, db_session):
+    """Every card in a stack is in the DOM and hidden ones use opacity: 0, not
+    display: none — so the browser fetched and decoded ALL of them up front, and
+    loading="lazy" didn't help because they're absolutely positioned at the same
+    spot and all count as in-viewport. 54 PSN cards meant 102 SGDB heroes
+    decoded before the first one appeared."""
+    import re
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id, user.steamgriddb_api_key = "n" * 64, "dude", "k"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_HY{i}_00",
+                "name": f"Cross {i}",
+                "displayName": f"Cross {i}",
+                "platform": "PS3,PS4",
+                "sources": ["titles"],
+            }
+            for i in range(4)
+        ],
+    )
+    psn.save_review_thumbnails(
+        db_session,
+        user.id,
+        {
+            f"NPWR_HY{i}_00": {"thumbnail_url": "https://sgdb/g.png", "hero_url": "https://sgdb/h.png", "logo_url": "https://sgdb/l.png"}
+            for i in range(4)
+        },
+    )
+
+    card = client.get("/tools/psn-review?view=card").text
+    assert len(re.findall(r'<img [^>]*\ssrc="https?://', card)) == 0, "no card image loads up front"
+    assert len(re.findall(r'data-src="https?://', card)) == 8, "hero + logo per card, deferred"
+
+    # The list view keeps eager thumbnails — small, and in a normal scrolling
+    # list where the browser's own lazy-loading actually works.
+    rows = client.get("/tools/psn-review?view=list").text
+    assert 'class="cgt-list-row-thumb" src="https://sgdb/g.png"' in rows
+
+
+def test_every_card_stack_uses_the_shared_window():
+    """PSN and import both render stacks; the fix has to cover both or the
+    other one keeps the bug — import is the bigger stack at 253 cards."""
+    helper = open("frontend/static/js/app.js").read()
+    assert "window.cgtHydrateCards" in helper
+    for page in ("frontend/templates/psn_review.html", "frontend/templates/import_review.html"):
+        assert "cgtHydrateCards(" in open(page).read(), page
+    for tpl in (
+        "frontend/templates/partials/_psn_review_cards.html",
+        "frontend/templates/partials/_psn_played_only_cards.html",
+        "frontend/templates/partials/_import_cards.html",
+    ):
+        body = open(tpl).read()
+        assert "data-src=" in body, tpl
+        assert 'hero__img" src=' not in body, tpl

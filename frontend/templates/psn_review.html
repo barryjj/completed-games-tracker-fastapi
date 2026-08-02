@@ -102,6 +102,8 @@ function psnShowCard(idx) {
     c.classList.toggle('cgt-match-card--active', i === psnCardIdx);
   });
   psnLastCardKey = (cards[psnCardIdx].id || '').replace('psn-card-', '');
+  // Only the cards near this one load their art; see cgtHydrateCards.
+  cgtHydrateCards(cards, psnCardIdx);
   var counter = document.getElementById('psn-nav-counter');
   if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
 }

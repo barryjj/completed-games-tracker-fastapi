@@ -9,9 +9,9 @@
        shaped for — a horizontal grid cropped into it lost half the image. #}
     {% if r.hero %}
     <div class="cgt-import-hero">
-      <img class="cgt-detail-hero__img" src="{{ r.hero }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__img" data-src="{{ r.hero }}" alt="" loading="lazy">
       {% if r.logo %}
-      <img class="cgt-detail-hero__logo" src="{{ r.logo }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__logo" data-src="{{ r.logo }}" alt="" loading="lazy">
       {% endif %}
     </div>
     {% endif %}

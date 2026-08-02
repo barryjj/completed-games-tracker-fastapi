@@ -199,6 +199,30 @@ document.addEventListener('htmx:beforeSwap', function(evt) {
   }
 });
 
+// ─── Card-stack image windowing ────────────────────────────────────────
+// Every card in a stack sits in the DOM at once and hidden ones use opacity: 0,
+// not display: none — so the browser fetches and decodes EVERY image up front.
+// loading="lazy" is no help either: the cards are absolutely positioned at the
+// same spot, so all of them count as in-viewport. A PSN queue of 54 cards meant
+// 102 SGDB heroes (~1920x620) decoded before the first one appeared.
+//
+// So images ship as data-src and are materialized only near the active card.
+// Paging by one extends the window by one on that side, which is the "+1 in the
+// direction of travel" behaviour for free.
+window.cgtHydrateCards = function(cards, activeIdx, radius) {
+  if (!cards || !cards.length) return;
+  radius = (radius === undefined) ? 2 : radius;
+  var lo = Math.max(0, activeIdx - radius);
+  var hi = Math.min(cards.length - 1, activeIdx + radius);
+  for (var i = lo; i <= hi; i++) {
+    var pending = cards[i].querySelectorAll('img[data-src]');
+    for (var j = 0; j < pending.length; j++) {
+      pending[j].src = pending[j].getAttribute('data-src');
+      pending[j].removeAttribute('data-src');
+    }
+  }
+};
+
 function cgtToast(message, type) {
   var container = document.getElementById('toast-container');
   if (!container) return;
