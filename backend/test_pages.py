@@ -2616,3 +2616,28 @@ def test_vendored_assets_do_not_request_missing_source_maps(client):
         r = client.get(f"/static/{asset}")
         assert r.status_code == 200, asset
         assert "sourceMappingURL" not in r.text, f"{asset} would request a .map we don't ship"
+
+
+def test_missing_artwork_count_survives_a_null_release_id(client, db_session):
+    """NOT IN against a subquery containing NULL is never true, so one
+    GameArtwork row with a NULL release_id silently made "missing artwork"
+    return nothing at all — the Tools card read 0 missing while hundreds were.
+    cover_h happened to have no such rows, so the horizontal view worked and hid
+    it."""
+    from backend.pages_common import _build_lib_query
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _make_named_entry(db_session, user.id, "Artless")
+    db_session.commit()
+
+    before = _build_lib_query(db_session, user, "", "", "default", "name", False, True, "grid_v")[0].count()
+    assert before >= 1, "the entry has no cover, so it must count as missing"
+
+    # A game-level artwork row with no release attached — exactly what poisoned it.
+    db_session.add(models.GameArtwork(release_id=None, artwork_type="cover_v", source="sgdb", url="https://x/y.png", is_valid=True))
+    db_session.commit()
+
+    after = _build_lib_query(db_session, user, "", "", "default", "name", False, True, "grid_v")[0].count()
+    assert after == before, "a NULL release_id must not zero the whole count"
+    assert entry is not None
