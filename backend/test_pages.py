@@ -2606,3 +2606,13 @@ def test_home_rows_share_one_hover_treatment():
         assert tint in block, selector
     # The underline-only treatment is gone.
     assert "text-decoration: underline;" not in css[css.index(".cgt-breakdown__row {") :][:600]
+
+
+def test_vendored_assets_do_not_request_missing_source_maps(client):
+    """We don't ship the .map files, so every page load requested two that don't
+    exist and logged 404s. Console noise buries real errors, and the desktop
+    shell's devtools is where anything actually gets diagnosed."""
+    for asset in ("vendor/bootstrap.bundle.min.js", "vendor/bootstrap.min.css", "vendor/htmx.min.js"):
+        r = client.get(f"/static/{asset}")
+        assert r.status_code == 200, asset
+        assert "sourceMappingURL" not in r.text, f"{asset} would request a .map we don't ship"
