@@ -1,0 +1,4 @@
+{# Trophy glyph from Bootstrap Icons (MIT, (c) The Bootstrap Authors) — same
+   provenance as the Steam and PlayStation glyphs elsewhere. Inline so it takes
+   the tier colour from currentColor. #}
+<svg xmlns="http://www.w3.org/2000/svg" width="0.85em" height="0.85em" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5.5A.5.5 0 0 1 3 0h10a.5.5 0 0 1 .5.5q0 .807-.034 1.536a3 3 0 1 1-1.133 5.89c-.79 1.865-1.878 2.777-2.833 3.011v2.173l1.425.35A2 2 0 0 1 12.5 15.5v.5h-9v-.5a2 2 0 0 1 1.575-1.95l1.425-.35v-2.173c-.955-.234-2.043-1.146-2.833-3.012a3 3 0 1 1-1.132-5.89A33 33 0 0 1 2.5.5m.099 2.54a2 2 0 0 0 .72 3.935c-.333-1.05-.588-2.346-.72-3.935m10.083 3.935a2 2 0 0 0 .72-3.935c-.133 1.59-.388 2.885-.72 3.935"/></svg>

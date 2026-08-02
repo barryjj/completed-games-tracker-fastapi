@@ -2555,32 +2555,41 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   line-height: 1;
   color: var(--ctp-text);
 }
-/* Two tier pairs per row. As a single 4-row column this overflowed the card's
-   fixed 520px body and clipped the "updated" line under the footer; paired, it
-   is two rows and fits with room to spare. */
+/* One line. As a stack of four label/value rows this overflowed the card's
+   fixed 520px body and clipped the "updated" line behind the footer; the glyph
+   carries the tier, so the word doesn't need the space. */
 .cgt-trophy-tiers {
-  display: grid;
-  grid-template-columns: auto auto auto 1fr;
-  gap: 3px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
 }
-.cgt-trophy-tiers dt {
-  text-transform: capitalize;
-  font-weight: 600;
-}
-.cgt-trophy-tiers dd {
-  margin: 0;
-  color: var(--ctp-subtext);
+.cgt-trophy-tier {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-variant-numeric: tabular-nums;
+  color: var(--ctp-subtext);
 }
-.cgt-trophy-tiers dd.cgt-trophy-tier--complete { color: var(--ctp-text); }
-.cgt-trophy-tier--platinum { color: var(--ctp-sky); }
-.cgt-trophy-tier--gold     { color: var(--ctp-yellow); }
-.cgt-trophy-tier--silver   { color: var(--ctp-overlay1); }
-.cgt-trophy-tier--bronze   { color: var(--ctp-peach); }
+/* The glyph is the tier; the count stays neutral so the colours read as a
+   legend rather than as four differently-important numbers. */
+.cgt-trophy-tier svg { flex-shrink: 0; }
+.cgt-trophy-tier--complete { color: var(--ctp-text); }
+.cgt-trophy-tier--platinum svg { color: var(--ctp-sky); }
+.cgt-trophy-tier--gold     svg { color: var(--ctp-yellow); }
+.cgt-trophy-tier--silver   svg { color: var(--ctp-overlay1); }
+.cgt-trophy-tier--bronze   svg { color: var(--ctp-peach); }
 .cgt-trophy-meta {
   margin-top: 0.4rem;
   font-size: 0.7rem;
   color: var(--ctp-overlay0);
+}
+
+/* Review card title. A bare h6 inherits the body colour, which left the game
+   name reading fainter than the small-caps block headings under it — the least
+   emphatic thing on a card that exists to identify one game. */
+.cgt-review-card-title {
+  color: var(--ctp-text);
+  font-weight: 600;
 }

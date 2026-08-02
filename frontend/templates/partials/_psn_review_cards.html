@@ -17,15 +17,14 @@
     {% endif %}
 
     <div class="p-3">
-      <table class="cgt-source-table mb-2"><tbody>
-        <tr>
-          <td class="cgt-source-table__label">
-            {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
-          </td>
-          <td class="cgt-source-table__title"><h6 class="mb-0">{{ r.name }}</h6></td>
-          <td class="cgt-source-table__platform"></td>
-        </tr>
-      </tbody></table>
+      {# Flex, not a table: the table's label cell kept its padding even when
+         empty, so a row without a "Set 1/2" badge had its title indented while
+         the reason below stayed flush. Badge trails the title so the title is
+         always at the same x as everything under it. #}
+      <div class="d-flex align-items-baseline gap-2 mb-1">
+        <h6 class="cgt-review-card-title mb-0">{{ r.name }}</h6>
+        {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
+      </div>
 
       <p class="text-secondary small mb-3">{{ r.reason }}</p>
 
@@ -54,12 +53,18 @@
             <span class="cgt-trophy-progress">{{ r.trophy_progress }}%</span>
             <span class="text-secondary small">{{ r.trophy_earned }} of {{ r.trophy_defined }}</span>
           </div>
-          <dl class="cgt-trophy-tiers mb-0">
+          {# One line: the glyph carries the tier, so the word doesn't have to.
+             Four stacked label/value rows overflowed the card's fixed body. #}
+          <div class="cgt-trophy-tiers">
             {% for t in r.trophy_tiers %}
-            <dt class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}">{{ t.tier }}</dt>
-            <dd{% if t.earned == t.defined %} class="cgt-trophy-tier--complete"{% endif %}>{{ t.earned }}/{{ t.defined }}</dd>
+            <span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}{% if t.earned == t.defined %} cgt-trophy-tier--complete{% endif %}"
+                  title="{{ t.tier | capitalize }} — {{ t.earned }} of {{ t.defined }}">
+              {% if t.tier == "platinum" %}{% include "partials/_icon_trophy_platinum.svg" %}
+              {%- else %}{% include "partials/_icon_trophy.svg" %}{% endif -%}
+              {{ t.earned }}/{{ t.defined }}
+            </span>
             {% endfor %}
-          </dl>
+          </div>
           {% else %}
           <p class="text-secondary small mb-0 mt-2">No trophy data.</p>
           {% endif %}
