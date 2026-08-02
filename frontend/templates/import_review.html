@@ -164,6 +164,17 @@ document.addEventListener('DOMContentLoaded', function() {
 // feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
 // a subsequent search/platform/year/sort change stays scoped correctly.
 // Card view only exists for "Add to existing" — switching away forces list,
+// app.js is deferred, so an inline script can run before cgtHydrateCards
+// exists. Guarding the call alone meant hydration was skipped and never
+// retried — cards kept their data-src and showed no art at all. Retry once the
+// deferred scripts have run.
+function cgtHydrateWhenReady(cards, idx) {
+  if (window.cgtHydrateCards) { cgtHydrateCards(cards, idx); return; }
+  window.addEventListener('load', function() {
+    if (window.cgtHydrateCards) cgtHydrateCards(importCards(), importCardIdx);
+  }, { once: true });
+}
+
 // ─── Bulk-select mode ──────────────────────────────────────────────────
 // Checkboxes live in the markup but only display while #import-table has
 // .import-select-mode; the Select button toggles it so normal review stays
@@ -288,7 +299,7 @@ function importShowCard(idx) {
   cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
   // Same windowing as the PSN stack — this queue renders 253 cards, so it was
   // the worse offender; it only looked fine because Steam art was cached.
-  if (window.cgtHydrateCards) cgtHydrateCards(cards, importCardIdx);
+  cgtHydrateWhenReady(cards, importCardIdx);
   var counter = document.getElementById('import-nav-counter');
   if (counter) {
     var nav = document.getElementById('import-nav');

@@ -211,6 +211,8 @@ document.addEventListener('htmx:beforeSwap', function(evt) {
 // direction of travel" behaviour for free.
 window.cgtHydrateCards = function(cards, activeIdx, radius) {
   if (!cards || !cards.length) return;
+  // Anything still deferred when this first ran gets picked up here.
+  window.__cgtHydrateReady = true;
   radius = (radius === undefined) ? 2 : radius;
   var lo = Math.max(0, activeIdx - radius);
   var hi = Math.min(cards.length - 1, activeIdx + radius);

@@ -103,7 +103,7 @@ function psnShowCard(idx) {
   });
   psnLastCardKey = (cards[psnCardIdx].id || '').replace('psn-card-', '');
   // Only the cards near this one load their art; see cgtHydrateCards.
-  if (window.cgtHydrateCards) cgtHydrateCards(cards, psnCardIdx);
+  cgtHydrateWhenReady(cards, psnCardIdx);
   var counter = document.getElementById('psn-nav-counter');
   if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
 }
@@ -205,6 +205,17 @@ window.psnApplyDrafts = function() {
   });
   return touched;
 };
+
+// app.js is deferred, so an inline script can run before cgtHydrateCards
+// exists. Guarding the call alone meant hydration was skipped and never
+// retried — cards kept their data-src and showed no art at all. Retry once the
+// deferred scripts have run.
+function cgtHydrateWhenReady(cards, idx) {
+  if (window.cgtHydrateCards) { cgtHydrateCards(cards, idx); return; }
+  window.addEventListener('load', function() {
+    if (window.cgtHydrateCards) cgtHydrateCards(psnCards(), psnCardIdx);
+  }, { once: true });
+}
 
 // ─── Bulk-select mode ──────────────────────────────────────────────────
 window.psnToggleSelect = function() {

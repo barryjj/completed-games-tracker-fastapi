@@ -2791,11 +2791,15 @@ def test_stack_pages_do_not_call_deferred_helpers_at_parse_time():
     base = open("frontend/templates/base.html").read()
     assert "app.js" in base and "defer" in base, "premise: app.js is deferred"
 
-    psn_page = open("frontend/templates/psn_review.html").read()
-    assert "if (window.cgtHydrateCards) cgtHydrateCards(" in psn_page
-    assert "DOMContentLoaded" in psn_page
-    # The bare top-level call is what broke it.
-    assert "\npsnRebuildNav(true);" not in psn_page
+    for page in ("frontend/templates/psn_review.html", "frontend/templates/import_review.html"):
+        body = open(page).read()
+        # Guarding alone silently skipped hydration forever — cards kept their
+        # data-src and showed no art. It has to RETRY once defer completes.
+        assert "cgtHydrateWhenReady(" in body, page
+        assert "window.addEventListener('load'" in body, page
+        assert "if (window.cgtHydrateCards) cgtHydrateCards(cards," not in body, page
 
-    imp = open("frontend/templates/import_review.html").read()
-    assert "if (window.cgtHydrateCards) cgtHydrateCards(" in imp
+    psn_page = open("frontend/templates/psn_review.html").read()
+    assert "DOMContentLoaded" in psn_page
+    # The bare top-level call is what blanked the stage.
+    assert "\npsnRebuildNav(true);" not in psn_page
