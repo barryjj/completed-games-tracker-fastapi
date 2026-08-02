@@ -215,10 +215,6 @@ window.psnApplyDrafts = function() {
     opts.querySelectorAll('input[name="platforms"]').forEach(function(cb) {
       cb.checked = want.indexOf(cb.value) !== -1;
     });
-    var host = opts.closest('tr, .cgt-match-card');
-    // Defensive: a throw here aborts the forEach, so one odd row would silently
-    // cost every draft after it.
-    if (host) host.classList.add('cgt-psn-drafted');
     touched++;
   });
   return touched;

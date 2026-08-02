@@ -2544,10 +2544,3 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   .cgt-psn-card-split { grid-template-columns: 1fr; }
 }
 
-/* A row whose ticks came from a saved draft rather than the server's defaults.
-   Faint left marker only — it's a "you touched this" note, not a warning, and
-   anything louder would compete with the restricted-row reasons. */
-.cgt-psn-drafted > td:first-child,
-.cgt-match-card.cgt-psn-drafted {
-  box-shadow: inset 2px 0 0 var(--ctp-sapphire);
-}
