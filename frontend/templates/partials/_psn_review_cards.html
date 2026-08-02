@@ -39,6 +39,7 @@
           {% for o in r.options %}
           <label class="cgt-psn-plat-check">
             <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
+                   onchange="psnRememberDraft('{{ r.key }}')"
                    {% if o.selected %}checked{% endif %}>
             <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
             {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
@@ -71,7 +72,7 @@
             hx-target="#psn-row-{{ r.key }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"
-            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.key }}')">
+            hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnCardDone('{{ r.key }}'); }">
       Confirm
     </button>
     <button class="btn btn-surface btn-sm"
@@ -79,7 +80,7 @@
             hx-target="#psn-row-{{ r.key }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"
-            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.key }}')">
+            hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnCardDone('{{ r.key }}'); }">
       Dismiss
     </button>
   </div>

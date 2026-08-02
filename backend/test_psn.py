@@ -2688,3 +2688,30 @@ def test_row_actions_refresh_the_counts_and_retire_the_row(client, db_session):
     # ...and the chrome comes back with one fewer.
     assert 'id="psn-tabs"' in body and 'hx-swap-oob="true"' in body
     assert 'id="psn-pending-count" hx-swap-oob="true">1<' in body.replace("\n", "")
+
+
+def test_review_rows_wire_up_draft_persistence(client, db_session):
+    """Tentative ticks survive leaving the page. Nothing is committed until you
+    confirm, so the draft is client-side — but the wiring has to be present on
+    every checkbox and every action, which is what silently rots."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_DR_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PS4", "sources": ["titles"]}],
+    )
+
+    for view in ("list", "card"):
+        body = client.get(f"/tools/psn-review?view={view}").text
+        assert body.count("psnRememberDraft('NPWR_DR_00')") == 2, f"{view}: one per platform checkbox"
+        assert "psnForgetDraft('NPWR_DR_00')" in body, f"{view}: deciding clears the draft"
+
+    js = client.get("/tools/psn-review").text
+    # An empty selection is a real tentative state and must round-trip.
+    assert "psnApplyDrafts" in js and "psnWriteDrafts" in js
+    # Bulk actions clear what they acted on.
+    assert "psnClearActedDrafts" in js

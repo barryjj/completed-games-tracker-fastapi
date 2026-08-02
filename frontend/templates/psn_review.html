@@ -71,14 +71,14 @@
           hx-confirm="Confirm the selected games? Library entries are created for each ticked platform."
           hx-swap="none"
           hx-disabled-elt="this"
-          hx-on::after-request="psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Confirm selected</button>
+          hx-on::after-request="psnClearActedDrafts(); psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Confirm selected</button>
   <button type="button" id="psn-bulk-dismiss" class="btn btn-sm btn-surface" disabled
           hx-post="/tools/psn-review/bulk-dismiss"
           hx-vals='js:{keys: psnCheckedKeys()}'
           hx-confirm="Dismiss the selected games? Nothing is added to your library."
           hx-swap="none"
           hx-disabled-elt="this"
-          hx-on::after-request="psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Dismiss selected</button>
+          hx-on::after-request="psnClearActedDrafts(); psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Dismiss selected</button>
 </div>
 
 <div id="psn-review-content">
@@ -146,6 +146,58 @@ window.psnSetKind = function(kind) {
   htmx.trigger('#psn-review-filters', 'submit');
 };
 
+// ─── Tentative platform picks ──────────────────────────────────────────
+// Unticking three boxes and then navigating away used to lose the thinking. The
+// server can't hold these: nothing is committed until you confirm, and a draft
+// written per click would be a write per checkbox on a 54-row queue.
+//
+// localStorage is right HERE specifically because the server never needs to
+// read it — unlike the import filters, which were moved to cookies precisely so
+// the server could render already-filtered (#123). This only replays over
+// server-rendered defaults after the fact.
+var PSN_DRAFT_KEY = 'cgt-psn-draft';
+
+function psnDrafts() {
+  try { return JSON.parse(localStorage.getItem(PSN_DRAFT_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function psnWriteDrafts(d) {
+  try { localStorage.setItem(PSN_DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* full or blocked */ }
+}
+
+// Called on every checkbox change. Stores the row's whole selection, so an
+// empty array is preserved too — "I decided I own none of these" is a real
+// tentative state and must not read as "no draft".
+window.psnRememberDraft = function(key) {
+  var opts = document.getElementById('psn-opts-' + key);
+  if (!opts) return;
+  var d = psnDrafts();
+  d[key] = Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; });
+  psnWriteDrafts(d);
+};
+
+window.psnForgetDraft = function(key) {
+  var d = psnDrafts();
+  if (key in d) { delete d[key]; psnWriteDrafts(d); }
+};
+
+// Replay drafts over the server's defaults after any render.
+window.psnApplyDrafts = function() {
+  var d = psnDrafts();
+  var touched = 0;
+  Object.keys(d).forEach(function(key) {
+    var opts = document.getElementById('psn-opts-' + key);
+    if (!opts) return;   // not on this page/filter — leave the draft alone
+    var want = d[key];
+    opts.querySelectorAll('input[name="platforms"]').forEach(function(cb) {
+      cb.checked = want.indexOf(cb.value) !== -1;
+    });
+    opts.closest('tr, .cgt-match-card').classList.add('cgt-psn-drafted');
+    touched++;
+  });
+  return touched;
+};
+
 // ─── Bulk-select mode ──────────────────────────────────────────────────
 window.psnToggleSelect = function() {
   var table = document.getElementById('psn-review-table');
@@ -182,6 +234,13 @@ window.psnBulkSync = function() {
 window.psnSelectAll = function(on) {
   document.querySelectorAll('#psn-review-table .psn-bulk-check').forEach(function(cb) { cb.checked = on; });
   psnBulkSync();
+};
+
+// Bulk actions decide many rows at once; their drafts go with them.
+window.psnClearActedDrafts = function() {
+  document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
+    psnForgetDraft(cb.value);
+  });
 };
 
 window.psnCheckedKeys = function() {
@@ -231,6 +290,7 @@ document.addEventListener('htmx:afterSwap', function(e) {
     }
     psnCardIdx = 0;
     if (document.getElementById('psn-stack')) psnRebuildNav(true);
+    psnApplyDrafts();
     // The toggle lives outside the swap, so re-evaluate whether it applies to
     // whatever just rendered — card view and played-only have nothing to bulk.
     var kind = document.getElementById('psn-kind-field').value;
@@ -241,5 +301,6 @@ document.addEventListener('htmx:afterSwap', function(e) {
 });
 
 if (document.getElementById('psn-stack')) psnRebuildNav(true);
+psnApplyDrafts();
 </script>
 {% endblock %}
