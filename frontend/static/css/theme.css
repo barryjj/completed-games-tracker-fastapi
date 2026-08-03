@@ -2272,6 +2272,16 @@ body:has(.cgt-match-nav--sticky) {
   paint-order: stroke fill;
   -webkit-text-stroke: 0.3px var(--cgt-stat-stroke);
 }
+/* "29 of 52" — the goal rides along with the count instead of claiming a stat
+   slot of its own. Smaller and muted so the count still reads as the number,
+   and the stroke is cleared: it belongs to the accent, not to this. */
+.cgt-tool-stat__of {
+  font-size: 0.6em;
+  font-weight: 600;
+  color: var(--ctp-overlay1);
+  margin-left: 0.35em;
+  -webkit-text-stroke: 0;
+}
 .cgt-tool-stat__label {
   font-size: 0.63rem;
   font-weight: 400;

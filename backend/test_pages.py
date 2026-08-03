@@ -2528,9 +2528,12 @@ def test_home_widgets_use_linked_numbers_not_footer_buttons(client, db_session):
     assert "a.cgt-tool-stat--link:hover" in css
 
 
-def test_this_year_widget_carries_derived_stats(client, db_session):
-    """Space freed by the button goes to stats derived from data already loaded
-    — no extra queries."""
+def test_this_year_widget_shows_progress_against_the_goal(client, db_session):
+    """Goal, To go, Best month and last year's total used to sit beside the
+    count — five stats wrapping to two rows above the bar strip. Once the cards
+    shrank that read as clutter. Progress against the goal is the one number
+    worth the space; the strip carries the shape of the year and "to go" is
+    subtraction the reader can do."""
     from backend import models
 
     token = _signup_and_login(client)
@@ -2543,16 +2546,28 @@ def test_this_year_widget_carries_derived_stats(client, db_session):
     db_session.commit()
 
     body = client.get("/").text
-    assert "To go" in body
-    assert "Best &mdash; Mar" in body or "Best — Mar" in body
-
-
-def test_best_month_is_omitted_when_nothing_is_logged(client, db_session):
-    """A 'best month' of zero is noise, not a stat."""
-    _signup_and_login(client)
-    body = client.get("/").text
-    assert "To go" in body
+    assert "cgt-tool-stat__of" in body, "goal should ride along with the count"
+    assert f"Completions in {year}" in body
+    # The four retired stats stay retired.
+    assert "To go" not in body
     assert "Best &mdash;" not in body and "Best —" not in body
+    assert f"{year - 1} total" not in body
+    # One stat in the card, not five.
+    card = body[body.index("This year") :]
+    card = card[: card.index("cgt-month-bars")]
+    assert card.count("cgt-tool-stat__value") == 1, "This-year card should carry a single stat"
+
+
+def test_this_year_widget_does_not_query_last_year(client, db_session):
+    """Dropping the stat should drop its query too, not leave it computed and
+    thrown away."""
+    import inspect
+
+    from backend import pages
+
+    src = inspect.getsource(pages.home_page)
+    assert "year - 1" not in src, "last-year count is still being queried"
+    assert "best_month" not in src, "best-month is still being computed"
 
 
 def test_needs_attention_surfaces_missing_artwork(client, db_session):

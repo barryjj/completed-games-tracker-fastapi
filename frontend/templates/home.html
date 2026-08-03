@@ -20,33 +20,18 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">This year</div>
     <div class="cgt-tool-stats">
-      {# The number IS the link — buttons in the footer made the cards cluttered
-         and, at three per row, asymmetric. Undecorated so it still reads as a
-         stat, with a hover to say it's clickable. #}
+      {# The number IS the link — buttons in the footer made the cards
+         cluttered and, at three per row, asymmetric. Undecorated so it still
+         reads as a stat, with a hover to say it's clickable.
+         Goal, To go, Best month and last year's total used to sit alongside:
+         five stats wrapping to two rows above the bar strip, which read as
+         clutter once the cards shrank. Progress against the goal is the one
+         number worth the space; the strip already carries the shape of the
+         year, and "to go" is just subtraction. #}
       <a class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions">
-        <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
+        <div class="cgt-tool-stat__value">{{ completions_this_year }}{% if yearly_goal %}<span class="cgt-tool-stat__of">of {{ yearly_goal }}</span>{% endif %}</div>
         <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
       </a>
-      <div class="cgt-tool-stat cgt-tool-stat--muted">
-        <div class="cgt-tool-stat__value">{{ yearly_goal }}</div>
-        <div class="cgt-tool-stat__label">Goal</div>
-      </div>
-      <div class="cgt-tool-stat cgt-tool-stat--muted">
-        <div class="cgt-tool-stat__value">{{ completions_remaining }}</div>
-        <div class="cgt-tool-stat__label">To go</div>
-      </div>
-      {% if best_month_index is not none %}
-      <div class="cgt-tool-stat cgt-tool-stat--muted">
-        <div class="cgt-tool-stat__value">{{ best_month_count }}</div>
-        <div class="cgt-tool-stat__label">Best &mdash; {{ month_names[best_month_index][:3] }}</div>
-      </div>
-      {% endif %}
-      {% if completions_last_year %}
-      <div class="cgt-tool-stat cgt-tool-stat--muted">
-        <div class="cgt-tool-stat__value">{{ completions_last_year }}</div>
-        <div class="cgt-tool-stat__label">{{ year - 1 }} total</div>
-      </div>
-      {% endif %}
     </div>
     {# Completions per month, current year. Single series, one hue; future
        months render as faint stubs. Tooltip carries the exact count. #}

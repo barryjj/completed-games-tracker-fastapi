@@ -170,7 +170,6 @@ def home_page(
     year = datetime.date.today().year
     comp_base = db.query(models.Completion).filter(models.Completion.user_id == current_user.id)
     completions_this_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year)).count()
-    completions_last_year = comp_base.filter(func.strftime("%Y", models.Completion.completed_at) == str(year - 1)).count()
     # Per-month counts for the current year (mini bar strip on the This-year
     # widget). Always 12 slots; future months render as stubs client-side.
     month_rows = (
@@ -246,8 +245,6 @@ def home_page(
     import_counts = _import_tab_counts(db, current_user.id)
     # Derived from what's already loaded — no extra queries. Fills the space the
     # "Open completions" button used to occupy.
-    best_month_n = max(completions_by_month) if completions_by_month else 0
-    best_month = completions_by_month.index(best_month_n) if best_month_n else None
     return templates.TemplateResponse(
         request=request,
         name="home.html",
@@ -256,10 +253,6 @@ def home_page(
             "year": year,
             "yearly_goal": _YEARLY_GOAL,
             "completions_this_year": completions_this_year,
-            "completions_remaining": max(0, _YEARLY_GOAL - completions_this_year),
-            "best_month_index": best_month,
-            "best_month_count": best_month_n,
-            "completions_last_year": completions_last_year,
             "completions_by_month": completions_by_month,
             "current_month": datetime.date.today().month,
             "month_names": [
