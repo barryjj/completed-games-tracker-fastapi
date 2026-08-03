@@ -55,15 +55,15 @@
     </div>
     {% if steam_counts is not none %}
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--teal">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--sky' if steam_counts.games else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(steam_counts.games) }}</div>
         <div class="cgt-tool-stat__label">Games</div>
       </div>
-      <div class="cgt-tool-stat cgt-tool-stat--peach">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--blue' if steam_counts.dlc else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(steam_counts.dlc) }}</div>
         <div class="cgt-tool-stat__label">DLC</div>
       </div>
-      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--lavender' if steam_counts.total else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(steam_counts.total) }}</div>
         <div class="cgt-tool-stat__label">Total</div>
       </div>
@@ -135,7 +135,7 @@
     </div>
     {% if import_pending %}
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--yellow">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if import_pending else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(import_pending) }}</div>
         <div class="cgt-tool-stat__label">Imports to review</div>
       </div>
@@ -174,7 +174,7 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">Artwork</div>
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat {{ 'cgt-tool-stat--maroon' if missing_covers else 'cgt-tool-stat--muted' }}">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if missing_covers else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(missing_covers) }}</div>
         <div class="cgt-tool-stat__label">Missing covers</div>
       </div>
@@ -190,7 +190,7 @@
        pressing anything — it has to be visible or it's a job you can't see. #}
     <div id="sync-indicator-artwork"></div>
     <div class="cgt-tool-card__actions">
-      <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">
+      <a href="/integrations/steamgriddb" class="btn btn-primary btn-sm">
         {% if current_user.steamgriddb_api_key %}Open artwork tools{% else %}Configure{% endif %}
       </a>
       {% if missing_covers %}
@@ -228,7 +228,7 @@
     {% endif %}
     {% if psn_counts is not none %}
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--lavender' if psn_counts.games else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(psn_counts.games) }}</div>
         <div class="cgt-tool-stat__label">Games</div>
       </div>

@@ -23,7 +23,7 @@
       {# The number IS the link — buttons in the footer made the cards cluttered
          and, at three per row, asymmetric. Undecorated so it still reads as a
          stat, with a hover to say it's clickable. #}
-      <a class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions">
+      <a class="cgt-tool-stat {{ 'cgt-tool-stat--blue' if completions_this_year else 'cgt-tool-stat--muted' }} cgt-tool-stat--link" href="/completions">
         <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
         <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
       </a>
@@ -93,13 +93,13 @@
          guess, and played-only activity with no purchase or trophy behind it.
          One number because they're one page. #}
       <a class="cgt-breakdown__row" href="/tools/psn-review">
-        <span class="cgt-breakdown__num cgt-breakdown__num--yellow">{{ "{:,}".format(psn_review_pending) }}</span>
+        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if psn_review_pending else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(psn_review_pending) }}</span>
         <span class="cgt-breakdown__label">PSN · needs a decision</span>
       </a>
       {% endif %}
       {% if missing_covers %}
       <a class="cgt-breakdown__row" href="/library?missing_art=true">
-        <span class="cgt-breakdown__num cgt-breakdown__num--muted">{{ "{:,}".format(missing_covers) }}</span>
+        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if missing_covers else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(missing_covers) }}</span>
         <span class="cgt-breakdown__label">library &middot; missing artwork</span>
       </a>
       {% endif %}
@@ -113,7 +113,7 @@
   <div class="cgt-tool-card cgt-tool-card--tall">
     <div class="cgt-tool-card__title">Library</div>
     <div class="cgt-tool-stats">
-      <a class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library">
+      <a class="cgt-tool-stat {{ 'cgt-tool-stat--lavender' if library_total else 'cgt-tool-stat--muted' }} cgt-tool-stat--link" href="/library">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
         <div class="cgt-tool-stat__label">Games</div>
       </a>

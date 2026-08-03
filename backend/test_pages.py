@@ -2519,8 +2519,9 @@ def test_home_widgets_use_linked_numbers_not_footer_buttons(client, db_session):
 
     assert "cgt-tool-card__actions" not in body, "no footer buttons on Home"
     # The headline stats are the links.
-    assert 'class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions"' in body
-    assert 'class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library"' in body
+    # The accent is conditional now (grey at zero), so match the link role only.
+    assert 'cgt-tool-stat--link" href="/completions"' in body
+    assert 'cgt-tool-stat--link" href="/library"' in body
     # Undecorated, with the hover carrying the affordance.
     css = open("frontend/static/css/theme.css").read()
     assert "a.cgt-tool-stat--link {" in css
@@ -2658,11 +2659,34 @@ def test_stat_accents_use_the_palette_directly_in_both_themes():
     assert "{#" not in css
 
 
-def test_pending_badge_does_not_repeat_the_stat_colour():
-    """The badge shows the same number as the headline stat directly below it,
-    so a filled accent pill put the figure twice in the same hue and the two
-    competed."""
-    css = open("frontend/static/css/theme.css").read()
-    block = css[css.index(".cgt-pending-badge {") :][:260]
-    assert "var(--ctp-surface1)" in block
-    assert "var(--ctp-yellow)" not in block
+def test_stat_colours_follow_one_rule_across_the_cards(client, db_session):
+    """The assignment grew a card at a time and meant nothing. Now: ONE colour
+    for work waiting (yellow), one blue family for counts — sky and blue are the
+    two parts, lavender the total — and grey whenever the figure is zero, so a
+    bright number always means something needs doing."""
+    import re
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_id64, user.steam_api_key = "7656119", "k" * 32
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    tools = open("frontend/templates/tools.html").read()
+    # Every queue count uses the same attention colour, and greys at zero.
+    for cond in ("pending_matches", "import_pending", "missing_covers", "psn_review_pending"):
+        assert f"'cgt-tool-stat--yellow' if {cond} else 'cgt-tool-stat--muted'" in tools, cond
+    # No queue keeps a colour of its own.
+    assert "cgt-tool-stat--maroon" not in tools
+    # Counts are one family: parts then total.
+    assert "'cgt-tool-stat--sky' if steam_counts.games" in tools
+    assert "'cgt-tool-stat--blue' if steam_counts.dlc" in tools
+    assert "'cgt-tool-stat--lavender' if steam_counts.total" in tools
+    assert "'cgt-tool-stat--lavender' if psn_counts.games" in tools, "a total, so colour 3"
+    assert "cgt-tool-stat--teal" not in tools and "cgt-tool-stat--peach" not in tools
+
+    # A zero really does render grey rather than a bright zero.
+    body = client.get("/tools").text
+    zero = body[body.index("Pending review") - 400 : body.index("Pending review")]
+    assert "cgt-tool-stat--muted" in zero
+    assert re.search(r"cgt-tool-stat--yellow[^>]*>\s*<div[^>]*>0<", body) is None

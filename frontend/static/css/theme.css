@@ -863,12 +863,13 @@ a.cgt-completion-record:hover {
 }
 
 /* ─── Pending matches indicator ─────────────────────────────────────────── */
-/* Count chip beside a card title. Neutral on purpose: the same number is the
-   card's headline stat directly below, so a filled accent pill put the figure
-   twice in the same colour and the two competed. */
+/* Count chip beside a card title. Filled with the same accent as the stat it
+   summarises — they read as one thing, not two. This was briefly neutralised to
+   fix an apparent clash, but the clash was the light-theme stat rendering as
+   mustard next to a yellow pill; with Latte restored there is nothing to fix. */
 .cgt-pending-badge {
-  background: var(--ctp-surface1) !important;
-  color: var(--ctp-subtext) !important;
+  background: var(--ctp-yellow) !important;
+  color: var(--ctp-crust) !important;
   font-size: .65rem;
   padding: .2em .45em;
 }
@@ -2180,6 +2181,7 @@ body:has(.cgt-match-nav--sticky) {
   color: var(--ctp-overlay1);
   white-space: nowrap;
 }
+:is(.cgt-tool-stat--sky      .cgt-tool-stat__value, .cgt-breakdown__num--sky) { color: var(--ctp-sky); }
 :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: var(--ctp-teal); }
 :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--ctp-peach); }
 :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: var(--ctp-lavender); }
