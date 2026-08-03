@@ -2529,11 +2529,10 @@ def test_home_widgets_use_linked_numbers_not_footer_buttons(client, db_session):
 
 
 def test_this_year_widget_shows_progress_against_the_goal(client, db_session):
-    """Goal, To go, Best month and last year's total used to sit beside the
-    count — five stats wrapping to two rows above the bar strip. Once the cards
-    shrank that read as clutter. Progress against the goal is the one number
-    worth the space; the strip carries the shape of the year and "to go" is
-    subtraction the reader can do."""
+    """Count + Goal is the original pairing. To go, Best month and last year's
+    total were added later to fill a stretched card, making five stats that
+    wrapped onto two rows — clutter once the cards shrank. The card fills
+    itself via the bar strip now, so the extra stats stay gone."""
     from backend import models
 
     token = _signup_and_login(client)
@@ -2546,16 +2545,16 @@ def test_this_year_widget_shows_progress_against_the_goal(client, db_session):
     db_session.commit()
 
     body = client.get("/").text
-    assert "cgt-tool-stat__of" in body, "goal should ride along with the count"
     assert f"Completions in {year}" in body
-    # The four retired stats stay retired.
+    assert ">Goal<" in body
+    # The three later additions stay retired.
     assert "To go" not in body
     assert "Best &mdash;" not in body and "Best —" not in body
     assert f"{year - 1} total" not in body
-    # One stat in the card, not five.
+    # Two stats in the card, not five.
     card = body[body.index("This year") :]
     card = card[: card.index("cgt-month-bars")]
-    assert card.count("cgt-tool-stat__value") == 1, "This-year card should carry a single stat"
+    assert card.count("cgt-tool-stat__value") == 2, "This-year card should carry count + goal"
 
 
 def test_this_year_widget_does_not_query_last_year(client, db_session):
@@ -2735,3 +2734,17 @@ def test_boot_script_migrates_pre_nord_theme_settings():
         assert "p==='dark'" in html and "'mocha'" in html, f"{name} drops old dark setting"
         # data-bs-theme must stay a value Bootstrap understands.
         assert "d.dataset.bsTheme=(p==='mocha'?'dark':'light')" in html, name
+
+
+def test_month_strip_grows_to_fill_the_card():
+    """Home forces every card to the tallest sibling's height. A fixed track
+    height is only ever right for one such height — it left dead space under
+    the strip, which is what the extra stats were originally added to hide."""
+    css = open("frontend/static/css/theme.css").read()
+    import re
+
+    track = css[css.index(".cgt-month-bars__track {") :][:220]
+    assert "flex: 1 1 auto;" in track, "track must absorb the card's slack"
+    assert "min-height: 88px;" in track, "keep 88px as the floor"
+    # A bare `height:` (not min-/max-) pins the track and brings the dead space back.
+    assert not re.search(r"(?<![-\w])height:\s*\d", track), "a fixed height reintroduces the dead space"

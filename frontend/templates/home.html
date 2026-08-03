@@ -23,15 +23,19 @@
       {# The number IS the link — buttons in the footer made the cards
          cluttered and, at three per row, asymmetric. Undecorated so it still
          reads as a stat, with a hover to say it's clickable.
-         Goal, To go, Best month and last year's total used to sit alongside:
-         five stats wrapping to two rows above the bar strip, which read as
-         clutter once the cards shrank. Progress against the goal is the one
-         number worth the space; the strip already carries the shape of the
-         year, and "to go" is just subtraction. #}
+         Count + Goal is the original pairing. To go, Best month and last
+         year's total were added later to fill a stretched card and turned into
+         five stats wrapping to two rows — clutter once the cards shrank. The
+         card is filled by letting the bar strip absorb the slack instead, so
+         it tracks whatever the tallest sibling card happens to be. #}
       <a class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions">
-        <div class="cgt-tool-stat__value">{{ completions_this_year }}{% if yearly_goal %}<span class="cgt-tool-stat__of">of {{ yearly_goal }}</span>{% endif %}</div>
+        <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
         <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
       </a>
+      <div class="cgt-tool-stat cgt-tool-stat--muted">
+        <div class="cgt-tool-stat__value">{{ yearly_goal }}</div>
+        <div class="cgt-tool-stat__label">Goal</div>
+      </div>
     </div>
     {# Completions per month, current year. Single series, one hue; future
        months render as faint stubs. Tooltip carries the exact count. #}
