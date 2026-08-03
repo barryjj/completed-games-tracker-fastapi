@@ -1,5 +1,9 @@
 /* ─── Catppuccin Mocha (dark) ────────────────────────────────────────────── */
 html[data-bs-theme="dark"] {
+  color-scheme: dark;
+  /* Stat-number outline. Each theme strokes with its own darkest surface, not
+     black — on Mocha a black stroke against pale accents just reads grimy. */
+  --cgt-stat-stroke: rgba(17,17,27,0.55);
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
   --ctp-overlay0: #6c7086; --ctp-overlay1: #7f849c; --ctp-text:     #cdd6f4;
@@ -61,67 +65,143 @@ html[data-bs-theme="dark"] {
   --bs-focus-ring-color: rgba(203,166,247,0.25);
 }
 
-/* ─── Catppuccin Latte (light) ───────────────────────────────────────────── */
+/* ─── Nord (light, default) ──────────────────────────────────────────────── */
+/* Surfaces are a deliberately wide page↔card step (#dfe3e8 → #ffffff). Latte's
+   own step was 23/765 in RGB terms, which read as flat — cards never lifted off
+   the page. This is 83.
+   Accents: nine are published Nord (Frost nord7-10, Aurora nord11-15) used
+   verbatim. Catppuccin's palette has fourteen slots, so five are derived by
+   mixing two adjacent published Nord colours — ratio recorded on each line so
+   they can be re-derived. Nothing here is a hand-picked hex.
+   Nord is a dark-first palette: teal, yellow, green and sky are pale on a light
+   card. That is expected and is what --cgt-stat-stroke exists for. Do NOT
+   "fix" it by darkening the accents — that turns yellow into mustard and
+   destroys the palette's character. */
 html[data-bs-theme="light"] {
-  --ctp-base:     #eff1f5; --ctp-mantle:   #e6e9ef; --ctp-crust:    #dce0e8;
-  --ctp-surface0: #ccd0da; --ctp-surface1: #bcc0cc; --ctp-surface2: #acb0be;
-  --ctp-overlay0: #9ca0b0; --ctp-overlay1: #8c8fa1; --ctp-text:     #4c4f69;
-  --ctp-subtext:  #5c5f77; --ctp-subtext0: #6c6f85; --ctp-subtext1: #5c5f77;
+  color-scheme: light;
+  --cgt-stat-stroke: rgba(46,52,64,0.55);   /* nord0 */
+  --ctp-base:     #dfe3e8; --ctp-mantle:   #ffffff; --ctp-crust:    #eceff4;
+  --ctp-surface0: #c3cad3; --ctp-surface1: #b3bcc9; --ctp-surface2: #9fabbd;
+  --ctp-overlay0: #8792a5; --ctp-overlay1: #6d7889; --ctp-text:     #2e3440;
+  --ctp-subtext:  #3b4252; --ctp-subtext0: #5b6472; --ctp-subtext1: #434c5e;
+  /* published Nord */
+  --ctp-teal:     #8fbcbb; /* nord7  */ --ctp-sky:      #88c0d0; /* nord8  */
+  --ctp-sapphire: #81a1c1; /* nord9  */ --ctp-blue:     #5e81ac; /* nord10 */
+  --ctp-red:      #bf616a; /* nord11 */ --ctp-peach:    #d08770; /* nord12 */
+  --ctp-yellow:   #ebcb8b; /* nord13 */ --ctp-green:    #a3be8c; /* nord14 */
+  --ctp-mauve:    #b48ead; /* nord15 */
+  /* derived — mix of two adjacent published Nord colours */
+  --ctp-maroon:   #c46c6c; /* nord11+12 @30% */
+  --ctp-flamingo: #ca796e; /* nord11+12 @62% */
+  --ctp-rosewater:#dca67c; /* nord12+13 @45% */
+  --ctp-lavender: #9089ad; /* nord15+10 @42% */
+  --ctp-pink:     #b87d94; /* nord15+11 @38% */
+
+  /* Filled-button shades. Accents are too pale to carry white text at full
+     strength, so each is darkened along its own hue to the same weight Latte's
+     hand-tuned fills already used. Buttons only — never applied to text. */
+  --cgt-btn-primary:        #a77a9f;
+  --cgt-btn-primary-hover:  #98658e;
+  --cgt-btn-success:        #8eaf72;
+  --cgt-btn-success-hover:  #789d59;
+  --cgt-btn-danger:         #bf616a;
+  --cgt-btn-danger-hover:   #b14852;
+  --cgt-btn-on-fill:        #ffffff;
+  --cgt-btn-primary-rgb:    167,122,159;
+
+  /* Bootstrap overrides */
+  --bs-body-bg:                   #dfe3e8;
+  --bs-body-bg-rgb:               223,227,232;
+  --bs-body-color:                #2e3440;
+  --bs-body-color-rgb:            46,52,64;
+  --bs-emphasis-color:            #2e3440;
+  --bs-secondary-color:           #3b4252;
+  --bs-secondary-bg:              #ffffff;
+  --bs-tertiary-bg:               #c3cad3;
+  --bs-border-color:              #b3bcc9;
+  --bs-border-color-translucent:  rgba(179,188,201,0.3);
+  --bs-link-color:                #a77a9f;
+  --bs-link-hover-color:          #98658e;
+  --bs-primary:                   #a77a9f;
+  --bs-primary-rgb:               167,122,159;
+  --bs-danger:                    #bf616a;
+  --bs-danger-rgb:                191,97,106;
+  --bs-success:                   #8eaf72;
+  --bs-success-rgb:               142,175,114;
+  --bs-warning:                   #ebcb8b;
+  --bs-code-color:                #789d59;
+  --bs-navbar-color:              #3b4252;
+  --bs-navbar-hover-color:        #2e3440;
+  --bs-navbar-active-color:       #2e3440;
+  --bs-navbar-brand-color:        #a77a9f;
+  --bs-navbar-brand-hover-color:  #98658e;
+  --bs-nav-link-color:            #3b4252;
+  --bs-nav-link-hover-color:      #2e3440;
+  --bs-dropdown-bg:               #ffffff;
+  --bs-dropdown-border-color:     #b3bcc9;
+  --bs-dropdown-divider-bg:       #b3bcc9;
+  --bs-dropdown-link-color:       #3b4252;
+  --bs-dropdown-link-hover-color: #2e3440;
+  --bs-dropdown-link-hover-bg:    #c3cad3;
+  --bs-dropdown-link-active-bg:   #a77a9f;
+  --bs-dropdown-link-active-color: #ffffff;
+  --bs-card-border-color:         #b3bcc9;
+  --bs-card-bg:                   #ffffff;
+  --bs-input-bg:                  #ffffff;
+  --bs-input-border-color:        #b3bcc9;
+  --bs-input-color:               #2e3440;
+  --bs-input-placeholder-color:   #8792a5;
+  --bs-input-focus-border-color:  #a77a9f;
+  --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(167,122,159,0.2);
+  --bs-table-bg:                  transparent;
+  --bs-table-striped-bg:          rgba(0,0,0,0.04);
+  --bs-table-border-color:        #b3bcc9;
+
+  --bs-focus-ring-color: rgba(167,122,159,0.2);
+}
+
+/* ─── Catppuccin Latte (light, opt-in) ───────────────────────────────────── */
+/* Same surfaces as Nord — the flat page↔card step was a Latte problem worth
+   fixing regardless of which accents sit on it. Only the accents and the
+   shades derived from them change.
+   These are Latte's published accents, rendered as published. Previously the
+   stat rows mixed every accent 65% toward --ctp-text, which stripped an
+   average of 42% of their saturation, unevenly (teal lost 29%, pink 55%) —
+   so carefully-chosen triplets stopped separating. That mix is gone; the
+   hairline stroke does the legibility work instead. Do not reintroduce it. */
+html[data-palette="latte"] {
+  --cgt-stat-stroke: rgba(76,79,105,0.55);  /* Latte text ink */
   --ctp-rosewater:#dc8a78; --ctp-flamingo:  #dd7878; --ctp-pink:     #ea76cb;
   --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
   --ctp-maroon:   #e64553; --ctp-red:      #d20f39; --ctp-peach:    #fe640b;
   --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
   --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
 
-  /* Bootstrap overrides */
-  --bs-body-bg:                   #eff1f5;
-  --bs-body-bg-rgb:               239,241,245;
-  --bs-body-color:                #4c4f69;
-  --bs-body-color-rgb:            76,79,105;
-  --bs-emphasis-color:            #4c4f69;
-  --bs-secondary-color:           #5c5f77;
-  --bs-secondary-bg:              #e6e9ef;
-  --bs-tertiary-bg:               #ccd0da;
-  --bs-border-color:              #bcc0cc;
-  --bs-border-color-translucent:  rgba(188,192,204,0.3);
-  --bs-link-color:                #8839ef;
-  --bs-link-hover-color:          #7287fd;
-  --bs-primary:                   #8839ef;
-  --bs-primary-rgb:               136,57,239;
-  --bs-danger:                    #d20f39;
-  --bs-danger-rgb:                210,15,57;
-  --bs-success:                   #40a02b;
-  --bs-success-rgb:               64,160,43;
+  --cgt-btn-primary:        #a370e8;
+  --cgt-btn-primary-hover:  #8f5cd4;
+  --cgt-btn-success:        #5aba54;
+  --cgt-btn-success-hover:  #46a640;
+  --cgt-btn-danger:         #d94f6a;
+  --cgt-btn-danger-hover:   #c23555;
+  --cgt-btn-on-fill:        #ffffff;
+  --cgt-btn-primary-rgb:    163,112,232;
+
+  --bs-link-color:                #a370e8;
+  --bs-link-hover-color:          #8f5cd4;
+  --bs-primary:                   #a370e8;
+  --bs-primary-rgb:               163,112,232;
+  --bs-danger:                    #d94f6a;
+  --bs-danger-rgb:                217,79,106;
+  --bs-success:                   #5aba54;
+  --bs-success-rgb:               90,186,84;
   --bs-warning:                   #df8e1d;
   --bs-code-color:                #40a02b;
-  --bs-navbar-color:              #5c5f77;
-  --bs-navbar-hover-color:        #4c4f69;
-  --bs-navbar-active-color:       #4c4f69;
-  --bs-navbar-brand-color:        #8839ef;
-  --bs-navbar-brand-hover-color:  #7287fd;
-  --bs-nav-link-color:            #5c5f77;
-  --bs-nav-link-hover-color:      #4c4f69;
-  --bs-dropdown-bg:               #e6e9ef;
-  --bs-dropdown-border-color:     #bcc0cc;
-  --bs-dropdown-divider-bg:       #bcc0cc;
-  --bs-dropdown-link-color:       #5c5f77;
-  --bs-dropdown-link-hover-color: #4c4f69;
-  --bs-dropdown-link-hover-bg:    #ccd0da;
-  --bs-dropdown-link-active-bg:   #8839ef;
-  --bs-dropdown-link-active-color: #eff1f5;
-  --bs-card-border-color:         #bcc0cc;
-  --bs-card-bg:                   #e6e9ef;
-  --bs-input-bg:                  #ffffff;
-  --bs-input-border-color:        #bcc0cc;
-  --bs-input-color:               #4c4f69;
-  --bs-input-placeholder-color:   #9ca0b0;
-  --bs-input-focus-border-color:  #8839ef;
-  --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(136,57,239,0.2);
-  --bs-table-bg:                  transparent;
-  --bs-table-striped-bg:          rgba(0,0,0,0.04);
-  --bs-table-border-color:        #bcc0cc;
-
-  --bs-focus-ring-color: rgba(136,57,239,0.2);
+  --bs-navbar-brand-color:        #a370e8;
+  --bs-navbar-brand-hover-color:  #8f5cd4;
+  --bs-dropdown-link-active-bg:   #a370e8;
+  --bs-input-focus-border-color:  #a370e8;
+  --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(163,112,232,0.2);
+  --bs-focus-ring-color: rgba(163,112,232,0.2);
 }
 
 /* ─── Form controls ──────────────────────────────────────────────────────── */
@@ -143,7 +223,7 @@ html[data-bs-theme="light"] {
 }
 .form-label { color: var(--ctp-text); font-weight: 500; }
 
-/* ─── Buttons ────────────────────────────────────────────────────────────── */
+ ────────────────────────────────────────────────────────────── */
 .btn-primary {
   --bs-btn-bg:                  var(--ctp-mauve);
   --bs-btn-border-color:        var(--ctp-mauve);
@@ -159,29 +239,29 @@ html[data-bs-theme="light"] {
 }
 /* Latte's mauve is vivid on light bg; use a softer mid-tone instead */
 html[data-bs-theme="light"] .btn-primary {
-  --bs-btn-bg:                  #a370e8;
-  --bs-btn-border-color:        #a370e8;
-  --bs-btn-color:               #fff;
-  --bs-btn-hover-bg:            #8f5cd4;
-  --bs-btn-hover-border-color:  #8f5cd4;
-  --bs-btn-hover-color:         #fff;
-  --bs-btn-active-bg:           #8f5cd4;
-  --bs-btn-disabled-bg:         #a370e8;
-  --bs-btn-disabled-border-color: #a370e8;
-  --bs-btn-disabled-color:      #fff;
-  --bs-btn-focus-shadow-rgb:    163,112,232;
+  --bs-btn-bg:                  var(--cgt-btn-primary);
+  --bs-btn-border-color:        var(--cgt-btn-primary);
+  --bs-btn-color:               var(--cgt-btn-on-fill);
+  --bs-btn-hover-bg:            var(--cgt-btn-primary-hover);
+  --bs-btn-hover-border-color:  var(--cgt-btn-primary-hover);
+  --bs-btn-hover-color:         var(--cgt-btn-on-fill);
+  --bs-btn-active-bg:           var(--cgt-btn-primary-hover);
+  --bs-btn-disabled-bg:         var(--cgt-btn-primary);
+  --bs-btn-disabled-border-color: var(--cgt-btn-primary);
+  --bs-btn-disabled-color:      var(--cgt-btn-on-fill);
+  --bs-btn-focus-shadow-rgb:    var(--cgt-btn-primary-rgb);
 }
 html[data-bs-theme="light"] .btn-success {
-  --bs-btn-bg:                  #5aba54;
-  --bs-btn-border-color:        #5aba54;
-  --bs-btn-color:               #fff;
-  --bs-btn-hover-bg:            #46a640;
-  --bs-btn-hover-border-color:  #46a640;
-  --bs-btn-hover-color:         #fff;
-  --bs-btn-active-bg:           #46a640;
-  --bs-btn-disabled-bg:         #5aba54;
-  --bs-btn-disabled-border-color: #5aba54;
-  --bs-btn-disabled-color:      #fff;
+  --bs-btn-bg:                  var(--cgt-btn-success);
+  --bs-btn-border-color:        var(--cgt-btn-success);
+  --bs-btn-color:               var(--cgt-btn-on-fill);
+  --bs-btn-hover-bg:            var(--cgt-btn-success-hover);
+  --bs-btn-hover-border-color:  var(--cgt-btn-success-hover);
+  --bs-btn-hover-color:         var(--cgt-btn-on-fill);
+  --bs-btn-active-bg:           var(--cgt-btn-success-hover);
+  --bs-btn-disabled-bg:         var(--cgt-btn-success);
+  --bs-btn-disabled-border-color: var(--cgt-btn-success);
+  --bs-btn-disabled-color:      var(--cgt-btn-on-fill);
 }
 .btn-outline-secondary {
   --bs-btn-color:              var(--ctp-text);
@@ -212,16 +292,16 @@ html[data-bs-theme="light"] .btn-outline-secondary {
 }
 .btn-danger:hover { filter: brightness(1.1); }
 html[data-bs-theme="light"] .btn-danger {
-  --bs-btn-bg:                    #d94f6a;
-  --bs-btn-border-color:          #d94f6a;
-  --bs-btn-color:                 #fff;
-  --bs-btn-hover-bg:              #c23555;
-  --bs-btn-hover-border-color:    #c23555;
-  --bs-btn-hover-color:           #fff;
-  --bs-btn-active-bg:             #c23555;
-  --bs-btn-disabled-bg:           #d94f6a;
-  --bs-btn-disabled-border-color: #d94f6a;
-  --bs-btn-disabled-color:        #fff;
+  --bs-btn-bg:                    var(--cgt-btn-danger);
+  --bs-btn-border-color:          var(--cgt-btn-danger);
+  --bs-btn-color:                 var(--cgt-btn-on-fill);
+  --bs-btn-hover-bg:              var(--cgt-btn-danger-hover);
+  --bs-btn-hover-border-color:    var(--cgt-btn-danger-hover);
+  --bs-btn-hover-color:           var(--cgt-btn-on-fill);
+  --bs-btn-active-bg:             var(--cgt-btn-danger-hover);
+  --bs-btn-disabled-bg:           var(--cgt-btn-danger);
+  --bs-btn-disabled-border-color: var(--cgt-btn-danger);
+  --bs-btn-disabled-color:        var(--cgt-btn-on-fill);
   filter: none;
 }
 html[data-bs-theme="light"] .btn-danger:hover { filter: none; }
@@ -315,8 +395,8 @@ html[data-bs-theme="light"] .btn-warning:hover { filter: none; }
 .navbar { background-color: var(--ctp-mantle); border-bottom-color: var(--ctp-surface0) !important; }
 .navbar-brand { color: var(--ctp-mauve) !important; font-weight: 700; letter-spacing: 0.02em; font-size: 1rem; }
 .navbar-brand:hover { color: var(--ctp-lavender) !important; }
-html[data-bs-theme="light"] .navbar-brand { color: #a370e8 !important; }
-html[data-bs-theme="light"] .navbar-brand:hover { color: #8f5cd4 !important; }
+html[data-bs-theme="light"] .navbar-brand { color: var(--cgt-btn-primary) !important; }
+html[data-bs-theme="light"] .navbar-brand:hover { color: var(--cgt-btn-primary-hover) !important; }
 .nav-link { color: var(--ctp-subtext) !important; font-size: 0.95rem; }
 .nav-link:hover, .nav-link:focus { color: var(--ctp-text) !important; }
 .nav-link:active, .nav-link.show { color: var(--ctp-mauve) !important; }
@@ -359,9 +439,9 @@ a:active { color: var(--bs-link-color); }
 }
 .table tbody td { border-bottom-color: var(--ctp-surface0); }
 html[data-bs-theme="dark"]  tr.completion-editing > td { background-color: var(--ctp-surface0) !important; }
-html[data-bs-theme="light"] tr.completion-editing > td { background-color: rgba(163,112,232,0.1) !important; }
+html[data-bs-theme="light"] tr.completion-editing > td { background-color: rgba(var(--cgt-btn-primary-rgb),0.1) !important; }
 tr.completion-editing > td:first-child { border-left: 3px solid var(--ctp-mauve); }
-html[data-bs-theme="light"] tr.completion-editing > td:first-child { border-left-color: #a370e8; }
+html[data-bs-theme="light"] tr.completion-editing > td:first-child { border-left-color: var(--cgt-btn-primary); }
 
 /* ─── Cards ──────────────────────────────────────────────────────────────── */
 .card { background-color: var(--ctp-mantle); border-color: var(--ctp-surface1); }
@@ -541,10 +621,10 @@ details summary::before { content: "▶"; font-size: 0.65em; transition: transfo
 details[open] summary::before { transform: rotate(90deg); }
 details summary:hover { background: rgba(var(--bs-primary-rgb), 0.08); border-color: var(--ctp-mauve); }
 html[data-bs-theme="light"] details summary {
-  background-color: #a370e8; color: #fff; border-color: #a370e8;
+  background-color: var(--cgt-btn-primary); color: var(--cgt-btn-on-fill); border-color: var(--cgt-btn-primary);
 }
 html[data-bs-theme="light"] details summary:hover {
-  background-color: #8f5cd4; border-color: #8f5cd4;
+  background-color: var(--cgt-btn-primary-hover); border-color: var(--cgt-btn-primary-hover);
 }
 details > :not(summary) { margin-top: 1rem; }
 
@@ -2169,6 +2249,29 @@ body:has(.cgt-match-nav--sticky) {
   line-height: 1.1;
   color: var(--ctp-text);
 }
+/* Hairline outline on the *accented* numbers. paint-order puts the stroke down
+   first and the fill over it, so the letterform keeps its full weight and the
+   centre keeps the accent's published colour — the edge is defined without the
+   hue shifting. Applied in every palette so the numbers read as one component;
+   each palette supplies its own stroke colour via --cgt-stat-stroke.
+   Deliberately NOT applied to the plain (ink) or --muted variants: stroking
+   ink with ink only fakes a heavier font weight, and it would darken muted.
+   The breakdown numbers inherit body size, so they take a lighter stroke —
+   0.5px on 0.8rem text reads as bold, not as an outline. */
+:is(
+  .cgt-tool-stat--teal, .cgt-tool-stat--peach, .cgt-tool-stat--lavender,
+  .cgt-tool-stat--yellow, .cgt-tool-stat--green, .cgt-tool-stat--blue,
+  .cgt-tool-stat--pink, .cgt-tool-stat--maroon, .cgt-tool-stat--flamingo
+) .cgt-tool-stat__value {
+  paint-order: stroke fill;
+  -webkit-text-stroke: 0.5px var(--cgt-stat-stroke);
+}
+:is(.cgt-breakdown__num--teal, .cgt-breakdown__num--peach, .cgt-breakdown__num--lavender,
+    .cgt-breakdown__num--yellow, .cgt-breakdown__num--green, .cgt-breakdown__num--blue,
+    .cgt-breakdown__num--pink, .cgt-breakdown__num--maroon, .cgt-breakdown__num--flamingo) {
+  paint-order: stroke fill;
+  -webkit-text-stroke: 0.3px var(--cgt-stat-stroke);
+}
 .cgt-tool-stat__label {
   font-size: 0.63rem;
   font-weight: 400;
@@ -2187,18 +2290,6 @@ body:has(.cgt-match-nav--sticky) {
 :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: var(--ctp-maroon); }
 :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: var(--ctp-flamingo); }
 :is(.cgt-tool-stat--muted    .cgt-tool-stat__value, .cgt-breakdown__num--muted) { color: var(--ctp-overlay0); }
-/* Latte's accents miss 3:1 contrast for large text on the card surface —
-   mix each toward text ink (same spirit as the light-mode button shades). */
-html[data-bs-theme="light"] :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
-
 /* Small generic thumbnail (Home rows, anywhere a 64x30 header-art chip is
    needed outside a table). Same shape as the match-review row thumb. */
 .cgt-thumb-sm {

@@ -2641,3 +2641,82 @@ def test_missing_artwork_count_survives_a_null_release_id(client, db_session):
     after = _build_lib_query(db_session, user, "", "", "default", "name", False, True, "grid_v")[0].count()
     assert after == before, "a NULL release_id must not zero the whole count"
     assert entry is not None
+
+
+def _theme_css():
+    return open("frontend/static/css/theme.css").read()
+
+
+def _palette_block(css, selector):
+    i = css.index(selector)
+    j = css.index("{", i)
+    depth = 0
+    for k in range(j, len(css)):
+        if css[k] == "{":
+            depth += 1
+        elif css[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[j:k]
+    raise AssertionError(f"unterminated block for {selector}")
+
+
+def test_stat_values_are_not_mixed_toward_ink():
+    """Light mode used to render every stat number as
+    color-mix(accent 65%, --ctp-text). That stripped ~42% of each accent's
+    saturation, unevenly (teal -29%, pink -55%), so the triplets chosen for
+    colorblind separation stopped separating — the light theme read as
+    arbitrary. The hairline stroke solves legibility instead, leaving hue
+    intact. This is the exact regression to prevent."""
+    css = _theme_css()
+    for accent in ("teal", "peach", "lavender", "yellow", "green", "blue", "pink", "maroon", "flamingo"):
+        needle = f"color-mix(in srgb, var(--ctp-{accent})"
+        for hit in range(css.count(needle)):
+            idx = -1
+            for _ in range(hit + 1):
+                idx = css.index(needle, idx + 1)
+            line_start = css.rfind("\n", 0, idx) + 1
+            line = css[line_start : css.index("\n", idx)]
+            assert "--ctp-text" not in line, f"accent mixed toward ink again: {line.strip()[:100]}"
+
+
+def test_every_palette_declares_the_stat_stroke():
+    """The outline is what makes pale accents legible. A palette that forgets
+    --cgt-stat-stroke renders it as an invalid value — no stroke, no error."""
+    css = _theme_css()
+    for selector in ('html[data-bs-theme="dark"] {', 'html[data-bs-theme="light"] {', 'html[data-palette="latte"] {'):
+        assert "--cgt-stat-stroke:" in _palette_block(css, selector), selector
+
+
+def test_latte_overrides_come_after_the_default_light_palette():
+    """html[data-bs-theme="light"] and html[data-palette="latte"] have equal
+    specificity, so source order alone decides. Move the Latte block above the
+    Nord one and Latte silently renders as Nord."""
+    css = _theme_css()
+    assert css.index('html[data-palette="latte"] {') > css.index('html[data-bs-theme="light"] {')
+
+
+def test_palette_specific_button_shades_stay_light_scoped():
+    """--cgt-btn-* are only declared in the light palettes. Any use that isn't
+    scoped to a light rule resolves to nothing under Mocha — an invisible
+    button, not a build error."""
+    import re
+
+    css = _theme_css()
+    for m in re.finditer(r"var\(--cgt-btn-[a-z-]+\)", css):
+        start = css.rfind("}", 0, m.start())
+        start = 0 if start < 0 else start + 1
+        selector = css[start : css.index("{", start)].strip().splitlines()[-1]
+        assert 'data-bs-theme="light"' in selector or "data-palette" in selector, selector[:90]
+
+
+def test_boot_script_migrates_pre_nord_theme_settings():
+    """Existing installs have 'light'/'dark' in localStorage. Without migration
+    the picker opens blank and the stored preference is silently ignored."""
+    for name in ("base.html", "login.html", "signup.html"):
+        html = open(f"frontend/templates/{name}").read()
+        assert "localStorage.getItem('theme')" in html, name
+        assert "p==='light'" in html and "'nord'" in html, f"{name} drops old light setting"
+        assert "p==='dark'" in html and "'mocha'" in html, f"{name} drops old dark setting"
+        # data-bs-theme must stay a value Bootstrap understands.
+        assert "d.dataset.bsTheme=(p==='mocha'?'dark':'light')" in html, name

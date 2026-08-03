@@ -102,27 +102,35 @@
         </button>
         <ul class="theme-picker-menu" role="listbox" hidden>
           <li role="option"><button type="button" data-value="system">System default</button></li>
-          <li role="option"><button type="button" data-value="dark">Dark (Catppuccin Mocha)</button></li>
-          <li role="option"><button type="button" data-value="light">Light (Catppuccin Latte)</button></li>
+          <li role="option"><button type="button" data-value="nord">Nord (light)</button></li>
+          <li role="option"><button type="button" data-value="latte">Latte (light)</button></li>
+          <li role="option"><button type="button" data-value="mocha">Mocha (dark)</button></li>
         </ul>
       </div>
       <script>
         (function () {
-          var labels = { system: 'System default', dark: 'Dark (Catppuccin Mocha)', light: 'Light (Catppuccin Latte)' };
+          var labels = { system: 'System default', nord: 'Nord (light)', latte: 'Latte (light)', mocha: 'Mocha (dark)' };
           var picker  = document.getElementById('theme-picker');
           var trigger = picker.querySelector('.theme-picker-trigger');
           var menu    = picker.querySelector('.theme-picker-menu');
-          var current = localStorage.getItem('theme') || 'system';
+          var stored = localStorage.getItem('theme');
+          // Pre-Nord installs stored 'light'/'dark'; the boot script migrates
+          // them, but read both spellings so the picker never opens blank.
+          if (stored === 'light') { stored = 'nord'; }
+          else if (stored === 'dark') { stored = 'mocha'; }
+          var current = labels[stored] ? stored : 'system';
 
           function applyTheme(val) {
+            var palette = val;
             if (val === 'system') {
               localStorage.removeItem('theme');
-              document.documentElement.dataset.bsTheme =
-                matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+              palette = matchMedia('(prefers-color-scheme: dark)').matches ? 'mocha' : 'nord';
             } else {
-              document.documentElement.dataset.bsTheme = val;
               localStorage.setItem('theme', val);
             }
+            var d = document.documentElement;
+            d.dataset.palette = palette;
+            d.dataset.bsTheme = palette === 'mocha' ? 'dark' : 'light';
             trigger.textContent = labels[val];
             menu.querySelectorAll('button').forEach(function (b) {
               b.setAttribute('aria-selected', b.dataset.value === val ? 'true' : 'false');

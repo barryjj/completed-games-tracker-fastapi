@@ -7,9 +7,34 @@ Read this before touching any template, CSS, or JS.
 
 ## Theme
 
-**Catppuccin Mocha** (dark, default) / **Catppuccin Latte** (light).
-Switched via `prefers-color-scheme` media query; user can override with a localStorage toggle.
-Both palettes are defined in `frontend/static/css/theme.css`.
+Three palettes, all defined in `frontend/static/css/theme.css`:
+
+| Palette | Mode | Role |
+|---------|------|------|
+| **Nord** | light | Default light theme |
+| **Catppuccin Latte** | light | Opt-in alternative |
+| **Catppuccin Mocha** | dark | Default dark theme |
+
+Two attributes drive them, and the split matters:
+
+- `data-bs-theme` is only ever `light` or `dark` — it is Bootstrap's own
+  attribute and Bootstrap does not understand any other value.
+- `data-palette` is `nord` | `latte` | `mocha` and selects the palette.
+
+So Latte is `data-bs-theme="light" data-palette="latte"`, and every existing
+`html[data-bs-theme="light"] …` component rule keeps applying to both light
+palettes without being duplicated. **Scope new light-mode rules to
+`data-bs-theme`, not `data-palette`,** unless the rule is genuinely
+palette-specific.
+
+Palette-specific literals belong in the palette block as `--cgt-*` variables
+(see `--cgt-btn-primary`, `--cgt-stat-stroke`) — never hardcoded into a
+component rule, or the third palette silently inherits the wrong colour.
+
+The boot script in `base.html` / `login.html` / `signup.html` resolves the
+palette before first paint and migrates pre-Nord `light`/`dark` values stored
+in `localStorage`. Absent a stored value, `prefers-color-scheme` picks Nord or
+Mocha.
 
 **Rule: no emoji in UI chrome.** Badge labels, headings, button text — plain text only.
 
@@ -43,7 +68,12 @@ Navbar: **Home · Library · Completions · Tools** on the left; **gear (Setting
 
 ## Catppuccin CSS Variables
 
-These are the vars actually used in templates and CSS. All resolve correctly in both Mocha and Latte.
+These are the vars actually used in templates and CSS. All resolve in all three
+palettes. The table lists Mocha and Latte; **Nord** supplies the same variable
+names — nine accents are published Nord values and five (`maroon`, `flamingo`,
+`rosewater`, `lavender`, `pink`) are mixes of two adjacent Nord colours, with
+the ratio recorded inline in `theme.css` so they can be re-derived rather than
+guessed at.
 
 | Var | Mocha | Latte | Role |
 |-----|-------|-------|------|
@@ -224,8 +254,16 @@ Values are the only colored text; labels stay muted ink (identity is never color
 | `--muted` modifier | zero / nothing to do |
 
 Side-by-side triplets (teal/peach/lavender, green/blue/pink) are validated for
-colorblind separation. Light mode auto-darkens values via `color-mix` toward text ink —
-don't hardcode Latte shades. The tool grid uses `grid-auto-rows: 1fr` so all cards in
+colorblind separation.
+
+Values render in the palette's **published** accent, and carry a hairline
+outline (`paint-order: stroke fill` + `-webkit-text-stroke` with
+`--cgt-stat-stroke`) so pale accents keep a defined edge on light surfaces.
+Light mode used to mix every accent 65% toward `--ctp-text`; that stripped an
+average 42% of their saturation and did it unevenly (teal lost 29%, pink 55%),
+which broke the very triplet separation above. **Don't reintroduce a
+lightness/ink mix on stat values** — the stroke is what solves legibility, and
+it leaves the hue intact. The tool grid uses `grid-auto-rows: 1fr` so all cards in
 a row share the tallest card's height — uniform tiles are structural, not dependent on
 text happening to wrap evenly.
 

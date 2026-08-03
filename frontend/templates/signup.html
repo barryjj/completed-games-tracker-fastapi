@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Create Account — Completed Games Tracker</title>
-  <script>document.documentElement.dataset.bsTheme=localStorage.getItem('theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');</script>
+  <script>(function(){var p=localStorage.getItem('theme');if(p==='light'){p='nord';localStorage.setItem('theme',p);}else if(p==='dark'){p='mocha';localStorage.setItem('theme',p);}if(p!=='nord'&&p!=='latte'&&p!=='mocha'){p=matchMedia('(prefers-color-scheme: dark)').matches?'mocha':'nord';}var d=document.documentElement;d.dataset.palette=p;d.dataset.bsTheme=(p==='mocha'?'dark':'light');})();</script>
   <link rel="stylesheet" href="/static/vendor/bootstrap.min.css">
   <link rel="stylesheet" href="/static/css/theme.css">
 </head>
