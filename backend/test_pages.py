@@ -2643,25 +2643,18 @@ def test_missing_artwork_count_survives_a_null_release_id(client, db_session):
     assert entry is not None
 
 
-def test_warm_stat_accents_define_their_own_light_values():
-    """Light-theme accents are derived by mixing the dark value 65% toward
-    --ctp-text, a blue-grey. Cool hues survive that — a darker green is still
-    green — but WARM ones turn brown, which is why only yellow and peach need
-    their own light values rather than a derived one."""
+def test_stat_accents_use_the_palette_directly_in_both_themes():
+    """Latte IS the light palette — its accents are already chosen for a light
+    background. Deriving them by mixing the Mocha values 65% toward the text ink
+    browned every warm hue and greyed the cool ones; there is no override now,
+    so each theme's own value is what renders."""
     css = open("frontend/static/css/theme.css").read()
-    for var, light in (("--cgt-stat-yellow", "#b86f00"), ("--cgt-stat-peach", "#d94f00")):
-        assert f"{var}: var(--ctp-{var.split('-')[-1]});" in css, f"{var}: dark uses the palette value"
-        assert f"{var}: {light};" in css, f"{var}: light defines its own"
-        assert f"color: var({var});" in css, f"{var}: the stat rule reads it"
-    # Scope to the stat-accent rules: tag badges and alerts legitimately tint
-    # with these same colours and must not be caught by this.
-    stats = css[css.index(".cgt-tool-stat--teal") :]
-    stats = stats[: stats.index("/* ", stats.index('data-bs-theme="light"')) + 400]
-    for accent in ("yellow", "peach"):
-        assert f"color-mix(in srgb, var(--ctp-{accent})" not in stats, f"{accent} is still derived"
-    # Cool accents still are, and should be.
-    assert "color-mix(in srgb, var(--ctp-green)" in stats
-    # CSS files can't carry Jinja comments.
+    assert 'html[data-bs-theme="light"] :is(.cgt-tool-stat' not in css, "no derived light accents"
+    for accent in ("yellow", "peach", "teal", "green", "blue", "lavender"):
+        assert f"color: var(--ctp-{accent});" in css, accent
+    # No invented one-off colours.
+    for invented in ("#b86f00", "#d94f00", "--cgt-stat-yellow", "--cgt-stat-peach"):
+        assert invented not in css, invented
     assert "{#" not in css
 
 

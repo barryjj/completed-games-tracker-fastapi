@@ -9,12 +9,6 @@ html[data-bs-theme="dark"] {
   --ctp-maroon:   #eba0ac; --ctp-red:      #f38ba8; --ctp-peach:    #fab387;
   --ctp-yellow:   #f9e2af; --ctp-green:    #a6e3a1; --ctp-teal:     #94e2d5;
   --ctp-sky:      #89dceb; --ctp-sapphire: #74c7ec;
-  /* Stat accents. Yellow is the only palette colour that can't survive the
-     light-theme treatment: mixing it toward --ctp-text (a blue-grey) desaturates
-     it into olive-brown, and using Latte's yellow straight only reaches 2.3:1 on
-     --ctp-base. Light gets a purpose-picked amber instead — see below. */
-  --cgt-stat-yellow: var(--ctp-yellow);
-  --cgt-stat-peach: var(--ctp-peach);
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #1e1e2e;
@@ -78,17 +72,6 @@ html[data-bs-theme="light"] {
   --ctp-maroon:   #e64553; --ctp-red:      #d20f39; --ctp-peach:    #fe640b;
   --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
   --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
-  /* Fully saturated amber at 3.50:1 on --ctp-base — clears the large-text
-     threshold with the same readability as the old mix (4.07:1) but at
-     saturation 1.00 against its 0.38, which is the whole difference between
-     "gold" and "brown". */
-  --cgt-stat-yellow: #b86f00;
-  /* Same reasoning as yellow: darkening a WARM hue toward the blue-grey text
-     ink turns it brown. Cool accents survive it — a darker green is still
-     green — which is why only these two need their own light values.
-     #d94f00 is 3.66:1 at saturation 1.00; the mix it replaces was 3.83:1 at
-     0.63, i.e. the same readability with a third of the colour drained out. */
-  --cgt-stat-peach: #d94f00;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #eff1f5;
@@ -2198,27 +2181,19 @@ body:has(.cgt-match-nav--sticky) {
   white-space: nowrap;
 }
 :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: var(--ctp-teal); }
-:is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--cgt-stat-peach); }
+:is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--ctp-peach); }
 :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: var(--ctp-lavender); }
-:is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: var(--cgt-stat-yellow); }
+:is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: var(--ctp-yellow); }
 :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: var(--ctp-green); }
 :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: var(--ctp-blue); }
 :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: var(--ctp-pink); }
 :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: var(--ctp-maroon); }
 :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: var(--ctp-flamingo); }
 :is(.cgt-tool-stat--muted    .cgt-tool-stat__value, .cgt-breakdown__num--muted) { color: var(--ctp-overlay0); }
-/* Latte's accents miss 3:1 contrast for large text on the card surface —
-   mix each toward text ink (same spirit as the light-mode button shades). */
-html[data-bs-theme="light"] :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
-/* yellow and peach deliberately absent — the two warm accents define their own
-   light values (--cgt-stat-yellow, --cgt-stat-peach) rather than being derived
-   by darkening, which browns them. */
-html[data-bs-theme="light"] :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
-html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
+/* No light-theme override. Latte IS the light palette — its accents are chosen
+   for a light background already. Deriving them by mixing the Mocha values
+   toward the text ink was the bug: it browned every warm hue and greyed the
+   cool ones. */
 
 /* Small generic thumbnail (Home rows, anywhere a 64x30 header-art chip is
    needed outside a table). Same shape as the match-review row thumb. */
