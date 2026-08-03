@@ -1,0 +1,73 @@
+/* ─── Stock Catppuccin Latte — REFERENCE COPY, NOT LOADED ────────────────
+ *
+ * The unmodified light-theme variable block, kept verbatim so the softened
+ * palette we're building has something exact to diff against and revert to.
+ * Nothing imports this file; it exists because once the values in theme.css
+ * are hand-tuned, the app is no longer running a stock palette and there is
+ * no upstream to check against.
+ *
+ * Canonical source: https://catppuccin.com/palette (Latte)
+ * Captured: 2026-08-02
+ * ──────────────────────────────────────────────────────────────────────── */
+
+html[data-bs-theme="light"] {
+  --ctp-base:     #eff1f5; --ctp-mantle:   #e6e9ef; --ctp-crust:    #dce0e8;
+  --ctp-surface0: #ccd0da; --ctp-surface1: #bcc0cc; --ctp-surface2: #acb0be;
+  --ctp-overlay0: #9ca0b0; --ctp-overlay1: #8c8fa1; --ctp-text:     #4c4f69;
+  --ctp-subtext:  #5c5f77; --ctp-subtext0: #6c6f85; --ctp-subtext1: #5c5f77;
+  --ctp-rosewater:#dc8a78; --ctp-flamingo:  #dd7878; --ctp-pink:     #ea76cb;
+  --ctp-mauve:    #8839ef; --ctp-lavender: #7287fd; --ctp-blue:     #1e66f5;
+  --ctp-maroon:   #e64553; --ctp-red:      #d20f39; --ctp-peach:    #fe640b;
+  --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
+  --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
+
+  /* Bootstrap overrides */
+  --bs-body-bg:                   #eff1f5;
+  --bs-body-bg-rgb:               239,241,245;
+  --bs-body-color:                #4c4f69;
+  --bs-body-color-rgb:            76,79,105;
+  --bs-emphasis-color:            #4c4f69;
+  --bs-secondary-color:           #5c5f77;
+  --bs-secondary-bg:              #e6e9ef;
+  --bs-tertiary-bg:               #ccd0da;
+  --bs-border-color:              #bcc0cc;
+  --bs-border-color-translucent:  rgba(188,192,204,0.3);
+  --bs-link-color:                #8839ef;
+  --bs-link-hover-color:          #7287fd;
+  --bs-primary:                   #8839ef;
+  --bs-primary-rgb:               136,57,239;
+  --bs-danger:                    #d20f39;
+  --bs-danger-rgb:                210,15,57;
+  --bs-success:                   #40a02b;
+  --bs-success-rgb:               64,160,43;
+  --bs-warning:                   #df8e1d;
+  --bs-code-color:                #40a02b;
+  --bs-navbar-color:              #5c5f77;
+  --bs-navbar-hover-color:        #4c4f69;
+  --bs-navbar-active-color:       #4c4f69;
+  --bs-navbar-brand-color:        #8839ef;
+  --bs-navbar-brand-hover-color:  #7287fd;
+  --bs-nav-link-color:            #5c5f77;
+  --bs-nav-link-hover-color:      #4c4f69;
+  --bs-dropdown-bg:               #e6e9ef;
+  --bs-dropdown-border-color:     #bcc0cc;
+  --bs-dropdown-divider-bg:       #bcc0cc;
+  --bs-dropdown-link-color:       #5c5f77;
+  --bs-dropdown-link-hover-color: #4c4f69;
+  --bs-dropdown-link-hover-bg:    #ccd0da;
+  --bs-dropdown-link-active-bg:   #8839ef;
+  --bs-dropdown-link-active-color: #eff1f5;
+  --bs-card-border-color:         #bcc0cc;
+  --bs-card-bg:                   #e6e9ef;
+  --bs-input-bg:                  #ffffff;
+  --bs-input-border-color:        #bcc0cc;
+  --bs-input-color:               #4c4f69;
+  --bs-input-placeholder-color:   #9ca0b0;
+  --bs-input-focus-border-color:  #8839ef;
+  --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(136,57,239,0.2);
+  --bs-table-bg:                  transparent;
+  --bs-table-striped-bg:          rgba(0,0,0,0.04);
+  --bs-table-border-color:        #bcc0cc;
+
+  --bs-focus-ring-color: rgba(136,57,239,0.2);
+}
