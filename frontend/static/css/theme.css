@@ -863,10 +863,6 @@ a.cgt-completion-record:hover {
 }
 
 /* ─── Pending matches indicator ─────────────────────────────────────────── */
-/* Count chip beside a card title. Filled with the same accent as the stat it
-   summarises — they read as one thing, not two. This was briefly neutralised to
-   fix an apparent clash, but the clash was the light-theme stat rendering as
-   mustard next to a yellow pill; with Latte restored there is nothing to fix. */
 .cgt-pending-badge {
   background: var(--ctp-yellow) !important;
   color: var(--ctp-crust) !important;
@@ -2181,7 +2177,6 @@ body:has(.cgt-match-nav--sticky) {
   color: var(--ctp-overlay1);
   white-space: nowrap;
 }
-:is(.cgt-tool-stat--sky      .cgt-tool-stat__value, .cgt-breakdown__num--sky) { color: var(--ctp-sky); }
 :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: var(--ctp-teal); }
 :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: var(--ctp-peach); }
 :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: var(--ctp-lavender); }
@@ -2192,10 +2187,17 @@ body:has(.cgt-match-nav--sticky) {
 :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: var(--ctp-maroon); }
 :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: var(--ctp-flamingo); }
 :is(.cgt-tool-stat--muted    .cgt-tool-stat__value, .cgt-breakdown__num--muted) { color: var(--ctp-overlay0); }
-/* No light-theme override. Latte IS the light palette — its accents are chosen
-   for a light background already. Deriving them by mixing the Mocha values
-   toward the text ink was the bug: it browned every warm hue and greyed the
-   cool ones. */
+/* Latte's accents miss 3:1 contrast for large text on the card surface —
+   mix each toward text ink (same spirit as the light-mode button shades). */
+html[data-bs-theme="light"] :is(.cgt-tool-stat--teal     .cgt-tool-stat__value, .cgt-breakdown__num--teal) { color: color-mix(in srgb, var(--ctp-teal)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--peach    .cgt-tool-stat__value, .cgt-breakdown__num--peach) { color: color-mix(in srgb, var(--ctp-peach)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--lavender .cgt-tool-stat__value, .cgt-breakdown__num--lavender) { color: color-mix(in srgb, var(--ctp-lavender) 65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--yellow   .cgt-tool-stat__value, .cgt-breakdown__num--yellow) { color: color-mix(in srgb, var(--ctp-yellow)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--green    .cgt-tool-stat__value, .cgt-breakdown__num--green) { color: color-mix(in srgb, var(--ctp-green)    65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--blue     .cgt-tool-stat__value, .cgt-breakdown__num--blue) { color: color-mix(in srgb, var(--ctp-blue)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--pink     .cgt-tool-stat__value, .cgt-breakdown__num--pink) { color: color-mix(in srgb, var(--ctp-pink)     65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--maroon   .cgt-tool-stat__value, .cgt-breakdown__num--maroon) { color: color-mix(in srgb, var(--ctp-maroon)   65%, var(--ctp-text)); }
+html[data-bs-theme="light"] :is(.cgt-tool-stat--flamingo .cgt-tool-stat__value, .cgt-breakdown__num--flamingo) { color: color-mix(in srgb, var(--ctp-flamingo) 65%, var(--ctp-text)); }
 
 /* Small generic thumbnail (Home rows, anywhere a 64x30 header-art chip is
    needed outside a table). Same shape as the match-review row thumb. */
