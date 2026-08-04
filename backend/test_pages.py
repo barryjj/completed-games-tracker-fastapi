@@ -2818,3 +2818,108 @@ def test_psn_card_drops_its_blurb_once_connected(client, db_session):
     assert "Fetch your PlayStation library" not in body
     assert "Capture your PlayStation sign-in" not in body
     assert "tester" in body, "identity block replaces the copy"
+
+
+def test_theme_css_has_no_stray_comment_markers():
+    """A script that rewrote theme.css split on a comment header and rejoined
+    without it, leaving a dangling `*/`. CSS recovers from that by discarding
+    the *next whole rule* — which silently deleted `.btn-primary`, so every
+    primary button fell back to Bootstrap's blue. No error anywhere: not in the
+    build, not in the console, not in the tests. Only the pixels."""
+    css = open("frontend/static/css/theme.css").read()
+    i = 0
+    in_comment = False
+    while i < len(css) - 1:
+        two = css[i : i + 2]
+        if not in_comment and two == "/*":
+            in_comment, i = True, i + 2
+            continue
+        if not in_comment and two == "*/":
+            line = css[:i].count("\n") + 1
+            raise AssertionError(f"stray `*/` at line {line} — the opening `/*` was lost")
+        if in_comment and two == "*/":
+            in_comment, i = False, i + 2
+            continue
+        i += 1
+    assert not in_comment, "unterminated comment — everything after it is dead"
+
+
+def test_theme_css_selectors_are_parseable():
+    """The same failure with the opener intact but the closer lost would leave
+    comment prose sitting where a selector belongs. Any top-level selector
+    containing box-drawing characters is comment text the parser is about to
+    eat a rule over."""
+    import re
+
+    css = open("frontend/static/css/theme.css").read()
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    depth = 0
+    chunk = ""
+    for ch in stripped:
+        if ch == "{":
+            if depth == 0:
+                sel = chunk.strip()
+                assert not re.search(r"[─━—│]", sel), f"comment text leaked into a selector: {sel[:70]!r}"
+                assert sel, "empty selector"
+            depth += 1
+            chunk = ""
+        elif ch == "}":
+            depth -= 1
+            chunk = ""
+        elif depth == 0:
+            chunk += ch
+
+
+def test_key_rules_survive_comment_stripping():
+    """The regression this exists for: `.btn-primary` vanished from the cascade
+    while still being present in the file, so a plain text search found it and
+    proved nothing. These read the CSS with comments removed — the way a parser
+    sees it — so a rule swallowed by an unclosed comment reads as missing.
+
+    A lost closing `*/` is invisible to marker balance (the next comment's
+    closer picks it up) and invisible to selector checks (the swallowed region
+    just becomes comment). Only "is the rule still there afterwards" catches
+    it."""
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", open("frontend/static/css/theme.css").read(), flags=re.S)
+    for selector, needle in (
+        (".btn-primary {", "var(--ctp-mauve)"),
+        (".btn-danger {", "var(--ctp-red)"),
+        (".cgt-tool-card {", "var(--ctp-mantle)"),
+        (".cgt-tool-card__body {", "font-size:"),
+    ):
+        assert selector in css, f"{selector} is not in the parsed stylesheet"
+        i = css.index(selector)
+        assert needle in css[i : css.index("}", i)], f"{selector} lost {needle}"
+
+
+def test_sync_cards_report_last_synced_the_same_way(client, db_session):
+    """Steam's identity block showed when it last synced; PSN's said
+    "PlayStation Network", which restated the card title. Two cards meant to be
+    the same component, telling you different amounts."""
+    import datetime
+
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "npsso-token", "tester"
+    user.steam_id64, user.steam_persona_name = "76561198000000000", "tester"
+    db_session.commit()
+
+    body = client.get("/tools").text
+    assert "PlayStation Network</div>" not in body
+    assert body.count("Never synced") == 2, "both cards say it the same way when never synced"
+
+    synced = datetime.datetime(2026, 8, 2, 16, 49, tzinfo=datetime.UTC)
+    user.psn_last_synced_at = synced
+    user.steam_last_synced_at = synced
+    db_session.commit()
+
+    body = client.get("/tools").text
+    assert body.count("Last synced") == 2
+    # Both carry the local-time hook the JS converts, not a bare UTC string.
+    # SQLite drops the tzinfo, so match the timestamp rather than the offset.
+    assert body.count('class="local-time" data-utc="2026-08-02T16:49:00') == 2
+    assert body.count("2026-08-02 16:49 UTC") == 2

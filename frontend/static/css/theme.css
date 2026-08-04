@@ -223,7 +223,7 @@ html[data-palette="latte"] {
 }
 .form-label { color: var(--ctp-text); font-weight: 500; }
 
- ────────────────────────────────────────────────────────────── */
+/* ─── Buttons ────────────────────────────────────────────────────────────── */
 .btn-primary {
   --bs-btn-bg:                  var(--ctp-mauve);
   --bs-btn-border-color:        var(--ctp-mauve);

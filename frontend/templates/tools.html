@@ -216,7 +216,15 @@
       {% endif %}
       <div class="cgt-tool-card__body">
         <div class="fw-semibold">{{ current_user.psn_online_id }}</div>
-        <div class="text-secondary">PlayStation Network</div>
+        <div class="text-secondary">
+          {# Same line the Steam card carries — "PlayStation Network" restated
+             the card title and told you nothing the card didn't already say. #}
+          {% if current_user.psn_last_synced_at %}
+          Last synced <span class="local-time" data-utc="{{ current_user.psn_last_synced_at.isoformat() }}">{{ current_user.psn_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
+          {% else %}
+          Never synced
+          {% endif %}
+        </div>
       </div>
     </div>
     {% endif %}
