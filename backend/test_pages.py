@@ -2748,3 +2748,33 @@ def test_month_strip_grows_to_fill_the_card():
     assert "min-height: 88px;" in track, "keep 88px as the floor"
     # A bare `height:` (not min-/max-) pins the track and brings the dead space back.
     assert not re.search(r"(?<![-\w])height:\s*\d", track), "a fixed height reintroduces the dead space"
+
+
+def test_tools_cards_lead_with_a_primary_action(client, db_session):
+    """Every tool card's first action is the primary one. Artwork's had
+    regressed to btn-surface twice, so the card read as having no main action
+    while its neighbours all did."""
+    _signup_and_login(client)
+    body = client.get("/tools").text
+    assert '<a href="/integrations/steamgriddb" class="btn btn-primary btn-sm">' in body
+    # Not asserting a global count: some cards legitimately have no primary
+    # until they're connected. This is the one that keeps slipping.
+
+
+def test_tools_cards_do_not_badge_a_count_they_already_show():
+    """The pill on a card title repeated the headline stat directly beneath it
+    — 578 above "578 imports to review". Checked against the template rather
+    than a rendered page: the badges sit behind {% if count %}, so a fixture
+    that fails to produce a count would make a rendered assertion pass while
+    proving nothing.
+
+    The nav badge in base.html is a different case and stays — it's the only
+    place that count appears when you're not on the page."""
+    import re
+
+    tools = open("frontend/templates/tools.html").read()
+    for m in re.finditer(r'<div class="cgt-tool-card__title">(.*?)</div>', tools, re.S):
+        assert "cgt-pending-badge" not in m.group(1), f"count badge back on: {m.group(1)[:60]!r}"
+
+    base = open("frontend/templates/base.html").read()
+    assert "cgt-pending-badge" in base, "the nav badge should not have been removed"

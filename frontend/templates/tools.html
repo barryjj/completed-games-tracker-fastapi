@@ -102,9 +102,6 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       Match review
-      {% if pending_matches %}
-      <span class="badge rounded-pill cgt-pending-badge">{{ pending_matches }}</span>
-      {% endif %}
     </div>
     <div class="cgt-tool-stats">
       <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if pending_matches else 'cgt-tool-stat--muted' }}">
@@ -129,9 +126,6 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       Spreadsheet import
-      {% if import_pending %}
-      <span class="badge rounded-pill cgt-pending-badge">{{ import_pending }}</span>
-      {% endif %}
     </div>
     {% if import_pending %}
     <div class="cgt-tool-stats">
@@ -190,7 +184,7 @@
        pressing anything — it has to be visible or it's a job you can't see. #}
     <div id="sync-indicator-artwork"></div>
     <div class="cgt-tool-card__actions">
-      <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">
+      <a href="/integrations/steamgriddb" class="btn btn-primary btn-sm">
         {% if current_user.steamgriddb_api_key %}Open artwork tools{% else %}Configure{% endif %}
       </a>
       {% if missing_covers %}
@@ -263,9 +257,6 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       PSN review
-      {% if psn_review_pending %}
-      <span class="badge rounded-pill cgt-pending-badge">{{ psn_review_pending }}</span>
-      {% endif %}
     </div>
     <div class="cgt-tool-stats">
       <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if psn_review_pending else 'cgt-tool-stat--muted' }}">
