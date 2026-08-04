@@ -985,13 +985,20 @@ a.cgt-completion-record:hover {
 }
 
 /* Borderless / mosaic mode: strip borders, radius, and hover lift for the
-   true edge-to-edge Steam-library look. Toggle .cgt-library-grid--borderless
-   on the container. */
-.cgt-library-grid--borderless .cgt-library-card {
+   true edge-to-edge Steam-library look.
+
+   Scoped to <html>, NOT to the grid container. The grid lives inside
+   #library-content / #completions-content, which HTMX replaces on every
+   search, filter, sort and page — so a class on the container was wiped by
+   every swap while the checkbox (outside the swapped region) stayed checked.
+   The result was a toggle that looked on and wasn't, and only came back if you
+   clicked it twice. Gap and size never had this bug because they were always
+   documentElement CSS vars; this now matches them. */
+html.cgt-grid-borderless .cgt-library-card {
   border: none;
   border-radius: 0;
 }
-.cgt-library-grid--borderless .cgt-library-card:hover {
+html.cgt-grid-borderless .cgt-library-card:hover {
   border: none;
   transform: none;
 }

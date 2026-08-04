@@ -2923,3 +2923,32 @@ def test_sync_cards_report_last_synced_the_same_way(client, db_session):
     # SQLite drops the tzinfo, so match the timestamp rather than the offset.
     assert body.count('class="local-time" data-utc="2026-08-02T16:49:00') == 2
     assert body.count("2026-08-02 16:49 UTC") == 2
+
+
+def test_borderless_state_lives_outside_the_swapped_region():
+    """The borderless class used to sit on .cgt-library-grid, which is inside
+    the HTMX-swapped content region. Every search, filter, sort and page wiped
+    it while the checkbox — outside that region — stayed checked, so the toggle
+    read as on while being off and only took effect on a second click.
+
+    Gap and size never had this because they were always documentElement CSS
+    vars. Borderless now matches. Both grid pages, both orientations."""
+    css = open("frontend/static/css/theme.css").read()
+    assert "html.cgt-grid-borderless .cgt-library-card" in css
+    assert ".cgt-library-grid--borderless" not in css, "container-scoped rule is the bug"
+
+    for name in ("library.html", "completions.html"):
+        js = open(f"frontend/templates/{name}").read()
+        assert "documentElement.classList.toggle('cgt-grid-borderless'" in js, name
+        assert "cgt-library-grid--borderless" not in js, f"{name} still targets the grid"
+        # Applied unconditionally, so an off state actually clears.
+        assert "applyBorderless(savedBorderless);" in js, f"{name} only applies the on state"
+
+
+def test_borderless_needs_no_reapply_after_a_swap():
+    """The afterSwap re-apply existed only to undo the wipe. Leaving it behind
+    would hide a regression if the class ever moved back onto the grid."""
+    js = open("frontend/templates/library.html").read()
+    i = js.index("htmx:afterSwap")
+    block = js[i : js.index("});", i)]
+    assert "applyBorderless" not in block, "nothing wipes it now; the re-apply is dead code"

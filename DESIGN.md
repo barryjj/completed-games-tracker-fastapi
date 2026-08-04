@@ -320,6 +320,23 @@ Fallback chain: UserArtwork → GameArtwork native (steam/psn) → GameArtwork s
 **No cross-orientation fallback** — stretched art looks worse than a placeholder.
 IGDB/manual entries without `cover_h` should use the SGDB picker to find one.
 
+### Grid view state (size / gap / borderless)
+
+All three persist in `localStorage` and **all three apply to
+`document.documentElement`** — CSS vars for size and gap, a
+`cgt-grid-borderless` class for borderless.
+
+**Never attach grid view state to an element inside the swapped content
+region.** The grid lives in `#library-content` / `#completions-content`, which
+HTMX replaces on every search, filter, sort and page. Borderless originally set
+a class on `.cgt-library-grid` and was silently wiped by every swap, while the
+checkbox — outside that region — stayed checked. The toggle read as on while
+being off, and only worked if you clicked it twice. Size and gap never had the
+bug purely because they were on `documentElement` from the start.
+
+Apply the saved value unconditionally on load (`applyBorderless(saved)`), not
+just when it's on, so an off state actually clears.
+
 ---
 
 ## Artwork System

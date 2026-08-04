@@ -251,9 +251,11 @@ function resetCompletionForm() {
 
   function applyGap(px) { document.documentElement.style.setProperty('--cgt-grid-gap', px + 'px'); }
   function applySize(px) { document.documentElement.style.setProperty('--cgt-grid-card-min', px + 'px'); }
+  // On <html>, not on the grid — the grid is inside the HTMX-swapped region
+  // and a class there is wiped by every search/filter/sort/page. Same place
+  // gap and size already live, which is why those two never broke.
   function applyBorderless(on) {
-    var grid = document.querySelector('.cgt-library-grid');
-    if (grid) grid.classList.toggle('cgt-library-grid--borderless', !!on);
+    document.documentElement.classList.toggle('cgt-grid-borderless', !!on);
   }
 
   var savedGap = parseInt(localStorage.getItem(GRID_GAP_KEY), 10);
@@ -264,7 +266,7 @@ function resetCompletionForm() {
   if (savedSize) applySize(savedSize);
 
   var savedBorderless = localStorage.getItem(BORDERLESS_KEY) === '1';
-  if (savedBorderless) applyBorderless(true);
+  applyBorderless(savedBorderless);
 
   // View-mode toggle: write cookie + localStorage + navigate. Cookie is the
   // one the server reads on first paint, so the list-flashes-before-grid
