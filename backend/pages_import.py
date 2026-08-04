@@ -37,7 +37,7 @@ from .pages_common import (
 router = APIRouter()
 
 
-@router.get("/library/import")
+@router.get("/tools/import")
 def import_page(
     request: Request,
     db: Session = Depends(get_db),
@@ -58,7 +58,7 @@ def import_page(
     )
 
 
-@router.post("/library/import/upload")
+@router.post("/tools/import/upload")
 async def import_upload(
     request: Request,
     file: UploadFile = File(...),
@@ -158,7 +158,7 @@ async def _run_import_thumbnails_job(user_id: int) -> None:
 _IMPORT_PAGE_SIZE = 50
 
 
-@router.post("/library/import/cancel")
+@router.post("/tools/import/cancel")
 def import_cancel_job(
     request: Request,
     current_user: models.User = Depends(get_web_user),
@@ -173,7 +173,7 @@ def import_cancel_job(
     )
 
 
-@router.post("/library/import/cancel/{job_id}")
+@router.post("/tools/import/cancel/{job_id}")
 def import_cancel_queued(
     request: Request,
     job_id: str,
@@ -187,7 +187,7 @@ def import_cancel_queued(
     )
 
 
-@router.get("/library/import/progress")
+@router.get("/tools/import/progress")
 def import_progress(
     request: Request,
     db: Session = Depends(get_db),
@@ -211,7 +211,7 @@ def import_progress(
     )
 
 
-@router.get("/library/import/status")
+@router.get("/tools/import/status")
 def import_status(
     request: Request,
     db: Session = Depends(get_db),
@@ -310,7 +310,7 @@ def _import_candidate_visuals(db: Session, candidate: models.ImportCandidate) ->
     }
 
 
-@router.get("/library/import/review")
+@router.get("/tools/import/review")
 def import_review_page(
     request: Request,
     tab: str = "add_to_existing",
@@ -348,6 +348,20 @@ def import_review_page(
         sort = unquote(request.cookies.get(f"cgt-import-{tab}-sort", sort))
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
+
+    # A remembered filter only survives while it's still an OPTION for this tab.
+    # The dropdowns are built from the tab's own candidates, so confirming the
+    # last PS3 row drops PS3 from the list — but the cookie still said PS3, and
+    # the server kept filtering by it while the select, unable to render a value
+    # it has no option for, fell back to showing "All platforms". The queue then
+    # read as empty with no filter visible to clear, and only a change-and-
+    # change-back fixed it by overwriting the cookie.
+    platform_opts = _import_platform_options(db, current_user.id, tab)
+    year_opts = _import_year_options(db, current_user.id, tab)
+    if platform and platform not in {o["value"] for o in platform_opts}:
+        platform = ""
+    if year and year not in set(year_opts):
+        year = ""
     if view not in ("list", "card") or tab != "add_to_existing":
         view = "list"
 
@@ -457,8 +471,8 @@ def import_review_page(
                 "tab_total": tab_total,
                 "tab_counts": tab_counts,
                 "candidate_visuals": candidate_visuals,
-                "platform_options": _import_platform_options(db, current_user.id, tab),
-                "year_options": _import_year_options(db, current_user.id, tab),
+                "platform_options": platform_opts,
+                "year_options": year_opts,
                 # Tab switches set this so the selects repaint OOB for the new
                 # tab; filter changes / load-more leave it False (no repaint).
                 "refresh_filters": refresh_filters,
@@ -480,8 +494,8 @@ def import_review_page(
             "next_offset": next_offset,
             "has_more": has_more,
             "candidate_visuals": candidate_visuals,
-            "platform_options": _import_platform_options(db, current_user.id, tab),
-            "year_options": _import_year_options(db, current_user.id, tab),
+            "platform_options": platform_opts,
+            "year_options": year_opts,
             # for the shared add-game modal's platform datalist (in-place "Add new")
             "platforms": _get_all_platforms(db),
             **filter_ctx,
@@ -490,7 +504,7 @@ def import_review_page(
     )
 
 
-@router.get("/library/import/{candidate_id}/preview")
+@router.get("/tools/import/{candidate_id}/preview")
 def import_candidate_preview(
     candidate_id: int,
     request: Request,
@@ -573,7 +587,7 @@ def import_candidate_preview(
     )
 
 
-@router.get("/library/import/{candidate_id}/edit")
+@router.get("/tools/import/{candidate_id}/edit")
 def import_candidate_edit_form(
     candidate_id: int,
     request: Request,
@@ -606,7 +620,7 @@ def import_candidate_edit_form(
     )
 
 
-@router.get("/library/import/{candidate_id}/link")
+@router.get("/tools/import/{candidate_id}/link")
 def import_candidate_link_form(
     candidate_id: int,
     request: Request,
@@ -633,7 +647,7 @@ def import_candidate_link_form(
     )
 
 
-@router.post("/library/import/{candidate_id}/link")
+@router.post("/tools/import/{candidate_id}/link")
 def import_candidate_link(
     candidate_id: int,
     request: Request,
@@ -679,7 +693,7 @@ def import_candidate_link(
     return Response(content=toast + counts, media_type="text/html")
 
 
-@router.post("/library/import/{candidate_id}/edit")
+@router.post("/tools/import/{candidate_id}/edit")
 def import_candidate_edit(
     candidate_id: int,
     request: Request,
@@ -756,7 +770,7 @@ def import_candidate_edit(
     )
 
 
-@router.post("/library/import/{candidate_id}/dismiss")
+@router.post("/tools/import/{candidate_id}/dismiss")
 def import_dismiss(
     candidate_id: int,
     request: Request,
@@ -820,7 +834,7 @@ def _confirm_add_to_existing(db: Session, current_user: models.User, candidate) 
     candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
 
 
-@router.post("/library/import/confirm-bulk")
+@router.post("/tools/import/confirm-bulk")
 def confirm_import_bulk(
     request: Request,
     ids: str = Form(""),
@@ -859,7 +873,7 @@ def confirm_import_bulk(
     return Response(content=toast + counts, media_type="text/html")
 
 
-@router.post("/library/import/dismiss-bulk")
+@router.post("/tools/import/dismiss-bulk")
 def dismiss_import_bulk(
     request: Request,
     ids: str = Form(""),
@@ -894,7 +908,7 @@ def dismiss_import_bulk(
     return Response(content=toast + counts, media_type="text/html")
 
 
-@router.post("/library/import/{candidate_id}/confirm")
+@router.post("/tools/import/{candidate_id}/confirm")
 def import_confirm(
     candidate_id: int,
     request: Request,
@@ -942,7 +956,7 @@ def import_confirm(
     return Response(status_code=400)
 
 
-@router.post("/library/import/{candidate_id}/reopen")
+@router.post("/tools/import/{candidate_id}/reopen")
 def reopen_import_candidate(
     request: Request,
     candidate_id: int,
@@ -1005,7 +1019,7 @@ def reopen_import_candidate(
     )
 
 
-@router.post("/library/import/fetch-thumbnails")
+@router.post("/tools/import/fetch-thumbnails")
 def import_fetch_thumbnails(
     request: Request,
     current_user: models.User = Depends(get_web_user),
@@ -1024,7 +1038,7 @@ def import_fetch_thumbnails(
     return Response(status_code=202)
 
 
-@router.post("/library/import/clear")
+@router.post("/tools/import/clear")
 def import_clear_all(
     request: Request,
     db: Session = Depends(get_db),
@@ -1050,12 +1064,12 @@ def import_clear_all(
         db.query(models.ImportCandidate).filter(models.ImportCandidate.id.in_(pending_ids)).delete(synchronize_session=False)
     db.commit()
     return Response(
-        headers={"HX-Redirect": "/library/import"},
+        headers={"HX-Redirect": "/tools/import"},
         status_code=200,
     )
 
 
-@router.post("/library/import/recheck")
+@router.post("/tools/import/recheck")
 def import_recheck(
     request: Request,
     db: Session = Depends(get_db),

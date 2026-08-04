@@ -1,9 +1,10 @@
-{# Snapshot report + played-only review for the PSN configure page. Also the
+{# Sync report for the PSN configure page. The review queues themselves live
+   on /tools/psn-review; this only points at them. Also the
    swap target (#psn-snapshot-report, outerHTML) for the per-row review
    actions, which re-render it with a flash line. #}
 <div id="psn-snapshot-report">
 {% if not report %}
-  <p class="text-secondary mb-0"><small>No snapshot yet — Fetch library crawls PSN and builds a reviewable report here. Nothing is written to your library.</small></p>
+  <p class="text-secondary mb-0"><small>No sync yet &mdash; Sync PSN library crawls PSN, adds what it can place, and reports here on what it found.</small></p>
 {% else %}
   {% if flash %}
   <div class="alert alert-success py-2 mb-3"><small>{{ flash }}</small></div>
@@ -15,7 +16,7 @@
     <h6 class="cgt-detail-block__heading">Last fetch</h6>
     <dl class="cgt-detail-meta small mb-0">
       <dt>Fetched</dt>
-      <dd><span class="local-time" data-utc="{{ snapshot.fetched_at.split('+')[0] }}">{{ snapshot.fetched_at }}</span></dd>
+      <dd>{% if last_synced_at %}<span class="local-time" data-utc="{{ last_synced_at.isoformat() }}">{{ last_synced_at }}</span>{% else %}&mdash;{% endif %}</dd>
       <dt>Merged games</dt>
       <dd>{{ "{:,}".format(report.merged_total) }}</dd>
       <dt>Purchased</dt>
@@ -42,7 +43,7 @@
     {# The old wording here claimed "existing library rows are never modified",
        which was never true of PSN's own rows — a re-sync deliberately refreshes
        their playtime and last-played. Only OTHER sources are untouched. #}
-    <p class="small text-secondary mb-0">Every purchased and trophy-backed game whose platform PSN settles (PS Plus included &mdash; provenance is kept on each entry). Re-syncing refreshes playtime and last-played on entries it created before; manual, Steam and spreadsheet entries are never touched, and overlaps with them are queued for match review. Cross-play games PSN can&rsquo;t place, and played-only activity, go to the review queues below.</p>
+    <p class="small text-secondary mb-0">Every purchased and trophy-backed game whose platform PSN settles (PS Plus included &mdash; provenance is kept on each entry). Re-syncing refreshes playtime and last-played on entries it created before; manual, Steam and spreadsheet entries are never touched, and overlaps with them are queued for match review. Cross-play games PSN can&rsquo;t place, and played-only activity, go to the PSN review queue.</p>
   </div>
 
   {% if import_review %}
@@ -51,68 +52,11 @@
      "what the crawl found" report. #}
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">
-      Cross-play games need review
+      Games needing a decision
       <span class="text-secondary fw-normal ms-1">({{ import_review | length }})</span>
     </h6>
-    <p class="text-secondary mb-2"><small>Some trophy sets cover several platforms and PSN doesn&rsquo;t say which you own. Choose what to create.</small></p>
+    <p class="text-secondary mb-2"><small>Trophy sets covering several platforms, and games you played with nothing behind them. Both live in the PSN review queue.</small></p>
     <a href="/tools/psn-review" class="btn btn-sm btn-primary">Open PSN review</a>
-  </div>
-  {% endif %}
-
-  {% if played_only %}
-  <div class="cgt-detail-block mb-3">
-    <h6 class="cgt-detail-block__heading">Played-only activity — your call per row</h6>
-    <p class="small text-secondary mb-2">Sessions with no purchase or trophy set behind them: disc copies, demos, friend passes, launch-and-quit noise. Nothing here imports without your click.</p>
-    <div class="table-responsive">
-      <table class="table table-sm small mb-0 align-middle">
-        <thead><tr><th>Title</th><th>Via</th><th>Played</th><th>When</th><th>Suggestion</th><th class="text-end">Action</th></tr></thead>
-        <tbody>
-          {% for row in played_only %}
-          <tr>
-            <td>{{ row.name }}<br><span class="text-secondary">{{ row.category or "" }}</span></td>
-            <td>{{ row.service or "—" }}</td>
-            <td>{{ row.minutes // 60 }}h{{ "%02d" % (row.minutes % 60) }}m<br><span class="text-secondary">{{ row.play_count }} session{{ "s" if row.play_count != 1 }}</span></td>
-            <td><span class="text-secondary">{{ row.first_played }}{% if row.last_played != row.first_played %} &rarr; {{ row.last_played }}{% endif %}</span></td>
-            <td><span class="text-secondary">{{ row.reason }}</span></td>
-            <td class="text-end" style="min-width: 220px;">
-              {% if row.decision %}
-                <span class="tag-badge {{ 'tag-platform-steam' if row.decision.action == 'imported' else 'tag-dlc' }}">{{ row.decision.action }}</span>
-              {% else %}
-                <button class="btn btn-sm {{ 'btn-primary' if row.suggested == 'import' else 'btn-surface' }}"
-                        hx-post="/integrations/psn/played-only/{{ row.external_id }}/import"
-                        hx-target="#psn-snapshot-report" hx-swap="outerHTML"
-                        hx-disabled-elt="this">Import</button>
-                <button class="btn btn-sm {{ 'btn-primary' if row.suggested == 'skip' else 'btn-surface' }}"
-                        hx-post="/integrations/psn/played-only/{{ row.external_id }}/skip"
-                        hx-target="#psn-snapshot-report" hx-swap="outerHTML"
-                        hx-disabled-elt="this">Skip</button>
-                <button type="button" class="btn btn-sm btn-surface"
-                        onclick="document.getElementById('psn-attach-{{ loop.index }}').classList.toggle('d-none')">Attach&hellip;</button>
-              {% endif %}
-            </td>
-          </tr>
-          {% if not row.decision %}
-          <tr id="psn-attach-{{ loop.index }}" class="d-none">
-            <td colspan="6">
-              <div class="d-flex align-items-center gap-2 mb-2">
-                <small class="text-secondary flex-shrink-0">Attach play stats to:</small>
-                <input type="search" class="form-control form-control-sm" style="max-width: 280px;"
-                       placeholder="Search your library&hellip;"
-                       name="q"
-                       hx-get="/integrations/psn/attach-search"
-                       hx-vals='{"external_id": "{{ row.external_id }}"}'
-                       hx-trigger="input changed delay:300ms"
-                       hx-target="next .psn-attach-results"
-                       hx-swap="innerHTML">
-              </div>
-              <div class="psn-attach-results"></div>
-            </td>
-          </tr>
-          {% endif %}
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
   </div>
   {% endif %}
 

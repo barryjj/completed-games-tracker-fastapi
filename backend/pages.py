@@ -143,6 +143,16 @@ def _psn_counts(db: Session, user: models.User) -> dict | None:
     return {"games": total or 0}
 
 
+def _psn_pending(db: Session, user: models.User) -> int:
+    """Games waiting on a PSN decision — both queues, since they're two tabs of
+    one page and a card showing only half the work is a card that lies."""
+    if not user.psn_npsso:
+        return 0
+    cross = len(_psn.import_review_rows(db, user.id))
+    played = len([r for r in _psn.played_only_rows(db, user.id) if not r["decision"]])
+    return cross + played
+
+
 # TODO(phase 3): user-configurable yearly goal — hardcoded until widget
 # customization lands (see ROADMAP "Home / Tools / Settings restructure").
 _YEARLY_GOAL = 52
@@ -194,7 +204,10 @@ def home_page(
             models.Completion.sort_order.asc().nulls_last(),
             models.Completion.id.desc(),
         )
-        .limit(5)
+        # Twelve: the footer button is gone AND every card is forced to the
+        # tallest one's height (grid-auto-rows: 1fr), so a short list here is
+        # dead space rather than a tidy card.
+        .limit(12)
         .all()
     )
     library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()
@@ -230,6 +243,8 @@ def home_page(
             platform_breakdown.append({"label": label, "css": models._platform_heuristic_css(label), "value": label, "count": n})
 
     import_counts = _import_tab_counts(db, current_user.id)
+    # Derived from what's already loaded — no extra queries. Fills the space the
+    # "Open completions" button used to occupy.
     return templates.TemplateResponse(
         request=request,
         name="home.html",
@@ -259,7 +274,8 @@ def home_page(
             "platform_breakdown": platform_breakdown,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
-            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
+            "psn_review_pending": _psn_pending(db, current_user),
+            "missing_covers": _build_lib_query(db, current_user, "", "", "default", "name", False, True, "grid_v")[0].count(),
             **_base_ctx(db, current_user),
         },
     )
@@ -285,7 +301,7 @@ def tools_page(
             "current_user": current_user,
             "steam_counts": _steam_counts(db, current_user),
             "psn_counts": _psn_counts(db, current_user),
-            "psn_review_pending": len(_psn.import_review_rows(db, current_user.id)) if current_user.psn_npsso else 0,
+            "psn_review_pending": _psn_pending(db, current_user),
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),

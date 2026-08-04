@@ -398,17 +398,14 @@ def save_psn_token(
 
 
 def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
-    """Re-render the snapshot report block (used as the swap target by the
-    played-only review actions so the row list updates in place)."""
-    snap = psn.load_snapshot(current_user.id)
+    """Re-render the sync report block for the PSN configure page."""
     _review = psn.import_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
         context={
-            "snapshot": snap,
-            "report": (snap or {}).get("report"),
-            "played_only": psn.played_only_rows(db, current_user.id),
+            "report": current_user.psn_last_sync_report,
+            "last_synced_at": current_user.psn_last_synced_at,
             "import_review": _review,
             "flash": flash,
             "flash_error": error,
@@ -416,49 +413,6 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
     )
     response.headers["Cache-Control"] = "no-store"
     return response
-
-
-@router.post("/psn/played-only/{external_id}/import")
-def psn_played_only_import(
-    external_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    try:
-        name = psn.import_played_only(db, current_user, external_id)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    return _psn_report_response(request, db, current_user, flash=f"Imported {name}.")
-
-
-@router.post("/psn/played-only/{external_id}/skip")
-def psn_played_only_skip(
-    external_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    try:
-        psn.skip_played_only(db, current_user, external_id)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    return _psn_report_response(request, db, current_user, flash="Skipped.")
-
-
-@router.post("/psn/played-only/{external_id}/attach")
-def psn_played_only_attach(
-    external_id: str,
-    request: Request,
-    entry_id: int = Form(...),
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(get_web_user),
-):
-    try:
-        name = psn.attach_played_only(db, current_user, external_id, entry_id)
-    except ValueError as e:
-        return _psn_report_response(request, db, current_user, error=str(e))
-    return _psn_report_response(request, db, current_user, flash=f"Play stats attached to {name}.")
 
 
 @router.get("/psn/attach-search")
@@ -471,16 +425,37 @@ def psn_attach_search(
 ):
     """Inline entry picker for the attach action: search the user's library,
     return buttons that POST the attach directly."""
+    # PlayStation family only. You're attaching PSN playtime to a PSN-family
+    # record, so a Steam row is never the answer — and searching the whole
+    # library meant "devil" returned eight Devil May Cry 5 DLC rows
+    # alphabetically and pushed the Special Edition past the limit, making the
+    # entry you wanted unreachable.
     query = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
         .join(models.Game)
-        .filter(models.UserLibraryEntry.user_id == current_user.id)
+        .filter(
+            models.UserLibraryEntry.user_id == current_user.id,
+            models.GameRelease.source == "psn",
+        )
     )
     qn = q.strip()
     if qn:
         query = query.filter(models.Game.title.ilike(f"%{qn}%"))
-    entries = query.order_by(models.Game.title).limit(8).all()
+    entries = query.all()
+    if qn:
+        # Rank before truncating: alphabetical order buried exact matches under
+        # whatever happened to sort first.
+        needle = qn.casefold()
+
+        def rank(e):
+            title = (e.release.game.display_name or e.release.game.title or "").casefold()
+            return (0 if title == needle else 1 if title.startswith(needle) else 2, len(title), title)
+
+        entries.sort(key=rank)
+    else:
+        entries.sort(key=lambda e: (e.release.game.display_name or e.release.game.title or "").casefold())
+    entries = entries[:8]
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_attach_results.html",
@@ -496,12 +471,12 @@ def psn_snapshot_report(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Render the stored snapshot's report (or an empty state) for the PSN
-    configure page, including the played-only review rows.
+    """Render the last sync's report (or an empty state) for the PSN configure
+    page.
 
     no-store: the desktop shell's WKWebView heuristically caches GETs that
-    carry no cache headers, which can pin a stale/pre-snapshot response in a
-    context with no user-facing reload."""
+    carry no cache headers, which can pin a stale response in a context with no
+    user-facing reload."""
     return _psn_report_response(request, db, current_user)
 
 
@@ -601,6 +576,9 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if result.get("no_product"):
             lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
         return "\n".join(lines)
+    if kind == "psn_review_art":
+        return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
+
     if kind == "psn_sync":
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
         if result["updated"]:
@@ -616,7 +594,7 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         if result.get("needs_review"):
             lines.append(f"{result['needs_review']} cross-play games need a platform — open Tools → PSN review")
         if result.get("played_only_pending"):
-            lines.append(f"{result['played_only_pending']} played-only entries need a decision — open the PSN page")
+            lines.append(f"{result['played_only_pending']} played-only games need a decision — open Tools → PSN review")
         if result.get("match_candidates"):
             lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
         if result.get("skipped_pc_dupe"):
@@ -650,9 +628,56 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         added = result.get("dlc_added", 0)
         delta = f"+{added:,} DLC" if added else "No new DLC"
     else:
-        return f"Steam job complete\n{totals_line}"
+        # Never assert a service the job didn't come from. This fallback used to
+        # say "Steam job complete" for ANY unhandled kind, so psn_review_art —
+        # chained off a PSN sync — announced itself as a finished Steam sync,
+        # complete with Steam totals.
+        spec = _STEAM_KINDS.get(kind) or {}
+        return f"{spec.get('job_label') or spec.get('label') or kind} complete"
 
     return f"{header}\n{delta}\n{totals_line}"
+
+
+async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, has_sgdb_key: bool) -> None:
+    """Post-sync enrichment, run ONE AT A TIME.
+
+    These used to be three concurrent tasks. SQLite in WAL mode allows a single
+    writer, each of these holds its transaction across an HTTP call, and
+    busy_timeout is 10s — so a writer queued behind the other two plus their
+    network round-trips blew straight past it and the job died on
+    "database is locked". Serialising removes the contention instead of raising
+    the timeout, which would only have turned a visible failure into a slow one.
+
+    Order is deliberate. Store metadata goes FIRST because it retitles — sparse
+    "Batman" becomes "Batman: The Telltale Series" — and both artwork passes
+    look SGDB up BY TITLE. Running it last meant every cover was fetched against
+    whatever name PSN happened to return.
+
+    Each step self-gates (store_is_stale, missing-art filters), so a re-run
+    costs almost nothing and a skipped step is free.
+    """
+    steps: list[tuple[str, str]] = []
+    if added:
+        steps.append(("psn_store_refresh", "Store metadata"))
+    if has_sgdb_key:
+        # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
+        # the covers actually being waited on.
+        steps.append(("sgdb_fill_all", "Artwork fill"))
+        if needs_review:
+            # Review rows have no library entry to borrow art from, so without
+            # this their cards fall back to PSN's square icon0.png.
+            steps.append(("psn_review_art", "Review artwork"))
+
+    for kind, label in steps:
+        job = jobs.create(user_id=user_id, kind=kind, label=label)
+        try:
+            if kind == "sgdb_fill_all":
+                await _run_sgdb_fill_all_job(job.id, user_id, sources={"psn"})
+            else:
+                await _run_sync_job(job.id, user_id, kind)
+        except Exception:
+            # One step failing must not strand the rest of the chain.
+            _logger.exception("PSN follow-up %s failed for user %s", kind, user_id)
 
 
 async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
@@ -667,7 +692,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         return
 
     jobs.update(job_id, status=jobs.JobStatus.RUNNING)
-    worker_state.enrichment_paused = True
+    worker_state.pause_enrichment()
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -683,23 +708,31 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
-        # PSN entries have no native artwork, so auto-fill from SGDB after an
-        # import — as its own background job so the import toast isn't held up
-        # by the (long) fill. Gated on an SGDB key; silently skipped without.
-        if kind == "psn_sync" and user.steamgriddb_api_key:
-            fill_job = jobs.create(user_id=user.id, kind="sgdb_fill_all", label="Artwork fill")
-            # Scope to PSN entries — those are the ones the import just added
-            # with no native art. Re-scanning all 16k+ entries here never
-            # finishes and buries the covers we actually need.
-            asyncio.create_task(_run_sgdb_fill_all_job(fill_job.id, user.id, sources={"psn"}))
-        # The import is what discovers the uncertain ones, so it's what asks for
-        # their art. Gated on the count it just computed: no review queue, no
-        # reason to hit SGDB. Review rows have no library entry to borrow art
-        # from, so without this their cards fall back to PSN's square icon0.png
-        # and look nothing like every other review card.
-        if kind == "psn_sync" and result.get("needs_review") and user.steamgriddb_api_key:
-            art_job = jobs.create(user_id=user.id, kind="psn_review_art", label="Review artwork")
-            asyncio.create_task(_run_sync_job(art_job.id, user.id, "psn_review_art"))
+        # One chain, not three tasks. See _run_psn_followups.
+        if kind == "psn_sync":
+            asyncio.create_task(
+                _run_psn_followups(
+                    user.id,
+                    added=bool(result.get("added")),
+                    needs_review=bool(result.get("needs_review")),
+                    has_sgdb_key=bool(user.steamgriddb_api_key),
+                )
+            )
+        # Store metadata RETITLES — the sparse "Batman" becomes "Batman: The
+        # Telltale Series". The duplicate scan inside the import already ran, on
+        # the sparse titles, so anything only recognisable under the corrected
+        # one was invisible to it. Re-scan now that the titles are right;
+        # scan_for_matches keys off (manual_entry, source, external_id) and
+        # updates in place, so a second pass adds no duplicates.
+        if kind == "psn_store_refresh" and result.get("retitled"):
+            scan = await asyncio.to_thread(_match_review.scan_for_matches, db, user)
+            db.commit()
+            if scan.get("candidates_added"):
+                jobs.mark_done(
+                    job_id,
+                    _format_sync_result(db, user, kind, result)
+                    + f"\n{scan['candidates_added']:,} new possible duplicates found from corrected titles",
+                )
     except psn.PsnNpssoExpiredError as e:
         # Same tagging pattern as Steam below; the desktop shell's re-capture
         # loop for this code is wired in the PSN import PR.
@@ -716,8 +749,30 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         _logger.exception("Job %s (%s) failed", job_id, kind)
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
-        worker_state.enrichment_paused = False
+        worker_state.resume_enrichment()
         db.close()
+
+
+# Crawls: user-initiated, hit an external API, and two at once is genuinely
+# unwise. Everything else (artwork, store metadata, review art) is chained
+# enrichment that overlaps by design and must never block a crawl.
+_PRIMARY_SYNC_KINDS = frozenset({"steam_sync_full", "steam_sync_games", "steam_sync_dlc", "steam_refresh_catalog", "psn_sync"})
+
+
+def _kickoff_toast(request: Request, body: str, kind: str = "success", status: int = 200):
+    """Report a sync kickoff as an OOB toast, the way completion already is.
+
+    The Tools cards post with hx-swap="none" and no target, so an inline flash
+    body had nowhere to land — pressing Sync during another sync did nothing
+    visible at all. An OOB toast surfaces from any button regardless of target,
+    and makes start, rejection and completion all speak the same way.
+    """
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": kind, "body": body},
+        status_code=status,
+    )
 
 
 def _kick_off_sync(request: Request, current_user: models.User, kind: str):
@@ -725,28 +780,21 @@ def _kick_off_sync(request: Request, current_user: models.User, kind: str):
     spec = _STEAM_KINDS[kind]
     err = _credential_error(current_user, kind)
     if err:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": err},
-            status_code=422,
-        )
-    active = jobs.active_jobs_for(current_user.id)
-    if active:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": "A sync job is already running — please wait for it to finish."},
-            status_code=409,
-        )
+        return _kickoff_toast(request, err, kind="danger", status=422)
+    # Only another CRAWL blocks a crawl. The follow-up jobs a sync chains —
+    # artwork fill, store metadata, review art — are designed to overlap and can
+    # run for many minutes (store metadata is rate-limited to ~1s per release),
+    # so counting them here meant a background trickle silently refused a button
+    # the user pressed. Refusing on those was also incoherent: the app runs
+    # three chained jobs at once but wouldn't let you start one.
+    blocking = [j for j in jobs.active_jobs_for(current_user.id) if j.kind in _PRIMARY_SYNC_KINDS]
+    if blocking:
+        running = blocking[0].label or "A sync"
+        return _kickoff_toast(request, f"{running} is already running — try again once it finishes.", kind="warning", status=409)
     job_label = spec.get("job_label") or f"Steam {spec['label'].lower()}"
     job = jobs.create(user_id=current_user.id, kind=kind, label=job_label)
     asyncio.create_task(_run_sync_job(job.id, current_user.id, kind))
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/integrations_flash.html",
-        context={"message": spec["started"]},
-    )
+    return _kickoff_toast(request, spec["started"], kind="info")
 
 
 def _credential_error(current_user: models.User, kind: str) -> str | None:
@@ -840,6 +888,32 @@ async def refresh_steam_app_catalog(request: Request, current_user: models.User 
     return _kick_off_sync(request, current_user, "steam_refresh_catalog")
 
 
+# Which service a job belongs to, so each card can show its OWN progress.
+# #sync-indicator was a single global id and the poller rendered active_jobs[0]
+# into it, so a PSN sync and an artwork fill running together left one of them
+# invisible — and on Tools the one indicator sat inside the Steam card,
+# captioning PSN work as Steam's.
+_JOB_SERVICE = {
+    "steam_sync_full": "steam",
+    "steam_sync_games": "steam",
+    "steam_sync_dlc": "steam",
+    "steam_refresh_catalog": "steam",
+    "psn_sync": "psn",
+    "psn_store_refresh": "psn",
+    "psn_review_art": "psn",
+    "sgdb_fill_all": "artwork",
+    "sgdb_fill": "artwork",
+    "match_scan": "match",
+    "import_xlsx": "import",
+}
+
+
+def job_service(kind: str) -> str:
+    """Service bucket for a job kind; unknown kinds fall back to the generic
+    indicator so a new kind is never silently invisible."""
+    return _JOB_SERVICE.get(kind, "other")
+
+
 @router.get("/jobs/poll")
 def jobs_poll(
     request: Request,
@@ -865,6 +939,9 @@ def jobs_poll(
             "active_jobs": active,
             "completed_import": completed_import,
             "retry_paths": retry_paths,
+            # First active job per service — each card renders its own, instead
+            # of one global indicator that whichever job polled first wins.
+            "active_by_service": {job_service(j.kind): j for j in reversed(active)},
         },
     )
     triggers = []
@@ -1445,6 +1522,25 @@ async def steamgriddb_fill_missing(
     )
 
 
+def kick_psn_enrichment(user: models.User) -> list[str]:
+    """Enrich the entries a review just created — artwork, then store metadata.
+
+    A sync chains these itself, but rows confirmed afterwards arrive too late
+    for that pass, which used to mean "sync again" purely as a chore. Fired when
+    the review queue EMPTIES rather than per confirm: clicking through 54 rows
+    would otherwise spawn 54 pairs of jobs.
+
+    Both jobs self-gate — the fill only touches entries missing art, and
+    store_is_stale() skips anything already enriched — so a firing that turns
+    out to have nothing to do costs almost nothing.
+    """
+    # Same chain as after a sync, and serialised for the same reason: two
+    # writers holding transactions across HTTP calls exhaust SQLite's
+    # busy_timeout and one dies on "database is locked".
+    asyncio.create_task(_run_psn_followups(user.id, added=True, needs_review=False, has_sgdb_key=bool(user.steamgriddb_api_key)))
+    return ["psn_store_refresh"] + (["sgdb_fill_all"] if user.steamgriddb_api_key else [])
+
+
 async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | None = None) -> None:
     """Background runner: fill all four SGDB artwork types in one pass.
 
@@ -1456,7 +1552,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | 
     # duration. Otherwise three background writers (this fill, Steam metadata
     # enrichment, URL verification) serialize against the one SQLite writer and
     # the foreground app crawls — the post-PSN-import freeze.
-    worker_state.enrichment_paused = True
+    worker_state.pause_enrichment()
     db = SessionLocal()
     try:
         user = db.query(models.User).filter(models.User.id == user_id).first()
@@ -1483,7 +1579,7 @@ async def _run_sgdb_fill_all_job(job_id: str, user_id: int, sources: set[str] | 
         _logger.exception("SGDB fill-all job %s failed", job_id)
         jobs.mark_failed(job_id, f"Job failed: {e}")
     finally:
-        worker_state.enrichment_paused = False
+        worker_state.resume_enrichment()
         db.close()
 
 

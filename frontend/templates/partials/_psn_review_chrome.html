@@ -1,0 +1,13 @@
+{# OOB-ONLY. The tab bar, the pending badge and the blurb all live outside
+   #psn-review-content but all describe the CURRENT queue, so every partial
+   response re-emits them or they keep describing the last one — switching to
+   Played-only left "54 pending" and the cross-play blurb above seven rows.
+   Row actions send it too, so counts fall as rows are decided rather than
+   going stale until the next full swap.
+
+   Never included on a full page render: that would duplicate these ids. #}
+{% include "partials/_psn_tabs.html" %}
+<span id="psn-pending-count" hx-swap-oob="true">{{ counts[kind] }}</span>
+<p id="psn-review-blurb" class="text-secondary small mb-0" hx-swap-oob="true">
+  {% include "partials/_psn_review_blurb.html" %}
+</p>

@@ -24,11 +24,11 @@
   <label class="form-check d-flex align-items-center gap-2 mb-0 small">
     <input class="form-check-input mt-0" type="checkbox" id="show-skipped-toggle"
            {% if show_skipped %}checked{% endif %}
-           onchange="window.location = '/library/match-review?show_skipped=' + this.checked">
+           onchange="window.location = '/tools/match-review?show_skipped=' + this.checked">
     Show dismissed
   </label>
   <button class="btn btn-sm btn-surface"
-          hx-post="/library/match-review/clear-dismissed"
+          hx-post="/tools/match-review/clear-dismissed"
           hx-swap="none">
     Clear dismissed
   </button>
@@ -36,7 +36,7 @@
 
 {# Reload when scan job completes — full navigation so scripts re-execute #}
 <div hx-trigger="cgt:matchScanDone from:body"
-     hx-on:cgt:match-scan-done="window.location.href = '/library/match-review{% if show_skipped %}?show_skipped=true{% endif %}'"
+     hx-on:cgt:match-scan-done="window.location.href = '/tools/match-review{% if show_skipped %}?show_skipped=true{% endif %}'"
      style="display:none;"></div>
 
 {# Scanning in-progress indicator — shown after clicking Scan, hidden on load #}
@@ -116,14 +116,14 @@
     {% if c.status == 'pending' %}
     <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
     <button class="btn btn-sm btn-surface"
-            hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+            hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
             hx-on::after-request="cgtListRowDone('{{ c.id }}')">Dismiss</button>
     <button class="btn btn-sm btn-primary"
-            hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+            hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="cgtListRowDone('{{ c.id }}')">Confirm</button>
     {% else %}
     <button class="btn btn-sm btn-surface"
-            hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+            hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="window.location.reload()">Merge anyway</button>
     {% endif %}
   </div>
@@ -177,11 +177,11 @@
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
       <button class="btn btn-sm btn-surface"
-              hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+              hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
               hx-vals='{"note": "Dismissed by user"}'
               hx-on::after-request="cgtMultiDismiss('{{ c.id }}')">Dismiss</button>
       <button class="btn btn-sm btn-primary"
-              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
               hx-on::after-request="cgtMultiConfirm('{{ c.id }}')">Confirm</button>
       {% else %}
       <span class="text-secondary small">Dismissed</span>
@@ -276,11 +276,11 @@
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface flex-shrink-0" onclick="openCandidatePreview({{ c.id }})">Preview</button>
       <button class="btn btn-sm btn-surface flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+              hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
               hx-vals='{"note": "Dismissed from card view"}'
               hx-on::after-request="cgtCardOptionDismiss('{{ c.id }}', '{{ fc.id }}')">Dismiss</button>
       <button class="btn btn-sm btn-primary flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
               hx-on::after-request="cgtCandidateDone('{{ fc.id }}')">Confirm</button>
       {% else %}
       <span class="text-secondary small flex-shrink-0">Dismissed</span>
@@ -332,10 +332,10 @@
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-surface flex-shrink-0" onclick="openCandidatePreview({{ c.id }})">Preview</button>
       <button class="btn btn-sm btn-surface flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/skip" hx-swap="none"
+              hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
               hx-on::after-request="cgtCardDismiss('{{ c.id }}')">Dismiss</button>
       <button class="btn btn-sm btn-primary flex-shrink-0"
-              hx-post="/library/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
               hx-on::after-request="cgtCandidateDone('{{ c.id }}')">Confirm</button>
       {% else %}
       <span class="text-secondary small flex-shrink-0">Dismissed</span>
@@ -419,7 +419,7 @@
   window.cgtApproveSelected = function() {
     const ids = Array.from(document.querySelectorAll('.cgt-row-cb:checked')).map(cb => cb.dataset.id);
     ids.forEach(id => {
-      htmx.ajax('POST', '/library/match-review/' + id + '/merge', { swap: 'none' })
+      htmx.ajax('POST', '/tools/match-review/' + id + '/merge', { swap: 'none' })
         .then(() => cgtListRowDone(id));
     });
   };
@@ -482,7 +482,7 @@
 
   window.openCandidatePreview = function(candidateId) {
     _getMatchDetailOffcanvas().show();
-    htmx.ajax('GET', '/library/match-review/' + candidateId + '/preview', {
+    htmx.ajax('GET', '/tools/match-review/' + candidateId + '/preview', {
       target: '#match-review-detail-content',
       swap: 'innerHTML',
     });
@@ -599,7 +599,7 @@
     const highCards = cards.filter(c => parseFloat(c.dataset.score) >= 0.90 && c.dataset.status === 'pending');
     highCards.forEach(card => {
       const id = card.dataset.candidateId;
-      htmx.ajax('POST', '/library/match-review/' + id + '/merge', { swap: 'none' })
+      htmx.ajax('POST', '/tools/match-review/' + id + '/merge', { swap: 'none' })
         .then(() => cgtCandidateDone(id));
     });
   };

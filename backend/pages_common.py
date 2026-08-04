@@ -739,6 +739,13 @@ def _build_lib_query(
             .filter(
                 models.GameArtwork.artwork_type == art_type,
                 models.GameArtwork.is_valid.is_(True),
+                # NOT IN against a subquery containing NULL is never true, so a
+                # single NULL release_id silently made "missing artwork" return
+                # nothing at all. Seven such rows existed for cover_v, which is
+                # why the vertical view reported 0 missing while hundreds were;
+                # cover_h happened to have none, so the horizontal view worked
+                # and hid it. Same guard the user-artwork subquery above has.
+                models.GameArtwork.release_id.isnot(None),
             )
             .scalar_subquery()
         )

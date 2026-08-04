@@ -9,7 +9,7 @@
 
 {# Same refetch-on-jobs-done as the Tools grid — sync results and pending
    counts stay live on the landing page. #}
-<div class="cgt-tool-grid" id="home-widgets"
+<div class="cgt-tool-grid cgt-tool-grid--paired" id="home-widgets"
      hx-get="/"
      hx-select="#home-widgets"
      hx-disinherit="hx-select"
@@ -20,10 +20,18 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">This year</div>
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--flamingo">
+      {# The number IS the link — buttons in the footer made the cards
+         cluttered and, at three per row, asymmetric. Undecorated so it still
+         reads as a stat, with a hover to say it's clickable.
+         Count + Goal is the original pairing. To go, Best month and last
+         year's total were added later to fill a stretched card and turned into
+         five stats wrapping to two rows — clutter once the cards shrank. The
+         card is filled by letting the bar strip absorb the slack instead, so
+         it tracks whatever the tallest sibling card happens to be. #}
+      <a class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions">
         <div class="cgt-tool-stat__value">{{ completions_this_year }}</div>
         <div class="cgt-tool-stat__label">Completions in {{ year }}</div>
-      </div>
+      </a>
       <div class="cgt-tool-stat cgt-tool-stat--muted">
         <div class="cgt-tool-stat__value">{{ yearly_goal }}</div>
         <div class="cgt-tool-stat__label">Goal</div>
@@ -44,43 +52,81 @@
       </div>
       {% endfor %}
     </div>
-    <div class="cgt-tool-card__actions">
-      <a href="/completions" class="btn btn-surface btn-sm">Open completions</a>
+  </div>
+
+  {# ── Needs attention ────────────────────────────────────────────────── #}
+  <div class="cgt-tool-card">
+    <div class="cgt-tool-card__title">Needs attention</div>
+    {# Per-bucket breakdown, not totals — same reading as the review page's
+       tabs so the widget tells you where the work actually is. Zeros go
+       muted so quiet buckets don't beg for attention. #}
+    <div class="cgt-breakdown cgt-tool-card__body">
+      <a class="cgt-breakdown__row" href="/tools/match-review">
+        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if pending_matches else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(pending_matches or 0) }}</span>
+        <span class="cgt-breakdown__label">sync matches</span>
+      </a>
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=add_to_existing">
+        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--green' if import_counts.add_to_existing else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
+        <span class="cgt-breakdown__label">imports · add to existing</span>
+      </a>
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=create_new">
+        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--blue' if import_counts.create_new else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.create_new) }}</span>
+        <span class="cgt-breakdown__label">imports · create new</span>
+      </a>
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=needs_review">
+        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--pink' if import_counts.needs_review else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.needs_review) }}</span>
+        <span class="cgt-breakdown__label">imports · needs review</span>
+      </a>
+      {% if psn_review_pending %}
+      {# Both PSN queues: cross-play games held back rather than imported on a
+         guess, and played-only activity with no purchase or trophy behind it.
+         One number because they're one page. #}
+      <a class="cgt-breakdown__row" href="/tools/psn-review">
+        <span class="cgt-breakdown__num cgt-breakdown__num--yellow">{{ "{:,}".format(psn_review_pending) }}</span>
+        <span class="cgt-breakdown__label">PSN · needs a decision</span>
+      </a>
+      {% endif %}
+      {% if missing_covers %}
+      <a class="cgt-breakdown__row" href="/library?missing_art=true">
+        <span class="cgt-breakdown__num cgt-breakdown__num--muted">{{ "{:,}".format(missing_covers) }}</span>
+        <span class="cgt-breakdown__label">library &middot; missing artwork</span>
+      </a>
+      {% endif %}
     </div>
+    {% if not pending_matches and not import_pending and not psn_review_pending and not missing_covers %}
+    <div class="cgt-tool-card__body text-secondary">All caught up.</div>
+    {% endif %}
   </div>
 
   {# ── Library ────────────────────────────────────────────────────────── #}
-  <div class="cgt-tool-card">
+  <div class="cgt-tool-card cgt-tool-card--tall">
     <div class="cgt-tool-card__title">Library</div>
     <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+      <a class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library">
         <div class="cgt-tool-stat__value">{{ "{:,}".format(library_total) }}</div>
         <div class="cgt-tool-stat__label">Games</div>
-      </div>
+      </a>
     </div>
     {% if platform_breakdown %}
     <div>
-      {% for row in platform_breakdown[:6] %}
+      {% for row in platform_breakdown[:10] %}
       <a class="cgt-detail-list-row d-flex align-items-center gap-2"
          href="/library?platform={{ row.value | urlencode }}">
         <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
-        <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
+        <span class="cgt-tool-card__body fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
       </a>
       {% endfor %}
-      {% if platform_breakdown | length > 6 %}
+      {% if platform_breakdown | length > 10 %}
       <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
-        <span class="small text-secondary">…and {{ platform_breakdown | length - 6 }} more</span>
+        <span class="cgt-tool-card__body text-secondary">…and {{ platform_breakdown | length - 10 }} more</span>
       </a>
       {% endif %}
     </div>
     {% endif %}
-    <div class="cgt-tool-card__actions">
-      <a href="/library" class="btn btn-surface btn-sm">Open library</a>
-    </div>
   </div>
 
   {# ── Recently completed ─────────────────────────────────────────────── #}
-  <div class="cgt-tool-card">
+  <div class="cgt-tool-card cgt-tool-card--tall">
     <div class="cgt-tool-card__title">Recently completed</div>
     {% if recent_completions %}
     <div>
@@ -91,57 +137,15 @@
         {% if _thumb %}<img class="cgt-thumb-sm" src="{{ _thumb }}" alt="" loading="lazy">
         {% else %}<div class="cgt-thumb-sm cgt-thumb-sm--empty"></div>{% endif %}
         <span class="text-truncate small">{{ c.library_entry.release.game.display_title }}</span>
-        <span class="text-secondary small flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
+        <span class="cgt-list-row-date flex-shrink-0 ms-auto">{{ c|completion_date }}</span>
       </a>
       {% endfor %}
     </div>
     {% else %}
-    <div class="small text-secondary">Completions you log will show up here.</div>
+    <div class="cgt-tool-card__body text-secondary">Completions you log will show up here.</div>
     {% endif %}
   </div>
 
-  {# ── Needs attention ────────────────────────────────────────────────── #}
-  <div class="cgt-tool-card">
-    <div class="cgt-tool-card__title">Needs attention</div>
-    {# Per-bucket breakdown, not totals — same reading as the review page's
-       tabs so the widget tells you where the work actually is. Zeros go
-       muted so quiet buckets don't beg for attention. #}
-    <div class="cgt-breakdown small">
-      <a class="cgt-breakdown__row" href="/library/match-review">
-        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if pending_matches else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(pending_matches or 0) }}</span>
-        <span class="cgt-breakdown__label">sync matches</span>
-      </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=add_to_existing">
-        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--green' if import_counts.add_to_existing else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
-        <span class="cgt-breakdown__label">imports · add to existing</span>
-      </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=create_new">
-        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--blue' if import_counts.create_new else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.create_new) }}</span>
-        <span class="cgt-breakdown__label">imports · create new</span>
-      </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=needs_review">
-        <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--pink' if import_counts.needs_review else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(import_counts.needs_review) }}</span>
-        <span class="cgt-breakdown__label">imports · needs review</span>
-      </a>
-      {% if psn_review_pending %}
-      {# PSN holds cross-play games back rather than importing them on a guess,
-         so they land here until the platform is confirmed. #}
-      <a class="cgt-breakdown__row" href="/tools/psn-review">
-        <span class="cgt-breakdown__num cgt-breakdown__num--yellow">{{ "{:,}".format(psn_review_pending) }}</span>
-        <span class="cgt-breakdown__label">PSN · needs a platform</span>
-      </a>
-      {% endif %}
-    </div>
-    {% if not pending_matches and not import_pending and not psn_review_pending %}
-    <div class="small text-secondary">All caught up.</div>
-    {% endif %}
-    <div class="cgt-tool-card__actions">
-      {% if pending_matches %}<a href="/library/match-review" class="btn btn-surface btn-sm">Review matches</a>{% endif %}
-      {% if import_pending %}<a href="/library/import/review" class="btn btn-surface btn-sm">Review imports</a>{% endif %}
-      {% if psn_review_pending %}<a href="/tools/psn-review" class="btn btn-surface btn-sm">Review PSN</a>{% endif %}
-      <a href="/tools" class="btn btn-surface btn-sm">All tools</a>
-    </div>
-  </div>
 
 </div>
 {% endblock %}

@@ -1,6 +1,6 @@
 {% if job or queue %}
 <div id="import-progress"
-     hx-get="/library/import/progress"
+     hx-get="/tools/import/progress"
      hx-trigger="every 2s"
      hx-swap="outerHTML"
      class="mt-3 pt-3 border-top">
@@ -19,7 +19,7 @@
       {% endif %}
     </span>
     <button class="btn btn-sm btn-surface ms-auto"
-            hx-post="/library/import/cancel"
+            hx-post="/tools/import/cancel"
             hx-swap="none"
             hx-disabled-elt="this">
       Cancel
@@ -36,10 +36,10 @@
   <div class="d-flex align-items-center gap-2 text-secondary small py-1">
     <span class="me-auto">{{ fname }} <span class="badge bg-surface text-secondary ms-1">queued</span></span>
     <button class="btn btn-sm btn-surface"
-            hx-post="/library/import/cancel/{{ qjob_id }}"
+            hx-post="/tools/import/cancel/{{ qjob_id }}"
             hx-swap="none"
             hx-disabled-elt="this"
-            hx-on::after-request="htmx.ajax('GET', '/library/import/progress', {target:'#import-progress', swap:'outerHTML'})">
+            hx-on::after-request="htmx.ajax('GET', '/tools/import/progress', {target:'#import-progress', swap:'outerHTML'})">
       Remove
     </button>
   </div>
@@ -53,9 +53,9 @@
 {# OOB swap — keeps the header Review/Clear buttons live during and after import #}
 <div id="import-header-actions" hx-swap-oob="true" class="d-flex align-items-center gap-2">
 {% if pending %}
-  <a href="/library/import/review" class="btn btn-sm btn-primary">Review {{ pending }} pending</a>
+  <a href="/tools/import/review" class="btn btn-sm btn-primary">Review {{ pending }} pending</a>
   <button class="btn btn-sm btn-surface"
-          hx-post="/library/import/clear"
+          hx-post="/tools/import/clear"
           hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
           hx-swap="none"
           hx-disabled-elt="this">

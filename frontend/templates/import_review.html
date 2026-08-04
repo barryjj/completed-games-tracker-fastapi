@@ -15,25 +15,25 @@
 <div class="btn-group btn-group-sm mb-3" role="group" id="import-tabs">
   <button type="button" class="btn btn-surface{% if tab == 'add_to_existing' %} active{% endif %}" data-tab="add_to_existing"
           onclick="importSwitchTab(this, 'add_to_existing')"
-          hx-get="/library/import/review" hx-vals='{"tab":"add_to_existing","refresh_filters":1}' hx-include="#import-search, #import-view-field"
+          hx-get="/tools/import/review" hx-vals='{"tab":"add_to_existing","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Add to existing <span class="badge bg-secondary ms-1" id="import-tab-count-add_to_existing">{{ tab_counts.add_to_existing }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'create_new' %} active{% endif %}" data-tab="create_new"
           onclick="importSwitchTab(this, 'create_new')"
-          hx-get="/library/import/review" hx-vals='{"tab":"create_new","refresh_filters":1}' hx-include="#import-search, #import-view-field"
+          hx-get="/tools/import/review" hx-vals='{"tab":"create_new","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Create new <span class="badge bg-secondary ms-1" id="import-tab-count-create_new">{{ tab_counts.create_new }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'needs_review' %} active{% endif %}" data-tab="needs_review"
           onclick="importSwitchTab(this, 'needs_review')"
-          hx-get="/library/import/review" hx-vals='{"tab":"needs_review","refresh_filters":1}' hx-include="#import-search, #import-view-field"
+          hx-get="/tools/import/review" hx-vals='{"tab":"needs_review","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Needs review <span class="badge bg-secondary ms-1" id="import-tab-count-needs_review">{{ tab_counts.needs_review }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if tab == 'confirmed' %} active{% endif %}" data-tab="confirmed"
           onclick="importSwitchTab(this, 'confirmed')"
-          hx-get="/library/import/review" hx-vals='{"tab":"confirmed","refresh_filters":1}' hx-include="#import-search, #import-view-field"
+          hx-get="/tools/import/review" hx-vals='{"tab":"confirmed","refresh_filters":1}' hx-include="#import-search, #import-view-field"
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Confirmed <span class="badge bg-secondary ms-1" id="import-tab-count-confirmed">{{ confirmed_count }}</span>
   </button>
@@ -41,7 +41,7 @@
 
 <form
   id="import-filters-form"
-  hx-get="/library/import/review"
+  hx-get="/tools/import/review"
   hx-target="#import-tab-content"
   hx-swap="innerHTML"
   hx-push-url="true"
@@ -104,14 +104,14 @@
        reliably settle on swap-none/OOB responses, which froze the buttons
        mid-flight. hx-vals js: reads the checked ids at click time. #}
     <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
-            hx-post="/library/import/confirm-bulk"
+            hx-post="/tools/import/confirm-bulk"
             hx-vals='js:{ids: importCheckedIds()}'
             hx-confirm="Confirm the selected candidates? Their completions will be logged against the matched library entries."
             hx-swap="none"
             hx-disabled-elt="this"
             hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Confirm selected</button>
     <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
-            hx-post="/library/import/dismiss-bulk"
+            hx-post="/tools/import/dismiss-bulk"
             hx-vals='js:{ids: importCheckedIds()}'
             hx-confirm="Dismiss the selected candidates? They can be re-detected by a future re-upload after Clear dismissed."
             hx-swap="none"
@@ -121,7 +121,7 @@
   {# Page-level operations — used rarely, so they live down here instead of
      hovering in the header. #}
   <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-          hx-post="/library/import/recheck"
+          hx-post="/tools/import/recheck"
           hx-confirm="Re-check all pending candidates against your current library? This may take a moment."
           hx-swap="none"
           hx-disabled-elt="this">
@@ -129,7 +129,7 @@
     Recheck matches
   </button>
   <button class="btn btn-sm btn-surface d-inline-flex align-items-center gap-2"
-          hx-post="/library/import/clear"
+          hx-post="/tools/import/clear"
           hx-confirm="Clear all pending candidates? This cannot be undone."
           hx-swap="none"
           hx-disabled-elt="this">
@@ -164,6 +164,17 @@ document.addEventListener('DOMContentLoaded', function() {
 // feedback and keeps the filter form's hidden "tab"/"view" fields in sync so
 // a subsequent search/platform/year/sort change stays scoped correctly.
 // Card view only exists for "Add to existing" — switching away forces list,
+// app.js is deferred, so an inline script can run before cgtHydrateCards
+// exists. Guarding the call alone meant hydration was skipped and never
+// retried — cards kept their data-src and showed no art at all. Retry once the
+// deferred scripts have run.
+function cgtHydrateWhenReady(cards, idx) {
+  if (window.cgtHydrateCards) { cgtHydrateCards(cards, idx); return; }
+  window.addEventListener('load', function() {
+    if (window.cgtHydrateCards) cgtHydrateCards(importCards(), importCardIdx);
+  }, { once: true });
+}
+
 // ─── Bulk-select mode ──────────────────────────────────────────────────
 // Checkboxes live in the markup but only display while #import-table has
 // .import-select-mode; the Select button toggles it so normal review stays
@@ -286,6 +297,9 @@ function importShowCard(idx) {
   if (!cards.length) return;
   importCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
   cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
+  // Same windowing as the PSN stack — this queue renders 253 cards, so it was
+  // the worse offender; it only looked fine because Steam art was cached.
+  cgtHydrateWhenReady(cards, importCardIdx);
   var counter = document.getElementById('import-nav-counter');
   if (counter) {
     var nav = document.getElementById('import-nav');
@@ -360,7 +374,7 @@ if (document.getElementById('import-stack')) importRebuildNav(true);
 
 // Preview pane
 window.openImportPreview = function(candidateId) {
-  htmx.ajax('GET', '/library/import/' + candidateId + '/preview', {
+  htmx.ajax('GET', '/tools/import/' + candidateId + '/preview', {
     target: '#import-preview-content',
     swap: 'innerHTML'
   });
@@ -396,7 +410,7 @@ function importOpenModal(candidateId, action, title) {
   body.innerHTML = '<p class="text-secondary small mb-0">Loading…</p>';
   document.getElementById('import-edit-modal-title').textContent = title;
   bootstrap.Modal.getOrCreateInstance(document.getElementById('importEditModal')).show();
-  htmx.ajax('GET', '/library/import/' + candidateId + '/' + action, {
+  htmx.ajax('GET', '/tools/import/' + candidateId + '/' + action, {
     target: '#import-edit-modal-body',
     swap: 'innerHTML'
   });

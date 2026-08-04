@@ -7,9 +7,34 @@ Read this before touching any template, CSS, or JS.
 
 ## Theme
 
-**Catppuccin Mocha** (dark, default) / **Catppuccin Latte** (light).
-Switched via `prefers-color-scheme` media query; user can override with a localStorage toggle.
-Both palettes are defined in `frontend/static/css/theme.css`.
+Three palettes, all defined in `frontend/static/css/theme.css`:
+
+| Palette | Mode | Role |
+|---------|------|------|
+| **Nord** | light | Default light theme |
+| **Catppuccin Latte** | light | Opt-in alternative |
+| **Catppuccin Mocha** | dark | Default dark theme |
+
+Two attributes drive them, and the split matters:
+
+- `data-bs-theme` is only ever `light` or `dark` — it is Bootstrap's own
+  attribute and Bootstrap does not understand any other value.
+- `data-palette` is `nord` | `latte` | `mocha` and selects the palette.
+
+So Latte is `data-bs-theme="light" data-palette="latte"`, and every existing
+`html[data-bs-theme="light"] …` component rule keeps applying to both light
+palettes without being duplicated. **Scope new light-mode rules to
+`data-bs-theme`, not `data-palette`,** unless the rule is genuinely
+palette-specific.
+
+Palette-specific literals belong in the palette block as `--cgt-*` variables
+(see `--cgt-btn-primary`, `--cgt-stat-stroke`) — never hardcoded into a
+component rule, or the third palette silently inherits the wrong colour.
+
+The boot script in `base.html` / `login.html` / `signup.html` resolves the
+palette before first paint and migrates pre-Nord `light`/`dark` values stored
+in `localStorage`. Absent a stored value, `prefers-color-scheme` picks Nord or
+Mocha.
 
 **Rule: no emoji in UI chrome.** Badge labels, headings, button text — plain text only.
 
@@ -43,7 +68,12 @@ Navbar: **Home · Library · Completions · Tools** on the left; **gear (Setting
 
 ## Catppuccin CSS Variables
 
-These are the vars actually used in templates and CSS. All resolve correctly in both Mocha and Latte.
+These are the vars actually used in templates and CSS. All resolve in all three
+palettes. The table lists Mocha and Latte; **Nord** supplies the same variable
+names — nine accents are published Nord values and five (`maroon`, `flamingo`,
+`rosewater`, `lavender`, `pink`) are mixes of two adjacent Nord colours, with
+the ratio recorded inline in `theme.css` so they can be re-derived rather than
+guessed at.
 
 | Var | Mocha | Latte | Role |
 |-----|-------|-------|------|
@@ -208,6 +238,16 @@ OOB toasts. Muted placeholder cards add `.cgt-tool-card--muted`.
   </div>
 </div>
 ```
+All body text in a tool card — blurbs, the account identity block, breakdown
+rows — uses `.cgt-tool-card__body`, which declares the size in `rem`. Do not
+reach for Bootstrap's `.small` inside a card: three separate opt-ins is how the
+sizes drifted apart in the first place, and `.small` is `em`-based so it
+compounds when nested.
+
+A connected integration card drops its explanatory blurb — the identity block
+and the counts say the state, and instructions for a job already done are
+noise. Keep the copy in the disconnected branch only.
+
 Values are the only colored text; labels stay muted ink (identity is never color-alone).
 **Accent meanings are semantic — reuse them, don't invent new assignments:**
 
@@ -224,8 +264,16 @@ Values are the only colored text; labels stay muted ink (identity is never color
 | `--muted` modifier | zero / nothing to do |
 
 Side-by-side triplets (teal/peach/lavender, green/blue/pink) are validated for
-colorblind separation. Light mode auto-darkens values via `color-mix` toward text ink —
-don't hardcode Latte shades. The tool grid uses `grid-auto-rows: 1fr` so all cards in
+colorblind separation.
+
+Values render in the palette's **published** accent, and carry a hairline
+outline (`paint-order: stroke fill` + `-webkit-text-stroke` with
+`--cgt-stat-stroke`) so pale accents keep a defined edge on light surfaces.
+Light mode used to mix every accent 65% toward `--ctp-text`; that stripped an
+average 42% of their saturation and did it unevenly (teal lost 29%, pink 55%),
+which broke the very triplet separation above. **Don't reintroduce a
+lightness/ink mix on stat values** — the stroke is what solves legibility, and
+it leaves the hue intact. The tool grid uses `grid-auto-rows: 1fr` so all cards in
 a row share the tallest card's height — uniform tiles are structural, not dependent on
 text happening to wrap evenly.
 
@@ -271,6 +319,23 @@ Color thresholds: ≥85 green, ≥70 teal, ≥50 yellow, ≥20 peach, else red.
 Fallback chain: UserArtwork → GameArtwork native (steam/psn) → GameArtwork sgdb.
 **No cross-orientation fallback** — stretched art looks worse than a placeholder.
 IGDB/manual entries without `cover_h` should use the SGDB picker to find one.
+
+### Grid view state (size / gap / borderless)
+
+All three persist in `localStorage` and **all three apply to
+`document.documentElement`** — CSS vars for size and gap, a
+`cgt-grid-borderless` class for borderless.
+
+**Never attach grid view state to an element inside the swapped content
+region.** The grid lives in `#library-content` / `#completions-content`, which
+HTMX replaces on every search, filter, sort and page. Borderless originally set
+a class on `.cgt-library-grid` and was silently wiped by every swap, while the
+checkbox — outside that region — stayed checked. The toggle read as on while
+being off, and only worked if you clicked it twice. Size and gap never had the
+bug purely because they were on `documentElement` from the start.
+
+Apply the saved value unconditionally on load (`applyBorderless(saved)`), not
+just when it's on, so an off state actually clears.
 
 ---
 

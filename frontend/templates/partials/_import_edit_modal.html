@@ -3,7 +3,7 @@
    a specific existing library entry (skipping the matcher entirely) for
    cases it should catch but doesn't. #}
 <form id="import-edit-form"
-      hx-post="/library/import/{{ candidate.id }}/edit"
+      hx-post="/tools/import/{{ candidate.id }}/edit"
       hx-swap="none"
       hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('importEditModal')).hide(); }">
   <p class="text-secondary small">

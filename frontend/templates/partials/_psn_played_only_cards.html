@@ -1,0 +1,76 @@
+{# Card items for the played-only queue. Bare cards only — the stage wrapper
+   and nav live in _psn_review_content.html, same split as the cross-play set. #}
+{% for r in rows %}
+<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.external_id }}">
+  <div class="cgt-match-card__body">
+    {# Hero + logo, same as the cross-play cards — same table, same art columns,
+       and the fill job was already populating them. #}
+    {% if r.hero %}
+    <div class="cgt-import-hero">
+      <img class="cgt-detail-hero__img" data-src="{{ r.hero }}" alt="" loading="lazy">
+      {% if r.logo %}
+      <img class="cgt-detail-hero__logo" data-src="{{ r.logo }}" alt="" loading="lazy">
+      {% endif %}
+    </div>
+    {% endif %}
+    <div class="p-3">
+      <h6 class="mb-1">{{ r.name }}</h6>
+      <p class="text-secondary small mb-3">{{ r.reason }}</p>
+
+      {# Side by side rather than stacked: the card is a fixed height, and
+         stacking pushed the attach search below the fold so the row's most
+         useful action was the one you couldn't see. #}
+      <div class="cgt-psn-card-split">
+        <div class="cgt-detail-block mb-0">
+          <dl class="cgt-detail-meta small mb-0">
+            <dt>Played</dt>
+            <dd>{{ r.minutes // 60 }}h{{ "%02d" % (r.minutes % 60) }}m over {{ r.play_count }} session{{ "s" if r.play_count != 1 }}</dd>
+            {% if r.first_played %}
+            <dt>Window</dt>
+            <dd>{{ r.first_played }}{% if r.last_played != r.first_played %} &rarr; {{ r.last_played }}{% endif %}</dd>
+            {% endif %}
+            <dt>Category</dt>
+            {# Literal, not "{{ x or '&mdash;' }}" — Jinja escapes the entity and
+               it renders as the text &mdash; on screen. #}
+            <dd>{% if r.category %}{{ r.category }}{% else %}&mdash;{% endif %}</dd>
+            <dt>Via</dt>
+            <dd>{% if r.service %}{{ r.service }}{% else %}&mdash;{% endif %}</dd>
+          </dl>
+        </div>
+
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Already own this?</h6>
+          <p class="text-secondary small mb-2">Attach the play stats to that entry instead of creating a second one &mdash; the activity row and the game you own often wear different Sony names.</p>
+          <input type="search" class="form-control form-control-sm"
+                 placeholder="Search your library&hellip;"
+                 name="q"
+                 hx-get="/integrations/psn/attach-search"
+                 hx-vals='{"external_id": "{{ r.external_id }}"}'
+                 hx-trigger="input changed delay:300ms"
+                 hx-target="next .psn-attach-results"
+                 hx-swap="innerHTML">
+          <div class="psn-attach-results mt-2"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
+    <button class="btn btn-sm {{ 'btn-primary' if r.suggested == 'import' else 'btn-surface' }}"
+            hx-post="/tools/psn-review/{{ r.external_id }}/played-only/import"
+            hx-target="#psn-row-{{ r.external_id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.external_id }}')">Import</button>
+    <button class="btn btn-sm {{ 'btn-primary' if r.suggested == 'skip' else 'btn-surface' }}"
+            hx-post="/tools/psn-review/{{ r.external_id }}/played-only/skip"
+            hx-target="#psn-row-{{ r.external_id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.external_id }}')">Skip</button>
+  </div>
+
+  {# Off-DOM anchor so one server response serves both views. #}
+  <span id="psn-row-{{ r.external_id }}" hidden></span>
+</div>
+{% endfor %}

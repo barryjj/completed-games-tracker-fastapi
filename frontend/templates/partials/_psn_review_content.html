@@ -1,12 +1,17 @@
-{# The review body — one view at a time, server-rendered. Swapped wholesale by
-   the view toggle and the platform filter. #}
+{# Everything outside this swap target that describes the current queue rides
+   along OOB — tabs, pending count, blurb, and the per-queue sort options. #}
+{% if oob %}{% include "partials/_psn_review_chrome.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
+{# The review body — one queue and one view at a time, server-rendered.
+   Swapped wholesale by the tab buttons, the view toggle and the filter. #}
 {% if not rows %}
 <div class="cgt-detail-block">
   <p class="text-secondary mb-0">
     {% if not has_snapshot %}
-    <em>No PSN snapshot yet &mdash; run <a href="/integrations/psn">Fetch library</a> first.</em>
+    <em>No PSN sync yet &mdash; run <a href="/integrations/psn">Sync PSN library</a> first.</em>
     {% elif platform %}
     <em>Nothing left to review on {{ platform }}.</em>
+    {% elif kind == "played_only" %}
+    <em>Nothing to review &mdash; every played game had a purchase or trophy set behind it, or you&rsquo;ve decided them all.</em>
     {% else %}
     <em>Nothing to review &mdash; every trophy set resolved to a single platform, or you&rsquo;ve decided them all.</em>
     {% endif %}
@@ -14,7 +19,11 @@
 </div>
 {% elif view == "card" %}
 <div id="psn-stack" class="cgt-match-stage cgt-match-stage--import">
+  {% if kind == "played_only" %}
+  {% include "partials/_psn_played_only_cards.html" %}
+  {% else %}
   {% include "partials/_psn_review_cards.html" %}
+  {% endif %}
 </div>
 {# Counter rather than dots — same reasoning as import review, and the same
    sticky bar so the arrows stay reachable without scrolling. #}
@@ -27,15 +36,30 @@
 <div class="table-responsive">
   <table class="table table-sm align-middle" id="psn-review-table">
     <thead>
+      {% if kind == "played_only" %}
       <tr>
+        <th>Title</th>
+        <th class="text-nowrap">Played</th>
+        <th class="text-nowrap">When</th>
+        <th>Why it&rsquo;s here</th>
+        <th></th>
+      </tr>
+      {% else %}
+      <tr>
+        <th class="psn-bulk-cell"><input class="form-check-input" type="checkbox" onchange="psnSelectAll(this.checked)" title="Select all"></th>
         <th>Title</th>
         <th class="text-nowrap">Trophies</th>
         <th>Platforms owned</th>
         <th></th>
       </tr>
+      {% endif %}
     </thead>
     <tbody>
+      {% if kind == "played_only" %}
+      {% include "partials/_psn_played_only_rows.html" %}
+      {% else %}
       {% include "partials/_psn_review_rows.html" %}
+      {% endif %}
     </tbody>
   </table>
 </div>

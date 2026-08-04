@@ -5,24 +5,27 @@
 <div class="mb-3 d-flex align-items-start justify-content-between flex-wrap gap-2">
   <div>
     <h4 class="mb-0">PSN Review</h4>
-    <p class="text-secondary small mb-0">
-      Decisions the PSN import can&rsquo;t make for you. A cross-play trophy set covers several
-      platforms and PSN never says which you own &mdash; and with cross-buy the answer is often
-      more than one. Confirming creates the library entries.
+    <p id="psn-review-blurb" class="text-secondary small mb-0">
+      {% include "partials/_psn_review_blurb.html" %}
     </p>
   </div>
   <div class="d-flex align-items-center gap-2">
-    <span class="badge bg-secondary"><span id="psn-pending-count">{{ rows | length }}</span> pending</span>
+    <span class="badge bg-secondary"><span id="psn-pending-count">{{ counts[kind] }}</span> pending</span>
   </div>
 </div>
+
+{# Both queues are "PSN couldn't settle this, you decide" and both are rows of
+   the same table — tabs, not two pages. #}
+{% include "partials/_psn_tabs.html" %}
 
 <form id="psn-review-filters"
       hx-get="/tools/psn-review"
       hx-target="#psn-review-content"
       hx-swap="innerHTML"
       hx-push-url="true"
-      hx-trigger="submit">
+      hx-trigger="submit, input changed delay:300ms from:#psn-search">
   <input type="hidden" name="view" id="psn-view-field" value="{{ view }}">
+  <input type="hidden" name="kind" id="psn-kind-field" value="{{ kind }}">
   <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
     <div class="btn-group btn-group-sm" role="group" id="psn-view-toggle">
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}"
@@ -31,6 +34,7 @@
               onclick="psnSetView('card')" title="Card view">&#9638;</button>
     </div>
     <select class="form-select form-select-sm" name="platform" style="width:auto;"
+            {% if kind == "played_only" %}hidden{% endif %}
             onchange="htmx.trigger('#psn-review-filters', 'submit')"
             title="Show only trophy sets offering this platform">
       <option value="">All platforms</option>
@@ -38,8 +42,44 @@
       <option value="{{ p }}"{% if p == platform %} selected{% endif %}>{{ p }}</option>
       {% endfor %}
     </select>
+    <input id="psn-search" name="q" type="search" class="form-control form-control-sm"
+           placeholder="Search title&hellip;" style="max-width:220px" value="{{ q }}" autocomplete="off">
+    {# Sort options differ per queue: trophy progress is what tells two sets of
+       the same game apart, playtime is what matters for played-only. #}
+    {% include "partials/_psn_sort_select.html" %}
+    {# Bulk mode: reveals row checkboxes; the bar below holds the actions that
+       operate on the selection. List view only — the card stack shows one row
+       at a time, so there is nothing to select across. Cross-play only, since
+       played-only rows take three different actions rather than one. #}
+    <button type="button" id="psn-select-toggle" class="btn btn-sm btn-surface"
+            {% if view != 'list' or kind != 'cross_play' %}hidden{% endif %}
+            onclick="psnToggleSelect()">Bulk mode</button>
   </div>
 </form>
+
+{# Most rows arrive pre-ticked correctly from the cross-buy reference, so bulk
+   confirm sends each row's OWN platform selection rather than just its id. #}
+<div id="psn-bulk-bar" class="d-flex align-items-center gap-2 mb-3" hidden>
+  <span class="small text-secondary"><span id="psn-bulk-count">0</span> selected</span>
+  <button type="button" class="btn btn-sm btn-surface" onclick="psnSelectAll(true)">Select all</button>
+  {# Native hx attributes, not htmx.ajax(): the JS API's promise doesn't settle
+     reliably on swap-none responses, which froze import review's buttons
+     mid-flight. hx-vals js: reads the ticked platforms at click time. #}
+  <button type="button" id="psn-bulk-confirm" class="btn btn-sm btn-primary" disabled
+          hx-post="/tools/psn-review/bulk-confirm"
+          hx-vals='js:{selections: psnCheckedSelections()}'
+          hx-confirm="Confirm the selected games? Library entries are created for each ticked platform."
+          hx-swap="none"
+          hx-disabled-elt="this"
+          hx-on::after-request="psnClearActedDrafts(); psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Confirm selected</button>
+  <button type="button" id="psn-bulk-dismiss" class="btn btn-sm btn-surface" disabled
+          hx-post="/tools/psn-review/bulk-dismiss"
+          hx-vals='js:{keys: psnCheckedKeys()}'
+          hx-confirm="Dismiss the selected games? Nothing is added to your library."
+          hx-swap="none"
+          hx-disabled-elt="this"
+          hx-on::after-request="psnClearActedDrafts(); psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Dismiss selected</button>
+</div>
 
 <div id="psn-review-content">
   {% include "partials/_psn_review_content.html" %}
@@ -50,6 +90,26 @@
 // separate rather than generalised because the two queues load on different
 // pages and share no markup ids.
 let psnCardIdx = 0;
+// Which card was on screen, so a swap — or a return to the page — puts you back
+// rather than at the top. Stored per queue: the two stacks are different lists,
+// and a single slot would have each tab trying to restore the other's card.
+const PSN_CARD_KEY = 'cgt-psn-card';
+let psnLastCardKey = null;
+
+function psnCurrentKind() {
+  var f = document.getElementById('psn-kind-field');
+  return (f && f.value) || 'cross_play';
+}
+function psnReadCardMemory() {
+  try { return JSON.parse(localStorage.getItem(PSN_CARD_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function psnRememberCard(key) {
+  psnLastCardKey = key;
+  var m = psnReadCardMemory();
+  m[psnCurrentKind()] = key;
+  try { localStorage.setItem(PSN_CARD_KEY, JSON.stringify(m)); } catch (e) { /* full or blocked */ }
+}
 function psnCards() { return Array.from(document.querySelectorAll('#psn-stack .cgt-match-card')); }
 function psnShowCard(idx) {
   const cards = psnCards();
@@ -59,6 +119,9 @@ function psnShowCard(idx) {
     c.classList.toggle('cgt-match-card--hidden', i !== psnCardIdx);
     c.classList.toggle('cgt-match-card--active', i === psnCardIdx);
   });
+  psnRememberCard((cards[psnCardIdx].id || '').replace('psn-card-', ''));
+  // Only the cards near this one load their art; see cgtHydrateCards.
+  cgtHydrateWhenReady(cards, psnCardIdx);
   var counter = document.getElementById('psn-nav-counter');
   if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
 }
@@ -93,10 +156,167 @@ window.psnPendingDelta = function(d) {
   if (!isNaN(n)) el.textContent = Math.max(0, n + d);
 };
 
+window.psnSetKind = function(kind) {
+  document.getElementById('psn-kind-field').value = kind;
+  // A platform filter from the other tab would silently empty this one.
+  var sel = document.querySelector('#psn-review-filters select[name="platform"]');
+  if (sel) sel.value = '';
+  var search = document.getElementById('psn-search');
+  if (search) search.value = '';
+  // Sort keys are per-queue ("progress" means nothing on played-only).
+  var sortSel = document.querySelector('#psn-review-filters select[name="sort"]');
+  if (sortSel) sortSel.value = 'name';
+  htmx.trigger('#psn-review-filters', 'submit');
+};
+
+// ─── Tentative platform picks ──────────────────────────────────────────
+// Unticking three boxes and then navigating away used to lose the thinking. The
+// server can't hold these: nothing is committed until you confirm, and a draft
+// written per click would be a write per checkbox on a 54-row queue.
+//
+// localStorage is right HERE specifically because the server never needs to
+// read it — unlike the import filters, which were moved to cookies precisely so
+// the server could render already-filtered (#123). This only replays over
+// server-rendered defaults after the fact.
+var PSN_DRAFT_KEY = 'cgt-psn-draft';
+
+function psnDrafts() {
+  try { return JSON.parse(localStorage.getItem(PSN_DRAFT_KEY) || '{}'); }
+  catch (e) { return {}; }
+}
+function psnWriteDrafts(d) {
+  try { localStorage.setItem(PSN_DRAFT_KEY, JSON.stringify(d)); } catch (e) { /* full or blocked */ }
+}
+
+// Called on every checkbox change. Stores the row's whole selection, so an
+// empty array is preserved too — "I decided I own none of these" is a real
+// tentative state and must not read as "no draft".
+window.psnRememberDraft = function(key) {
+  var opts = document.getElementById('psn-opts-' + key);
+  if (!opts) return;
+  var d = psnDrafts();
+  d[key] = Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; });
+  psnWriteDrafts(d);
+};
+
+window.psnForgetDraft = function(key) {
+  var d = psnDrafts();
+  if (key in d) { delete d[key]; psnWriteDrafts(d); }
+};
+
+// Replay drafts over the server's defaults after any render.
+window.psnApplyDrafts = function() {
+  var d = psnDrafts();
+  var touched = 0;
+  Object.keys(d).forEach(function(key) {
+    var opts = document.getElementById('psn-opts-' + key);
+    if (!opts) return;   // not on this page/filter — leave the draft alone
+    var want = d[key];
+    opts.querySelectorAll('input[name="platforms"]').forEach(function(cb) {
+      cb.checked = want.indexOf(cb.value) !== -1;
+    });
+    touched++;
+  });
+  return touched;
+};
+
+// app.js is deferred, so an inline script can run before cgtHydrateCards
+// exists. Guarding the call alone meant hydration was skipped and never
+// retried — cards kept their data-src and showed no art at all. Retry once the
+// deferred scripts have run.
+function cgtHydrateWhenReady(cards, idx) {
+  if (window.cgtHydrateCards) { cgtHydrateCards(cards, idx); return; }
+  window.addEventListener('load', function() {
+    if (window.cgtHydrateCards) cgtHydrateCards(psnCards(), psnCardIdx);
+  }, { once: true });
+}
+
+// ─── Bulk-select mode ──────────────────────────────────────────────────
+window.psnToggleSelect = function() {
+  var table = document.getElementById('psn-review-table');
+  if (!table) return;
+  if (table.classList.contains('psn-select-mode')) { psnExitSelect(); return; }
+  table.classList.add('psn-select-mode');
+  document.getElementById('psn-select-toggle').classList.add('active');
+  document.getElementById('psn-bulk-bar').hidden = false;
+  psnBulkSync();
+};
+
+window.psnExitSelect = function() {
+  var table = document.getElementById('psn-review-table');
+  if (table) {
+    table.classList.remove('psn-select-mode');
+    table.querySelectorAll('.psn-bulk-check:checked').forEach(function(cb) { cb.checked = false; });
+  }
+  var btn = document.getElementById('psn-select-toggle');
+  if (btn) btn.classList.remove('active');
+  var bar = document.getElementById('psn-bulk-bar');
+  if (bar) bar.hidden = true;
+};
+
+window.psnBulkSync = function() {
+  var n = document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').length;
+  var count = document.getElementById('psn-bulk-count');
+  if (count) count.textContent = n;
+  ['psn-bulk-confirm', 'psn-bulk-dismiss'].forEach(function(id) {
+    var b = document.getElementById(id);
+    if (b) b.disabled = n === 0;
+  });
+};
+
+window.psnSelectAll = function(on) {
+  document.querySelectorAll('#psn-review-table .psn-bulk-check').forEach(function(cb) { cb.checked = on; });
+  psnBulkSync();
+};
+
+// Bulk actions decide many rows at once; their drafts go with them.
+window.psnClearActedDrafts = function() {
+  document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
+    psnForgetDraft(cb.value);
+  });
+};
+
+window.psnCheckedKeys = function() {
+  return Array.from(document.querySelectorAll('#psn-review-table .psn-bulk-check:checked'))
+    .map(function(cb) { return cb.value; }).join(',');
+};
+
+// Each row carries its own platform ticks — that pre-ticking is the point of
+// the cross-buy reference, so bulk confirm has to send it per row, not just ids.
+window.psnCheckedSelections = function() {
+  var out = {};
+  document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
+    var opts = document.getElementById('psn-opts-' + cb.value);
+    out[cb.value] = opts
+      ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
+      : [];
+  });
+  return JSON.stringify(out);
+};
+
 function psnSetView(view) {
   document.getElementById('psn-view-field').value = view;
   htmx.trigger('#psn-review-filters', 'submit');
 }
+
+// A decided row says what happened, then gets out of the way. Leaving them in
+// place turns the queue into a list of things you already dealt with, which is
+// what you end up reading past to find the ones you haven't.
+document.addEventListener('htmx:afterSwap', function(e) {
+  var row = e.target && e.target.matches && e.target.matches('[data-retire]') ? e.target : null;
+  if (!row) return;
+  setTimeout(function() {
+    row.style.transition = 'opacity .3s ease';
+    row.style.opacity = '0';
+    setTimeout(function() { row.remove(); }, 300);
+  }, 1600);
+});
+
+// Confirming one set changes what its siblings may claim, and they're already
+// rendered — re-render the queue so their options reflect it.
+document.body.addEventListener('cgt:psnSiblingsStale', function() {
+  htmx.trigger('#psn-review-filters', 'submit');
+});
 
 document.addEventListener('htmx:afterSwap', function(e) {
   if (e.target && e.target.id === 'psn-review-content') {
@@ -107,11 +327,37 @@ document.addEventListener('htmx:afterSwap', function(e) {
       btns[0].classList.toggle('active', view === 'list');
       btns[1].classList.toggle('active', view === 'card');
     }
-    psnCardIdx = 0;
-    if (document.getElementById('psn-stack')) psnRebuildNav(true);
+    psnApplyDrafts();
+    // Return to the card you were on. Resetting to the first of 54 lost your
+    // place on every tab switch — and since card 1 still shows the server's
+    // defaults, it read as the draft having been discarded.
+    if (document.getElementById('psn-stack')) {
+      var remembered = psnLastCardKey || psnReadCardMemory()[psnCurrentKind()];
+      var back = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + remembered; });
+      psnCardIdx = back > -1 ? back : 0;
+      psnRebuildNav(false);
+    }
+    // The toggle lives outside the swap, so re-evaluate whether it applies to
+    // whatever just rendered — card view and played-only have nothing to bulk.
+    var kind = document.getElementById('psn-kind-field').value;
+    var toggle = document.getElementById('psn-select-toggle');
+    if (toggle) toggle.hidden = !(view === 'list' && kind === 'cross_play');
+    psnExitSelect();
   }
 });
 
-if (document.getElementById('psn-stack')) psnRebuildNav(true);
+// app.js is deferred, so it has NOT executed while this inline script runs —
+// calling into it here threw, aborted psnShowCard before any card got
+// --active, and left all 54 hidden: a blank stage. DOMContentLoaded fires
+// after deferred scripts, so everything exists by then.
+document.addEventListener('DOMContentLoaded', function() {
+  if (document.getElementById('psn-stack')) {
+    var want = psnReadCardMemory()[psnCurrentKind()];
+    var at = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + want; });
+    psnCardIdx = at > -1 ? at : 0;
+    psnRebuildNav(false);
+  }
+  psnApplyDrafts();
+});
 </script>
 {% endblock %}

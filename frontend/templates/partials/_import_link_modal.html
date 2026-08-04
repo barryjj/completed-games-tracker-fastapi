@@ -3,7 +3,7 @@
    Confirmed tab is the undo). Editing spreadsheet data lives in the separate
    Edit modal. #}
 <form id="import-link-form"
-      hx-post="/library/import/{{ candidate.id }}/link"
+      hx-post="/tools/import/{{ candidate.id }}/link"
       hx-swap="none"
       hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('importEditModal')).hide(); htmx.trigger('#import-filters-form', 'submit-view'); }">
   <p class="text-secondary small">

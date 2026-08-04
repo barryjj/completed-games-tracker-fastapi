@@ -1720,7 +1720,7 @@ def test_reopen_deletes_linked_completion_and_flips_pending(client, db_session):
     entry = _make_plain_entry(db_session, user.id)
     cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
     comp_id, cand_id = comp.id, cand.id
-    r = client.post(f"/library/import/{cand_id}/reopen")
+    r = client.post(f"/tools/import/{cand_id}/reopen")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.Completion, comp_id) is None
@@ -1737,7 +1737,7 @@ def test_reopen_legacy_candidate_matches_by_row_fields(client, db_session):
     entry = _make_plain_entry(db_session, user.id)
     cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=False)
     comp_id, cand_id = comp.id, cand.id
-    r = client.post(f"/library/import/{cand_id}/reopen")
+    r = client.post(f"/tools/import/{cand_id}/reopen")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.Completion, comp_id) is None
@@ -1751,7 +1751,7 @@ def test_reopen_rejects_pending_candidate(client, db_session):
     cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
     cand.status = "pending"
     db_session.commit()
-    assert client.post(f"/library/import/{cand.id}/reopen").status_code == 404
+    assert client.post(f"/tools/import/{cand.id}/reopen").status_code == 404
 
 
 def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
@@ -1759,9 +1759,9 @@ def test_confirmed_tab_lists_candidate_with_reopen_action(client, db_session):
     user = db_session.query(models.User).first()
     entry = _make_plain_entry(db_session, user.id)
     cand, _ = _make_confirmed_candidate(db_session, user.id, entry.id)
-    r = client.get("/library/import/review?tab=confirmed", headers=_HX)
+    r = client.get("/tools/import/review?tab=confirmed", headers=_HX)
     assert r.status_code == 200
-    assert f"/library/import/{cand.id}/reopen".encode() in r.content
+    assert f"/tools/import/{cand.id}/reopen".encode() in r.content
 
 
 def _make_import_candidate(db, user_id, title, platform_obj, action="create_new"):
@@ -1826,7 +1826,7 @@ def test_confirm_endpoint_rejects_non_add_to_existing(client, db_session):
     db_session.flush()
     cand = _make_import_candidate(db_session, user.id, "Some Game", plat, action="create_new")
     db_session.commit()
-    r = client.post(f"/library/import/{cand.id}/confirm")
+    r = client.post(f"/tools/import/{cand.id}/confirm")
     assert r.status_code == 400
 
 
@@ -1900,12 +1900,12 @@ def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_sess
     client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
 
     # create_new: cookie applies, no query param needed — server renders filtered
-    r = client.get("/library/import/review?tab=create_new", headers=_HX)
+    r = client.get("/tools/import/review?tab=create_new", headers=_HX)
     assert "Steam Game" in r.text
     assert "Switch Game" not in r.text
 
     # needs_review: the create_new cookie must NOT leak here
-    r2 = client.get("/library/import/review?tab=needs_review", headers=_HX)
+    r2 = client.get("/tools/import/review?tab=needs_review", headers=_HX)
     assert "Other Steam" in r2.text
 
 
@@ -1925,13 +1925,13 @@ def test_platform_filter_narrows_results_and_marks_selection(client, db_session)
 
     # HX filter-change response: only the filtered rows (selects are not
     # re-emitted on a plain filter change — see the OOB test below).
-    r = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}", headers=_HX)
+    r = client.get(f"/tools/import/review?tab=create_new&platform=pid:{steam.id}", headers=_HX)
     assert r.status_code == 200
     assert "Steam Game" in r.text
     assert "Switch Game" not in r.text
 
     # Full page render carries the selects inline, with the chosen option marked.
-    full = client.get(f"/library/import/review?tab=create_new&platform=pid:{steam.id}")
+    full = client.get(f"/tools/import/review?tab=create_new&platform=pid:{steam.id}")
     assert "Steam Game" in full.text
     assert "Switch Game" not in full.text
     assert f'value="pid:{steam.id}" selected' in full.text
@@ -1951,7 +1951,7 @@ def test_filter_selects_self_trigger_so_oob_replacement_keeps_them_working(clien
     _make_import_candidate(db_session, user.id, "Steam Game", steam)
     db_session.commit()
 
-    full = client.get("/library/import/review?tab=create_new")
+    full = client.get("/tools/import/review?tab=create_new")
     body = full.text
     # the platform select block itself carries hx-get (self-triggering)
     seg = body[body.index('id="import-platform-filter"') :]
@@ -1973,10 +1973,10 @@ def test_tab_switch_refreshes_selects_oob_but_filter_change_does_not(client, db_
     _make_import_candidate(db_session, user.id, "Steam Game", steam)
     db_session.commit()
 
-    with_refresh = client.get("/library/import/review?tab=create_new&refresh_filters=1", headers=_HX)
+    with_refresh = client.get("/tools/import/review?tab=create_new&refresh_filters=1", headers=_HX)
     assert 'hx-swap-oob="true"' in with_refresh.text
 
-    without = client.get("/library/import/review?tab=create_new", headers=_HX)
+    without = client.get("/tools/import/review?tab=create_new", headers=_HX)
     assert 'hx-swap-oob="true"' not in without.text
 
 
@@ -1992,7 +1992,7 @@ def test_full_page_load_never_duplicates_selects_even_with_refresh_flag(client, 
     _make_import_candidate(db_session, user.id, "Steam Game", steam)
     db_session.commit()
 
-    r = client.get("/library/import/review?tab=create_new&refresh_filters=1")
+    r = client.get("/tools/import/review?tab=create_new&refresh_filters=1")
     assert r.status_code == 200
     assert 'hx-swap-oob="true"' not in r.text
     assert r.text.count('id="import-platform-filter"') == 1
@@ -2030,7 +2030,7 @@ def test_confirmed_tab_filter_dropdowns_populate_from_confirmed_candidates(clien
     db_session.commit()
 
     # Full render of the confirmed tab: selects carry the confirmed set's options
-    full = client.get("/library/import/review?tab=confirmed")
+    full = client.get("/tools/import/review?tab=confirmed")
     assert full.status_code == 200
     assert f'value="pid:{snes.id}"' in full.text
     assert 'value="2009"' in full.text
@@ -2038,7 +2038,7 @@ def test_confirmed_tab_filter_dropdowns_populate_from_confirmed_candidates(clien
     assert 'value="2021"' not in full.text
 
     # and the platform filter actually narrows the confirmed list
-    r = client.get(f"/library/import/review?tab=confirmed&platform=pid:{snes.id}", headers=_HX)
+    r = client.get(f"/tools/import/review?tab=confirmed&platform=pid:{snes.id}", headers=_HX)
     assert "Old Game" in r.text
 
 
@@ -2079,7 +2079,7 @@ def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
     ids = f"{a.id},{b.id},{c.id},99999"
     a_id, b_id, c_id = a.id, b.id, c.id
 
-    r = client.post("/library/import/confirm-bulk", data={"ids": ids})
+    r = client.post("/tools/import/confirm-bulk", data={"ids": ids})
     assert r.status_code == 200
     assert b"Confirmed 2 candidates" in r.content
     db_session.expire_all()
@@ -2095,7 +2095,7 @@ def test_bulk_confirm_confirms_only_eligible_candidates(client, db_session):
 
 def test_bulk_confirm_requires_ids(client):
     _signup_and_login(client)
-    assert client.post("/library/import/confirm-bulk", data={"ids": ""}).status_code == 422
+    assert client.post("/tools/import/confirm-bulk", data={"ids": ""}).status_code == 422
 
 
 def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
@@ -2113,7 +2113,7 @@ def test_bulk_dismiss_dismisses_pending_candidates(client, db_session):
     db_session.add(cand)
     db_session.commit()
     cand_id = cand.id
-    r = client.post("/library/import/dismiss-bulk", data={"ids": str(cand_id)})
+    r = client.post("/tools/import/dismiss-bulk", data={"ids": str(cand_id)})
     assert r.status_code == 200
     assert b"Dismissed 1 candidate" in r.content
     db_session.expire_all()
@@ -2148,7 +2148,7 @@ def test_link_confirms_immediately(client, db_session):
     db_session.commit()
     cand_id, row_id, entry_id = cand.id, row.id, entry.id
 
-    r = client.post(f"/library/import/{cand_id}/link", data={"library_entry_id": str(entry_id)})
+    r = client.post(f"/tools/import/{cand_id}/link", data={"library_entry_id": str(entry_id)})
     assert r.status_code == 200
     assert b"Confirmed against" in r.content
     db_session.expire_all()
@@ -2160,7 +2160,7 @@ def test_link_confirms_immediately(client, db_session):
     # linkage stamped -> reopenable
     assert db_session.get(models.ImportRow, row_id).created_completion_id == comp.id
     # link modal only offered for pending candidates
-    assert client.get(f"/library/import/{cand_id}/link").status_code == 404
+    assert client.get(f"/tools/import/{cand_id}/link").status_code == 404
 
 
 def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
@@ -2188,7 +2188,7 @@ def test_edit_without_link_saves_row_edits_and_rematches(client, db_session):
     cand_id, row_id = cand.id, row.id
 
     r = client.post(
-        f"/library/import/{cand_id}/edit",
+        f"/tools/import/{cand_id}/edit",
         data={
             "raw_title": "Some Unmatched Game",
             "raw_platform": "",
@@ -2216,13 +2216,13 @@ def test_confirm_and_dismiss_are_noops_on_confirmed_candidate(client, db_session
     cand, comp = _make_confirmed_candidate(db_session, user.id, entry.id, link=True)
     cand_id, comp_id = cand.id, comp.id
 
-    r = client.post(f"/library/import/{cand_id}/confirm")
+    r = client.post(f"/tools/import/{cand_id}/confirm")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
     assert db_session.query(models.Completion).count() == 1
 
-    r = client.post(f"/library/import/{cand_id}/dismiss")
+    r = client.post(f"/tools/import/{cand_id}/dismiss")
     assert r.status_code == 200
     db_session.expire_all()
     assert db_session.get(models.ImportCandidate, cand_id).status == "confirmed"
@@ -2412,3 +2412,543 @@ def test_bulk_edit_ignores_other_users_entries(client, db_session):
     r = client.post("/library/entries/bulk-edit", data={"ids": str(theirs.id), "is_hidden": "true"})
     assert r.status_code == 404
     db_session.refresh(theirs)
+
+
+def test_stale_filter_cookie_is_dropped_not_silently_applied(client, db_session):
+    """A remembered filter only survives while it's still an option for the tab.
+
+    The dropdowns are built from the tab's own candidates, so confirming the
+    last row on a platform drops it from the list — but the cookie still named
+    it. The server kept filtering by it while the select, having no option to
+    render, showed "All platforms": a queue that read as empty with no filter
+    visible to clear, fixable only by changing the filter and changing back."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    db_session.add(steam)
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    db_session.commit()
+
+    # A cookie naming a platform this tab has no candidates for.
+    client.cookies.set("cgt-import-create_new-platform", "pid%3A999999")
+    body = client.get("/tools/import/review?tab=create_new").text
+    client.cookies.delete("cgt-import-create_new-platform")
+
+    assert "Steam Game" in body
+    assert "Nothing matches these filters" not in body
+
+
+def test_valid_filter_cookie_is_still_honoured(client, db_session):
+    """The fix must not break stickiness itself — a cookie naming a real option
+    still filters."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Nintendo Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
+    body = client.get("/tools/import/review?tab=create_new").text
+    client.cookies.delete("cgt-import-create_new-platform")
+    assert "Steam Game" in body
+    assert "Switch Game" not in body
+
+
+def test_html_is_never_cached_but_static_still_is(client, db_session):
+    """The asset version lives in the PAGE, so a cached page pins a stale
+    stylesheet and the browser never even asks for the new one — the mechanism
+    behind three separate false bug hunts in this project. Per-route headers
+    didn't catch it: one page of nine had them."""
+    _signup_and_login(client)
+    for path in ("/", "/tools", "/library", "/completions", "/tools/psn-review", "/tools/import/review", "/tools/match-review"):
+        r = client.get(path)
+        assert r.headers.get("cache-control") == "no-store", path
+
+    # HTMX partials are dynamic data too.
+    partial = client.get("/tools/psn-review", headers={"HX-Request": "true"})
+    assert partial.headers.get("cache-control") == "no-store"
+
+    # /static stays cacheable — versioning it is the whole point.
+    css = client.get("/static/css/theme.css")
+    assert css.status_code == 200
+    assert css.headers.get("cache-control") != "no-store"
+
+
+def test_static_version_tracks_edits_without_a_restart(tmp_path, monkeypatch):
+    """uvicorn --reload watches .py only, so a CSS-only edit produced no
+    restart, no new version, and a browser correctly serving the old file.
+    Recomputing per render is ~0.07ms over six files."""
+    import os
+    import time
+
+    from backend import main
+
+    static = tmp_path / "static"
+    (static / "css").mkdir(parents=True)
+    asset = static / "css" / "theme.css"
+    asset.write_text("a{}")
+    monkeypatch.setattr(main, "STATIC_DIR", str(static))
+
+    first = main._compute_static_version()
+    time.sleep(0.01)
+    asset.write_text("b{}")
+    os.utime(asset, (time.time() + 5, time.time() + 5))
+
+    assert main._compute_static_version() != first, "a CSS edit must change the version"
+
+
+def test_base_template_calls_the_version_rather_than_baking_it_in():
+    """{{ static_version }} on a callable renders its repr, silently producing a
+    constant cache-bust — guard the call parentheses."""
+    html = open("frontend/templates/base.html").read()
+    assert "?v={{ static_version }}" not in html
+    assert html.count("?v={{ static_version() }}") == 5
+
+
+def test_home_widgets_use_linked_numbers_not_footer_buttons(client, db_session):
+    """The footer buttons duplicated destinations the numbers already imply, and
+    at three per row they wrapped — cluttered and asymmetric. The numbers are the
+    links now, and the reclaimed space goes to content."""
+    _signup_and_login(client)
+    body = client.get("/").text
+
+    assert "cgt-tool-card__actions" not in body, "no footer buttons on Home"
+    # The headline stats are the links.
+    assert 'class="cgt-tool-stat cgt-tool-stat--blue cgt-tool-stat--link" href="/completions"' in body
+    assert 'class="cgt-tool-stat cgt-tool-stat--lavender cgt-tool-stat--link" href="/library"' in body
+    # Undecorated, with the hover carrying the affordance.
+    css = open("frontend/static/css/theme.css").read()
+    assert "a.cgt-tool-stat--link {" in css
+    assert "text-decoration: none;" in css[css.index("a.cgt-tool-stat--link {") :][:400]
+    assert "a.cgt-tool-stat--link:hover" in css
+
+
+def test_this_year_widget_shows_progress_against_the_goal(client, db_session):
+    """Count + Goal is the original pairing. To go, Best month and last year's
+    total were added later to fill a stretched card, making five stats that
+    wrapped onto two rows — clutter once the cards shrank. The card fills
+    itself via the bar strip now, so the extra stats stay gone."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    import datetime
+
+    entry = _make_named_entry(db_session, user.id, "Done Game")
+    year = datetime.date.today().year
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(year, 3, 14)))
+    db_session.commit()
+
+    body = client.get("/").text
+    assert f"Completions in {year}" in body
+    assert ">Goal<" in body
+    # The three later additions stay retired.
+    assert "To go" not in body
+    assert "Best &mdash;" not in body and "Best —" not in body
+    assert f"{year - 1} total" not in body
+    # Two stats in the card, not five.
+    card = body[body.index("This year") :]
+    card = card[: card.index("cgt-month-bars")]
+    assert card.count("cgt-tool-stat__value") == 2, "This-year card should carry count + goal"
+
+
+def test_this_year_widget_does_not_query_last_year(client, db_session):
+    """Dropping the stat should drop its query too, not leave it computed and
+    thrown away."""
+    import inspect
+
+    from backend import pages
+
+    src = inspect.getsource(pages.home_page)
+    assert "year - 1" not in src, "last-year count is still being queried"
+    assert "best_month" not in src, "best-month is still being computed"
+
+
+def test_needs_attention_surfaces_missing_artwork(client, db_session):
+    """Every card is forced to the tallest one's height, so a sparse card is
+    dead space. Missing artwork is real work and already links somewhere."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _make_named_entry(db_session, user.id, "Artless Game")
+    db_session.commit()
+
+    body = client.get("/").text
+    assert "library &middot; missing artwork" in body or "library · missing artwork" in body
+    assert "/library?missing_art=true" in body
+    # ...and it counts toward "caught up", or the card would claim done with
+    # work still listed under it.
+    assert "All caught up." not in body
+
+
+def test_home_pairs_the_short_widgets_into_one_column(client, db_session):
+    """Every card used to be forced to the tallest one's height, so widening the
+    Library list handed the two short cards a screenful of dead space. They
+    share a column now; the list-shaped cards span both rows.
+
+    Source order matters: the grid flows by column, so the two short cards have
+    to be adjacent in the markup to land in the same one."""
+    _signup_and_login(client)
+    body = client.get("/").text
+
+    assert "cgt-tool-grid--paired" in body
+    # Scope to the grid — "Library" also appears in the nav, ahead of it.
+    grid = body[body.index('id="home-widgets"') :]
+    order = [grid.index(t) for t in ("This year", "Needs attention", "Library", "Recently completed")]
+    assert order == sorted(order), "short widgets must be adjacent, before the tall ones"
+    assert grid.count("cgt-tool-card--tall") == 2
+
+    # Tools keeps the plain uniform grid — this is a Home-only layout.
+    tools = client.get("/tools").text
+    assert "cgt-tool-grid--paired" not in tools
+
+
+def test_home_rows_share_one_hover_treatment():
+    """Home had three: a mauve tint on the list rows, an underline with no
+    background on the Needs-attention rows, and a flat surface fill on the
+    linked stats. Same page, same gesture, three answers."""
+    css = open("frontend/static/css/theme.css").read()
+    tint = "color-mix(in srgb, var(--ctp-mauve) 10%, transparent)"
+    for selector in (".cgt-detail-list-row:hover", "a.cgt-breakdown__row:hover", "a.cgt-tool-stat--link:hover"):
+        block = css[css.index(selector) :][:200]
+        assert tint in block, selector
+    # The underline-only treatment is gone.
+    assert "text-decoration: underline;" not in css[css.index(".cgt-breakdown__row {") :][:600]
+
+
+def test_vendored_assets_do_not_request_missing_source_maps(client):
+    """We don't ship the .map files, so every page load requested two that don't
+    exist and logged 404s. Console noise buries real errors, and the desktop
+    shell's devtools is where anything actually gets diagnosed."""
+    for asset in ("vendor/bootstrap.bundle.min.js", "vendor/bootstrap.min.css", "vendor/htmx.min.js"):
+        r = client.get(f"/static/{asset}")
+        assert r.status_code == 200, asset
+        assert "sourceMappingURL" not in r.text, f"{asset} would request a .map we don't ship"
+
+
+def test_missing_artwork_count_survives_a_null_release_id(client, db_session):
+    """NOT IN against a subquery containing NULL is never true, so one
+    GameArtwork row with a NULL release_id silently made "missing artwork"
+    return nothing at all — the Tools card read 0 missing while hundreds were.
+    cover_h happened to have no such rows, so the horizontal view worked and hid
+    it."""
+    from backend.pages_common import _build_lib_query
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _make_named_entry(db_session, user.id, "Artless")
+    db_session.commit()
+
+    before = _build_lib_query(db_session, user, "", "", "default", "name", False, True, "grid_v")[0].count()
+    assert before >= 1, "the entry has no cover, so it must count as missing"
+
+    # A game-level artwork row with no release attached — exactly what poisoned it.
+    db_session.add(models.GameArtwork(release_id=None, artwork_type="cover_v", source="sgdb", url="https://x/y.png", is_valid=True))
+    db_session.commit()
+
+    after = _build_lib_query(db_session, user, "", "", "default", "name", False, True, "grid_v")[0].count()
+    assert after == before, "a NULL release_id must not zero the whole count"
+    assert entry is not None
+
+
+def _theme_css():
+    return open("frontend/static/css/theme.css").read()
+
+
+def _palette_block(css, selector):
+    i = css.index(selector)
+    j = css.index("{", i)
+    depth = 0
+    for k in range(j, len(css)):
+        if css[k] == "{":
+            depth += 1
+        elif css[k] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[j:k]
+    raise AssertionError(f"unterminated block for {selector}")
+
+
+def test_stat_values_are_not_mixed_toward_ink():
+    """Light mode used to render every stat number as
+    color-mix(accent 65%, --ctp-text). That stripped ~42% of each accent's
+    saturation, unevenly (teal -29%, pink -55%), so the triplets chosen for
+    colorblind separation stopped separating — the light theme read as
+    arbitrary. The hairline stroke solves legibility instead, leaving hue
+    intact. This is the exact regression to prevent."""
+    css = _theme_css()
+    for accent in ("teal", "peach", "lavender", "yellow", "green", "blue", "pink", "maroon", "flamingo"):
+        needle = f"color-mix(in srgb, var(--ctp-{accent})"
+        for hit in range(css.count(needle)):
+            idx = -1
+            for _ in range(hit + 1):
+                idx = css.index(needle, idx + 1)
+            line_start = css.rfind("\n", 0, idx) + 1
+            line = css[line_start : css.index("\n", idx)]
+            assert "--ctp-text" not in line, f"accent mixed toward ink again: {line.strip()[:100]}"
+
+
+def test_every_palette_declares_the_stat_stroke():
+    """The outline is what makes pale accents legible. A palette that forgets
+    --cgt-stat-stroke renders it as an invalid value — no stroke, no error."""
+    css = _theme_css()
+    for selector in ('html[data-bs-theme="dark"] {', 'html[data-bs-theme="light"] {', 'html[data-palette="latte"] {'):
+        assert "--cgt-stat-stroke:" in _palette_block(css, selector), selector
+
+
+def test_latte_overrides_come_after_the_default_light_palette():
+    """html[data-bs-theme="light"] and html[data-palette="latte"] have equal
+    specificity, so source order alone decides. Move the Latte block above the
+    Nord one and Latte silently renders as Nord."""
+    css = _theme_css()
+    assert css.index('html[data-palette="latte"] {') > css.index('html[data-bs-theme="light"] {')
+
+
+def test_palette_specific_button_shades_stay_light_scoped():
+    """--cgt-btn-* are only declared in the light palettes. Any use that isn't
+    scoped to a light rule resolves to nothing under Mocha — an invisible
+    button, not a build error."""
+    import re
+
+    css = _theme_css()
+    for m in re.finditer(r"var\(--cgt-btn-[a-z-]+\)", css):
+        start = css.rfind("}", 0, m.start())
+        start = 0 if start < 0 else start + 1
+        selector = css[start : css.index("{", start)].strip().splitlines()[-1]
+        assert 'data-bs-theme="light"' in selector or "data-palette" in selector, selector[:90]
+
+
+def test_boot_script_migrates_pre_nord_theme_settings():
+    """Existing installs have 'light'/'dark' in localStorage. Without migration
+    the picker opens blank and the stored preference is silently ignored."""
+    for name in ("base.html", "login.html", "signup.html"):
+        html = open(f"frontend/templates/{name}").read()
+        assert "localStorage.getItem('theme')" in html, name
+        assert "p==='light'" in html and "'nord'" in html, f"{name} drops old light setting"
+        assert "p==='dark'" in html and "'mocha'" in html, f"{name} drops old dark setting"
+        # data-bs-theme must stay a value Bootstrap understands.
+        assert "d.dataset.bsTheme=(p==='mocha'?'dark':'light')" in html, name
+
+
+def test_month_strip_grows_to_fill_the_card():
+    """Home forces every card to the tallest sibling's height. A fixed track
+    height is only ever right for one such height — it left dead space under
+    the strip, which is what the extra stats were originally added to hide."""
+    css = open("frontend/static/css/theme.css").read()
+    import re
+
+    track = css[css.index(".cgt-month-bars__track {") :][:220]
+    assert "flex: 1 1 auto;" in track, "track must absorb the card's slack"
+    assert "min-height: 88px;" in track, "keep 88px as the floor"
+    # A bare `height:` (not min-/max-) pins the track and brings the dead space back.
+    assert not re.search(r"(?<![-\w])height:\s*\d", track), "a fixed height reintroduces the dead space"
+
+
+def test_tools_cards_lead_with_a_primary_action(client, db_session):
+    """Every tool card's first action is the primary one. Artwork's had
+    regressed to btn-surface twice, so the card read as having no main action
+    while its neighbours all did."""
+    _signup_and_login(client)
+    body = client.get("/tools").text
+    assert '<a href="/integrations/steamgriddb" class="btn btn-primary btn-sm">' in body
+    # Not asserting a global count: some cards legitimately have no primary
+    # until they're connected. This is the one that keeps slipping.
+
+
+def test_tools_cards_do_not_badge_a_count_they_already_show():
+    """The pill on a card title repeated the headline stat directly beneath it
+    — 578 above "578 imports to review". Checked against the template rather
+    than a rendered page: the badges sit behind {% if count %}, so a fixture
+    that fails to produce a count would make a rendered assertion pass while
+    proving nothing.
+
+    The nav badge in base.html is a different case and stays — it's the only
+    place that count appears when you're not on the page."""
+    import re
+
+    tools = open("frontend/templates/tools.html").read()
+    for m in re.finditer(r'<div class="cgt-tool-card__title">(.*?)</div>', tools, re.S):
+        assert "cgt-pending-badge" not in m.group(1), f"count badge back on: {m.group(1)[:60]!r}"
+
+    base = open("frontend/templates/base.html").read()
+    assert "cgt-pending-badge" in base, "the nav badge should not have been removed"
+
+
+def test_card_body_text_has_one_declared_size():
+    """Blurbs, the account identity block and the breakdown rows each used to
+    opt into Bootstrap's .small on their own, so they matched by coincidence
+    rather than by rule and any one could drift. One class owns the size now."""
+    import re
+
+    css = open("frontend/static/css/theme.css").read()
+    block = css[css.index(".cgt-tool-card__body {") :][:200]
+    assert "font-size:" in block, "the body class must declare the size itself"
+    # rem, not em: a body element nested inside another would compound.
+    assert re.search(r"font-size:\s*[0-9.]+rem", block), "use rem so it cannot compound"
+
+    for name in ("tools.html", "home.html"):
+        html = open(f"frontend/templates/{name}").read()
+        assert 'class="small' not in html, f"{name} still opts into Bootstrap .small for card text"
+
+
+def test_psn_card_drops_its_blurb_once_connected(client, db_session):
+    """The Steam card replaces its copy with the identity block and stats once
+    connected. PSN kept showing "fetch your PlayStation library" to someone who
+    already had — instructions for a job already done, and the reason the two
+    sync cards didn't read as the same component."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    body = client.get("/tools").text
+    assert "Capture your PlayStation sign-in" in body, "disconnected state keeps its copy"
+
+    user.psn_npsso = "npsso-token"
+    user.psn_online_id = "tester"
+    db_session.commit()
+
+    body = client.get("/tools").text
+    assert "Fetch your PlayStation library" not in body
+    assert "Capture your PlayStation sign-in" not in body
+    assert "tester" in body, "identity block replaces the copy"
+
+
+def test_theme_css_has_no_stray_comment_markers():
+    """A script that rewrote theme.css split on a comment header and rejoined
+    without it, leaving a dangling `*/`. CSS recovers from that by discarding
+    the *next whole rule* — which silently deleted `.btn-primary`, so every
+    primary button fell back to Bootstrap's blue. No error anywhere: not in the
+    build, not in the console, not in the tests. Only the pixels."""
+    css = open("frontend/static/css/theme.css").read()
+    i = 0
+    in_comment = False
+    while i < len(css) - 1:
+        two = css[i : i + 2]
+        if not in_comment and two == "/*":
+            in_comment, i = True, i + 2
+            continue
+        if not in_comment and two == "*/":
+            line = css[:i].count("\n") + 1
+            raise AssertionError(f"stray `*/` at line {line} — the opening `/*` was lost")
+        if in_comment and two == "*/":
+            in_comment, i = False, i + 2
+            continue
+        i += 1
+    assert not in_comment, "unterminated comment — everything after it is dead"
+
+
+def test_theme_css_selectors_are_parseable():
+    """The same failure with the opener intact but the closer lost would leave
+    comment prose sitting where a selector belongs. Any top-level selector
+    containing box-drawing characters is comment text the parser is about to
+    eat a rule over."""
+    import re
+
+    css = open("frontend/static/css/theme.css").read()
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    depth = 0
+    chunk = ""
+    for ch in stripped:
+        if ch == "{":
+            if depth == 0:
+                sel = chunk.strip()
+                assert not re.search(r"[─━—│]", sel), f"comment text leaked into a selector: {sel[:70]!r}"
+                assert sel, "empty selector"
+            depth += 1
+            chunk = ""
+        elif ch == "}":
+            depth -= 1
+            chunk = ""
+        elif depth == 0:
+            chunk += ch
+
+
+def test_key_rules_survive_comment_stripping():
+    """The regression this exists for: `.btn-primary` vanished from the cascade
+    while still being present in the file, so a plain text search found it and
+    proved nothing. These read the CSS with comments removed — the way a parser
+    sees it — so a rule swallowed by an unclosed comment reads as missing.
+
+    A lost closing `*/` is invisible to marker balance (the next comment's
+    closer picks it up) and invisible to selector checks (the swallowed region
+    just becomes comment). Only "is the rule still there afterwards" catches
+    it."""
+    import re
+
+    css = re.sub(r"/\*.*?\*/", "", open("frontend/static/css/theme.css").read(), flags=re.S)
+    for selector, needle in (
+        (".btn-primary {", "var(--ctp-mauve)"),
+        (".btn-danger {", "var(--ctp-red)"),
+        (".cgt-tool-card {", "var(--ctp-mantle)"),
+        (".cgt-tool-card__body {", "font-size:"),
+    ):
+        assert selector in css, f"{selector} is not in the parsed stylesheet"
+        i = css.index(selector)
+        assert needle in css[i : css.index("}", i)], f"{selector} lost {needle}"
+
+
+def test_sync_cards_report_last_synced_the_same_way(client, db_session):
+    """Steam's identity block showed when it last synced; PSN's said
+    "PlayStation Network", which restated the card title. Two cards meant to be
+    the same component, telling you different amounts."""
+    import datetime
+
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "npsso-token", "tester"
+    user.steam_id64, user.steam_persona_name = "76561198000000000", "tester"
+    db_session.commit()
+
+    body = client.get("/tools").text
+    assert "PlayStation Network</div>" not in body
+    assert body.count("Never synced") == 2, "both cards say it the same way when never synced"
+
+    synced = datetime.datetime(2026, 8, 2, 16, 49, tzinfo=datetime.UTC)
+    user.psn_last_synced_at = synced
+    user.steam_last_synced_at = synced
+    db_session.commit()
+
+    body = client.get("/tools").text
+    assert body.count("Last synced") == 2
+    # Both carry the local-time hook the JS converts, not a bare UTC string.
+    # SQLite drops the tzinfo, so match the timestamp rather than the offset.
+    assert body.count('class="local-time" data-utc="2026-08-02T16:49:00') == 2
+    assert body.count("2026-08-02 16:49 UTC") == 2
+
+
+def test_borderless_state_lives_outside_the_swapped_region():
+    """The borderless class used to sit on .cgt-library-grid, which is inside
+    the HTMX-swapped content region. Every search, filter, sort and page wiped
+    it while the checkbox — outside that region — stayed checked, so the toggle
+    read as on while being off and only took effect on a second click.
+
+    Gap and size never had this because they were always documentElement CSS
+    vars. Borderless now matches. Both grid pages, both orientations."""
+    css = open("frontend/static/css/theme.css").read()
+    assert "html.cgt-grid-borderless .cgt-library-card" in css
+    assert ".cgt-library-grid--borderless" not in css, "container-scoped rule is the bug"
+
+    for name in ("library.html", "completions.html"):
+        js = open(f"frontend/templates/{name}").read()
+        assert "documentElement.classList.toggle('cgt-grid-borderless'" in js, name
+        assert "cgt-library-grid--borderless" not in js, f"{name} still targets the grid"
+        # Applied unconditionally, so an off state actually clears.
+        assert "applyBorderless(savedBorderless);" in js, f"{name} only applies the on state"
+
+
+def test_borderless_needs_no_reapply_after_a_swap():
+    """The afterSwap re-apply existed only to undo the wipe. Leaving it behind
+    would hide a regression if the class ever moved back onto the grid."""
+    js = open("frontend/templates/library.html").read()
+    i = js.index("htmx:afterSwap")
+    block = js[i : js.index("});", i)]
+    assert "applyBorderless" not in block, "nothing wipes it now; the re-apply is dead code"

@@ -181,18 +181,69 @@ document.addEventListener('htmx:afterSettle', function(e) {
 // - A 6s autohide via Bootstrap.Toast options
 // - A 'hidden.bs.toast' listener that removes the element from the DOM so
 //   the container doesn't accumulate stale toasts over a long session.
+// Must produce the SAME markup as partials/_toast.html. All the styling —
+// background, border, the 4px left accent — hangs off .toast-success /
+// .toast-danger, so a toast built without those classes renders with no
+// background at all: the transparent green one that didn't match anything.
+// htmx drops non-2xx responses on the floor by default, including their OOB
+// content. Sync kickoff answers 409 ("already running") and 422 (missing
+// credentials) as OOB toasts, so without this the Tools cards' Sync buttons —
+// which post with hx-swap="none" and no target — silently did nothing when
+// rejected. Allow these two to swap so the toast is delivered; everything else
+// keeps htmx's default error behaviour.
+document.addEventListener('htmx:beforeSwap', function(evt) {
+  var status = evt.detail.xhr && evt.detail.xhr.status;
+  if (status === 409 || status === 422) {
+    evt.detail.shouldSwap = true;
+    evt.detail.isError = false;
+  }
+});
+
+// ─── Card-stack image windowing ────────────────────────────────────────
+// Every card in a stack sits in the DOM at once and hidden ones use opacity: 0,
+// not display: none — so the browser fetches and decodes EVERY image up front.
+// loading="lazy" is no help either: the cards are absolutely positioned at the
+// same spot, so all of them count as in-viewport. A PSN queue of 54 cards meant
+// 102 SGDB heroes (~1920x620) decoded before the first one appeared.
+//
+// So images ship as data-src and are materialized only near the active card.
+// Paging by one extends the window by one on that side, which is the "+1 in the
+// direction of travel" behaviour for free.
+window.cgtHydrateCards = function(cards, activeIdx, radius) {
+  if (!cards || !cards.length) return;
+  // Anything still deferred when this first ran gets picked up here.
+  window.__cgtHydrateReady = true;
+  radius = (radius === undefined) ? 2 : radius;
+  var lo = Math.max(0, activeIdx - radius);
+  var hi = Math.min(cards.length - 1, activeIdx + radius);
+  for (var i = lo; i <= hi; i++) {
+    var pending = cards[i].querySelectorAll('img[data-src]');
+    for (var j = 0; j < pending.length; j++) {
+      pending[j].src = pending[j].getAttribute('data-src');
+      pending[j].removeAttribute('data-src');
+    }
+  }
+};
+
 function cgtToast(message, type) {
   var container = document.getElementById('toast-container');
   if (!container) return;
-  var color = type === 'error' ? 'var(--ctp-red)' : 'var(--ctp-green)';
+  var KINDS = {error: 'danger', danger: 'danger', warning: 'warning', warn: 'warning', info: 'info'};
+  var kind = KINDS[type] || 'success';
   var el = document.createElement('div');
-  el.className = 'toast align-items-center border-0';
-  el.setAttribute('role', 'status');
+  el.className = 'toast toast-' + kind + ' align-items-center show';
+  var urgent = kind === 'danger' || kind === 'warning';
+  el.setAttribute('role', urgent ? 'alert' : 'status');
+  el.setAttribute('aria-live', urgent ? 'assertive' : 'polite');
+  el.setAttribute('aria-atomic', 'true');
   el.innerHTML =
     '<div class="d-flex">' +
-    '<div class="toast-body small" style="color:' + color + ';">' + message + '</div>' +
-    '<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>' +
+    '<div class="toast-body"></div>' +
+    '<button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>' +
     '</div>';
+  // textContent, not innerHTML: messages interpolate error strings from the
+  // shell, which must never be parsed as markup.
+  el.querySelector('.toast-body').textContent = message;
   container.appendChild(el);
   _initToast(el);
 }

@@ -400,9 +400,11 @@
   // Apply saved values immediately so the layout is final on first paint.
   function applyGap(px) { document.documentElement.style.setProperty('--cgt-grid-gap', px + 'px'); }
   function applySize(px) { document.documentElement.style.setProperty('--cgt-grid-card-min', px + 'px'); }
+  // On <html>, not on the grid — the grid is inside the HTMX-swapped region
+  // and a class there is wiped by every search/filter/sort/page. Same place
+  // gap and size already live, which is why those two never broke.
   function applyBorderless(on) {
-    var grid = document.querySelector('.cgt-library-grid');
-    if (grid) grid.classList.toggle('cgt-library-grid--borderless', !!on);
+    document.documentElement.classList.toggle('cgt-grid-borderless', !!on);
   }
 
   var savedGap = parseInt(localStorage.getItem(GRID_GAP_KEY), 10);
@@ -421,7 +423,7 @@
   applySize(effectiveSize);
 
   var savedBorderless = localStorage.getItem(BORDERLESS_KEY) === '1';
-  if (savedBorderless) applyBorderless(true);
+  applyBorderless(savedBorderless);
 
   // View-mode toggle: write cookie + localStorage + navigate. Cookie is the
   // one the server reads on first paint, so collapse-then-pop never happens.
@@ -475,16 +477,13 @@
     });
   }
 
-  // Re-apply borderless after any HTMX swap of #library-content (search,
-  // filter, pagination). The class lives on .cgt-library-grid which is inside
-  // the swapped element, so it gets blown away. Gap/size survive because they
-  // use CSS vars on documentElement; borderless needs this extra re-apply.
+  // Scroll to top after a swap. Borderless used to be re-applied here too,
+  // because the class sat inside the swapped element; it lives on <html> now
+  // and survives on its own.
   document.body.addEventListener('htmx:afterSwap', function(e) {
     if (e.detail.target.id !== 'library-content') return;
     // Scroll back to top instantly so the user sees results from row 1.
     window.scrollTo({top: 0, behavior: 'instant'});
-    var on = localStorage.getItem(BORDERLESS_KEY) === '1';
-    if (on) applyBorderless(true);
   });
 })();
 

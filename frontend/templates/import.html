@@ -6,9 +6,9 @@
   <h1 class="mb-0">Import</h1>
   <div id="import-header-actions" class="d-flex align-items-center gap-2">
   {% if pending %}
-  <a href="/library/import/review" class="btn btn-sm btn-primary">Review {{ pending }} pending</a>
+  <a href="/tools/import/review" class="btn btn-sm btn-primary">Review {{ pending }} pending</a>
   <button class="btn btn-sm btn-surface"
-          hx-post="/library/import/clear"
+          hx-post="/tools/import/clear"
           hx-confirm="Clear all {{ pending }} pending candidates? This cannot be undone."
           hx-swap="none"
           hx-disabled-elt="this">
@@ -29,12 +29,12 @@
           Columns recognised: <code>#</code>, <code>Game</code>, <code>Platform</code>,
           <code>Date</code>, <code>Playthroughs</code>, <code>Notes</code>, <code>Collection</code>.
         </p>
-        <form hx-post="/library/import/upload"
+        <form hx-post="/tools/import/upload"
               hx-encoding="multipart/form-data"
               hx-swap="none"
               hx-sync="this:drop"
               hx-disabled-elt="find button[type='submit']"
-              hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/library/import/progress', {target:'#import-progress', swap:'outerHTML'})">
+              hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tools/import/progress', {target:'#import-progress', swap:'outerHTML'})">
           <div class="mb-3">
             <input class="form-control form-control-sm" type="file" name="file" accept=".xlsx,.xls" required>
           </div>
@@ -44,7 +44,7 @@
           </button>
         </form>
         <div id="import-progress"
-             hx-get="/library/import/progress"
+             hx-get="/tools/import/progress"
              hx-trigger="load, every 2s"
              hx-swap="outerHTML"></div>
       </div>

@@ -1927,3 +1927,203 @@ def test_sgdb_fill_all_endpoint_requires_key(client, db_session, monkeypatch):
     db_session.commit()
     r = client.post("/integrations/steamgriddb/fill-all")
     assert r.status_code == 200
+
+
+def test_enrichment_pause_is_refcounted_not_a_flag(monkeypatch):
+    """A PSN sync chains follow-up jobs that deliberately overlap. With a plain
+    bool, the FIRST to finish resumed the enrichment and artwork-verification
+    workers while the others were still writing — three writers on one SQLite
+    connection, which is the contention behind the post-import freeze."""
+    from backend import worker_state
+
+    monkeypatch.setattr(worker_state, "_pause_depth", 0)
+    assert worker_state.is_paused() is False
+
+    worker_state.pause_enrichment()  # sync starts
+    worker_state.pause_enrichment()  # chained artwork fill starts
+    assert worker_state.is_paused() is True
+
+    worker_state.resume_enrichment()  # the fast one finishes first
+    assert worker_state.is_paused() is True, "still paused while the other job writes"
+
+    worker_state.resume_enrichment()  # last one finishes
+    assert worker_state.is_paused() is False
+
+
+def test_resume_cannot_drive_the_counter_negative(monkeypatch):
+    """An unbalanced resume must not leave the worker permanently paused."""
+    from backend import worker_state
+
+    monkeypatch.setattr(worker_state, "_pause_depth", 0)
+    worker_state.resume_enrichment()
+    worker_state.resume_enrichment()
+    worker_state.pause_enrichment()
+    assert worker_state.is_paused() is True
+    worker_state.resume_enrichment()
+    assert worker_state.is_paused() is False
+
+
+def test_sync_kickoff_reports_as_a_toast(client, db_session):
+    """The Tools cards post with hx-swap="none" and no target, so an inline
+    flash body had nowhere to land — pressing Sync during another sync did
+    nothing visible. Kickoff answers with an OOB toast instead."""
+    from backend import jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    jobs.clear_all()
+
+    # Something already running -> 409, and the reason arrives as a toast.
+    jobs.update(jobs.create(user_id=user.id, kind="steam_sync_full", label="Steam sync").id, status=jobs.JobStatus.RUNNING)
+    r = client.post("/integrations/psn/sync")
+    assert r.status_code == 409
+    assert b'hx-swap-oob="beforeend:#toast-container"' in r.content
+    # Warning, not danger: nothing broke, it just didn't happen.
+    assert b"toast-warning" in r.content
+    assert b"Steam sync is already running" in r.content
+    jobs.clear_all()
+
+
+def test_htmx_is_told_to_deliver_those_error_toasts():
+    """htmx drops non-2xx responses by default, OOB content included — so the
+    toast above would never render without an explicit beforeSwap allowance."""
+    js = open("frontend/static/js/app.js").read()
+    assert "htmx:beforeSwap" in js
+    seg = js[js.index("htmx:beforeSwap") : js.index("function cgtToast(")]
+    assert "409" in seg and "422" in seg
+    assert "shouldSwap = true" in seg
+
+
+def test_kickoff_and_completion_use_distinct_toast_kinds(client, db_session, monkeypatch):
+    """Starting a sync is information, not success — nothing has finished yet.
+    Being turned away is a warning, not a failure.
+
+    The kickoff is stubbed rather than really launched: a live background task
+    races the assertions (it can finish, or die on no network, before the second
+    request lands) and outlives the test database."""
+    from backend import integrations, jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    jobs.clear_all()
+
+    async def _noop(job_id, user_id, kind):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _noop)
+
+    started = client.post("/integrations/psn/sync")
+    assert started.status_code == 200
+    assert b"toast-info" in started.content
+    assert b"toast-success" not in started.content
+
+    # That job is still pending, so a second request is turned away.
+    jobs.update(jobs.active_jobs_for(user.id)[0].id, status=jobs.JobStatus.RUNNING)
+    rejected = client.post("/integrations/psn/sync")
+    assert rejected.status_code == 409
+    assert b"toast-warning" in rejected.content
+    jobs.clear_all()
+
+
+def test_unhandled_job_kind_never_claims_to_be_steam(db_session):
+    """The fallback used to read "Steam job complete" for ANY unmapped kind, so
+    psn_review_art — chained off a PSN sync — announced itself as a finished
+    Steam sync with Steam totals attached."""
+    from backend import integrations, models
+
+    user = db_session.query(models.User).first() or models.User(name="f", username="f", password_hash="x", api_token="ftok")
+    if user.id is None:
+        db_session.add(user)
+        db_session.commit()
+
+    msg = integrations._format_sync_result(db_session, user, "psn_review_art", {"filled": 3, "no_candidate": 1})
+    assert msg.startswith("PSN review artwork complete")
+    assert "Steam" not in msg
+
+    unknown = integrations._format_sync_result(db_session, user, "brand_new_kind", {})
+    assert "Steam" not in unknown
+    assert "complete" in unknown
+
+
+def test_js_toast_supports_the_same_kinds_as_the_server():
+    """Both builders must agree, or a JS-raised warning silently renders as a
+    success — which is how the transparent-green toast happened."""
+    js = open("frontend/static/js/app.js").read()
+    fn = js[js.index("function cgtToast(") : js.index("function _initToast(")]
+    for kind in ("danger", "warning", "info"):
+        assert f"'{kind}'" in fn, kind
+    css = open("frontend/static/css/theme.css").read()
+    for kind in ("success", "danger", "warning", "info"):
+        assert f".toast.toast-{kind}" in css, kind
+
+
+def test_chained_enrichment_does_not_block_a_sync(client, db_session, monkeypatch):
+    """A PSN sync chains artwork, store metadata and review art. Store metadata
+    is rate-limited to ~1s per release, so on a real library that is many
+    minutes during which a Steam sync was simply refused — by a job the user
+    never started and, worse, couldn't see."""
+    from backend import integrations, jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    async def _noop(job_id, user_id, kind):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _noop)
+
+    for kind, label in (("sgdb_fill_all", "Artwork fill"), ("psn_store_refresh", "Store metadata"), ("psn_review_art", "Review artwork")):
+        jobs.clear_all()
+        jobs.update(jobs.create(user_id=user.id, kind=kind, label=label).id, status=jobs.JobStatus.RUNNING)
+        r = client.post("/integrations/psn/sync")
+        assert r.status_code == 200, f"{kind} should not block a crawl"
+    jobs.clear_all()
+
+
+def test_another_crawl_still_blocks(client, db_session, monkeypatch):
+    """Two crawls at once is the case the guard exists for."""
+    from backend import integrations, jobs, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+
+    async def _noop(job_id, user_id, kind):
+        return None
+
+    monkeypatch.setattr(integrations, "_run_sync_job", _noop)
+    jobs.clear_all()
+    jobs.update(jobs.create(user_id=user.id, kind="steam_sync_full", label="Steam sync").id, status=jobs.JobStatus.RUNNING)
+    r = client.post("/integrations/psn/sync")
+    assert r.status_code == 409
+    assert b"Steam sync is already running" in r.content
+    jobs.clear_all()
+
+
+def test_every_job_service_has_somewhere_to_report(client, db_session):
+    """The poller emits one OOB target per service. A service with no landing
+    element on the page is a job that runs invisibly — which is how the chained
+    artwork fill ended up blocking a button with nothing on screen to explain
+    it."""
+    import re
+
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # Both cards must be in their connected branch — that's where the
+    # per-service indicators live, and it's the only state where those jobs run.
+    user.steam_id64, user.steam_api_key = "7656119", "k" * 32
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    poller = client.get("/integrations/jobs/poll").text
+    emitted = set(re.findall(r'id="sync-indicator-(\w+)"', poller))
+    tools = set(re.findall(r'id="sync-indicator-(\w+)"', client.get("/tools").text))
+    assert emitted <= tools, f"no landing element for: {sorted(emitted - tools)}"

@@ -4,57 +4,87 @@
 {% for r in rows %}
 <div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.key }}">
   <div class="cgt-match-card__body">
-    {% if r.image %}
+    {# Hero + logo overlay, same as import review's cards and the library detail
+       pane. The hero is SGDB's ~1920x620 art, which is what the 96/22 box is
+       shaped for — a horizontal grid cropped into it lost half the image. #}
+    {% if r.hero %}
     <div class="cgt-import-hero">
-      <img class="cgt-detail-hero__img" src="{{ r.image }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__img" data-src="{{ r.hero }}" alt="" loading="lazy">
+      {% if r.logo %}
+      <img class="cgt-detail-hero__logo" data-src="{{ r.logo }}" alt="" loading="lazy">
+      {% endif %}
     </div>
     {% endif %}
 
     <div class="p-3">
-      <table class="cgt-source-table mb-2"><tbody>
-        <tr>
-          <td class="cgt-source-table__label">
-            {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
-          </td>
-          <td class="cgt-source-table__title"><h6 class="mb-0">{{ r.name }}</h6></td>
-          <td class="cgt-source-table__platform">
-            {% if r.trophy_defined %}
-            <span class="tag-badge tag-source">{{ r.trophy_progress }}% &middot; {{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
-            {% endif %}
-          </td>
-        </tr>
-      </tbody></table>
+      {# Flex, not a table: the table's label cell kept its padding even when
+         empty, so a row without a "Set 1/2" badge had its title indented while
+         the reason below stayed flush. Badge trails the title so the title is
+         always at the same x as everything under it. #}
+      <div class="d-flex align-items-baseline gap-2 mb-1">
+        <h6 class="cgt-review-card-title mb-0">{{ r.name }}</h6>
+        {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
+      </div>
 
       <p class="text-secondary small mb-3">{{ r.reason }}</p>
 
-      <div class="cgt-detail-block mb-0">
-        <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
-        <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
-          {% for o in r.options %}
-          <label class="cgt-psn-plat-check">
-            <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
-                   {% if o.selected %}checked{% endif %}>
-            <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-            {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
-          </label>
-          {% endfor %}
+      {# Side by side, matching the played-only card. The question you're here
+         to answer goes left; the evidence for answering it goes right. #}
+      <div class="cgt-psn-card-split">
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
+          {% if r.set_count > 1 %}
+          {# Sony declares the SAME platform list on every set for this title, so
+             nothing but this says they're competing. Without it two sets can
+             claim one platform and the second is silently dropped as a
+             (game, platform) conflict. #}
+          <div class="cgt-completion-record cgt-completion-record--peach mt-2">
+            <span class="small">{{ r.set_count }} trophy sets share this title &mdash; platforms you assign here won&rsquo;t be offered on the {% if r.set_count == 2 %}other{% else %}others{% endif %}.</span>
+          </div>
+          {% endif %}
+          <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
+            {% for o in r.options %}
+            <label class="cgt-psn-plat-check{% if o.claimed_by %} cgt-psn-plat-check--claimed{% endif %}"
+                   {% if o.claimed_by %}title="Already assigned to {{ o.claimed_by }} — tick to claim it here anyway"{% endif %}>
+              <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
+                     onchange="psnRememberDraft('{{ r.key }}')"
+                     {% if o.selected %}checked{% endif %}>
+              <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
+              {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken by {{ o.claimed_by }}</span>
+              {% elif o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Trophies</h6>
+          {% if r.trophy_defined %}
+          <div class="d-flex align-items-baseline gap-2 mt-1 mb-2">
+            <span class="cgt-trophy-progress">{{ r.trophy_progress }}%</span>
+            <span class="text-secondary small">{{ r.trophy_earned }} of {{ r.trophy_defined }}</span>
+          </div>
+          {# One line: the glyph carries the tier, so the word doesn't have to.
+             Four stacked label/value rows overflowed the card's fixed body. #}
+          <div class="cgt-trophy-tiers">
+            {% for t in r.trophy_tiers %}
+            <span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}{% if t.earned == t.defined %} cgt-trophy-tier--complete{% endif %}"
+                  title="{{ t.tier | capitalize }} — {{ t.earned }} of {{ t.defined }}">
+              {% include "partials/_icon_trophy.svg" %}{{ t.earned }}/{{ t.defined }}
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <p class="text-secondary small mb-0 mt-2">No trophy data.</p>
+          {% endif %}
+          {% if r.trophy_last_updated or r.last_played %}
+          <div class="cgt-trophy-meta">
+            {% if r.trophy_last_updated %}Updated {{ r.trophy_last_updated }}{% endif %}
+            {% if r.last_played %}{% if r.trophy_last_updated %} &middot; {% endif %}played {{ r.last_played }}{% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
-
-      {% if r.trophy_last_updated or r.last_played %}
-      <div class="cgt-detail-block mb-0 mt-3">
-        <dl class="cgt-detail-meta small mb-0">
-          {% if r.trophy_last_updated %}
-          <dt>Trophies updated</dt>
-          <dd>{{ r.trophy_last_updated }}</dd>
-          {% endif %}
-          {% if r.last_played %}
-          <dt>Last played</dt>
-          <dd>{{ r.last_played }}</dd>
-          {% endif %}
-        </dl>
-      </div>
-      {% endif %}
     </div>
   </div>
 
@@ -65,7 +95,7 @@
             hx-target="#psn-row-{{ r.key }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"
-            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.key }}')">
+            hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnCardDone('{{ r.key }}'); }">
       Confirm
     </button>
     <button class="btn btn-surface btn-sm"
@@ -73,7 +103,7 @@
             hx-target="#psn-row-{{ r.key }}"
             hx-swap="outerHTML"
             hx-disabled-elt="this"
-            hx-on::after-request="if(event.detail.successful) psnCardDone('{{ r.key }}')">
+            hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnCardDone('{{ r.key }}'); }">
       Dismiss
     </button>
   </div>

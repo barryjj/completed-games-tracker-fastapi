@@ -29,6 +29,7 @@ from collections import Counter
 from urllib.parse import parse_qsl, urlparse
 
 import httpx
+import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from . import models, titles
@@ -534,7 +535,7 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
         # Keep the full set of play categories, not just the last one merged. A
         # game can have several play records (e.g. ps5_native_game + pspc_game);
         # the single `category` field can't tell "played natively on PS5 and
-        # briefly on PC" from "only ever played on PC" — is_pc_only needs all of
+        # briefly on PC" from "only ever played on PC" — is_pc_copy needs all of
         # them to skip Steam duplicates without dropping real PlayStation entries.
         # Read the live lib[key] (not the pre-loop `existing`) so categories from
         # an earlier play record for the same game aren't lost.
@@ -560,16 +561,11 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
 # ─── Snapshot + report (no library writes) ─────────────────────────────────
 
 
+# Path of the crawl dump. Write-only: nothing in the app reads it back — see
+# _write_debug_dump. Kept so open PSN questions can be answered offline from
+# the raw feeds (#181 was settled entirely from one of these files).
 def snapshot_path(user_id: int) -> str:
     return os.path.join(DATA_DIR, f"psn_snapshot_user{user_id}.json")
-
-
-def load_snapshot(user_id: int) -> dict | None:
-    try:
-        with open(snapshot_path(user_id)) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return None
 
 
 def external_id_for(item: dict) -> str | None:
@@ -615,10 +611,31 @@ def _build_report(db: Session, merged: list[dict], filtered: dict, totals: dict,
     }
 
 
-def fetch_snapshot(db: Session, user: models.User) -> dict:
-    """Full crawl → merge → snapshot file → report dict. Touches NOTHING in
-    the library — the import step is a separate, explicitly-triggered job
-    (follow-up PR)."""
+def has_synced(db: Session, user_id: int) -> bool:
+    """Whether a PSN sync has ever run for this user.
+
+    Drives empty-state copy ("run a sync first" vs "nothing left to review").
+    Reads the library and the review queue rather than the debug dump on disk,
+    so a restored database never disagrees with what the app shows.
+    """
+    if db.query(models.PsnReviewCandidate).filter(models.PsnReviewCandidate.user_id == user_id).first():
+        return True
+    return (
+        db.query(models.UserLibraryEntry.id)
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
+        .first()
+        is not None
+    )
+
+
+def crawl(db: Session, user: models.User) -> tuple[list[dict], dict, dict]:
+    """Full PSN crawl → (merged items, report, raw feeds). Writes nothing.
+
+    Was `fetch_snapshot`, which also owned persistence. Splitting the two is
+    what lets the sync hold the crawl in memory and put it straight into the
+    library, instead of round-tripping through a file (#157).
+    """
     if not user.psn_npsso:
         raise ValueError("A PSN NPSSO token is required.")
     if not user.psn_online_id:
@@ -643,37 +660,32 @@ def fetch_snapshot(db: Session, user: models.User) -> dict:
         "played_reported": played_total,
     }
     report = _build_report(db, result["merged"], result["filtered"], totals, purchased)
+    raw = {"purchased": purchased, "trophy_titles": titles, "played": played}
+    return result["merged"], report, raw
 
-    # A crawl replaces the snapshot file, so anything the USER put there has to
-    # be carried across or it's destroyed. That was survivable while fetching
-    # was a rare, deliberate step; now that a sync is one click and expected to
-    # be routine (#157), losing it would re-ask every cross-play and played-only
-    # question on every single sync. Cached review art rides along for the same
-    # reason — otherwise every sync re-hits SGDB for art it already had.
-    previous = load_snapshot(user.id) or {}
-    carried_art = {
-        ext: item["sgdbThumbnail"] for item in previous.get("merged", []) if (ext := external_id_for(item)) and item.get("sgdbThumbnail")
-    }
-    for item in result["merged"]:
-        url = carried_art.get(external_id_for(item))
-        if url:
-            item["sgdbThumbnail"] = url
 
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(snapshot_path(user.id), "w") as f:
-        json.dump(
-            {
-                "fetched_at": datetime.datetime.now(datetime.UTC).isoformat(),
-                "report": report,
-                "merged": result["merged"],
-                # Decisions are keyed by external_id, which survives a re-crawl.
-                "entry_decisions": previous.get("entry_decisions", {}),
-                "played_only_decisions": previous.get("played_only_decisions", {}),
-                "raw": {"purchased": purchased, "trophy_titles": titles, "played": played},
-            },
-            f,
-        )
-    return report
+def _write_debug_dump(user_id: int, report: dict, merged: list[dict], raw: dict) -> None:
+    """Dump the crawl to disk for debugging. NOTHING in the app reads this.
+
+    Kept because the raw feeds are how open PSN questions get answered offline
+    (the PS3/Vita purchased-platform investigation in #181 was settled entirely
+    from this file). Best-effort: a sync must never fail because a debug write
+    did.
+    """
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(snapshot_path(user_id), "w") as f:
+            json.dump(
+                {
+                    "fetched_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                    "report": report,
+                    "merged": merged,
+                    "raw": raw,
+                },
+                f,
+            )
+    except OSError:
+        _logger.warning("PSN debug dump failed for user %s", user_id, exc_info=True)
 
 
 # ─── Import (PR 2 — inserts only, played-only rows via explicit review) ────
@@ -714,18 +726,36 @@ def is_played_only(item: dict) -> bool:
 _NATIVE_PS_CAT_RE = re.compile(r"ps[345]", re.IGNORECASE)
 
 
-def is_pc_only(item: dict) -> bool:
-    """True when the only play evidence is a PC (pspc) playthrough with no
-    native PlayStation play record — a Steam/PC copy surfacing through PSN's PC
-    integration (Stellar Blade, the Until Dawn remake). Not a PlayStation entry."""
+def is_pc_copy(item: dict, steam_keys: set[str]) -> bool:
+    """True when this is the PC copy of a game, surfacing through PSN's PC
+    integration rather than anything you own on a PlayStation.
+
+    The test is evidence, not Sony's platform string, because Sony is not
+    consistent about it: Stellar Blade came back PSPC-only while the Until Dawn
+    remake came back "PS5,PSPC" for the identical situation. Requiring the set
+    to be PC-ONLY therefore missed the second one and minted a phantom PS5
+    entry for a game only owned on Steam.
+
+    So: the set mentions PSPC, the title is already in the Steam library, and
+    there is no PlayStation-side evidence — no purchase, and no play time under
+    a native console category. Trophies alone prove the game was played, never
+    which platform it ran on, so they are deliberately not evidence here.
+    """
+    plats = {p.strip().upper() for p in str(item.get("platform") or "").split(",") if p.strip()}
     cats = list(item.get("playCategories") or [])
     if not cats and item.get("category"):
         cats = [item["category"]]
-    if not cats:
+    if "PSPC" not in plats and not any("pspc" in str(c).lower() for c in cats):
         return False
-    has_pc = any("pspc" in str(c).lower() for c in cats)
-    has_native = any(_NATIVE_PS_CAT_RE.search(str(c)) for c in cats)
-    return has_pc and not has_native
+    if (item.get("normalizedName") or _normalized_name(item.get("name"))) not in steam_keys:
+        return False
+    if "purchased" in (item.get("sources") or []):
+        return False
+    if any(_NATIVE_PS_CAT_RE.search(str(c)) for c in cats):
+        return False
+    # PSPC minutes are PC minutes — the very thing being skipped — so only
+    # console platforms count as evidence of a PlayStation copy.
+    return not any(minutes for platform, minutes in played_minutes_by_platform(item).items() if platform != "PSPC")
 
 
 def _steam_title_keys(db: Session, user_id: int) -> set[str]:
@@ -780,6 +810,111 @@ _CATEGORY_PLATFORM = {"ps5": "PS5", "ps4": "PS4", "ps3": "PS3", "pspc": "PSPC"}
 # quit rather than "this is the version I played" (Forbidden West: 73h on PS5
 # vs 14min on PS4).
 _SUBSTANTIAL_MINUTES = 60
+
+
+# ─── Cross-buy reference data ──────────────────────────────────────────────
+
+REFERENCE_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "reference"))
+_CROSS_BUY_PATH = os.path.join(REFERENCE_DIR, "psn_cross_buy.json")
+_cross_buy_cache: dict | None = None
+
+
+def _load_cross_buy() -> dict:
+    """Known exceptions to the cross-buy assumption, indexed for lookup.
+
+    Sony's feeds cannot express whether a shared trophy list came with a shared
+    entitlement, nor whether a set spanning three platforms is really one list
+    or three — so this is hand-maintained reference data. See the _README in the
+    file. Cached per process; a missing or malformed file degrades to "nothing
+    known", never to a failed sync.
+    """
+    global _cross_buy_cache
+    if _cross_buy_cache is not None:
+        return _cross_buy_cache
+    index: dict = {"by_npcomm": {}, "by_title": []}
+    try:
+        with open(_CROSS_BUY_PATH) as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        _logger.warning("PSN cross-buy reference unreadable at %s — proceeding with no known exceptions", _CROSS_BUY_PATH)
+        _cross_buy_cache = index
+        return index
+    # Bulk confirmations first, so an explicit `titles` entry (which can carry
+    # cross_buy=false) overwrites rather than being overwritten.
+    for title in (raw.get("cross_buy_confirmed") or {}).get("titles") or []:
+        index["by_title"].append(
+            (
+                titles.normalize_for_match(title),
+                {"title": title, "shared_trophies": None, "cross_buy": True, "notes": "", "restricts": False},
+            )
+        )
+    for row in raw.get("titles") or []:
+        entry = {
+            "title": row.get("title", ""),
+            "shared_trophies": row.get("shared_trophies"),
+            "cross_buy": row.get("cross_buy"),
+            "notes": row.get("notes", ""),
+        }
+        # ONLY cross_buy=false restricts. Ownership is the criterion for putting
+        # a row in the library, and separate trophy lists don't make you own the
+        # game less — Axiom Verge and Bastion have per-platform lists AND
+        # cross-buy, so you own both copies and both belong. shared_trophies is
+        # kept as information (it decides which entry the trophy data actually
+        # describes, for #136) but must not suppress an entry.
+        entry["restricts"] = entry["cross_buy"] is False
+        for npcomm in row.get("npcomm") or []:
+            index["by_npcomm"][npcomm] = entry
+        # `aliases` exist because one product ships under several names across
+        # regions and re-releases (The Sly Trilogy / The Sly Collection).
+        for name in [entry["title"], *(row.get("aliases") or [])]:
+            if name:
+                index["by_title"].append((titles.normalize_for_match(name), entry))
+    _cross_buy_cache = index
+    return index
+
+
+# Store SKU prefixes. Not a general platform oracle — Sony reuses CUSA on a
+# handful of Vita/PS3 listings — but for a row we know was PURCHASED it names
+# the SKU that was bought, which is the only per-platform entitlement evidence
+# the feeds carry once a trophy set has overwritten the platform string.
+_TITLEID_PLATFORM = {"CUSA": "PS4", "PPSA": "PS5", "PCSA": "PSVITA", "PCSB": "PSVITA", "PCSE": "PSVITA", "PCSF": "PSVITA", "PCSG": "PSVITA"}
+
+
+def purchased_platform(item: dict) -> str | None:
+    """Platform of the SKU actually bought, or None when nothing was purchased."""
+    if "purchased" not in (item.get("sources") or []):
+        return None
+    tid = str(item.get("titleId") or "")
+    return _TITLEID_PLATFORM.get(tid[:4].upper())
+
+
+def cross_buy_exception(item: dict) -> dict | None:
+    """The reference entry for this item, or None when nothing is known.
+
+    npCommunicationId wins when present — it identifies a trophy set exactly.
+    Title matching falls back to the shared normalizer, so ™, casing, subtitles
+    and edition suffixes don't have to be reproduced in the file.
+    """
+    index = _load_cross_buy()
+    hit = index["by_npcomm"].get(item.get("npCommunicationId"))
+    if hit:
+        return hit
+    name = item.get("displayName") or item.get("name")
+    if not name:
+        return None
+    key = titles.normalize_for_match(name)
+    # Exact beats fuzzy, and an explicit entry beats a bulk confirmation — a
+    # curated cross_buy=false must never lose to the confirmed-cross-buy list.
+    best = None
+    for ref_key, entry in index["by_title"]:
+        tier = titles.titles_match(key, ref_key)
+        if not tier:
+            continue
+        if entry["notes"] or entry["cross_buy"] is False:
+            return entry
+        if best is None or tier == "exact":
+            best = entry
+    return best
 
 
 def platform_candidates(item: dict) -> list[str]:
@@ -970,18 +1105,49 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
     return "updated"
 
 
-def import_snapshot(db: Session, user: models.User) -> dict:
-    """Import the stored snapshot into the library: every purchased/trophy-
-    sourced game (PS_PLUS included — completability is the criterion, per
-    user decision 2026-07-18) becomes source='psn' rows. INSERTS ONLY for
-    existing library data; re-runs update the psn rows idempotently.
-    Cross-play games whose platform is ambiguous are held back for the PSN
-    review page — importing them on a guess would create entries this function
-    has no way to remove. Played-only rows are likewise never touched here. Ends by chaining the match-review scan so overlaps with
-    manual/historical entries surface immediately."""
-    snap = load_snapshot(user.id)
-    if not snap:
-        raise ValueError("No PSN snapshot found — run a PSN sync first.")
+def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: str) -> models.PsnReviewCandidate | None:
+    """Record a game the sync can't place as a review row, or refresh one.
+
+    A decided row (confirmed/dismissed) keeps its status — that is how
+    decisions survive a re-sync now, with no separate decisions file to carry
+    across. Its crawl payload is still refreshed, since trophy progress and
+    playtime move and the row is what the UI renders from.
+
+    Returns the row only when it's pending, so callers can count real work.
+    """
+    ext_id = external_id_for(item)
+    if not ext_id:
+        return None
+    row = (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.external_id == ext_id)
+        .first()
+    )
+    if row is None:
+        row = models.PsnReviewCandidate(user_id=user.id, external_id=ext_id, kind=kind, status="pending")
+        db.add(row)
+    row.title = item.get("displayName") or item.get("name") or ext_id
+    row.kind = kind
+    row.raw_data = item
+    return row if row.status == "pending" else None
+
+
+def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
+    """Add every game whose platform PSN settles; route the rest to review.
+
+    PS_PLUS included — completability is the criterion (user decision
+    2026-07-18). INSERTS ONLY for existing library data; re-runs update the psn
+    rows idempotently. Cross-play games PSN can't settle become review rows
+    rather than guesses: import creates entries and has no way to un-create
+    them, so a wrong platform would need manual cleanup. Played-only activity
+    likewise. Ends by chaining the match-review scan so overlaps with
+    manual/historical entries surface immediately.
+
+    Takes the merged crawl in memory rather than reading it back off disk. The
+    snapshot file was a proof-of-concept staging area from when a crawl was
+    forbidden to touch the library; keeping it in the read path let it drift
+    from the library it described (#157).
+    """
 
     added = updated = 0
     skipped_no_platform = 0
@@ -992,40 +1158,43 @@ def import_snapshot(db: Session, user: models.User) -> dict:
     needs_review = 0
     played_only = 0
     steam_keys = _steam_title_keys(db, user.id)
-    entry_decisions = snap.get("entry_decisions", {})
-    for item in snap.get("merged", []):
+    # One query, not one per game — this loop runs over ~1000 items.
+    decided = {
+        r.external_id: r
+        for r in db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.status != "pending")
+        .all()
+    }
+    for item in merged:
         if is_played_only(item):
-            played_only += 1
+            if _upsert_review_candidate(db, user, item, "played_only") is not None:
+                played_only += 1
             continue
-        # Belt-and-suspenders: the non-game filter runs at fetch time, but a
-        # snapshot taken before the filter was fixed can still hold a beta/demo
-        # — never import one regardless of when the snapshot was built.
+        # Belt-and-suspenders: the non-game filter runs at crawl time, but
+        # never import a beta/demo regardless of what reaches here.
         if is_non_game(item):
             skipped_non_game += 1
             continue
         # A pspc (PC) game already in the Steam library is the same copy showing
         # up through PSN's PC integration — skip it rather than mint a phantom
         # PlayStation entry (e.g. Stellar Blade, the Until Dawn remake).
-        if is_pc_only(item) and (item.get("normalizedName") or _normalized_name(item.get("name"))) in steam_keys:
+        if is_pc_copy(item, steam_keys):
             skipped_pc_dupe += 1
             continue
         if not external_id_for(item):
             skipped_no_id += 1
             continue
-        # A reviewed cross-play game becomes one entry per chosen platform,
-        # each with the format picked at review time (#163). An empty decision
-        # means "don't import this one".
-        decided = entry_decisions.get(external_id_for(item))
-        # Cross-play games PSN can't settle are HELD BACK rather than imported
-        # on a guess: import creates entries and can't un-create them, so a
-        # wrong platform would need manual cleanup. They go to the review page
-        # and surface as needs-attention until the user decides.
-        if decided is None and len(platform_candidates(item)) > 1:
-            needs_review += 1
+        # An already-decided cross-play game re-imports its chosen platforms, so
+        # a re-sync refreshes their playtime like any other psn row. A dismissed
+        # one has an empty list and so imports nothing.
+        row = decided.get(external_id_for(item))
+        if row is None and len(platform_candidates(item)) > 1:
+            if _upsert_review_candidate(db, user, item, "cross_play") is not None:
+                needs_review += 1
             continue
-        if decided is not None:
-            for choice in decided:
-                platform_id = models.resolve_platform_id(db, choice["platform"])
+        if row is not None:
+            for choice in row.chosen_platforms or []:
+                platform_id = models.resolve_platform_id(db, choice)
                 if platform_id is None:
                     skipped_no_platform += 1
                     continue
@@ -1071,20 +1240,24 @@ def import_snapshot(db: Session, user: models.User) -> dict:
 
 
 def sync_library(db: Session, user: models.User) -> dict:
-    """Crawl PSN and add the unambiguous games to the library, in one step.
+    """Crawl PSN and add what it can place, in one step — Steam sync for PSN.
 
-    The Steam mental model (#157): one button, entries appear, and the handful
-    of genuine questions land in review queues instead of gating the write
-    behind a second click. The old fetch→review-report→import sequence existed
-    so the PS_PLUS in/out call could be made against real counts before
-    anything was written; that decision is settled (import all), so the gate
-    was pure friction.
+    The crawl stays in memory and goes straight into the library; the only
+    thing written to disk is a debug dump of the raw feeds, which nothing in
+    the app reads back. That ordering is the point of #157: the old flow
+    staged a crawl in a JSON file and then read the app's state back out of it,
+    which is not how any other integration here works and let the file drift
+    from the library it claimed to describe.
 
     Returns the import's result with the crawl's report folded in, so one job
-    completion can report the library delta AND all three review queues.
+    completion can report the library delta AND every review queue.
     """
-    report = fetch_snapshot(db, user)
-    result = import_snapshot(db, user)
+    merged, report, raw = crawl(db, user)
+    result = import_merged(db, user, merged)
+    user.psn_last_sync_report = report
+    user.psn_last_synced_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+    _write_debug_dump(user.id, report, merged, raw)
     return {**result, "report": report}
 
 
@@ -1092,22 +1265,31 @@ def sync_library(db: Session, user: models.User) -> dict:
 
 
 def played_only_rows(db: Session, user_id: int) -> list[dict]:
-    """Review rows for the PSN page: every played-only item in the snapshot
-    plus its suggestion and any recorded decision."""
-    snap = load_snapshot(user_id)
-    if not snap:
-        return []
-    decisions = snap.get("played_only_decisions", {})
+    """Played-only review rows: activity with no purchase or trophy behind it.
+
+    A disc, a demo, someone else's account on your console — Sony's data can't
+    tell them apart, so these are asked rather than guessed. Decided rows stay
+    in the list showing what was chosen, since this queue lives inline on the
+    PSN page rather than as its own queue.
+    """
     rows = []
-    for item in snap.get("merged", []):
-        if not is_played_only(item):
-            continue
-        ext_id = external_id_for(item)
+    for cand in (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind == "played_only")
+        .all()
+    ):
+        item = cand.raw_data or {}
         action, reason = played_only_suggestion(item)
         rows.append(
             {
-                "external_id": ext_id,
-                "name": item.get("displayName") or item.get("name"),
+                "external_id": cand.external_id,
+                "name": cand.title,
+                # Same art the cross-play rows get — these are rows of the same
+                # table and the fill job never distinguished them; only the
+                # templates did, which made one queue look unfinished.
+                "image": cand.thumbnail_url or (item.get("image") or {}).get("url"),
+                "hero": cand.hero_url or cand.thumbnail_url,
+                "logo": cand.logo_url,
                 "category": item.get("category"),
                 "service": item.get("service"),
                 "minutes": duration_to_minutes(item.get("playDuration")) or 0,
@@ -1116,31 +1298,45 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
                 "last_played": (item.get("lastPlayed") or "")[:10],
                 "suggested": action,
                 "reason": reason,
-                "decision": decisions.get(ext_id),
+                "decision": cand.chosen_platforms if cand.status != "pending" else None,
             }
         )
     return rows
 
 
-def owned_platforms(snap: dict) -> set[str]:
-    """PlayStation consoles the snapshot PROVES the account owns.
+def owned_platforms(db: Session, user_id: int) -> set[str]:
+    """PlayStation consoles this account is PROVEN to own.
 
-    Two things prove hardware. A trophy set covering exactly one platform: you
-    cannot have a PS3-only set without a PS3. And a play record, whose category
-    names the console it ran on — logged time on ps5_native_game means a PS5.
-    (A cross-play set proves nothing on its own: it lists every platform the
-    game shipped on, not the ones you own.)
+    Two things prove hardware. A game the sync could place on exactly one
+    platform — you cannot have a PS3-only trophy set without a PS3 — and those
+    are already library entries, so the evidence lives there. And a play
+    record, whose category names the console it ran on.
 
-    Union those and you get the hardware actually in play, which is the only
-    defensible default for the ambiguous sets — a Vita-only library defaults to
-    Vita, an account with evidence for all four defaults to all four.
+    A cross-play set proves nothing on its own: it lists every platform the
+    game shipped on, not the ones you own. Which is why those are the rows
+    being asked about.
+
+    Comparison goes through resolve_platform_id, NOT string munging: trophy
+    feeds say "PSVITA" while the platforms table says "PlayStation Vita", so
+    an earlier uppercase-and-strip-spaces version silently proved nothing for
+    PS3 or Vita and left most rows defaulting to PS4 alone.
     """
-    proven: set[str] = set()
-    for item in snap.get("merged", []):
-        candidates = platform_candidates(item)
-        if len(candidates) == 1:
-            proven.add(candidates[0])
-        for platform, minutes in played_minutes_by_platform(item).items():
+    owned_ids = {
+        pid
+        for (pid,) in db.query(models.GameRelease.platform_id)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
+        .distinct()
+        .all()
+        if pid
+    }
+    proven = {token for token in _PS_PLATFORM_RANK if models.resolve_platform_id(db, token) in owned_ids}
+    for cand in (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.status == "pending")
+        .all()
+    ):
+        for platform, minutes in played_minutes_by_platform(cand.raw_data or {}).items():
             if minutes:
                 proven.add(platform)
     return proven
@@ -1163,166 +1359,267 @@ def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
 
 
 def import_review_rows(db: Session, user_id: int) -> list[dict]:
-    """Everything the import can't settle on its own — one row per trophy set,
-    one checkbox per platform that set covers.
+    """Pending cross-play rows — one per trophy set, one checkbox per platform.
 
     A cross-play set covers several platforms and never says which you own, and
     cross-buy means the answer is often more than one (Shovel Knight: Treasure
     Trove is a single PS3,PSVITA,PS4 set) — so platforms are checkboxes,
-    pre-ticked with every platform in the set the account is known to own (see
-    `owned_platforms`), and unticking them all skips the game.
+    pre-ticked with every platform in the set this account is known to own (see
+    `owned_platforms`). Unticking them all is the same as dismissing.
 
     **One row per trophy set, not per game.** Sony hands out several sets for
-    the same title — Crimsonland has NPWR06670 at 90% and NPWR06085 at 23%,
-    both declaring the identical PS3,PSVITA,PS4 — and no field in any feed says
-    which set is which console. They are two real progress records that want
-    two library entries, so they get asked about separately and the row carries
-    its trophy progress, which is the only thing that tells them apart.
+    one title — Crimsonland has NPWR06670 at 90% and NPWR06085 at 23%, both
+    declaring the identical PS3,PSVITA,PS4 — and no field in any feed says
+    which set covers which console. They are two real progress records wanting
+    two library entries, so they are asked about separately and each row
+    carries its trophy progress, the only thing that tells them apart.
 
-    Games the import can settle never appear, and neither do ones already
-    actioned: confirming here CREATES the entries, so a decided row leaves the
-    list the way a merged pair leaves match review.
+    Confirming CREATES the entries, so a decided row leaves the list the way a
+    merged pair leaves match review.
     """
-    snap = load_snapshot(user_id)
-    if not snap:
-        return []
-    decisions = snap.get("entry_decisions", {})
-    owned = owned_platforms(snap)
-    # Sets sharing a normalized title are the ones a user has to tell apart, and
-    # they're the ones that look like duplicates. Count them up front so the row
-    # can say "trophy set 1 of 2" instead of appearing twice for no stated reason.
-    by_name: dict[str, int] = {}
-    for item in snap.get("merged", []):
-        if is_played_only(item) or len(platform_candidates(item)) < 2:
-            continue
-        name = item.get("normalizedName") or ""
-        by_name[name] = by_name.get(name, 0) + 1
-    seen: dict[str, int] = {}
+    candidates = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.kind == "cross_play",
+            models.PsnReviewCandidate.status == "pending",
+        )
+        .all()
+    )
+    owned = owned_platforms(db, user_id)
+
+    # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
+    # INCLUDED. Two things need them:
+    #
+    #   1. "Set 1 of 2" has to keep saying 2 after one is confirmed, or the
+    #      surviving row stops explaining why it looked like a duplicate.
+    #   2. A platform a sibling already claimed is spoken for. Both Crimsonland
+    #      sets declare the identical PS3,PSVITA,PS4 — nothing distinguishes
+    #      them — so without this both could claim the same platform and
+    #      _import_one would silently drop the second as a (game, platform)
+    #      conflict. That's how the 90% set's data vanished and Vita ended up
+    #      showing 23%.
+    siblings: dict[str, list] = {}
+    for cand in (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind == "cross_play")
+        .all()
+    ):
+        siblings.setdefault((cand.raw_data or {}).get("normalizedName") or "", []).append(cand)
+    for group in siblings.values():
+        group.sort(key=lambda c: c.external_id or "")
+
+    claimed_by: dict[str, dict[str, str]] = {}
+    for name, group in siblings.items():
+        for pos, cand in enumerate(group):
+            if cand.status == "pending":
+                continue
+            for platform in cand.chosen_platforms or []:
+                claimed_by.setdefault(name, {})[platform] = f"set {pos + 1}"
 
     rows = []
-    for item in snap.get("merged", []):
-        if is_played_only(item):
+    for cand in candidates:
+        item = cand.raw_data or {}
+        options = platform_candidates(item)
+        if not options:
             continue
-        candidates = platform_candidates(item)
-        # A single-platform set answers itself; ask only when it's ambiguous.
-        if len(candidates) < 2:
-            continue
-        ext_id = external_id_for(item)
-        if not ext_id or ext_id in decisions:
-            continue  # already actioned — its entries exist, or it was skipped
         name = item.get("normalizedName") or ""
-        seen[name] = seen.get(name, 0) + 1
+        group = siblings.get(name, [])
+        sets_for_title = len(group) or 1
+        set_index = next((i + 1 for i, c in enumerate(group) if c.external_id == cand.external_id), 1)
+        taken = claimed_by.get(name, {})
 
-        sets_for_title = by_name.get(name, 1)
         trusted = _trophy_hint_is_trustworthy(item, sets_for_title)
         minutes = played_minutes_by_platform(item) if trusted else {}
         if trusted:
             _resolved, reason, _confident = resolve_platform_choice(item)
         elif sets_for_title > 1:
-            # Say what's actually known rather than quoting a play stat that
-            # may belong to the other trophy set for the same game.
+            # Say what's known rather than quoting a play stat that may belong
+            # to the other trophy set for the same game.
             reason = f"{sets_for_title} trophy sets for this title — PSN doesn't say which platform each covers"
         else:
             reason = "Matched by title only — PSN gives no platform for this trophy set"
 
-        # Default: everything in the set that this account can actually play.
-        # Falling back to all candidates keeps a fresh account (nothing proven
-        # yet) from defaulting to nothing at all.
-        default = [p for p in candidates if p in owned] or candidates
+        # Default: everything in the set this account can actually play.
+        # Absence of evidence is not evidence of absence — PSN reports play data
+        # only for PS4 and later, so a PS3 or Vita copy can never be confirmed
+        # or denied from the feeds. Over-offering costs a row you delete;
+        # under-offering costs a completion with nowhere to attach.
+        default = [p for p in options if p in owned] or options
+        # Never pre-tick a platform a sibling set already took. It stays
+        # offered — you might know something the data doesn't — but choosing it
+        # is now a deliberate override rather than the path of least resistance.
+        default = [p for p in default if p not in taken] or [p for p in options if p not in taken]
+
+        # ...unless the reference file knows this title breaks that assumption:
+        # separate trophy lists (so this set covers ONE platform) or separate
+        # purchases (so owning one implies nothing). Then only platforms with
+        # actual play evidence are pre-ticked, and the row says why — a wrong
+        # reference entry must be visible and correctable, never silent.
+        exception = cross_buy_exception(item)
+        if exception and exception["restricts"]:
+            # Evidence here means an entitlement or play time on THAT platform —
+            # a purchase names the SKU bought, which is the only per-platform
+            # ownership signal left once a trophy set has overwritten the
+            # platform string. Without it a bought-on-PS4 row pre-ticks nothing.
+            bought = purchased_platform(item)
+            default = [p for p in options if minutes.get(p) or p == bought]
+            why = "Sold separately per platform"
+            reason = f"{why} — {exception['notes']}" if exception["notes"] else f"{why} — tick only what you own"
 
         earned = item.get("earnedTrophies") or {}
         defined = item.get("trophies") or {}
         rows.append(
             {
-                "key": ext_id,
-                "external_id": ext_id,
-                "name": item.get("displayName") or item.get("name"),
+                "key": cand.external_id,
+                "external_id": cand.external_id,
+                "name": cand.title,
                 "reason": reason,
-                # A cached SGDB horizontal grid first — PSN's own image is a
-                # square icon0.png, which is the wrong shape for a review card's
-                # hero and makes this queue look nothing like the others. Same
-                # placeholder-art idea as import review's candidate thumbnails,
-                # with the snapshot standing in for the candidate row.
-                "image": item.get("sgdbThumbnail") or (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
+                # SGDB grid first — PSN's own image is a square icon0.png, the
+                # wrong shape for a review card's hero.
+                "image": cand.thumbnail_url or (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
+                # Card view shows a hero with the logo over it, like every other
+                # review card. Falls back to the grid so a row whose hero fetch
+                # failed still renders something rather than an empty box.
+                "hero": cand.hero_url or cand.thumbnail_url or (item.get("image") or {}).get("url"),
+                "logo": cand.logo_url,
                 "trophy_progress": item.get("trophyProgress"),
                 "trophy_earned": sum(v or 0 for v in earned.values()),
                 "trophy_defined": sum(v or 0 for v in defined.values()),
+                # Per-tier, Sony's own order. The feed already carries this and
+                # a summed chip threw it away — it's also the shape trophy
+                # tracking (#136) needs, so surfacing it now is a step toward
+                # that rather than decoration.
+                "trophy_tiers": [
+                    {"tier": tier, "earned": earned.get(tier) or 0, "defined": defined.get(tier) or 0}
+                    for tier in ("platinum", "gold", "silver", "bronze")
+                    if defined.get(tier)
+                ],
                 "trophy_last_updated": (item.get("trophyLastUpdated") or "")[:10],
-                # 1-based position among same-titled sets, and how many there
-                # are — only rendered when there's more than one.
-                "set_index": seen[name],
-                "set_count": by_name.get(name, 1),
+                "set_index": set_index,
+                "set_count": sets_for_title,
                 "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
                 "total_minutes": sum(minutes.values()),
-                "options": [{"platform": p, "selected": p in default, "minutes": minutes.get(p, 0)} for p in candidates],
+                "restricted": bool(exception and exception["restricts"]),
+                "options": [
+                    {"platform": p, "selected": p in default, "minutes": minutes.get(p, 0), "claimed_by": taken.get(p)} for p in options
+                ],
             }
         )
     rows.sort(key=lambda r: ((r["name"] or "").casefold(), r["set_index"]))
     return rows
 
 
-def review_thumbnail_gaps(user_id: int) -> list[dict]:
-    """Review rows with no cached art yet — {external_id, title} each.
+def review_thumbnail_gaps(db: Session, user_id: int) -> list[dict]:
+    """Pending review rows with no art yet — {external_id, title} each.
 
-    Fed to the SGDB placeholder fill. Nothing exists in the DB to hang art on
-    (entries are only created when a row is confirmed), so the snapshot plays
-    the part `ImportCandidate.thumbnail_url` plays for the spreadsheet queue.
+    Fed to the SGDB placeholder fill. These rows have no library entry to
+    borrow art from (entries exist only once a row is confirmed), which is
+    exactly ImportCandidate's position — hence the same thumbnail_url column.
     """
-    snap = load_snapshot(user_id)
-    if not snap:
-        return []
-    decisions = snap.get("entry_decisions", {})
-    gaps = []
-    for item in snap.get("merged", []):
-        if is_played_only(item) or len(platform_candidates(item)) < 2:
-            continue
-        ext_id = external_id_for(item)
-        if not ext_id or ext_id in decisions or item.get("sgdbThumbnail"):
-            continue
-        title = item.get("displayName") or item.get("name")
-        if title:
-            gaps.append({"external_id": ext_id, "title": title})
-    return gaps
+    return [
+        {"external_id": c.external_id, "title": c.title}
+        for c in db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.status == "pending",
+            # hero_url too: rows cached before the card used hero art have a
+            # thumbnail but no hero, and would otherwise never be topped up.
+            sa.or_(models.PsnReviewCandidate.thumbnail_url.is_(None), models.PsnReviewCandidate.hero_url.is_(None)),
+        )
+        .all()
+        if c.title
+    ]
 
 
-def save_review_thumbnails(user_id: int, thumbs: dict[str, str]) -> int:
-    """Cache SGDB thumbnail URLs onto the snapshot's merged items."""
-    if not thumbs:
-        return 0
-    snap = load_snapshot(user_id)
-    if not snap:
+def save_review_thumbnails(db: Session, user_id: int, art: dict[str, dict]) -> int:
+    """Cache SGDB art onto the review rows. Values are {thumbnail_url, hero_url,
+    logo_url} — the list view wants the grid, the card wants hero + logo."""
+    if not art:
         return 0
     written = 0
-    for item in snap.get("merged", []):
-        url = thumbs.get(external_id_for(item))
-        if url:
-            item["sgdbThumbnail"] = url
-            written += 1
-    if written:
-        with open(snapshot_path(user_id), "w") as f:
-            json.dump(snap, f)
+    for cand in (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.external_id.in_(list(art)))
+        .all()
+    ):
+        row = art[cand.external_id]
+        cand.thumbnail_url = row.get("thumbnail_url") or cand.thumbnail_url
+        cand.hero_url = row.get("hero_url") or cand.hero_url
+        cand.logo_url = row.get("logo_url") or cand.logo_url
+        written += 1
+    db.commit()
     return written
 
 
-def _find_review_item(snap: dict, key: str) -> dict | None:
-    for item in snap.get("merged", []):
-        if external_id_for(item) == key and len(platform_candidates(item)) > 1 and not is_played_only(item):
-            return item
-    return None
+def review_pending_count(db: Session, user_id: int) -> int:
+    """Rows still awaiting a decision, across both queues."""
+    return (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.status == "pending")
+        .count()
+    )
+
+
+def _pending_candidate(db: Session, user_id: int, key: str, kind: str = "cross_play") -> models.PsnReviewCandidate | None:
+    return (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.external_id == key,
+            models.PsnReviewCandidate.kind == kind,
+            models.PsnReviewCandidate.status == "pending",
+        )
+        .first()
+    )
 
 
 def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: list[str]) -> dict:
-    """Confirm one review row: record the chosen platforms for that trophy set
-    and create its entries. An empty list is a real decision (skip it)."""
-    snap = load_snapshot(user.id)
-    if not snap:
-        raise ValueError("No PSN snapshot found.")
-    item = _find_review_item(snap, key)
-    if item is None:
+    """Confirm one review row: create its entries and retire the row.
+
+    The review IS the action — match review merges on click, import review
+    confirms on click. An empty platform list is a real decision ("own it on
+    nothing"), which is exactly what Dismiss sends.
+    """
+    cand = _pending_candidate(db, user.id, key)
+    if cand is None:
         raise ValueError("That trophy set is not in the PSN review queue.")
-    result = apply_entry_decisions(db, user, {key: [{"platform": p} for p in platforms]})
-    result["name"] = item.get("displayName") or item.get("name") or key
-    return result
+    item = cand.raw_data or {}
+    # Only platforms the trophy set actually covers. A stale page can post
+    # anything, and an entry on a platform Sony never listed is a wrong row
+    # this function has no way to take back.
+    allowed = set(platform_candidates(item))
+    chosen = [p for p in platforms if p in allowed]
+
+    created = 0
+    for platform in chosen:
+        platform_id = models.resolve_platform_id(db, platform)
+        if platform_id is None:
+            continue
+        if _import_one(db, user, item, platform_id) == "added":
+            created += 1
+
+    cand.status = "confirmed" if chosen else "dismissed"
+    cand.chosen_platforms = chosen
+    cand.reviewed_at = datetime.datetime.now(datetime.UTC)
+    db.commit()
+
+    # Sibling sets for the same title are already rendered, and their platform
+    # options just changed — what this row claimed is no longer free. The caller
+    # refreshes the queue rather than leaving stale cards offering platforms
+    # that are now spoken for.
+    name = (item.get("normalizedName") or "").strip()
+    stale = bool(name) and any(
+        (c.raw_data or {}).get("normalizedName") == name
+        for c in db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user.id,
+            models.PsnReviewCandidate.kind == "cross_play",
+            models.PsnReviewCandidate.status == "pending",
+        )
+        .all()
+    )
+    return {"name": cand.title, "created": created, "platforms": chosen, "siblings_stale": stale}
 
 
 def dismiss_entry_decision(db: Session, user: models.User, key: str) -> dict:
@@ -1331,101 +1628,58 @@ def dismiss_entry_decision(db: Session, user: models.User, key: str) -> dict:
     return confirm_entry_decision(db, user, key, [])
 
 
-def apply_entry_decisions(db: Session, user: models.User, decisions: dict[str, list[dict]]) -> dict:
-    """Record the reviewed platforms AND create the entries, in one action.
-
-    The review IS the action — match review merges on click, import review
-    confirms on click — not a staging step needing a second import run. An empty
-    platform list is a real decision (skip this game) and is recorded so it
-    stops appearing as work.
-    """
-    written = record_entry_decisions(user.id, decisions)
-    snap = load_snapshot(user.id)
-    by_ext = {external_id_for(i): i for i in (snap or {}).get("merged", [])}
-    stored = (snap or {}).get("entry_decisions", {})
-
-    created = skipped = 0
-    for ext_id in decisions:
-        item = by_ext.get(ext_id)
-        if item is None:
-            continue
-        choices = stored.get(ext_id) or []
-        if not choices:
-            skipped += 1
-            continue
-        for choice in choices:
-            platform_id = models.resolve_platform_id(db, choice["platform"])
-            if platform_id is None:
-                continue
-            if _import_one(db, user, item, platform_id) == "added":
-                created += 1
+def _record_decision(db: Session, user_id: int, external_id: str, decision: dict) -> None:
+    """Retire a played-only row with what was decided about it."""
+    cand = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.external_id == external_id,
+            models.PsnReviewCandidate.kind == "played_only",
+        )
+        .first()
+    )
+    if cand is None:
+        raise ValueError("Played-only entry is not in the review queue.")
+    cand.status = "dismissed" if decision.get("action") == "skipped" else "confirmed"
+    # Reuses chosen_platforms as the decision record: for played-only the
+    # answer is an action, not a platform list, and a second JSON column for
+    # one variant is not worth a migration.
+    cand.chosen_platforms = decision
+    cand.reviewed_at = datetime.datetime.now(datetime.UTC)
     db.commit()
-    return {"reviewed": written, "created": created, "skipped": skipped}
 
 
-def record_entry_decisions(user_id: int, decisions: dict[str, list[dict]]) -> int:
-    """Persist the reviewed platform+format choices. Returns the number of
-    games recorded. Platforms are validated against each item's own trophy set;
-    an empty list is a valid decision meaning "don't import this at all"."""
-    snap = load_snapshot(user_id)
-    if not snap:
-        raise ValueError("No PSN snapshot found.")
-    by_ext = {external_id_for(i): i for i in snap.get("merged", [])}
-    store = snap.setdefault("entry_decisions", {})
-    written = 0
-    for ext_id, choices in decisions.items():
-        item = by_ext.get(ext_id)
-        if item is None:
-            continue
-        allowed = set(platform_candidates(item))
-        clean = []
-        for choice in choices:
-            platform = str(choice.get("platform") or "").upper()
-            if platform not in allowed:
-                continue
-            clean.append({"platform": platform})
-        store[ext_id] = clean
-        written += 1
-    if written:
-        with open(snapshot_path(user_id), "w") as f:
-            json.dump(snap, f)
-    return written
-
-
-def _record_decision(user_id: int, external_id: str, decision: dict) -> None:
-    snap = load_snapshot(user_id)
-    if not snap:
-        raise ValueError("No PSN snapshot found.")
-    snap.setdefault("played_only_decisions", {})[external_id] = decision
-    with open(snapshot_path(user_id), "w") as f:
-        json.dump(snap, f)
-
-
-def _find_played_only(snap: dict, external_id: str) -> dict | None:
-    for item in snap.get("merged", []):
-        if is_played_only(item) and external_id_for(item) == external_id:
-            return item
-    return None
+def _find_played_only(db: Session, user_id: int, external_id: str) -> dict | None:
+    cand = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.external_id == external_id,
+            models.PsnReviewCandidate.kind == "played_only",
+        )
+        .first()
+    )
+    return (cand.raw_data or {}) if cand else None
 
 
 def import_played_only(db: Session, user: models.User, external_id: str) -> str:
     """User-clicked: import one played-only row as a library entry."""
-    snap = load_snapshot(user.id)
-    item = snap and _find_played_only(snap, external_id)
+    item = _find_played_only(db, user.id, external_id)
     if not item:
-        raise ValueError("Played-only entry not found in the snapshot.")
+        raise ValueError("Played-only entry is not in the review queue.")
     platform_id = platform_for_item(db, item)
     if platform_id is None:
         raise ValueError("Cannot resolve a platform for this entry.")
     _import_one(db, user, item, platform_id)
     db.commit()
-    _record_decision(user.id, external_id, {"action": "imported"})
+    _record_decision(db, user.id, external_id, {"action": "imported"})
     return item.get("displayName") or item.get("name") or external_id
 
 
 def skip_played_only(db: Session, user: models.User, external_id: str) -> None:
     """User-clicked: record a skip so the row stops asking."""
-    _record_decision(user.id, external_id, {"action": "skipped"})
+    _record_decision(db, user.id, external_id, {"action": "skipped"})
 
 
 def attach_played_only(db: Session, user: models.User, external_id: str, entry_id: int) -> str:
@@ -1433,10 +1687,9 @@ def attach_played_only(db: Session, user: models.User, external_id: str, entry_i
     library entry (the DMC5-SE-on-disc case — activity row and the owned
     game wear different Sony names). Explicit user action, so mutating the
     chosen entry's play stats is the point."""
-    snap = load_snapshot(user.id)
-    item = snap and _find_played_only(snap, external_id)
+    item = _find_played_only(db, user.id, external_id)
     if not item:
-        raise ValueError("Played-only entry not found in the snapshot.")
+        raise ValueError("Played-only entry is not in the review queue.")
     entry = (
         db.query(models.UserLibraryEntry).filter(models.UserLibraryEntry.id == entry_id, models.UserLibraryEntry.user_id == user.id).first()
     )
@@ -1455,6 +1708,6 @@ def attach_played_only(db: Session, user: models.User, external_id: str, entry_i
     }
     release.raw_data = raw
     db.commit()
-    _record_decision(user.id, external_id, {"action": "attached", "entry_id": entry_id})
+    _record_decision(db, user.id, external_id, {"action": "attached", "entry_id": entry_id})
     game = release.game
     return game.display_name or game.title

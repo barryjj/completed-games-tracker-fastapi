@@ -1,6 +1,9 @@
 {# Reusable toast partial.
    Expected context:
-     - kind:  "success" or "danger"
+     - kind:  "success" | "danger" | "warning" | "info"
+              success = it happened · danger = it failed
+              warning = it didn't happen, but nothing broke (a rejected sync)
+              info    = here's what's happening, no action needed (sync started)
      - body:  message text
 
    The outer <div hx-swap-oob="beforeend:#toast-container"> is a wrapper that
@@ -13,8 +16,8 @@
        {%- if error_code %} data-error-code="{{ error_code }}"{% endif %}
        {%- if retry_url %} data-retry-url="{{ retry_url }}"{% endif %}
        {%- if job_label %} data-job-label="{{ job_label }}"{% endif %}
-       role="alert"
-       aria-live="{{ 'assertive' if kind == 'danger' else 'polite' }}"
+       role="{{ 'alert' if kind in ('danger', 'warning') else 'status' }}"
+       aria-live="{{ 'assertive' if kind in ('danger', 'warning') else 'polite' }}"
        aria-atomic="true"
        data-bs-autohide="true"
        data-bs-delay="6000">

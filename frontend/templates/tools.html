@@ -9,6 +9,11 @@
 
 {# Refetches itself when the job poller reports any finished job, so the
    sync/match/import/artwork numbers update without a manual refresh. #}
+{# Catch-all for job kinds with no card of their own — job_service() falls back
+   to "other" precisely so a new kind is never invisible. #}
+<div id="sync-indicator-other"></div>
+<div id="sync-indicator-import"></div>
+
 <div class="cgt-tool-grid" id="tools-cards"
      hx-get="/tools"
      hx-select="#tools-cards"
@@ -37,7 +42,7 @@
       <img src="{{ current_user.steam_avatar_url }}" alt="" width="32" height="32"
            style="border-radius: 3px; flex-shrink: 0;">
       {% endif %}
-      <div class="small">
+      <div class="cgt-tool-card__body">
         <div class="fw-semibold">{{ current_user.steam_persona_name or "Steam user" }}</div>
         <div class="text-secondary">
           {% if current_user.steam_last_synced_at %}
@@ -68,12 +73,10 @@
     <div hx-get="/integrations/steam/enrichment-status"
          hx-trigger="load"
          hx-swap="outerHTML"></div>
-    {# Landing zone for the job poller's OOB "sync in progress" indicator —
-       lived on the old integrations hub; without this div the running-sync
-       spinner had nowhere to render since the hub was retired. #}
-    <div id="sync-indicator"></div>
+    {# Per-service progress: this card shows Steam's job and nothing else. #}
+    <div id="sync-indicator-steam"></div>
     {% else %}
-    <div class="small text-secondary">Import your Steam library and playtime. Set up your Steam sign-in and credentials first.</div>
+    <div class="cgt-tool-card__body text-secondary">Import your Steam library and playtime. Set up your Steam sign-in and credentials first.</div>
     {% endif %}
     <div class="cgt-tool-card__actions">
       {% if current_user.steam_id64 and current_user.steam_api_key %}
@@ -99,9 +102,6 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       Match review
-      {% if pending_matches %}
-      <span class="badge rounded-pill cgt-pending-badge">{{ pending_matches }}</span>
-      {% endif %}
     </div>
     <div class="cgt-tool-stats">
       <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if pending_matches else 'cgt-tool-stat--muted' }}">
@@ -109,11 +109,12 @@
         <div class="cgt-tool-stat__label">Pending review</div>
       </div>
     </div>
-    <div class="small text-secondary">
+    <div class="cgt-tool-card__body text-secondary">
       Synced games that look like existing manual entries.{% if not pending_matches %} All caught up.{% endif %}
     </div>
+    <div id="sync-indicator-match"></div>
     <div class="cgt-tool-card__actions">
-      <a href="/library/match-review" class="btn btn-primary btn-sm">Open review</a>
+      <a href="/tools/match-review" class="btn btn-primary btn-sm">Open review</a>
       <button class="btn btn-surface btn-sm"
               hx-post="/integrations/match-review/scan"
               hx-swap="none"
@@ -125,9 +126,6 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       Spreadsheet import
-      {% if import_pending %}
-      <span class="badge rounded-pill cgt-pending-badge">{{ import_pending }}</span>
-      {% endif %}
     </div>
     {% if import_pending %}
     <div class="cgt-tool-stats">
@@ -136,32 +134,32 @@
         <div class="cgt-tool-stat__label">Imports to review</div>
       </div>
     </div>
-    <div class="cgt-breakdown small">
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=add_to_existing">
+    <div class="cgt-breakdown cgt-tool-card__body">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=add_to_existing">
         <span class="cgt-breakdown__num cgt-breakdown__num--green">{{ "{:,}".format(import_counts.add_to_existing) }}</span>
         <span class="cgt-breakdown__label">add to existing</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=create_new">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=create_new">
         <span class="cgt-breakdown__num cgt-breakdown__num--blue">{{ "{:,}".format(import_counts.create_new) }}</span>
         <span class="cgt-breakdown__label">create new</span>
       </a>
-      <a class="cgt-breakdown__row" href="/library/import/review?tab=needs_review">
+      <a class="cgt-breakdown__row" href="/tools/import/review?tab=needs_review">
         <span class="cgt-breakdown__num cgt-breakdown__num--pink">{{ "{:,}".format(import_counts.needs_review) }}</span>
         <span class="cgt-breakdown__label">needs review</span>
       </a>
     </div>
     {% else %}
-    <div class="small text-secondary">
+    <div class="cgt-tool-card__body text-secondary">
       Bring in historical completions from a CSV or spreadsheet. Nothing writes to the library without review.
     </div>
     {% endif %}
     <div class="cgt-tool-card__actions">
       {% if import_pending %}
-      <a href="/library/import/review" class="btn btn-primary btn-sm">Open review</a>
-      <a href="/library/import" class="btn btn-surface btn-sm">Upload sheet</a>
+      <a href="/tools/import/review" class="btn btn-primary btn-sm">Open review</a>
+      <a href="/tools/import" class="btn btn-surface btn-sm">Upload sheet</a>
       {% else %}
-      <a href="/library/import" class="btn btn-primary btn-sm">Upload sheet</a>
-      <a href="/library/import/review" class="btn btn-surface btn-sm">Open review</a>
+      <a href="/tools/import" class="btn btn-primary btn-sm">Upload sheet</a>
+      <a href="/tools/import/review" class="btn btn-surface btn-sm">Open review</a>
       {% endif %}
     </div>
   </div>
@@ -175,15 +173,18 @@
         <div class="cgt-tool-stat__label">Missing covers</div>
       </div>
     </div>
-    <div class="small text-secondary">
+    <div class="cgt-tool-card__body text-secondary">
       {% if current_user.steamgriddb_api_key %}
       Bulk-fill missing covers, heroes, and logos from SteamGridDB, or re-verify stored artwork URLs.
       {% else %}
       Bulk artwork tools need a SteamGridDB API key — add one under Settings → Integrations.
       {% endif %}
     </div>
+    {# The artwork fill is chained off a PSN sync, so it starts without anyone
+       pressing anything — it has to be visible or it's a job you can't see. #}
+    <div id="sync-indicator-artwork"></div>
     <div class="cgt-tool-card__actions">
-      <a href="/integrations/steamgriddb" class="btn btn-surface btn-sm">
+      <a href="/integrations/steamgriddb" class="btn btn-primary btn-sm">
         {% if current_user.steamgriddb_api_key %}Open artwork tools{% else %}Configure{% endif %}
       </a>
       {% if missing_covers %}
@@ -213,9 +214,17 @@
       <img src="{{ current_user.psn_avatar_url }}" alt="" width="32" height="32"
            style="border-radius: 3px; flex-shrink: 0;">
       {% endif %}
-      <div class="small">
+      <div class="cgt-tool-card__body">
         <div class="fw-semibold">{{ current_user.psn_online_id }}</div>
-        <div class="text-secondary">PlayStation Network</div>
+        <div class="text-secondary">
+          {# Same line the Steam card carries — "PlayStation Network" restated
+             the card title and told you nothing the card didn't already say. #}
+          {% if current_user.psn_last_synced_at %}
+          Last synced <span class="local-time" data-utc="{{ current_user.psn_last_synced_at.isoformat() }}">{{ current_user.psn_last_synced_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>
+          {% else %}
+          Never synced
+          {% endif %}
+        </div>
       </div>
     </div>
     {% endif %}
@@ -227,13 +236,25 @@
       </div>
     </div>
     {% endif %}
-    <div class="small text-secondary">Fetch your PlayStation library and trophy history, then import into your library.</div>
+    {# No blurb once connected — the Steam card drops its copy at this point
+       too, and "fetch your PlayStation library" is instructions for something
+       already done. The identity block and the count say the state. #}
+    <div id="sync-indicator-psn"></div>
     {% else %}
-    <div class="small text-secondary">Capture your PlayStation sign-in to sync your library and trophy history.</div>
+    <div class="cgt-tool-card__body text-secondary">Capture your PlayStation sign-in to sync your library and trophy history.</div>
     {% endif %}
     <div class="cgt-tool-card__actions">
+      {# Parity with the Steam card: sync from the card, configure elsewhere.
+         Sending the user to a config page to press the button they came for is
+         the thing that made this integration feel two-step (#157). #}
+      {% if current_user.psn_npsso and current_user.psn_online_id %}
+      <button class="btn btn-primary btn-sm"
+              hx-post="/integrations/psn/sync"
+              hx-swap="none"
+              hx-disabled-elt="this">Sync</button>
+      {% endif %}
       {% if current_user.psn_npsso %}
-      <a href="/integrations/psn" class="btn btn-primary btn-sm">Open PSN sync</a>
+      <a href="/integrations/psn" class="btn btn-surface btn-sm">Configure</a>
       {% else %}
       <a href="/integrations/psn" class="btn btn-surface btn-sm">Set up</a>
       {% endif %}
@@ -246,18 +267,15 @@
   <div class="cgt-tool-card">
     <div class="cgt-tool-card__title">
       PSN review
-      {% if psn_review_pending %}
-      <span class="badge rounded-pill cgt-pending-badge">{{ psn_review_pending }}</span>
-      {% endif %}
     </div>
     <div class="cgt-tool-stats">
       <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if psn_review_pending else 'cgt-tool-stat--muted' }}">
         <div class="cgt-tool-stat__value">{{ psn_review_pending or 0 }}</div>
-        <div class="cgt-tool-stat__label">Need a platform</div>
+        <div class="cgt-tool-stat__label">Need a decision</div>
       </div>
     </div>
-    <div class="small text-secondary">
-      Cross-play trophy sets cover several platforms and PSN doesn't say which you own.{% if not psn_review_pending %} Nothing waiting.{% endif %}
+    <div class="cgt-tool-card__body text-secondary">
+      Cross-play trophy sets PSN can't place, and games you played with nothing behind them.{% if not psn_review_pending %} Nothing waiting.{% endif %}
     </div>
     <div class="cgt-tool-card__actions">
       <a href="/tools/psn-review" class="btn btn-primary btn-sm">Open review</a>

@@ -3,9 +3,9 @@
 <div class="d-flex flex-column gap-1">
   {% for entry in entries %}
   <button class="btn btn-sm btn-surface text-start"
-          hx-post="/integrations/psn/played-only/{{ external_id }}/attach"
+          hx-post="/tools/psn-review/{{ external_id }}/played-only/attach"
           hx-vals='{"entry_id": {{ entry.id }}}'
-          hx-target="#psn-snapshot-report" hx-swap="outerHTML"
+          hx-target="#psn-row-{{ external_id }}" hx-swap="outerHTML"
           hx-disabled-elt="this">
     {{ entry.release.game.display_name or entry.release.game.title }}
     <span class="text-secondary">&mdash; {{ entry.release.display_platform }}</span>

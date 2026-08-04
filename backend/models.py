@@ -137,6 +137,12 @@ class User(Base):
     psn_online_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # PSN profile avatar URL (largest size from the profile2 avatarUrls list).
     psn_avatar_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Telemetry from the last PSN crawl — fetched-vs-reported counts per feed,
+    # membership and platform breakdowns. Genuinely about the crawl rather than
+    # the library, so it's stored rather than derived; on the User because
+    # there is exactly one current value per account.
+    psn_last_sync_report: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    psn_last_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # SteamGridDB API key — used to look up community cover art for manual
     # entries, PSN entries, or any DLC/game whose Steam art is missing/ugly.
     steamgriddb_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -587,7 +593,7 @@ class SyncMatchCandidate(Base):
     """Potential duplicate match between a manual library entry and a synced platform game.
 
     Created by the match-detection pass (run automatically after sync, or on demand).
-    Reviewed by the user on /library/match-review.
+    Reviewed by the user on /tools/match-review.
 
     status values:
       pending       – awaiting review
@@ -695,6 +701,64 @@ class ImportRow(Base):
     candidate: Mapped["ImportCandidate"] = relationship("ImportCandidate", back_populates="rows")
 
     __table_args__ = {"sqlite_autoincrement": True}
+
+
+class PsnReviewCandidate(Base):
+    """One PSN game the sync could not place on its own.
+
+    PSN sync adds every game whose platform Sony settles straight to the
+    library, the way Steam sync does. Two questions are left that Sony's data
+    genuinely cannot answer, and they land here as rows to resolve — the same
+    shape ImportCandidate gives the spreadsheet queue.
+
+    This replaces the review state that used to live inside the crawl's JSON
+    snapshot. That file was a proof of concept: it existed because the original
+    PSN PR promised zero library writes and so needed somewhere outside the DB
+    to stage a crawl. Once sync became one click (#157) that promise was gone,
+    but the file stayed in the read path — which let it drift from the library
+    it described (surviving a DB restore still holding decisions about entries
+    that no longer existed).
+
+    kind values:
+      cross_play   – trophy set spans several platforms; which do you own?
+      played_only  – activity with no purchase or trophy behind it (a disc, a
+                     demo, someone else's account on your console)
+
+    status values:
+      pending / confirmed / dismissed — a decided row simply stops being
+      pending, so decisions persist across a re-sync with no extra machinery.
+    """
+
+    __tablename__ = "psn_review_candidates"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    # titleId | npCommunicationId | productId — stable across re-crawls, which
+    # is what lets a re-sync update a row instead of duplicating it.
+    external_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="cross_play", index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending", index=True)
+    # Platforms the user picked on confirm. [] is a real answer ("own it on
+    # nothing") and is why this is nullable-JSON rather than a delimited string.
+    chosen_platforms: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # SGDB art fetched by title — these rows have no library entry to borrow it
+    # from, exactly like ImportCandidate.thumbnail_url. Three types because the
+    # two views want different shapes: the list shows a horizontal grid, the
+    # card shows a hero with the logo overlaid, same as every other review card.
+    thumbnail_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    hero_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The merged crawl item. Display fields (candidate platforms, trophy
+    # progress, play history) are derived from this at render time rather than
+    # flattened into columns, the same way GameRelease.raw_data works.
+    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "external_id", name="uq_psn_review_user_external"),
+        {"sqlite_autoincrement": True},
+    )
 
 
 class Completion(Base):

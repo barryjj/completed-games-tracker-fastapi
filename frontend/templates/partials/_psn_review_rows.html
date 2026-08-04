@@ -5,6 +5,11 @@
    detail tucked into the card view. #}
 {% for r in rows %}
 <tr id="psn-row-{{ r.key }}">
+  {# Only visible while the table carries .psn-select-mode, so normal review
+     stays checkbox-free. Same mechanic as import review's bulk mode. #}
+  <td class="align-middle psn-bulk-cell">
+    <input class="form-check-input psn-bulk-check" type="checkbox" value="{{ r.key }}" onchange="psnBulkSync()">
+  </td>
   <td class="align-middle">
     <div class="d-flex align-items-center gap-2">
       {% if r.image %}
@@ -34,11 +39,14 @@
        Unticking them all and confirming is the same as Dismiss. #}
     <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-2">
       {% for o in r.options %}
-      <label class="cgt-psn-plat-check">
+      <label class="cgt-psn-plat-check{% if o.claimed_by %} cgt-psn-plat-check--claimed{% endif %}"
+             {% if o.claimed_by %}title="Already assigned to {{ o.claimed_by }} — tick to claim it here anyway"{% endif %}>
         <input class="form-check-input me-1" type="checkbox" name="platforms" value="{{ o.platform }}"
+               onchange="psnRememberDraft('{{ r.key }}')"
                {% if o.selected %}checked{% endif %}>
         <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-        {% if o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m</span>{% endif %}
+        {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken</span>
+        {% elif o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m</span>{% endif %}
       </label>
       {% endfor %}
     </div>
@@ -51,7 +59,7 @@
               hx-target="#psn-row-{{ r.key }}"
               hx-swap="outerHTML"
               hx-disabled-elt="this"
-              hx-on::after-request="if(event.detail.successful) psnPendingDelta(-1)">Confirm</button>
+              hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnPendingDelta(-1); }">Confirm</button>
       <button type="button" class="btn btn-primary btn-sm dropdown-toggle dropdown-toggle-split"
               data-bs-toggle="dropdown"
               data-bs-popper-config='{"strategy":"fixed"}'
@@ -63,7 +71,7 @@
                hx-post="/tools/psn-review/{{ r.key }}/dismiss"
                hx-target="#psn-row-{{ r.key }}"
                hx-swap="outerHTML"
-               hx-on::after-request="if(event.detail.successful) psnPendingDelta(-1)">Dismiss &mdash; I don&rsquo;t own this</a></li>
+               hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnPendingDelta(-1); }">Dismiss &mdash; I don&rsquo;t own this</a></li>
       </ul>
     </div>
   </td>
