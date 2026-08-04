@@ -2139,6 +2139,17 @@ body:has(.cgt-match-nav--sticky) {
   padding-bottom: 0.4rem;
   border-bottom: 1px solid var(--ctp-surface0);
 }
+/* The card's one body size. Blurbs, the account identity block and the
+   breakdown rows each used to opt into Bootstrap's .small independently, so
+   they were equal only by coincidence and any one of them could drift.
+   Declared here instead: one number, one place to turn it.
+   Sits below .small (0.875rem) deliberately — in a sparse card the blurb was
+   the largest thing after the stat and competed with it. rem, not em, so it
+   can't compound when a body element ends up nested in another. */
+.cgt-tool-card__body {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
 .cgt-tool-card__actions {
   display: flex;
   gap: 0.5rem;

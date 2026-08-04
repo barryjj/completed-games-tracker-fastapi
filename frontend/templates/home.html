@@ -60,7 +60,7 @@
     {# Per-bucket breakdown, not totals — same reading as the review page's
        tabs so the widget tells you where the work actually is. Zeros go
        muted so quiet buckets don't beg for attention. #}
-    <div class="cgt-breakdown small">
+    <div class="cgt-breakdown cgt-tool-card__body">
       <a class="cgt-breakdown__row" href="/tools/match-review">
         <span class="cgt-breakdown__num {{ 'cgt-breakdown__num--yellow' if pending_matches else 'cgt-breakdown__num--muted' }}">{{ "{:,}".format(pending_matches or 0) }}</span>
         <span class="cgt-breakdown__label">sync matches</span>
@@ -94,7 +94,7 @@
       {% endif %}
     </div>
     {% if not pending_matches and not import_pending and not psn_review_pending and not missing_covers %}
-    <div class="small text-secondary">All caught up.</div>
+    <div class="cgt-tool-card__body text-secondary">All caught up.</div>
     {% endif %}
   </div>
 
@@ -113,12 +113,12 @@
       <a class="cgt-detail-list-row d-flex align-items-center gap-2"
          href="/library?platform={{ row.value | urlencode }}">
         <span class="tag-badge {{ row.css }}">{{ row.label }}</span>
-        <span class="small fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
+        <span class="cgt-tool-card__body fw-semibold ms-auto">{{ "{:,}".format(row.count) }}</span>
       </a>
       {% endfor %}
       {% if platform_breakdown | length > 10 %}
       <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library">
-        <span class="small text-secondary">…and {{ platform_breakdown | length - 10 }} more</span>
+        <span class="cgt-tool-card__body text-secondary">…and {{ platform_breakdown | length - 10 }} more</span>
       </a>
       {% endif %}
     </div>
@@ -142,7 +142,7 @@
       {% endfor %}
     </div>
     {% else %}
-    <div class="small text-secondary">Completions you log will show up here.</div>
+    <div class="cgt-tool-card__body text-secondary">Completions you log will show up here.</div>
     {% endif %}
   </div>
 

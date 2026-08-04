@@ -2778,3 +2778,43 @@ def test_tools_cards_do_not_badge_a_count_they_already_show():
 
     base = open("frontend/templates/base.html").read()
     assert "cgt-pending-badge" in base, "the nav badge should not have been removed"
+
+
+def test_card_body_text_has_one_declared_size():
+    """Blurbs, the account identity block and the breakdown rows each used to
+    opt into Bootstrap's .small on their own, so they matched by coincidence
+    rather than by rule and any one could drift. One class owns the size now."""
+    import re
+
+    css = open("frontend/static/css/theme.css").read()
+    block = css[css.index(".cgt-tool-card__body {") :][:200]
+    assert "font-size:" in block, "the body class must declare the size itself"
+    # rem, not em: a body element nested inside another would compound.
+    assert re.search(r"font-size:\s*[0-9.]+rem", block), "use rem so it cannot compound"
+
+    for name in ("tools.html", "home.html"):
+        html = open(f"frontend/templates/{name}").read()
+        assert 'class="small' not in html, f"{name} still opts into Bootstrap .small for card text"
+
+
+def test_psn_card_drops_its_blurb_once_connected(client, db_session):
+    """The Steam card replaces its copy with the identity block and stats once
+    connected. PSN kept showing "fetch your PlayStation library" to someone who
+    already had — instructions for a job already done, and the reason the two
+    sync cards didn't read as the same component."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    body = client.get("/tools").text
+    assert "Capture your PlayStation sign-in" in body, "disconnected state keeps its copy"
+
+    user.psn_npsso = "npsso-token"
+    user.psn_online_id = "tester"
+    db_session.commit()
+
+    body = client.get("/tools").text
+    assert "Fetch your PlayStation library" not in body
+    assert "Capture your PlayStation sign-in" not in body
+    assert "tester" in body, "identity block replaces the copy"

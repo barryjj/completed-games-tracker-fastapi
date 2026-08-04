@@ -238,6 +238,16 @@ OOB toasts. Muted placeholder cards add `.cgt-tool-card--muted`.
   </div>
 </div>
 ```
+All body text in a tool card — blurbs, the account identity block, breakdown
+rows — uses `.cgt-tool-card__body`, which declares the size in `rem`. Do not
+reach for Bootstrap's `.small` inside a card: three separate opt-ins is how the
+sizes drifted apart in the first place, and `.small` is `em`-based so it
+compounds when nested.
+
+A connected integration card drops its explanatory blurb — the identity block
+and the counts say the state, and instructions for a job already done are
+noise. Keep the copy in the disconnected branch only.
+
 Values are the only colored text; labels stay muted ink (identity is never color-alone).
 **Accent meanings are semantic — reuse them, don't invent new assignments:**
 
