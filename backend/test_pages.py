@@ -2952,3 +2952,69 @@ def test_borderless_needs_no_reapply_after_a_swap():
     i = js.index("htmx:afterSwap")
     block = js[i : js.index("});", i)]
     assert "applyBorderless" not in block, "nothing wipes it now; the re-apply is dead code"
+
+
+def _make_synced_entry(db, user_id, title, platform="Steam", source="steam", parent_id=None):
+    g = models.Game(title=title, display_name=title, parent_id=parent_id)
+    db.add(g)
+    db.flush()
+    rel = models.GameRelease(game_id=g.id, source=source, platform=platform, external_id=f"ext-{g.id}")
+    db.add(rel)
+    db.flush()
+    e = models.UserLibraryEntry(user_id=user_id, release_id=rel.id, import_source=f"{source}_import")
+    db.add(e)
+    db.flush()
+    return e
+
+
+def test_collection_member_does_not_match_the_standalone_release(client, db_session):
+    """Real case: a manual entry for "Devil May Cry 3: Dante's Awakening -
+    Special Edition" was created as a member of "Devil May Cry HD Collection".
+    The owner also has the standalone Steam "Devil May Cry 3: Special Edition".
+    The scanner offered to merge them — but they are different copies, and
+    merging destroys the distinction the manual entry exists to record.
+
+    The veto is one-directional: collection-member manual vs parentless synced.
+    A synced game under the SAME parent still matches normally.
+    """
+    from backend import match_review, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    collection = models.Game(title="Devil May Cry HD Collection", display_name="Devil May Cry HD Collection", is_collection=True)
+    db_session.add(collection)
+    db_session.flush()
+
+    manual = _make_named_entry(db_session, user.id, "Devil May Cry 3: Dante's Awakening - Special Edition")
+    manual.release.game.parent_id = collection.id
+    _make_synced_entry(db_session, user.id, "Devil May Cry 3: Special Edition")
+    db_session.commit()
+
+    match_review.scan_for_matches(db_session, user)
+    db_session.commit()
+    pending = db_session.query(models.SyncMatchCandidate).filter_by(manual_entry_id=manual.id).all()
+    assert pending == [], f"collection member matched a standalone release: {[(c.external_id) for c in pending]}"
+
+
+def test_collection_member_still_matches_within_its_own_collection(client, db_session):
+    """The veto must not blind the scanner entirely — a synced game under the
+    same collection parent is a legitimate match and has to survive."""
+    from backend import match_review, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    collection = models.Game(title="Some HD Collection", display_name="Some HD Collection", is_collection=True)
+    db_session.add(collection)
+    db_session.flush()
+
+    manual = _make_named_entry(db_session, user.id, "Bundled Game Special Edition")
+    manual.release.game.parent_id = collection.id
+    _make_synced_entry(db_session, user.id, "Bundled Game Special Edition", parent_id=collection.id)
+    db_session.commit()
+
+    match_review.scan_for_matches(db_session, user)
+    db_session.commit()
+    pending = db_session.query(models.SyncMatchCandidate).filter_by(manual_entry_id=manual.id).all()
+    assert len(pending) == 1, "same-parent match should still be offered"

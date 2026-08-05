@@ -18,8 +18,10 @@ Scoring tiers:
 
 Algorithm summary
 -----------------
-1. Normalise: lowercase, HTML-unescape, ASCII-fold, & → and, roman numerals → arabic,
-   strip non-alphanumeric, collapse whitespace, drop leading articles.
+1. Normalise via titles.normalize_for_match (shared with the PSN merge and the
+   spreadsheet importer, so the three can't drift): folds accents and look-alikes
+   rather than deleting them, strips trophy/edition/platform suffixes, & → and,
+   roman numerals → arabic. Then HTML-unescape and drop leading articles here.
 2. Tokenise both titles.
 3. Greedy token matching: for each token in the shorter title find the best
    fuzzy-matched token in the longer (SequenceMatcher per token, threshold 0.75).
@@ -44,7 +46,7 @@ from difflib import SequenceMatcher
 
 from sqlalchemy.orm import Session
 
-from backend import models
+from backend import models, titles
 
 MIN_SCORE: float = 0.65
 _TOKEN_FUZZY_THRESHOLD: float = 0.75
@@ -78,17 +80,42 @@ _ROMAN_MAP: dict[str, str] = {
 
 
 def _normalise_tokens(title: str) -> list[str]:
-    """Return a list of normalised tokens for a title."""
-    t = html.unescape(title)
+    """Tokens for comparing GAME TITLES.
+
+    Delegates the folding to titles.normalize_for_match so this path can't
+    drift from the PSN merge and the spreadsheet importer (#180). This used to
+    hold its own copy which did NFKD then encode("ascii", "ignore") — that
+    DELETES anything non-ascii instead of folding it, so "ABZÛ" became "abz",
+    "NINJA GAIDEN Σ2" became "ninjagaiden2", and a Japanese title lost its name
+    entirely. It also converted a standalone "X" inside a name to "10"
+    ("Söldner-X 2" -> "soldner 10 2") and never stripped trophy or edition
+    suffixes, none of which the shared normalizer does.
+
+    Article stripping stays here: it is this matcher's own behaviour and
+    changing it would move every similarity score. Roman conversion is dropped
+    because normalize_for_match already does it, bounded correctly.
+    """
+    t = titles.normalize_for_match(html.unescape(title))
+    return _ARTICLE_RE.sub("", t).strip().split()
+
+
+def _normalise_platform_tokens(name: str) -> list[str]:
+    """Tokens for comparing PLATFORM NAMES — deliberately NOT the title path.
+
+    normalize_for_match strips trailing platform and edition suffixes, which is
+    right for a game title ("Rogue Legacy PS4" -> "rogue legacy") and wrong for
+    a platform name, where that text IS the value. Bare names survive it today,
+    but only because the suffix pattern needs a preceding word — one regex tweak
+    away from silently normalising "PlayStation Vita" down to "playstation".
+    Kept separate so that can't happen by accident.
+    """
+    t = html.unescape(name)
     t = unicodedata.normalize("NFKD", t).encode("ascii", "ignore").decode()
-    t = t.lower()
-    t = t.replace("&", "and")
+    t = t.lower().replace("&", "and")
     t = _NONALNUM_RE.sub(" ", t)
     t = _MULTI_SPACE.sub(" ", t).strip()
     t = _ARTICLE_RE.sub("", t).strip()
-    tokens = t.split()
-    # Roman numeral conversion — whole tokens only
-    return [_ROMAN_MAP.get(tok, tok) for tok in tokens]
+    return [_ROMAN_MAP.get(tok, tok) for tok in t.split()]
 
 
 def _tok_sim(a: str, b: str) -> float:
@@ -239,7 +266,7 @@ def _build_compat_map(db: Session) -> tuple[dict[int, set[int]], dict[str, set[s
 
     # Build normalised name → compatible normalised names map so entries with
     # no linked platform_id can still be matched by string.
-    pid_to_norm = {p.id: " ".join(_normalise_tokens(p.name)) for p in all_platforms}
+    pid_to_norm = {p.id: " ".join(_normalise_platform_tokens(p.name)) for p in all_platforms}
     name_compat: dict[str, set[str]] = {}
     for pid, compat_ids in id_compat.items():
         pn = pid_to_norm.get(pid, "")
@@ -268,11 +295,34 @@ def _platform_compatible(
 
     # At least one side lacks a linked platform_id — fall back to normalised
     # string comparison, with compat name map as a secondary check.
-    manual_norm = " ".join(_normalise_tokens(manual_pstr))
-    synced_norm = " ".join(_normalise_tokens(synced_pstr))
+    manual_norm = " ".join(_normalise_platform_tokens(manual_pstr))
+    synced_norm = " ".join(_normalise_platform_tokens(synced_pstr))
     if manual_norm == synced_norm:
         return True
     return synced_norm in name_compat.get(manual_norm, set()) or manual_norm in name_compat.get(synced_norm, set())
+
+
+def _collection_mismatch(db: Session, manual_game, synced_game) -> bool:
+    """True when the manual entry is a game INSIDE a collection and the synced
+    game is the same title sold standalone. They are not the same copy.
+
+    Real case this exists for: a manual entry for "Devil May Cry 3: Dante's
+    Awakening - Special Edition" created as part of "Devil May Cry HD
+    Collection" was matched against the standalone Steam "Devil May Cry 3:
+    Special Edition", which the user also owns. Same title, different thing —
+    merging them would destroy the distinction the manual entry was created to
+    record.
+
+    Deliberately one-directional: only a *collection-member manual* entry
+    against a *parentless synced* game is rejected. If the synced game sits
+    under the same parent, or the manual entry has no collection parent, this
+    says nothing and normal scoring applies.
+    """
+    parent_id = getattr(manual_game, "parent_id", None)
+    if not parent_id or getattr(synced_game, "parent_id", None) == parent_id:
+        return False
+    parent = db.query(models.Game).filter(models.Game.id == parent_id).first()
+    return bool(parent and parent.is_collection)
 
 
 def scan_for_matches(db: Session, user: models.User) -> dict:
@@ -280,6 +330,9 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
 
     For each manual entry, only the single highest-scoring synced game above
     MIN_SCORE is kept as a candidate — no multiple hits per manual entry.
+
+    Collection members are excluded from matching against standalone synced
+    games — see _collection_mismatch.
 
     Returns counts: {"candidates_added": N, "candidates_updated": N, "pairs_checked": N}
     """
@@ -344,6 +397,8 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
                     id_compat,
                     name_compat,
                 ):
+                    if _collection_mismatch(db, manual.release.game, synced.release.game):
+                        continue
                     exact_synced = synced
                     break
 
@@ -360,6 +415,9 @@ def scan_for_matches(db: Session, user: models.User) -> dict:
                     id_compat,
                     name_compat,
                 ):
+                    continue
+
+                if _collection_mismatch(db, manual.release.game, synced.release.game):
                     continue
 
                 pairs_checked += 1
