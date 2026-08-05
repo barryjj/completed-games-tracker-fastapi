@@ -3018,3 +3018,71 @@ def test_collection_member_still_matches_within_its_own_collection(client, db_se
     db_session.commit()
     pending = db_session.query(models.SyncMatchCandidate).filter_by(manual_entry_id=manual.id).all()
     assert len(pending) == 1, "same-parent match should still be offered"
+
+
+def test_remembered_filters_need_the_opt_in_cookie(client, db_session):
+    """Nothing is remembered unless the box is ticked. Without the opt-in
+    cookie the value cookies must be ignored entirely, or every user gets
+    sticky filters they never asked for."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # The platform <select> only lists platforms the user owns, so the filter
+    # has to actually exist in the library for the option to render at all.
+    _make_named_entry(db_session, user.id, "A PS3 Game", platform="PS3")
+    db_session.commit()
+
+    client.cookies.set("cgt-library-platform", "PS3")
+    body = client.get("/library").text
+    assert 'value="PS3" selected' not in body
+
+    client.cookies.set("cgt-library-remember", "1")
+    body = client.get("/library").text
+    assert 'value="PS3" selected' in body, "opt-in cookie should bind the stored platform"
+
+
+def test_an_explicit_filter_always_beats_the_remembered_one(client, db_session):
+    """A query param is the user changing a filter right now. A stored value
+    must never override it."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _make_named_entry(db_session, user.id, "A PS3 Game", platform="PS3")
+    _make_named_entry(db_session, user.id, "A Steam Game", platform="Steam")
+    db_session.commit()
+
+    client.cookies.set("cgt-library-remember", "1")
+    client.cookies.set("cgt-library-platform", "PS3")
+    body = client.get("/library?platform=Steam").text
+    assert 'value="Steam" selected' in body
+    assert 'value="PS3" selected' not in body
+
+
+def test_remembered_booleans_round_trip(client, db_session):
+    """show_hidden / missing_art are bools, stored as 1/absent — a naive
+    string read would make "" truthy and pin the filter on forever."""
+    _signup_and_login(client)
+    client.cookies.set("cgt-library-remember", "1")
+    # "0" is the trap: as a raw string it is TRUTHY, so a naive read pins the
+    # filter on and there is no way to turn it back off. "" happens to be falsy
+    # either way, which is why it proves nothing on its own.
+    client.cookies.set("cgt-library-show_hidden", "0")
+    body = client.get("/library").text
+    seg = body[body.index('id="lib-show-hidden"') : body.index('id="lib-show-hidden"') + 200]
+    assert "checked" not in seg, 'a stored "0" must read as False, not as a truthy string'
+
+    client.cookies.set("cgt-library-show_hidden", "1")
+    body = client.get("/library").text
+    assert "checked" in body[body.index('id="lib-show-hidden"') : body.index('id="lib-show-hidden"') + 200]
+
+
+def test_filter_memory_uses_cookies_not_localstorage():
+    """PR #123 settled this: the server can't read localStorage, so filters
+    stored there render unfiltered and get re-applied by JS — a visible flash
+    plus a wasted round-trip. Grid size/gap/borderless may use localStorage
+    because they're pure CSS and never change what the server renders."""
+    for name, prefix in (("library.html", "library"), ("completions.html", "completions")):
+        js = open(f"frontend/templates/{name}").read()
+        start = js.index("Remember filters (#189)")
+        block = js[start : js.index("</script>", start)]
+        # Look for real usage, not the comment that explains why it's absent.
+        assert "localStorage." not in block, f"{name} filter memory must not use localStorage"
+        assert f"cgt-' + PREFIX + '-" in block and f"'{prefix}'" in block

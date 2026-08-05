@@ -35,6 +35,7 @@ from .pages_common import (
     _resolve_view_mode,
     get_web_user,
     logger,
+    remembered_filters,
     templates,
 )
 
@@ -94,6 +95,17 @@ def library_page(
     # view-mode toggle JS. Lets the first paint render in the right mode
     # without the visible flicker the old JS-only redirect caused.
     view_mode = _resolve_view_mode(request, view_mode, "cgt-library-view-mode")
+
+    # Opt-in sticky filters (#189). `q` is deliberately excluded — remembering a
+    # search string across sessions is surprising in a way remembering a
+    # platform or sort is not.
+    _f = remembered_filters(
+        request,
+        "library",
+        {"platform": platform, "view": view, "sort": sort, "show_hidden": show_hidden, "missing_art": missing_art},
+    )
+    platform, view, sort = _f["platform"], _f["view"], _f["sort"]
+    show_hidden, missing_art = _f["show_hidden"], _f["missing_art"]
 
     base_q, view, sort = _build_lib_query(db, current_user, q, platform, view, sort, show_hidden, missing_art, view_mode)
 
