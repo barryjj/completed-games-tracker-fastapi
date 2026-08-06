@@ -57,9 +57,15 @@
   </div>
 </form>
 
-{# Most rows arrive pre-ticked correctly from the cross-buy reference, so bulk
-   confirm sends each row's OWN platform selection rather than just its id. #}
-<div id="psn-bulk-bar" class="d-flex align-items-center gap-2 mb-3" hidden>
+{# Sticky footer, matching import review / library / completions. The bulk bar
+   used to sit statically above the table: with 61 rows to decide you'd tick
+   some, scroll down to tick more, and the Confirm/Dismiss buttons were off
+   screen above you — with no back-to-top either, since that lives in this bar
+   on every other long-list page. #}
+<div class="cgt-sticky-actions">
+  {# Most rows arrive pre-ticked correctly from the cross-buy reference, so bulk
+     confirm sends each row's OWN platform selection rather than just its id. #}
+  <div id="psn-bulk-bar" class="d-flex align-items-center gap-2 me-auto" hidden>
   <span class="small text-secondary"><span id="psn-bulk-count">0</span> selected</span>
   <button type="button" class="btn btn-sm btn-surface" onclick="psnSelectAll(true)">Select all</button>
   {# Native hx attributes, not htmx.ajax(): the JS API's promise doesn't settle
@@ -79,6 +85,11 @@
           hx-swap="none"
           hx-disabled-elt="this"
           hx-on::after-request="psnClearActedDrafts(); psnExitSelect(); if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">Dismiss selected</button>
+  </div>
+  <button type="button" id="psn-back-to-top"
+          class="btn btn-surface btn-sm"
+          onclick="window.scrollTo({top:0,behavior:'smooth'})"
+          hidden>&uarr;</button>
 </div>
 
 <div id="psn-review-content">
@@ -359,5 +370,15 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   psnApplyDrafts();
 });
+
+// Same pattern as import review / library — a long decision list buries the
+// filter bar with no way back up otherwise.
+(function () {
+  var btn = document.getElementById('psn-back-to-top');
+  if (!btn) return;
+  function onScroll() { btn.hidden = window.scrollY < 300; }
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+})();
 </script>
 {% endblock %}

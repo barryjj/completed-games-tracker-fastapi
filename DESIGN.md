@@ -320,6 +320,20 @@ Fallback chain: UserArtwork → GameArtwork native (steam/psn) → GameArtwork s
 **No cross-orientation fallback** — stretched art looks worse than a placeholder.
 IGDB/manual entries without `cover_h` should use the SGDB picker to find one.
 
+### Long-list pages: actions go in the sticky footer
+
+Library, Completions, Import review and PSN review all use
+`.cgt-sticky-actions` — a `position: fixed; bottom: 0` bar. **Bulk actions and
+the back-to-top button belong inside it**, not in a static div above the table.
+
+PSN review originally had its bulk Confirm/Dismiss above the list: with a long
+queue you tick rows, scroll down to tick more, and the buttons are off screen
+above you — with no way back up, since back-to-top also lives in that bar. If a
+page can grow past one screen, its actions go in the footer.
+
+`body:has(.cgt-sticky-actions)` already adds the bottom padding so the last row
+isn't hidden behind it.
+
 ### Grid view state (size / gap / borderless)
 
 All three persist in `localStorage` and **all three apply to

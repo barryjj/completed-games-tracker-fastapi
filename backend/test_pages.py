@@ -3086,3 +3086,20 @@ def test_filter_memory_uses_cookies_not_localstorage():
         # Look for real usage, not the comment that explains why it's absent.
         assert "localStorage." not in block, f"{name} filter memory must not use localStorage"
         assert f"cgt-' + PREFIX + '-" in block and f"'{prefix}'" in block
+
+
+def test_every_long_list_page_keeps_its_actions_reachable():
+    """PSN review was the only long-list page whose bulk Confirm/Dismiss sat in
+    a static div above the table. With 61 rows to decide you tick some, scroll
+    down for more, and the buttons are off screen above you — and there was no
+    back-to-top either, because that lives in the sticky bar on every other
+    page. Same component, same behaviour, everywhere."""
+    for name in ("library.html", "import_review.html", "completions.html", "psn_review.html"):
+        html = open(f"frontend/templates/{name}").read()
+        assert "cgt-sticky-actions" in html, f"{name} has no sticky action bar"
+
+    psn = open("frontend/templates/psn_review.html").read()
+    bar = psn.index('class="cgt-sticky-actions"')
+    assert psn.index('id="psn-bulk-bar"') > bar, "bulk bar must live inside the sticky footer"
+    assert 'id="psn-back-to-top"' in psn
+    assert "window.scrollTo({top:0,behavior:'smooth'})" in psn
