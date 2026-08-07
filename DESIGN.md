@@ -320,6 +320,26 @@ Fallback chain: UserArtwork → GameArtwork native (steam/psn) → GameArtwork s
 **No cross-orientation fallback** — stretched art looks worse than a placeholder.
 IGDB/manual entries without `cover_h` should use the SGDB picker to find one.
 
+### Filter memory is opt-in, and lives in cookies
+
+Every filtered page — Library, Completions, Import review, PSN review — carries
+a **"Remember filters"** checkbox. Unticked (the default) nothing persists;
+ticked, the current values are stored and re-stored on each change; unticking
+deletes them.
+
+**Cookies, not localStorage.** The server reads these to bind filters into the
+FIRST render, so the list paints already filtered. localStorage was tried for
+this in PR #123 and abandoned: the server can't read it, so the page renders
+unfiltered and JS re-applies afterwards — a visible flash plus a wasted
+round-trip. Grid size/gap/borderless *may* use localStorage because they are
+pure CSS and never change what the server renders.
+
+Keys are `cgt-<page>-remember` and `cgt-<page>-<filter>`; Import review adds a
+tab segment (`cgt-import-<tab>-<filter>`) because each tab has its own candidate
+pool. An explicit query param always beats a stored value. `q` is never
+persisted on any page — a remembered search string is surprising in a way a
+remembered platform or sort is not.
+
 ### Long-list pages: actions go in the sticky footer
 
 Library, Completions, Import review and PSN review all use

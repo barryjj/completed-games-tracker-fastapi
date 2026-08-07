@@ -33,7 +33,7 @@
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}"
               onclick="psnSetView('card')" title="Card view">&#9638;</button>
     </div>
-    <select class="form-select form-select-sm" name="platform" style="width:auto;"
+    <select class="form-select form-select-sm" id="psn-platform" name="platform" style="width:auto;"
             {% if kind == "played_only" %}hidden{% endif %}
             onchange="htmx.trigger('#psn-review-filters', 'submit')"
             title="Show only trophy sets offering this platform">
@@ -47,6 +47,11 @@
     {# Sort options differ per queue: trophy progress is what tells two sets of
        the same game apart, playtime is what matters for played-only. #}
     {% include "partials/_psn_sort_select.html" %}
+    {# Not a filter — a preference. #}
+    <div class="form-check mb-0 ms-1">
+      <input class="form-check-input" type="checkbox" id="psn-remember-filters">
+      <label class="form-check-label text-secondary" for="psn-remember-filters"><small>Remember filters</small></label>
+    </div>
     {# Bulk mode: reveals row checkboxes; the bar below holds the actions that
        operate on the selection. List view only — the card stack shows one row
        at a time, so there is nothing to select across. Cross-play only, since
@@ -380,5 +385,58 @@ document.addEventListener('DOMContentLoaded', function() {
   window.addEventListener('scroll', onScroll, { passive: true });
   onScroll();
 })();
+
+{# ── Remember filters (#189) ──────────────────────────────────────────────
+   COOKIES, not localStorage: the server reads these to bind the filters into
+   the FIRST render, so the list paints already filtered. localStorage was tried
+   for this in PR #123 and abandoned — the server can't read it, so the page
+   renders unfiltered and JS re-applies afterwards, giving a visible flash and a
+   wasted round-trip. Grid size/gap/borderless legitimately use localStorage
+   because they're pure CSS and never change what the server renders.
+   Checking the box persists whatever is set RIGHT NOW, not just future changes.
+   Unchecking deletes the values outright — no stale state left to surprise. #}
+
+(function () {
+  var PREFIX = 'psn-review';
+  var FIELDS = [{name:'platform',el:'psn-platform'},{name:'sort',el:'psn-sort'},{name:'view',el:'psn-view-field'},{name:'kind',el:'psn-kind-field'}];
+  var box = document.getElementById('psn-remember-filters');
+  if (!box) return;
+
+  function put(name, value, keep) {
+    document.cookie = 'cgt-' + PREFIX + '-' + name + '=' + encodeURIComponent(value) +
+      ';path=/;max-age=' + (keep ? 31536000 : 0) + ';samesite=lax';
+  }
+  function readCookie(name) {
+    var m = document.cookie.match('(^|;)\\s*cgt-' + PREFIX + '-' + name + '\\s*=\\s*([^;]*)');
+    return m ? decodeURIComponent(m[2]) : null;
+  }
+  function currentValue(id) {
+    var el = document.getElementById(id);
+    if (!el) return null;
+    return el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
+  }
+  function persistAll(keep) {
+    FIELDS.forEach(function (f) {
+      var v = currentValue(f.el);
+      if (v === null) return;
+      put(f.name, keep ? v : '', keep);
+    });
+  }
+
+  box.checked = readCookie('remember') === '1';
+  box.addEventListener('change', function () {
+    var on = box.checked;
+    put('remember', on ? '1' : '', on);
+    persistAll(on);
+  });
+  // Re-persist on every filter change while the box is on, so the stored set
+  // always matches what's on screen.
+  FIELDS.forEach(function (f) {
+    var el = document.getElementById(f.el);
+    if (el) el.addEventListener('change', function () { if (box.checked) persistAll(true); });
+  });
+})();
+
+
 </script>
 {% endblock %}

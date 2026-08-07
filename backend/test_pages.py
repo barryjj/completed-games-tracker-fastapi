@@ -1897,6 +1897,7 @@ def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_sess
 
     # Stored the way the browser actually writes it: encodeURIComponent turns
     # the ":" into "%3A", so the server must decode before matching.
+    client.cookies.set("cgt-import-remember", "1")  # filter memory is opt-in (#189)
     client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
 
     # create_new: cookie applies, no query param needed — server renders filtered
@@ -2431,6 +2432,7 @@ def test_stale_filter_cookie_is_dropped_not_silently_applied(client, db_session)
     db_session.commit()
 
     # A cookie naming a platform this tab has no candidates for.
+    client.cookies.set("cgt-import-remember", "1")  # filter memory is opt-in (#189)
     client.cookies.set("cgt-import-create_new-platform", "pid%3A999999")
     body = client.get("/tools/import/review?tab=create_new").text
     client.cookies.delete("cgt-import-create_new-platform")
@@ -2452,6 +2454,7 @@ def test_valid_filter_cookie_is_still_honoured(client, db_session):
     _make_import_candidate(db_session, user.id, "Switch Game", switch)
     db_session.commit()
 
+    client.cookies.set("cgt-import-remember", "1")  # filter memory is opt-in (#189)
     client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
     body = client.get("/tools/import/review?tab=create_new").text
     client.cookies.delete("cgt-import-create_new-platform")
@@ -3103,3 +3106,60 @@ def test_every_long_list_page_keeps_its_actions_reachable():
     assert psn.index('id="psn-bulk-bar"') > bar, "bulk bar must live inside the sticky footer"
     assert 'id="psn-back-to-top"' in psn
     assert "window.scrollTo({top:0,behavior:'smooth'})" in psn
+
+
+def test_filter_memory_is_opt_in_on_every_filtered_page():
+    """Four filtered pages, one contract. Library and Completions had no memory,
+    Import review remembered unconditionally with no way off, PSN review had
+    none — three behaviours across four pages that all look the same."""
+    pages = {
+        "library.html": "lib-remember-filters",
+        "completions.html": "comp-remember-filters",
+        "import_review.html": "import-remember-filters",
+        "psn_review.html": "psn-remember-filters",
+    }
+    for name, box_id in pages.items():
+        html = open(f"frontend/templates/{name}").read()
+        assert f'id="{box_id}"' in html, f"{name} has no Remember filters toggle"
+        assert "Remember filters" in html, name
+
+
+def test_import_review_no_longer_remembers_unconditionally(client, db_session):
+    """It used to bind filter cookies into the render whether or not the user
+    asked. Without the opt-in cookie the stored value must be ignored."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Nintendo Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
+    body = client.get("/tools/import/review?tab=create_new").text
+    assert "Switch Game" in body, "stored filter applied without the opt-in"
+
+    client.cookies.set("cgt-import-remember", "1")
+    body = client.get("/tools/import/review?tab=create_new").text
+    assert "Switch Game" not in body, "opt-in should bind the stored filter"
+
+
+def test_psn_review_filters_are_remembered_when_opted_in(client, db_session):
+    """PSN review had no filter memory at all — the fourth page, and the one
+    the #189 issue text missed."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "npsso", "tester"
+    db_session.commit()
+
+    body = client.get("/tools/psn-review").text
+    assert 'id="psn-remember-filters"' in body
+
+    client.cookies.set("cgt-psn-review-sort", "name")
+    client.cookies.set("cgt-psn-review-remember", "1")
+    r = client.get("/tools/psn-review")
+    assert r.status_code == 200
