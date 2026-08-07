@@ -3088,7 +3088,7 @@ def test_filter_memory_uses_cookies_not_localstorage():
         block = js[start : js.index("</script>", start)]
         # Look for real usage, not the comment that explains why it's absent.
         assert "localStorage." not in block, f"{name} filter memory must not use localStorage"
-        assert f"cgt-' + PREFIX + '-" in block and f"'{prefix}'" in block
+        assert "cgt-' + PREFIX + '-" in block and f"'{prefix}'" in block
 
 
 def test_every_long_list_page_keeps_its_actions_reachable():
