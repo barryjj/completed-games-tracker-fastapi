@@ -320,6 +320,40 @@ Fallback chain: UserArtwork → GameArtwork native (steam/psn) → GameArtwork s
 **No cross-orientation fallback** — stretched art looks worse than a placeholder.
 IGDB/manual entries without `cover_h` should use the SGDB picker to find one.
 
+### Filter memory is opt-in, and lives in cookies
+
+Every filtered page — Library, Completions, Import review, PSN review — carries
+a **"Remember filters"** checkbox. Unticked (the default) nothing persists;
+ticked, the current values are stored and re-stored on each change; unticking
+deletes them.
+
+**Cookies, not localStorage.** The server reads these to bind filters into the
+FIRST render, so the list paints already filtered. localStorage was tried for
+this in PR #123 and abandoned: the server can't read it, so the page renders
+unfiltered and JS re-applies afterwards — a visible flash plus a wasted
+round-trip. Grid size/gap/borderless *may* use localStorage because they are
+pure CSS and never change what the server renders.
+
+Keys are `cgt-<page>-remember` and `cgt-<page>-<filter>`; Import review adds a
+tab segment (`cgt-import-<tab>-<filter>`) because each tab has its own candidate
+pool. An explicit query param always beats a stored value. `q` is never
+persisted on any page — a remembered search string is surprising in a way a
+remembered platform or sort is not.
+
+### Long-list pages: actions go in the sticky footer
+
+Library, Completions, Import review and PSN review all use
+`.cgt-sticky-actions` — a `position: fixed; bottom: 0` bar. **Bulk actions and
+the back-to-top button belong inside it**, not in a static div above the table.
+
+PSN review originally had its bulk Confirm/Dismiss above the list: with a long
+queue you tick rows, scroll down to tick more, and the buttons are off screen
+above you — with no way back up, since back-to-top also lives in that bar. If a
+page can grow past one screen, its actions go in the footer.
+
+`body:has(.cgt-sticky-actions)` already adds the bottom padding so the last row
+isn't hidden behind it.
+
 ### Grid view state (size / gap / borderless)
 
 All three persist in `localStorage` and **all three apply to

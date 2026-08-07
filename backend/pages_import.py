@@ -333,18 +333,24 @@ def import_review_page(
     # fill in whatever the request didn't pass explicitly (explicit params —
     # a live filter change — always win).
     qp = request.query_params
-    if "tab" not in qp:
+    # Opt-in (#189): this page remembered its filters unconditionally, which was
+    # never a choice the user made. Same contract as Library / Completions / PSN
+    # review now — nothing is bound unless cgt-import-remember is "1". The
+    # template migrates existing installs on first load so nobody silently loses
+    # filters they were already relying on.
+    remember = request.cookies.get("cgt-import-remember") == "1"
+    if remember and "tab" not in qp:
         tab = request.cookies.get("cgt-import-tab", tab)
     if tab not in _IMPORT_TABS and tab != "confirmed":
         tab = "add_to_existing"
     # unquote: the client writes these cookies with encodeURIComponent (raw
     # platform names can contain spaces), so a value like "pid:5" is stored as
     # "pid%3A5" — decode it back before the startswith("pid:")/option matching.
-    if "platform" not in qp:
+    if remember and "platform" not in qp:
         platform = unquote(request.cookies.get(f"cgt-import-{tab}-platform", platform))
-    if "year" not in qp:
+    if remember and "year" not in qp:
         year = unquote(request.cookies.get(f"cgt-import-{tab}-year", year))
-    if "sort" not in qp:
+    if remember and "sort" not in qp:
         sort = unquote(request.cookies.get(f"cgt-import-{tab}-sort", sort))
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"

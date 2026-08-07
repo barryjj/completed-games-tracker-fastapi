@@ -19,6 +19,7 @@ from .pages_common import (
     _extract_igdb_meta,
     _extract_steam_meta,
     get_web_user,
+    remembered_filters,
     templates,
 )
 
@@ -79,6 +80,11 @@ def psn_review_page(
     the DOM fighting over the same element ids (#163).
     """
     from . import psn
+
+    # Opt-in sticky filters (#189), same contract as Library / Completions /
+    # Import review. `q` excluded — a remembered search string is surprising.
+    _f = remembered_filters(request, "psn-review", {"platform": platform, "sort": sort, "view": view, "kind": kind})
+    platform, sort, view, kind = _f["platform"], _f["sort"], _f["view"], _f["kind"]
 
     kind = kind if kind in _PSN_REVIEW_KINDS else "cross_play"
     view = view if view in ("list", "card") else "list"

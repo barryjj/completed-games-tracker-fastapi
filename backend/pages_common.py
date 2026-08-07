@@ -11,6 +11,7 @@ import html as _html
 import logging
 import os
 import re
+from urllib.parse import unquote
 
 from fastapi import Depends, Request
 from fastapi.templating import Jinja2Templates
@@ -626,6 +627,45 @@ def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
 # List-page view-mode resolution (list / grid_v / grid_h). Shared because both
 # the library and completions pages resolve view_mode the same way.
 VIEW_MODES = {"list", "grid_v", "grid_h"}
+
+
+def remembered_filters(request: Request, prefix: str, fields: dict[str, object]) -> dict[str, object]:
+    """Fill filter values from cookies when the user opted in (#189).
+
+    Opt-in: nothing is remembered unless `cgt-<prefix>-remember` is "1", which
+    the toolbar checkbox sets. Unchecking it deletes the value cookies outright
+    rather than leaving them to surprise someone later.
+
+    COOKIES, not localStorage — deliberately, and this was settled the hard way
+    in PR #123. The server cannot read localStorage, so the page would render
+    unfiltered and JS would re-apply the filter afterwards: a visible flash plus
+    a wasted round-trip. Grid size/gap/borderless legitimately use localStorage
+    because they are pure CSS and never change what the server renders; filters
+    are the opposite. See the same reasoning in pages_import.py.
+
+    An explicit query param always wins — that's the user changing a filter
+    right now, and it must never be overridden by a stored value.
+
+    Booleans are stored as "1"/absent. Values are written with
+    encodeURIComponent client-side (platform names contain spaces), so they are
+    unquoted here.
+    """
+    if request.cookies.get(f"cgt-{prefix}-remember") != "1":
+        return fields
+    qp = request.query_params
+    out: dict[str, object] = {}
+    for name, current in fields.items():
+        if name in qp:
+            out[name] = current
+            continue
+        raw = request.cookies.get(f"cgt-{prefix}-{name}")
+        if raw is None:
+            out[name] = current
+        elif isinstance(current, bool):
+            out[name] = raw == "1"
+        else:
+            out[name] = unquote(raw)
+    return out
 
 
 def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: str) -> str:

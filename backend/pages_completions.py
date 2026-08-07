@@ -24,6 +24,7 @@ from .pages_common import (
     _needs_metadata_refresh,
     _resolve_view_mode,
     get_web_user,
+    remembered_filters,
     templates,
 )
 
@@ -48,6 +49,14 @@ def completions_page(
 ):
     # Resolved from query → cookie → default (see _resolve_view_mode docstring).
     view_mode = _resolve_view_mode(request, view_mode, "cgt-completions-view-mode")
+
+    # Opt-in sticky filters (#189). `q` excluded for the same reason as the
+    # library: a remembered search string is surprising, a remembered platform
+    # or sort is not. The date range is excluded too — it has its own
+    # default-to-current-year rule immediately below, and a remembered range
+    # would silently defeat it.
+    _f = remembered_filters(request, "completions", {"platform": platform, "sort": sort})
+    platform, sort = _f["platform"], _f["sort"]
     # Default to current calendar year if neither date filter is set — unless
     # all_time is explicitly set, which is the only way to distinguish "user
     # cleared both fields to see everything" from "fresh page load with no

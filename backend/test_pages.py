@@ -1897,6 +1897,7 @@ def test_per_tab_cookie_filters_initial_render_and_is_tab_scoped(client, db_sess
 
     # Stored the way the browser actually writes it: encodeURIComponent turns
     # the ":" into "%3A", so the server must decode before matching.
+    client.cookies.set("cgt-import-remember", "1")  # filter memory is opt-in (#189)
     client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
 
     # create_new: cookie applies, no query param needed — server renders filtered
@@ -2431,6 +2432,7 @@ def test_stale_filter_cookie_is_dropped_not_silently_applied(client, db_session)
     db_session.commit()
 
     # A cookie naming a platform this tab has no candidates for.
+    client.cookies.set("cgt-import-remember", "1")  # filter memory is opt-in (#189)
     client.cookies.set("cgt-import-create_new-platform", "pid%3A999999")
     body = client.get("/tools/import/review?tab=create_new").text
     client.cookies.delete("cgt-import-create_new-platform")
@@ -2452,6 +2454,7 @@ def test_valid_filter_cookie_is_still_honoured(client, db_session):
     _make_import_candidate(db_session, user.id, "Switch Game", switch)
     db_session.commit()
 
+    client.cookies.set("cgt-import-remember", "1")  # filter memory is opt-in (#189)
     client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
     body = client.get("/tools/import/review?tab=create_new").text
     client.cookies.delete("cgt-import-create_new-platform")
@@ -2952,3 +2955,211 @@ def test_borderless_needs_no_reapply_after_a_swap():
     i = js.index("htmx:afterSwap")
     block = js[i : js.index("});", i)]
     assert "applyBorderless" not in block, "nothing wipes it now; the re-apply is dead code"
+
+
+def _make_synced_entry(db, user_id, title, platform="Steam", source="steam", parent_id=None):
+    g = models.Game(title=title, display_name=title, parent_id=parent_id)
+    db.add(g)
+    db.flush()
+    rel = models.GameRelease(game_id=g.id, source=source, platform=platform, external_id=f"ext-{g.id}")
+    db.add(rel)
+    db.flush()
+    e = models.UserLibraryEntry(user_id=user_id, release_id=rel.id, import_source=f"{source}_import")
+    db.add(e)
+    db.flush()
+    return e
+
+
+def test_collection_member_does_not_match_the_standalone_release(client, db_session):
+    """Real case: a manual entry for "Devil May Cry 3: Dante's Awakening -
+    Special Edition" was created as a member of "Devil May Cry HD Collection".
+    The owner also has the standalone Steam "Devil May Cry 3: Special Edition".
+    The scanner offered to merge them — but they are different copies, and
+    merging destroys the distinction the manual entry exists to record.
+
+    The veto is one-directional: collection-member manual vs parentless synced.
+    A synced game under the SAME parent still matches normally.
+    """
+    from backend import match_review, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    collection = models.Game(title="Devil May Cry HD Collection", display_name="Devil May Cry HD Collection", is_collection=True)
+    db_session.add(collection)
+    db_session.flush()
+
+    manual = _make_named_entry(db_session, user.id, "Devil May Cry 3: Dante's Awakening - Special Edition")
+    manual.release.game.parent_id = collection.id
+    _make_synced_entry(db_session, user.id, "Devil May Cry 3: Special Edition")
+    db_session.commit()
+
+    match_review.scan_for_matches(db_session, user)
+    db_session.commit()
+    pending = db_session.query(models.SyncMatchCandidate).filter_by(manual_entry_id=manual.id).all()
+    assert pending == [], f"collection member matched a standalone release: {[(c.external_id) for c in pending]}"
+
+
+def test_collection_member_still_matches_within_its_own_collection(client, db_session):
+    """The veto must not blind the scanner entirely — a synced game under the
+    same collection parent is a legitimate match and has to survive."""
+    from backend import match_review, models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    collection = models.Game(title="Some HD Collection", display_name="Some HD Collection", is_collection=True)
+    db_session.add(collection)
+    db_session.flush()
+
+    manual = _make_named_entry(db_session, user.id, "Bundled Game Special Edition")
+    manual.release.game.parent_id = collection.id
+    _make_synced_entry(db_session, user.id, "Bundled Game Special Edition", parent_id=collection.id)
+    db_session.commit()
+
+    match_review.scan_for_matches(db_session, user)
+    db_session.commit()
+    pending = db_session.query(models.SyncMatchCandidate).filter_by(manual_entry_id=manual.id).all()
+    assert len(pending) == 1, "same-parent match should still be offered"
+
+
+def test_remembered_filters_need_the_opt_in_cookie(client, db_session):
+    """Nothing is remembered unless the box is ticked. Without the opt-in
+    cookie the value cookies must be ignored entirely, or every user gets
+    sticky filters they never asked for."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # The platform <select> only lists platforms the user owns, so the filter
+    # has to actually exist in the library for the option to render at all.
+    _make_named_entry(db_session, user.id, "A PS3 Game", platform="PS3")
+    db_session.commit()
+
+    client.cookies.set("cgt-library-platform", "PS3")
+    body = client.get("/library").text
+    assert 'value="PS3" selected' not in body
+
+    client.cookies.set("cgt-library-remember", "1")
+    body = client.get("/library").text
+    assert 'value="PS3" selected' in body, "opt-in cookie should bind the stored platform"
+
+
+def test_an_explicit_filter_always_beats_the_remembered_one(client, db_session):
+    """A query param is the user changing a filter right now. A stored value
+    must never override it."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _make_named_entry(db_session, user.id, "A PS3 Game", platform="PS3")
+    _make_named_entry(db_session, user.id, "A Steam Game", platform="Steam")
+    db_session.commit()
+
+    client.cookies.set("cgt-library-remember", "1")
+    client.cookies.set("cgt-library-platform", "PS3")
+    body = client.get("/library?platform=Steam").text
+    assert 'value="Steam" selected' in body
+    assert 'value="PS3" selected' not in body
+
+
+def test_remembered_booleans_round_trip(client, db_session):
+    """show_hidden / missing_art are bools, stored as 1/absent — a naive
+    string read would make "" truthy and pin the filter on forever."""
+    _signup_and_login(client)
+    client.cookies.set("cgt-library-remember", "1")
+    # "0" is the trap: as a raw string it is TRUTHY, so a naive read pins the
+    # filter on and there is no way to turn it back off. "" happens to be falsy
+    # either way, which is why it proves nothing on its own.
+    client.cookies.set("cgt-library-show_hidden", "0")
+    body = client.get("/library").text
+    seg = body[body.index('id="lib-show-hidden"') : body.index('id="lib-show-hidden"') + 200]
+    assert "checked" not in seg, 'a stored "0" must read as False, not as a truthy string'
+
+    client.cookies.set("cgt-library-show_hidden", "1")
+    body = client.get("/library").text
+    assert "checked" in body[body.index('id="lib-show-hidden"') : body.index('id="lib-show-hidden"') + 200]
+
+
+def test_filter_memory_uses_cookies_not_localstorage():
+    """PR #123 settled this: the server can't read localStorage, so filters
+    stored there render unfiltered and get re-applied by JS — a visible flash
+    plus a wasted round-trip. Grid size/gap/borderless may use localStorage
+    because they're pure CSS and never change what the server renders."""
+    for name, prefix in (("library.html", "library"), ("completions.html", "completions")):
+        js = open(f"frontend/templates/{name}").read()
+        start = js.index("Remember filters (#189)")
+        block = js[start : js.index("</script>", start)]
+        # Look for real usage, not the comment that explains why it's absent.
+        assert "localStorage." not in block, f"{name} filter memory must not use localStorage"
+        assert "cgt-' + PREFIX + '-" in block and f"'{prefix}'" in block
+
+
+def test_every_long_list_page_keeps_its_actions_reachable():
+    """PSN review was the only long-list page whose bulk Confirm/Dismiss sat in
+    a static div above the table. With 61 rows to decide you tick some, scroll
+    down for more, and the buttons are off screen above you — and there was no
+    back-to-top either, because that lives in the sticky bar on every other
+    page. Same component, same behaviour, everywhere."""
+    for name in ("library.html", "import_review.html", "completions.html", "psn_review.html"):
+        html = open(f"frontend/templates/{name}").read()
+        assert "cgt-sticky-actions" in html, f"{name} has no sticky action bar"
+
+    psn = open("frontend/templates/psn_review.html").read()
+    bar = psn.index('class="cgt-sticky-actions"')
+    assert psn.index('id="psn-bulk-bar"') > bar, "bulk bar must live inside the sticky footer"
+    assert 'id="psn-back-to-top"' in psn
+    assert "window.scrollTo({top:0,behavior:'smooth'})" in psn
+
+
+def test_filter_memory_is_opt_in_on_every_filtered_page():
+    """Four filtered pages, one contract. Library and Completions had no memory,
+    Import review remembered unconditionally with no way off, PSN review had
+    none — three behaviours across four pages that all look the same."""
+    pages = {
+        "library.html": "lib-remember-filters",
+        "completions.html": "comp-remember-filters",
+        "import_review.html": "import-remember-filters",
+        "psn_review.html": "psn-remember-filters",
+    }
+    for name, box_id in pages.items():
+        html = open(f"frontend/templates/{name}").read()
+        assert f'id="{box_id}"' in html, f"{name} has no Remember filters toggle"
+        assert "Remember filters" in html, name
+
+
+def test_import_review_no_longer_remembers_unconditionally(client, db_session):
+    """It used to bind filter cookies into the render whether or not the user
+    asked. Without the opt-in cookie the stored value must be ignored."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Nintendo Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
+    body = client.get("/tools/import/review?tab=create_new").text
+    assert "Switch Game" in body, "stored filter applied without the opt-in"
+
+    client.cookies.set("cgt-import-remember", "1")
+    body = client.get("/tools/import/review?tab=create_new").text
+    assert "Switch Game" not in body, "opt-in should bind the stored filter"
+
+
+def test_psn_review_filters_are_remembered_when_opted_in(client, db_session):
+    """PSN review had no filter memory at all — the fourth page, and the one
+    the #189 issue text missed."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "npsso", "tester"
+    db_session.commit()
+
+    body = client.get("/tools/psn-review").text
+    assert 'id="psn-remember-filters"' in body
+
+    client.cookies.set("cgt-psn-review-sort", "name")
+    client.cookies.set("cgt-psn-review-remember", "1")
+    r = client.get("/tools/psn-review")
+    assert r.status_code == 200
