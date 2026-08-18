@@ -160,7 +160,10 @@ def search_games_on_platforms(
     token = get_token(client_id, client_secret)
     ids = ",".join(str(int(p)) for p in platform_ids)
     body = (
-        f'search "{query}"; fields id, name, platforms, first_release_date; where platforms=({ids}) & version_parent = null; limit {limit};'
+        f'search "{query}"; '
+        f"fields id, name, platforms, first_release_date, game_type; "
+        f"where platforms=({ids}) & version_parent = null; "
+        f"limit {limit};"
     )
     resp = httpx.post(
         f"{_IGDB_BASE}/games",
@@ -174,7 +177,18 @@ def search_games_on_platforms(
         year = None
         if g.get("first_release_date"):
             year = datetime.datetime.fromtimestamp(g["first_release_date"], datetime.UTC).year
-        out.append({"id": g.get("id"), "name": g.get("name"), "platform_ids": g.get("platforms") or [], "year": year})
+        out.append(
+            {
+                "id": g.get("id"),
+                "name": g.get("name"),
+                "platform_ids": g.get("platforms") or [],
+                "year": year,
+                # IGDB's own classification — 0 main game, 1 dlc/addon, 3 bundle,
+                # 9 remaster, 10 expanded, 11 port. Authoritative where guessing
+                # from the title is not (#180).
+                "game_type": g.get("game_type"),
+            }
+        )
     return out
 
 

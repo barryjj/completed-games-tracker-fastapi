@@ -1,0 +1,50 @@
+{# Rows already confirmed or dismissed. Exists so a decision can be changed:
+   this queue used to drop them entirely, which made a mis-click unrecoverable
+   from the UI (#180). #}
+{% if not rows %}
+<p class="text-secondary">Nothing decided yet.</p>
+{% else %}
+<table class="table align-middle">
+  <thead>
+    <tr><th>Title</th><th>Outcome</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for r in rows %}
+    <tr id="psn-row-{{ r.key }}">
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          {% if r.image %}
+          <img class="cgt-list-row-thumb" src="{{ r.image }}" alt="" loading="lazy">
+          {% else %}
+          <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
+          {% endif %}
+          <span class="cgt-import-title">{{ r.name }}</span>
+        </div>
+      </td>
+      <td>
+        {% if r.status == "confirmed" %}
+        <span class="tag-badge tag-source">Added</span>
+        {% for p in r.chosen_platforms %}
+        <span class="tag-badge {{ p | platform_color }} ms-1">{{ p }}</span>
+        {% endfor %}
+        {% else %}
+        <span class="tag-badge tag-source">Dismissed</span>
+        {% endif %}
+      </td>
+      <td class="text-end">
+        {# Reopening only puts the ROW back. Entries a confirm created are left
+           alone — a re-confirm upserts them, and silently deleting library rows
+           from an undo is a bigger surprise than leaving them. #}
+        <button type="button" class="btn btn-sm btn-surface"
+                hx-post="/tools/psn-review/{{ r.key }}/reopen"
+                hx-swap="none"
+                hx-disabled-elt="this"
+                hx-on::after-request="if(event.detail.successful){ htmx.trigger('#psn-review-filters','submit'); }">
+          Review again
+        </button>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

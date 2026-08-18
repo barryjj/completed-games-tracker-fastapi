@@ -61,7 +61,7 @@ def _sort_review_rows(rows: list[dict], sort: str, kind: str) -> list[dict]:
 # title_fix: a trophy-only entry whose NAME is suspect. Lives in the same
 # queue as cross_play because one row can need both a name approval and a
 # platform choice, and deciding it twice would be absurd (#180).
-_PSN_REVIEW_KINDS = ("cross_play", "played_only", "title_fix")
+_PSN_REVIEW_KINDS = ("cross_play", "played_only", "title_fix", "media_app")
 
 
 @router.get("/tools/psn-review")
@@ -89,14 +89,15 @@ def psn_review_page(
     _f = remembered_filters(request, "psn-review", {"platform": platform, "sort": sort, "view": view, "kind": kind})
     platform, sort, view, kind = _f["platform"], _f["sort"], _f["view"], _f["kind"]
 
-    kind = kind if kind in _PSN_REVIEW_KINDS else "cross_play"
+    kind = kind if kind in _PSN_REVIEW_KINDS or kind == "decided" else "cross_play"
     view = view if view in ("list", "card") else "list"
 
     cross_rows = psn.import_review_rows(db, current_user.id)
     played_rows = [r for r in psn.played_only_rows(db, current_user.id) if not r["decision"]]
-    counts = {"cross_play": len(cross_rows), "played_only": len(played_rows)}
+    decided = psn.decided_rows(db, current_user.id)
+    counts = {"cross_play": len(cross_rows), "played_only": len(played_rows), "decided": len(decided)}
 
-    rows = cross_rows if kind == "cross_play" else played_rows
+    rows = {"cross_play": cross_rows, "played_only": played_rows, "decided": decided}.get(kind, cross_rows)
     review_platforms = sorted({o["platform"] for r in cross_rows for o in r["options"]})
     if kind == "cross_play" and platform:
         rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
@@ -115,7 +116,7 @@ def psn_review_page(
         "platform": platform,
         "q": q,
         "sort": sort,
-        "sorts": _PSN_SORTS[kind],
+        "sorts": _PSN_SORTS.get(kind, _PSN_SORTS["cross_play"]),
         "has_snapshot": psn.has_synced(db, current_user.id),
         "review_platforms": review_platforms,
     }
@@ -333,6 +334,74 @@ async def psn_played_only_attach(
     return _played_only_done(request, db, current_user, key, name, "play stats attached")
 
 
+@router.post("/tools/psn-review/{key}/reopen")
+async def psn_review_reopen(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Put a decided row back in the queue so the call can be changed."""
+    from . import psn
+
+    try:
+        psn.reopen_decision(db, current_user, key)
+    except ValueError:
+        return Response("That row is not in the PSN review queue.", status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": "Back in the review queue.", "oob": False},
+    )
+
+
+@router.get("/tools/psn-review/{key}/edit")
+async def psn_review_edit_form(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Edit body for one row. Same shape as import review's edit modal."""
+    from . import psn
+
+    rows = [r for r in psn.import_review_rows(db, current_user.id) if r["key"] == key]
+    if not rows:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_edit_modal.html",
+        context={"r": rows[0], "current_user": current_user},
+    )
+
+
+@router.post("/tools/psn-review/{key}/edit")
+async def psn_review_edit(
+    key: str,
+    request: Request,
+    title: str = Form(...),
+    igdb_id: str = Form(default=""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Save an edited name (and any corrected IGDB match) and re-render the row."""
+    from . import psn
+
+    chosen_id = None
+    if igdb_id.strip().isdigit():
+        chosen_id = int(igdb_id.strip())
+    try:
+        psn.rename_candidate(db, current_user, key, title, igdb_id=chosen_id)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    rows = [r for r in psn.import_review_rows(db, current_user.id) if r["key"] == key]
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_rows.html",
+        context={"rows": rows, "current_user": current_user},
+    )
+
+
 @router.post("/tools/psn-review/{key}/reject-name")
 async def psn_review_reject_name(
     key: str,
@@ -367,6 +436,7 @@ async def psn_review_confirm(
     request: Request,
     platforms: list[str] = Form(default=[]),
     use_proposed: bool = Form(default=False),
+    custom_title: str = Form(default=""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -380,7 +450,9 @@ async def psn_review_confirm(
     from . import psn
 
     try:
-        result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms], use_proposed=use_proposed)
+        result = psn.confirm_entry_decision(
+            db, current_user, key, [p.upper() for p in platforms], use_proposed=use_proposed, custom_title=custom_title
+        )
     except ValueError:
         # Fixed text, not the exception's: a 404 here only ever means the row
         # isn't in the queue (stale page, already actioned), and echoing an

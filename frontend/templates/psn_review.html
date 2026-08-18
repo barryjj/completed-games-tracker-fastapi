@@ -97,6 +97,20 @@
           hidden>&uarr;</button>
 </div>
 
+{# Edit modal — same shell as import review's, so the two pages behave the
+   same way rather than each inventing their own. #}
+<div class="modal fade" id="psnEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit candidate</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="psn-edit-modal-body"></div>
+    </div>
+  </div>
+</div>
+
 <div id="psn-review-content">
   {% include "partials/_psn_review_content.html" %}
 </div>
@@ -445,5 +459,34 @@ document.addEventListener('DOMContentLoaded', function() {
 })();
 
 
+
+// Edit modal — mirrors importOpenModal so both review pages open an edit the
+// same way (#180).
+window.psnOpenEdit = function(key) {
+  var body = document.getElementById('psn-edit-modal-body');
+  body.innerHTML = '<p class="text-secondary small mb-0">Loading&hellip;</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('psnEditModal')).show();
+  htmx.ajax('GET', '/tools/psn-review/' + encodeURIComponent(key) + '/edit', {
+    target: '#psn-edit-modal-body',
+    swap: 'innerHTML'
+  });
+};
+
+// The IGDB results partial calls selectIgdbGame(el) by name. The add-game modal
+// isn't on this page, so this is the only definition here — picking a result
+// fills the name AND captures the id, so an edit corrects the match rather than
+// just the text (#180).
+window.selectIgdbGame = function(el) {
+  var name = el.dataset.name || '';
+  var id = el.dataset.igdbId || '';
+  var titleEl = document.getElementById('psn-edit-title');
+  var idEl = document.getElementById('psn-edit-igdb-id');
+  if (titleEl) titleEl.value = name;
+  if (idEl) idEl.value = id;
+  var results = document.getElementById('psn-edit-igdb-results');
+  if (results) results.innerHTML = '';
+  var search = document.getElementById('psn-edit-igdb-search');
+  if (search) search.value = '';
+};
 </script>
 {% endblock %}

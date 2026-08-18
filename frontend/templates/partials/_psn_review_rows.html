@@ -21,9 +21,11 @@
         {# An accepted IGDB name is applied AT CREATION, so the row shows the
            name that will actually be written — struck-through original beside
            it, because you should be able to see what Sony called it (#180). #}
+        {# Name is read-only here; Edit opens the modal, same as every other
+           review page. The row's job is the platform decision. #}
         {% if r.proposal_status == "pending" and r.proposed_title %}
-        <span class="cgt-import-title cgt-psn-proposed" id="psn-title-{{ r.key }}">{{ r.proposed_title }}</span>
-        <span class="text-secondary small text-decoration-line-through ms-1">{{ r.name }}</span>
+        <span class="cgt-import-title cgt-psn-proposed">{{ r.proposed_title }}</span>
+        <div class="text-secondary small text-decoration-line-through">{{ r.name }}</div>
         {% else %}
         <span class="cgt-import-title">{{ r.name }}</span>
         {% endif %}
@@ -32,26 +34,17 @@
         {% endif %}
         <div class="text-secondary small">{{ r.reason }}</div>
         {% if r.proposal_status == "pending" and r.proposed_title %}
-        {# Ticked by default: the suggestion is corroborated on platform, and
-           the common case is accepting it. Unticking keeps Sony's name. #}
-        <div class="small mt-1">
-          <label class="text-secondary">
-            <input class="form-check-input me-1" type="checkbox" name="use_proposed" value="true" checked
-                   id="psn-useprop-{{ r.key }}">
-            Use IGDB name
-          </label>
-          <a href="#" class="ms-2 text-secondary"
-             hx-post="/tools/psn-review/{{ r.key }}/reject-name"
-             hx-target="#psn-row-{{ r.key }}"
-             hx-swap="outerHTML"
-             title="Discard the whole suggestion and go back to Sony's data">Reject</a>
+        <div class="small mt-1 text-secondary">
+          <span class="tag-badge tag-source">Rename suggested</span>
+          Edit to change or keep Sony&rsquo;s name.
         </div>
         {% elif r.proposal_status == "none" %}
-        {# Surfaced deliberately. An unidentified row kept invisible is exactly
-           how "SF3: Online Edition" reached the library unnoticed. #}
+        {# Only ever shown when IGDB genuinely returned nothing. An exact match
+           is "matched", not this — conflating them labelled ~279 correctly
+           identified games as unidentified. #}
         <div class="small mt-1 text-secondary">
           <span class="tag-badge tag-source">Not identified</span>
-          IGDB had no confident match &mdash; confirm to keep this name, or fix it in the library after.
+          No IGDB match &mdash; confirming keeps this name.
         </div>
         {% endif %}
       </div>
@@ -86,7 +79,7 @@
     <div class="btn-group btn-group-sm">
       <button type="button" class="btn btn-primary btn-sm"
               hx-post="/tools/psn-review/{{ r.key }}/confirm"
-              hx-include="#psn-opts-{{ r.key }} input:checked, #psn-useprop-{{ r.key }}:checked"
+              hx-include="#psn-opts-{{ r.key }} input:checked"
               hx-target="#psn-row-{{ r.key }}"
               hx-swap="outerHTML"
               hx-disabled-elt="this"
@@ -99,10 +92,12 @@
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
         <li><a class="dropdown-item" href="#"
+               onclick="psnOpenEdit('{{ r.key }}'); return false;">Edit</a></li>
+        <li><a class="dropdown-item" href="#"
                hx-post="/tools/psn-review/{{ r.key }}/dismiss"
                hx-target="#psn-row-{{ r.key }}"
                hx-swap="outerHTML"
-               hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnPendingDelta(-1); }">Dismiss &mdash; I don&rsquo;t own this</a></li>
+               hx-on::after-request="if(event.detail.successful) { psnForgetDraft('{{ r.key }}'); psnPendingDelta(-1); }">Dismiss</a></li>
       </ul>
     </div>
   </td>

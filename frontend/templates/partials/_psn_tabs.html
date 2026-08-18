@@ -4,12 +4,23 @@
    keeps the counts honest as rows are confirmed away. #}
 <div class="btn-group btn-group-sm mb-3" role="group" id="psn-tabs"
      {% if oob %}hx-swap-oob="true"{% endif %}>
+  {# "Needs review", not "Cross-play": the queue now holds anything the sync
+     couldn't settle on its own — a platform choice, a suspect trophy-set name,
+     or a media app that may not belong in a library at all. Played-only stays
+     separate because it asks a different question (did you actually play this,
+     with nothing behind it). #}
   <button type="button" class="btn btn-surface{% if kind == 'cross_play' %} active{% endif %}"
           onclick="psnSetKind('cross_play')">
-    Cross-play <span class="badge bg-secondary ms-1">{{ counts.cross_play }}</span>
+    Needs review <span class="badge bg-secondary ms-1">{{ counts.cross_play }}</span>
   </button>
   <button type="button" class="btn btn-surface{% if kind == 'played_only' %} active{% endif %}"
           onclick="psnSetKind('played_only')">
     Played-only <span class="badge bg-secondary ms-1">{{ counts.played_only }}</span>
+  </button>
+  {# Decided rows were unreachable — import review keeps a Confirmed tab and
+     played-only leaves them inline, but this queue dropped them with no undo. #}
+  <button type="button" class="btn btn-surface{% if kind == 'decided' %} active{% endif %}"
+          onclick="psnSetKind('decided')">
+    Decided <span class="badge bg-secondary ms-1">{{ counts.decided }}</span>
   </button>
 </div>

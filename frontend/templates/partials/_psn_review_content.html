@@ -3,7 +3,11 @@
 {% if oob %}{% include "partials/_psn_review_chrome.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
 {# The review body — one queue and one view at a time, server-rendered.
    Swapped wholesale by the tab buttons, the view toggle and the filter. #}
-{% if not rows %}
+{# Decided rows are their own shape — an outcome and an undo, not a decision to
+   make — so they render before the queue branches below. #}
+{% if kind == "decided" %}
+{% include "partials/_psn_decided_rows.html" %}
+{% elif not rows %}
 <div class="cgt-detail-block">
   <p class="text-secondary mb-0">
     {% if not has_snapshot %}

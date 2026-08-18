@@ -2735,3 +2735,24 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-psn-proposed {
   border-bottom: 1px dashed var(--ctp-teal);
 }
+
+/* PSN review: the row's name is an input, because a trophy-set name and an
+   IGDB suggestion can BOTH be wrong and the fix belongs here rather than in
+   the library afterwards (#180). Styled to read as text until focused, so the
+   row still looks like a list and not a form. */
+.cgt-psn-title-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 1px 4px;
+  width: 100%;
+  max-width: 32rem;
+  color: inherit;
+  font: inherit;
+}
+.cgt-psn-title-input:hover { border-color: var(--ctp-surface1); }
+.cgt-psn-title-input:focus {
+  background: var(--bs-input-bg);
+  border-color: var(--ctp-mauve);
+  outline: none;
+}
