@@ -752,6 +752,29 @@ class PsnReviewCandidate(Base):
     # progress, play history) are derived from this at render time rather than
     # flattened into columns, the same way GameRelease.raw_data works.
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # ── IGDB title proposal (#180) ─────────────────────────────────────────
+    # A trophy-only entry is named after its trophy SET, and those names are
+    # often wrong: localized (閃乱カグラ SHINOVI VERSUS), abbreviated (GTA IV),
+    # or missing the franchise prefix (Modern Warfare 2). The proposal lives
+    # HERE rather than being applied to the Game, so rejecting it is lossless —
+    # the raw trophy name and its full original platform options survive
+    # underneath with nothing to undo.
+    #
+    # proposed_platforms is IGDB's platform list intersected with Sony
+    # hardware, and is also the CORRECTION: Shinovi Versus' trophy set claims
+    # PS3 + Vita, IGDB says Vita, and the phantom PS3 vanishing is the fix.
+    # Accepting narrows the platform picker to this set; rejecting restores the
+    # trophy set's own claim.
+    #
+    # proposal_status: None (never looked up) | "pending" | "accepted" |
+    # "rejected". A rejected row keeps its proposal for the audit trail but
+    # must never store proposed_igdb_id on the game — rejecting the name
+    # rejects the whole match, since a lookup that got the name wrong has no
+    # claim to be right about the platforms it returned.
+    proposed_title: Mapped[str | None] = mapped_column(String, nullable=True)
+    proposed_igdb_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proposed_platforms: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    proposal_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 

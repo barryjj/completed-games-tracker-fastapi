@@ -1,19 +1,99 @@
 {# Card items for the PSN review's card view. Bare cards only — the
    .cgt-match-stage wrapper and the nav live in _psn_review_content.html, same
    split as _import_cards.html / _import_tab_content.html. #}
-{% for r in rows %}
-<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.key }}">
+{# Deepest card first, ACTIVE LAST. Paint order, not queue order — see
+   stack_cards(): a view transition paints its groups in DOM order and ignores
+   z-index, so rendering in queue order let the card behind cover the card
+   arriving for the whole animation. #}
+{% for r, off in stack_cards(rows, active_offset or 0) %}
+{# The SERVER marks which card is on show. Every card used to render hidden and
+   JS un-hid one after the fact, so any error before that — or any path that did
+   not re-run it after a swap — left the whole stack at opacity 0: a blank stage
+   with a working counter beside it. The view should not depend on a callback
+   firing. #}
+{# Coverflow, from real cards. The window holds two rows either side of the
+   active one, so the pile you have worked through stacks to the LEFT and the
+   pile ahead stacks to the RIGHT. Vertical offsets could not say which way you
+   were moving — everything shifted the same direction whichever button you
+   pressed. Sideways, the direction IS the movement.
+
+   off is signed (-2..2) for the direction, mag is its size for the scaling,
+   because CSS has no abs() we can rely on here. Both come from stack_cards
+   now, since the render order is no longer the queue order. #}
+{% set mag = off if off > 0 else -off %}
+{# GEOMETRY. Kept identical to psnCardPlace() in psn_review.html, which moves
+   these same elements when you page; the server paints the first frame so the
+   stack is right before any script runs. Pinned by
+   test_the_server_marks_which_card_is_showing.
+
+   CARDS ARE DEALT, NOT SWAPPED. Everything you have not reached waits off to
+   the RIGHT, invisible, ABOVE the pile. Advancing slides the next one in over
+   the top of the current card and lands it there; going back slides the top
+   card off to the right again and reveals what was underneath. The pile you
+   have worked through stays on the LEFT, under the active card, edges showing.
+
+   The previous version kept a visible pile on both sides, which meant the card
+   at +1 was sitting UNDER the active card and then had to become the card ON
+   TOP of it. Nothing physical changes depth like that, and no amount of
+   easing hides it -- the movement read as two cards trading places rather than
+   as one arriving.
+
+     off < 0   x = -(18 + (mag-1)*10)   the done pile, under, two deep
+     off = 0   x = 0                    on top of the done pile
+     off > 0   x = 60                   waiting just off the edge, above, invisible
+
+   z is 100 + off, so what is coming is always above what is here, and what is
+   done is always below. Inline transform rather than a custom property because
+   transitions do not run on unregistered custom properties. #}
+{% set mag = off if off > 0 else -off %}
+{% set x = 60 if off > 0 else (0 if off == 0 else -(18 + (mag - 1) * 10)) %}
+<div class="cgt-match-card cgt-match-card--import
+            {%- if not active_key %} cgt-match-card--hidden
+            {%- elif off == 0 %} cgt-match-card--active
+            {%- elif off < 0 and mag < 3 %} cgt-match-card--peek
+            {%- else %} cgt-match-card--hidden{% endif %}"
+     {# Its place in the WHOLE queue, not in the window. Paging is local now, so
+        the script needs to know which absolute row each loaded card is, both to
+        work out the new offsets and to tell when it is running out of window
+        and should quietly fetch more. #}
+     data-pos="{{ card_pos + off }}"
+     style="transform: translateX({{ x }}px) scale({{ 1 if off > 0 else 1 - mag * 0.012 }});
+            filter: brightness({{ 1 if off > 0 else 1 - mag * 0.06 }});
+            z-index: {{ 100 + off }};"
+     id="psn-card-{{ r.key }}">
   <div class="cgt-match-card__body">
     {# Hero + logo overlay, same as import review's cards and the library detail
        pane. The hero is SGDB's ~1920x620 art, which is what the 96/22 box is
        shaped for — a horizontal grid cropped into it lost half the image. #}
     {% if r.hero %}
     <div class="cgt-import-hero">
-      <img class="cgt-detail-hero__img" data-src="{{ r.hero }}" alt="" loading="lazy">
+      {# An animated hero is served as animated WebP, which WKWebView decodes
+         frame-by-frame on the main thread — an 11MB hero plays as a slideshow
+         in the desktop shell while being fine in a browser. SGDB has the same
+         asset as webm at a third the size; video goes through the media
+         pipeline instead. Stills stay plain <img>. #}
+      {# src, not data-src. Deferring art existed to stop 561 cards fetching at
+         once; the window is five, and the indirection meant every card started
+         empty and painted only after JS ran — a visible blip on every advance.
+         With a real src the browser paints from cache immediately, because the
+         card behind you was showing the same URL a moment ago. #}
+      {% if r.hero_video %}
+      <video class="cgt-detail-hero__img" src="{{ r.hero_video }}"
+             autoplay loop muted playsinline preload="auto"></video>
+      {% else %}
+      <img class="cgt-detail-hero__img" src="{{ r.hero }}" alt="" decoding="async">
+      {% endif %}
       {% if r.logo %}
-      <img class="cgt-detail-hero__logo" data-src="{{ r.logo }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__logo" src="{{ r.logo }}" alt="" decoding="async">
       {% endif %}
     </div>
+    {% else %}
+    {# A card with no art still needs the same silhouette. Omitting the hero
+       made those cards shorter and shifted everything up as you paged, which is
+       the same jumpiness a variable card height caused — and it is worse here
+       because it lands on exactly the rows that are already the least
+       identifiable. #}
+    <div class="cgt-import-hero cgt-import-hero--empty"></div>
     {% endif %}
 
     <div class="p-3">
@@ -21,25 +101,80 @@
          empty, so a row without a "Set 1/2" badge had its title indented while
          the reason below stayed flush. Badge trails the title so the title is
          always at the same x as everything under it. #}
-      <div class="d-flex align-items-baseline gap-2 mb-1">
-        <h6 class="cgt-review-card-title mb-0">{{ r.name }}</h6>
-        {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
-      </div>
-
-      <p class="text-secondary small mb-3">{{ r.reason }}</p>
-
       {# Side by side, matching the played-only card. The question you're here
          to answer goes left; the evidence for answering it goes right. #}
       <div class="cgt-psn-card-split">
+        {# Left column stacks: what the game IS, then the question about it.
+           Trophies keep the right column to themselves at full height — that
+           panel was already right and three boxes crammed across a row made
+           every one of them too narrow for its content. #}
+        <div class="cgt-psn-card-stack">
+          {# Identity gets a box of its own rather than floating between the hero
+           and the panels. It stopped being a bare title the moment it had to
+           carry a strikethrough, source chips and playtime — loose text under
+           the art could not hold that, and the card showed only Sony's name
+           until now, so a renamed row looked unchanged here. #}
+        <div class="cgt-detail-block mb-0">
+          <h6 class="cgt-detail-block__heading">Title</h6>
+          {# The chip LEADS its name instead of trailing it. Trailing works only
+             while nothing wraps — and with a rename there are always two names,
+             so the interesting case is exactly the one where both wrap and a
+             trailing chip drifts onto a line that looks like it belongs to the
+             other title. Leading, it labels the block that follows and the
+             pairing survives any amount of wrapping.
+
+             Inline rather than a fixed label column: a column would align the
+             chips but cost ~110px of a title box that is already the thing
+             running out of width. #}
+          {% if r.proposal_status == "pending" and r.proposed_title %}
+          <div class="cgt-card-name mt-1">
+            <span class="tag-badge tag-igdb" title="Matched to IGDB {{ r.proposed_igdb_id }}">IGDB</span>
+            <span class="cgt-review-card-title">{{ r.proposed_title }}</span>
+          </div>
+          <div class="cgt-card-name cgt-card-name--was">
+            <span class="tag-badge tag-platform-playstation">PlayStation</span>
+            <span class="text-secondary small text-decoration-line-through">{{ r.name }}</span>
+          </div>
+          {% else %}
+          <div class="cgt-card-name mt-1">
+            {# ONE chip when both sources describe the SAME name. A chip leads
+               the name it labels, so two of them leading one name is a pile,
+               not a pairing — there is only one thing being labelled here.
+               Two-tone keeps each source recognisable inside it.
+
+               Absence still carries the signal: no IGDB half means IGDB could
+               not identify the row. #}
+            {% if r.proposed_igdb_id %}
+            <span class="tag-badge cgt-chip-agreed" title="Sony's name, confirmed by IGDB {{ r.proposed_igdb_id }}">
+              <span class="cgt-chip-agreed__ps">PlayStation</span><span class="cgt-chip-agreed__sep">&middot;</span><span class="cgt-chip-agreed__igdb">IGDB</span>
+            </span>
+            {% else %}
+            <span class="tag-badge tag-platform-playstation">PlayStation</span>
+            {% endif %}
+            <span class="cgt-review-card-title">{{ r.name }}</span>
+          </div>
+          {% endif %}
+          {# Auto-import trails the source chips instead of claiming a line of its
+             own. It IS a different kind of fact from a name source, but a
+             wrapped title already costs this box a row, and a second badge line
+             on top of that pushed the platform box past the footer. #}
+          {% if r.verdict_auto %}
+          <span class="tag-badge tag-verdict-auto cgt-card-chip"
+                title="Platform and identity are both settled — this would import on its own once automation is switched on">Auto-import</span>
+          {% endif %}
+        </div>
+
         <div class="cgt-detail-block mb-0">
           <h6 class="cgt-detail-block__heading">Which platforms do you own this on?</h6>
-          {% if r.set_count > 1 %}
-          {# Sony declares the SAME platform list on every set for this title, so
-             nothing but this says they're competing. Without it two sets can
-             claim one platform and the second is silently dropped as a
-             (game, platform) conflict. #}
-          <div class="cgt-completion-record cgt-completion-record--peach mt-2">
-            <span class="small">{{ r.set_count }} trophy sets share this title &mdash; platforms you assign here won&rsquo;t be offered on the {% if r.set_count == 2 %}other{% else %}others{% endif %}.</span>
+          {% if r.contested %}
+          {# In the box whose answer it constrains, not as a badge on the title —
+             a Set n/m chip up there reads as trivia and goes unnoticed, while
+             the thing that matters is that these platforms are contested. Sony
+             declares the SAME platform list on every set for this title, so
+             without this two sets claim one platform and the second is silently
+             dropped as a (game, platform) conflict. One line, not four. #}
+          <div class="cgt-completion-record cgt-completion-record--peach mb-2">
+            <span class="small">Platform not determined &mdash; choose the ones this set covers.</span>
           </div>
           {% endif %}
           <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-3 mt-2">
@@ -50,15 +185,22 @@
                      onchange="psnRememberDraft('{{ r.key }}')"
                      {% if o.selected %}checked{% endif %}>
               <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-              {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken by {{ o.claimed_by }}</span>
-              {% elif o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m played</span>{% endif %}
+              {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken by {{ o.claimed_by }}</span>{% endif %}
             </label>
             {% endfor %}
           </div>
         </div>
 
+        </div>
+
+        {# "Progress" rather than "Trophies": playtime lives here too now, and a
+           heading that names only half its contents is a heading that lies.
+           Two labelled sections rather than two headline figures side by side —
+           side by side, the tier breakdown sits under BOTH numbers and looks
+           like it describes both, when it only describes the trophies. #}
         <div class="cgt-detail-block mb-0">
-          <h6 class="cgt-detail-block__heading">Trophies</h6>
+          <h6 class="cgt-detail-block__heading">Progress</h6>
+          <div class="cgt-progress-label">Trophies</div>
           {% if r.trophy_defined %}
           <div class="d-flex align-items-baseline gap-2 mt-1 mb-2">
             <span class="cgt-trophy-progress">{{ r.trophy_progress }}%</span>
@@ -77,11 +219,29 @@
           {% else %}
           <p class="text-secondary small mb-0 mt-2">No trophy data.</p>
           {% endif %}
+
+          {% if r.trophy_last_updated and r.trophy_last_updated != r.last_played %}
+          {# Under the trophies, because it describes THEM — and only when it
+             differs from the play date. They agree nearly always (the last
+             trophy pops during the last session), and two identical dates read
+             as two facts worth comparing. #}
+          <div class="cgt-trophy-meta">Last trophy {{ r.trophy_last_updated | long_date }}</div>
+          {% endif %}
+
+          {% if r.total_minutes %}
+          <div class="cgt-progress-label mt-3">Playtime</div>
+          <div class="cgt-progress-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</div>
+          {% endif %}
+
+          {# No "last played" line: the meta below already carries it, and the
+             same date stated twice in one box reads like two different facts. #}
           {% if r.trophy_last_updated or r.last_played %}
-          <div class="cgt-trophy-meta">
-            {% if r.trophy_last_updated %}Updated {{ r.trophy_last_updated }}{% endif %}
-            {% if r.last_played %}{% if r.trophy_last_updated %} &middot; {% endif %}played {{ r.last_played }}{% endif %}
-          </div>
+          {# The play date sits with the playtime it belongs to. Falls back to
+             the trophy date when there is no play record at all, since then it
+             is the only thing that says when this was last touched. #}
+          {% if r.last_played or r.trophy_last_updated %}
+          <div class="cgt-trophy-meta">Last played {{ (r.last_played or r.trophy_last_updated) | long_date }}</div>
+          {% endif %}
           {% endif %}
         </div>
       </div>

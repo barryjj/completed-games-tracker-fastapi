@@ -8,6 +8,7 @@ positives like "Recollection" — those tests guard against reintroducing it).
 steam.py re-exports these names so existing imports and tests are untouched.
 """
 
+import functools
 import html
 import re
 import unicodedata
@@ -141,7 +142,7 @@ def _clean_title(title: str) -> str:
     unchanged). Decision: leave the platform's casing alone. If a user
     dislikes a SHOUTING title, the edit modal lets them override
     display_name."""
-    return _JUNK_RE.sub("", html.unescape(title)).strip()
+    return re.sub(r"\s+", " ", _JUNK_RE.sub("", html.unescape(title))).strip()
 
 
 # ─── Match normalization ────────────────────────────────────────────────────
@@ -231,6 +232,12 @@ def _roman_to_arabic(token: str) -> str | None:
     return str(total)
 
 
+# Pure and hammered: one pass over the PSN review queue called this 467,858
+# times for 567 rows, because cross_buy_exception re-normalizes both sides
+# of every comparison against a long exception list. Titles repeat heavily,
+# so caching turns that into a few hundred real computations and was worth
+# ~10s of the queue's 12s build.
+@functools.lru_cache(maxsize=8192)
 def normalize_for_match(title: str | None) -> str:
     """Fold a title to its comparable form: lowercase words, no punctuation,
     accents and look-alikes folded, trophy suffixes gone, numbers canonical.

@@ -3,7 +3,11 @@
 {% if oob %}{% include "partials/_psn_review_chrome.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
 {# The review body — one queue and one view at a time, server-rendered.
    Swapped wholesale by the tab buttons, the view toggle and the filter. #}
-{% if not rows %}
+{# Decided rows are their own shape — an outcome and an undo, not a decision to
+   make — so they render before the queue branches below. #}
+{% if kind == "decided" %}
+{% include "partials/_psn_decided_rows.html" %}
+{% elif not rows %}
 <div class="cgt-detail-block">
   <p class="text-secondary mb-0">
     {% if not has_snapshot %}
@@ -18,7 +22,8 @@
   </p>
 </div>
 {% elif view == "card" %}
-<div id="psn-stack" class="cgt-match-stage cgt-match-stage--import">
+<div id="psn-stack" class="cgt-match-stage cgt-match-stage--import"
+     data-active-key="{{ active_key or '' }}">
   {% if kind == "played_only" %}
   {% include "partials/_psn_played_only_cards.html" %}
   {% else %}
@@ -27,10 +32,22 @@
 </div>
 {# Counter rather than dots — same reasoning as import review, and the same
    sticky bar so the arrows stay reachable without scrolling. #}
-<div class="cgt-match-nav cgt-match-nav--sticky" id="psn-nav" data-total="{{ rows | length }}">
-  <button class="cgt-match-nav__btn" onclick="psnCardNav(-1)">&#8249;</button>
-  <span class="cgt-match-nav__counter" id="psn-nav-counter"></span>
-  <button class="cgt-match-nav__btn" onclick="psnCardNav(1)">&#8250;</button>
+{# Controls at the screen edges, not a bar under the card. The stack fills the
+   middle, so the edges are free and give a target the height of the viewport
+   instead of a 32px button — and moving left/right matches which way the cards
+   travel.
+
+   No visible counter: "561 pending" is already in the header and on the tab.
+   Position and total still ride the element as data, because the stack holds a
+   window and the DOM can no longer answer "which one of how many"; the count
+   goes to screen readers through the button labels. #}
+<div id="psn-nav" data-total="{{ card_total }}" data-index="{{ card_pos }}">
+  <button class="cgt-stack-edge cgt-stack-edge--prev" onclick="psnCardNav(-1)"
+          aria-label="Previous — {{ card_pos + 1 }} of {{ card_total }}"
+          {% if card_pos == 0 %}disabled{% endif %}>&#8249;</button>
+  <button class="cgt-stack-edge cgt-stack-edge--next" onclick="psnCardNav(1)"
+          aria-label="Next — {{ card_pos + 1 }} of {{ card_total }}"
+          {% if card_pos + 1 >= card_total %}disabled{% endif %}>&#8250;</button>
 </div>
 {% else %}
 <div class="table-responsive">
@@ -48,7 +65,9 @@
       <tr>
         <th class="psn-bulk-cell"><input class="form-check-input" type="checkbox" onchange="psnSelectAll(this.checked)" title="Select all"></th>
         <th>Title</th>
-        <th class="text-nowrap">Trophies</th>
+        {# No label: the column carries playtime AND trophies, each with its own
+           glyph, so a heading either lies or repeats them. #}
+        <th class="text-nowrap"></th>
         <th>Platforms owned</th>
         <th></th>
       </tr>

@@ -46,14 +46,14 @@
     <p class="small text-secondary mb-0">Every purchased and trophy-backed game whose platform PSN settles (PS Plus included &mdash; provenance is kept on each entry). Re-syncing refreshes playtime and last-played on entries it created before; manual, Steam and spreadsheet entries are never touched, and overlaps with them are queued for match review. Cross-play games PSN can&rsquo;t place, and played-only activity, go to the PSN review queue.</p>
   </div>
 
-  {% if import_review %}
+  {% if import_review_count %}
   {# The cross-play decisions live on their own review page, reachable from
      Tools — creating library entries is not something to bury inside a
      "what the crawl found" report. #}
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">
       Games needing a decision
-      <span class="text-secondary fw-normal ms-1">({{ import_review | length }})</span>
+      <span class="text-secondary fw-normal ms-1">({{ import_review_count }})</span>
     </h6>
     <p class="text-secondary mb-2"><small>Trophy sets covering several platforms, and games you played with nothing behind them. Both live in the PSN review queue.</small></p>
     <a href="/tools/psn-review" class="btn btn-sm btn-primary">Open PSN review</a>

@@ -1,0 +1,95 @@
+{# Edit body for one PSN review row. Same contract as import review's edit
+   modal: change the candidate's properties here, the row's own controls stay
+   for the platform decision (#180).
+
+   The name is editable because Sony's trophy-set name and IGDB's suggestion can
+   BOTH be wrong — without this the only route is confirming a name you know is
+   bad and fixing it in the library afterwards. #}
+{# Close on the form's OWN post only. hx-on::after-request fires for every
+   htmx:afterRequest that BUBBLES up from a child — including the IGDB search
+   input below — so without the target gate the modal dismisses itself partway
+   through typing a query. Same trap _add_game_modal.html documents. #}
+<form id="psn-edit-form"
+      hx-post="/tools/psn-review/{{ r.key }}/edit"
+      hx-target="#psn-row-{{ r.key }}"
+      hx-swap="outerHTML"
+      hx-on::after-request="if(event.detail.successful && event.target === this){ bootstrap.Modal.getInstance(document.getElementById('psnEditModal')).hide(); }">
+  <div class="mb-3">
+    <label class="form-label">Name <span class="text-secondary fw-normal">(what the library entry will be called)</span></label>
+    <input type="text" class="form-control" id="psn-edit-title" name="title"
+           value="{{ (r.proposed_title or r.name) | e }}" required autocomplete="off" spellcheck="false">
+    {# The chosen IGDB id travels with the name. Picking a result here is a
+       CORRECTION of the automatic match — the user is already making the
+       judgement call, so making them look it up again later is busywork. #}
+    <input type="hidden" id="psn-edit-igdb-id" name="igdb_id"
+           value="{{ r.proposed_igdb_id if r.proposed_igdb_id else '' }}">
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label">Find on IGDB <span class="text-secondary fw-normal">(optional — corrects the match too)</span></label>
+    <input type="text" class="form-control form-control-sm" id="psn-edit-igdb-search"
+           placeholder="Search IGDB&hellip;" autocomplete="off"
+           hx-get="/integrations/igdb/search"
+           hx-trigger="input changed delay:300ms"
+           hx-target="#psn-edit-igdb-results"
+           hx-swap="innerHTML"
+           name="q">
+    {# Capped and scrollable, same as the add-game modal: 15 hits otherwise
+       run off the bottom of the dialog. #}
+    <div id="psn-edit-igdb-results" class="mt-2" style="max-height:200px;overflow-y:auto;"></div>
+
+    {# Locked confirmation card, same shape and language as the add-game modal.
+       Picking a result used to update only the name field, leaving the "IGDB
+       suggests" block below still showing the ORIGINAL auto-match — so the id
+       you were committing to was invisible and looked stale. #}
+    <div id="psn-edit-igdb-linked" class="d-none rounded p-2 mt-2"
+         style="border-left:3px solid var(--ctp-green);background:var(--ctp-surface1);">
+      <div class="d-flex align-items-center gap-2">
+        <span style="color:var(--ctp-green);line-height:1;">&#10003;</span>
+        <span id="psn-edit-igdb-linked-name" class="fw-medium small"></span>
+        <span id="psn-edit-igdb-linked-id" class="text-secondary small ms-1"></span>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-auto text-secondary"
+                onclick="psnClearIgdbSelection()">Change</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="cgt-detail-block mb-3">
+    <div class="text-secondary small mb-1">From PlayStation</div>
+    <div class="cgt-tool-card__body">{{ r.name }}</div>
+    <div class="text-secondary small mt-1">Trophy set covers {{ r.options | map(attribute='platform') | join(', ') }}</div>
+  </div>
+
+  {% if r.proposal_status == "pending" and r.proposed_title %}
+  <div class="cgt-detail-block mb-3" id="psn-edit-suggestion">
+    <div class="text-secondary small mb-1">IGDB suggests</div>
+    <div class="cgt-tool-card__body">{{ r.proposed_title }}</div>
+    <div class="text-secondary small mt-1">
+      Matched on the platforms this trophy set covers.
+      {% if r.proposed_igdb_id %}IGDB {{ r.proposed_igdb_id }}{% endif %}
+    </div>
+    {# Rejecting drops the WHOLE match — name, platform narrowing and id. A
+       lookup wrong about the name has no claim to be right about the rest. #}
+    <button type="button" class="btn btn-sm btn-surface mt-2"
+            hx-post="/tools/psn-review/{{ r.key }}/reject-name"
+            hx-target="#psn-row-{{ r.key }}"
+            hx-swap="outerHTML"
+            hx-on::after-request="if(event.detail.successful){ bootstrap.Modal.getInstance(document.getElementById('psnEditModal')).hide(); }">
+      Discard suggestion &mdash; keep PlayStation&rsquo;s name
+    </button>
+  </div>
+  {% elif r.proposal_status == "matched" and r.proposed_igdb_id %}
+  <div class="cgt-detail-block mb-3">
+    <div class="text-secondary small">Matched to IGDB {{ r.proposed_igdb_id }} — the name is already right.</div>
+  </div>
+  {% elif r.proposal_status == "none" %}
+  <div class="cgt-detail-block mb-3">
+    <div class="text-secondary small">IGDB had no match on this trophy set&rsquo;s platforms. Rename it here if you know better.</div>
+  </div>
+  {% endif %}
+
+  <div class="d-flex justify-content-end gap-2">
+    <button type="button" class="btn btn-surface btn-sm" data-bs-dismiss="modal">Cancel</button>
+    <button type="submit" class="btn btn-primary btn-sm">Save</button>
+  </div>
+</form>

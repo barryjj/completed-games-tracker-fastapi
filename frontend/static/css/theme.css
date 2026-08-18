@@ -4,6 +4,25 @@ html[data-bs-theme="dark"] {
   /* Stat-number outline. Each theme strokes with its own darkest surface, not
      black — on Mocha a black stroke against pale accents just reads grimy. */
   --cgt-stat-stroke: rgba(17,17,27,0.55);
+
+  /* Dark defined NONE of these, so every var(--cgt-btn-*) reference silently
+     resolved to nothing here while working in both light palettes. Mocha's
+     accents are already pale enough to carry dark text, which is why the
+     filled-button shades were only ever needed for light — but the TOKENS
+     have to exist in all three palettes or anything deriving from them (a
+     progress fill tinted from the button's own hue, say) breaks in dark only.
+     Pointed at the accents Mocha's buttons already use. */
+  --cgt-ps-ink: var(--ctp-lavender);  /* pale lavender reads fine on dark */
+  --cgt-igdb-ink: var(--ctp-green);  /* pale green reads fine as text on dark */
+  --cgt-btn-primary:        var(--ctp-mauve);
+  --cgt-btn-primary-hover:  var(--ctp-lavender);
+  --cgt-btn-primary-rgb:    203,166,247;
+  --cgt-btn-success:        var(--ctp-green);
+  --cgt-btn-success-hover:  var(--ctp-teal);
+  --cgt-btn-danger:         var(--ctp-red);
+  --cgt-btn-danger-hover:   var(--ctp-maroon);
+  --cgt-btn-on-fill:        var(--ctp-crust);
+
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
   --ctp-overlay0: #6c7086; --ctp-overlay1: #7f849c; --ctp-text:     #cdd6f4;
@@ -100,6 +119,8 @@ html[data-bs-theme="light"] {
   /* Filled-button shades. Accents are too pale to carry white text at full
      strength, so each is darkened along its own hue to the same weight Latte's
      hand-tuned fills already used. Buttons only — never applied to text. */
+  --cgt-ps-ink: #6b6584;  /* nord15+10 darkened along hue */
+  --cgt-igdb-ink: #6f8c58;  /* nord14 darkened along hue */
   --cgt-btn-primary:        #a77a9f;
   --cgt-btn-primary-hover:  #98658e;
   --cgt-btn-success:        #8eaf72;
@@ -177,6 +198,8 @@ html[data-palette="latte"] {
   --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
   --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
 
+  --cgt-ps-ink: #5566d8;  /* latte lavender darkened */
+  --cgt-igdb-ink: #40a02b;  /* latte green is already dark enough */
   --cgt-btn-primary:        #a370e8;
   --cgt-btn-primary-hover:  #8f5cd4;
   --cgt-btn-success:        #5aba54;
@@ -540,6 +563,128 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 .tag-source {
   color: var(--ctp-text);
   background: var(--ctp-surface1);
+  flex-shrink: 0;
+}
+
+/* Trophy progress bar on a PSN review row. A bare "100% 30/30" said the same
+   thing twice and still needed reading; the bar carries the proportion at a
+   glance and the count stays for the exact figure. Deliberately thin — it sits
+   under two lines of text and must not compete with them. */
+/* PSN review row, layout J. Fixed column widths so a row with three platform
+   chips lines up with a row that has one — right-aligning a flex row let the
+   stats drift as the chip group grew. */
+.cgt-psn-progress {
+  width: 7.5rem;
+}
+
+.cgt-psn-playtime {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--ctp-subtext0);
+  white-space: nowrap;
+}
+
+/* Glyph in its own column, centred against the count-over-bar pair. Matching an
+   icon to adjacent digits is a losing game — an em-sized glyph fills its whole
+   em box while digits reach ~70% of it as cap height, so the icon always stands
+   taller. Shrinking it to compensate closed up the trophy's negative space and
+   turned it to mush. Given its own column it answers to neither constraint. */
+.cgt-trophy-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ctp-text);
+  white-space: nowrap;
+}
+
+.cgt-trophy-figures {
+  display: inline-block;
+}
+
+.cgt-trophy-count {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.15;
+  /* Tabular figures: 10/12 and 5/77 must occupy the same width or the column
+     jitters row to row. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* The trophy needs MORE size and LESS contrast, not less of both. It is a dense
+   glyph with fine negative space around the handles and inside the bowl; below
+   ~11px those gaps close and it reads as a blob, which is why shrinking it to
+   match the digits' weight made it worse. The clock gets away with a smaller
+   size because it is thin outlines with nothing to fill in.
+
+   So: full size for legibility, opacity for weight. */
+/* Sized for legibility now that nothing has to line up with it: big enough for
+   the handles and bowl to stay open, soft enough not to outweigh the count. */
+.cgt-trophy-stat > svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: 0 0 auto;
+  opacity: 0.42;
+}
+
+.cgt-trophy-bar {
+  display: block;
+  width: 5rem;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--ctp-surface1);
+  overflow: hidden;
+}
+
+.cgt-trophy-bar > i {
+  display: block;
+  height: 100%;
+  /* The button's own hue, so bar and Confirm read as one family instead of two
+     competing accents. Defined in all three palettes as of #180. */
+  background: var(--cgt-btn-primary);
+  opacity: 0.45;
+}
+
+/* Source chips. PlayStation reuses the platform family's recipe so it sits with
+   the PS4/PSVITA chips; IGDB takes the green DESIGN.md already assigns to
+   "IGDB linked / confirmed". */
+/* Green ink on a green wash is unreadable in Nord, whose green (#a3be8c) is a
+   pale sage. Same problem the filled buttons have — an accent too light to
+   carry as text — and the same remedy: an explicit shade darkened along its own
+   hue, per palette, rather than mixing toward ink (which is the saturation-
+   stripping regression test_stat_values_are_not_mixed_toward_ink guards). */
+.tag-igdb {
+  color: var(--cgt-igdb-ink);
+  background: color-mix(in srgb, var(--ctp-green) 18%, transparent);
+}
+
+/* Nord's lavender (#9089ad) as ink on its own 15% wash is the same
+   too-pale-to-read problem the IGDB chip had, and takes the same remedy: an
+   explicit shade darkened along the hue, per palette. Scoped to these source
+   chips — the platform TAGS elsewhere are larger and already legible. */
+.cgt-chip-agreed__ps,
+.cgt-card-name > .tag-platform-playstation {
+  color: var(--cgt-ps-ink);
+}
+
+/* PSN review, shadow mode (#180). The sync computes what it WOULD have done
+   and reports it rather than acting, so the verdict can be watched being right
+   across a real library before anything imports on its own. Green is the
+   success/confirmed accent, so rows that would import unattended read as
+   settled at a glance while everything still needing a human stays neutral. */
+/* Bootstrap ships no min-w-0 utility — it is a Tailwind idiom — but three
+   templates use it on flex children that must be allowed to shrink. Without
+   min-width:0 a flex item cannot go below its content width, so .text-truncate
+   silently does nothing and a long IGDB result name overflows its container
+   instead of ellipsing. */
+.min-w-0 {
+  min-width: 0;
+}
+
+.tag-verdict-auto {
+  color: var(--ctp-crust);
+  background: var(--ctp-green);
   flex-shrink: 0;
 }
 
@@ -1756,11 +1901,6 @@ body:has(.cgt-sticky-actions) {
      height to correctly compute internal overflow. With only max-height,
      the body never actually scrolled and the footer got pushed off-card. */
   height: 520px;
-  transition: none;
-}
-.cgt-match-card--import.cgt-match-card--hidden,
-.cgt-match-card--import.cgt-match-card--active {
-  transform: none;
 }
 .cgt-match-card--import .cgt-match-card__body {
   overflow-y: auto;
@@ -2654,12 +2794,237 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   display: grid;
   grid-template-columns: 3fr 2fr;
   gap: 1rem;
-  align-items: start;
+  /* stretch, not start: the right column holds ONE box against a stacked pair,
+     and starting it left a ragged gap under the trophies. */
+  align-items: stretch;
 }
+
+.cgt-psn-card-split > .cgt-detail-block {
+  height: 100%;
+}
+/* Card-stack paging, at the screen edges. A 32px button under the card was a
+   small target for the action you perform hundreds of times, and its position
+   said nothing about direction. These sit against the viewport edges, run most
+   of its height, and stay quiet until the pointer is near them. */
+/* Coverflow. The window holds two rows either side of the active card, so the
+   ones you have done stack LEFT and the ones ahead stack RIGHT, their edges
+   showing past the card in front.
+
+   Vertical offsets could not convey direction: everything moved the same way
+   whichever button you pressed, so the movement read as a flicker. Sideways,
+   the direction is the movement. */
+.cgt-match-card--peek {
+  pointer-events: none;
+  z-index: calc(10 - var(--mag, 1));
+  /* OPAQUE. Fading them was a coverflow leftover, and it made stacked cards
+     translucent, so you saw one card through another — the overlap read as a
+     rendering fault rather than as a pile. Cards in a deck are solid; depth
+     comes from position and shading. */
+  opacity: 1;
+  /* A tight deck, not a fan. A constant step per card (54px, 108px, ...) spread
+     into a triangle that grew with the window. Piles read as piles when they
+     CLUSTER: the first card out sets the edge, the rest sit just behind it, so
+     what changes as you page is how many edges show, not how far they reach.
+     --x is the signed offset, computed per card in the template, because CSS
+     sign() is not dependable in this webview.
+
+     Barely scaled, too: a card two deep should look like the one in front of
+     it, not like it is off in the distance. */
+  transform: translateX(var(--x, 0)) scale(calc(1 - var(--mag, 1) * 0.012));
+  filter: brightness(calc(1 - var(--mag, 1) * 0.06));
+}
+
+.cgt-match-card--active {
+  z-index: 10;
+}
+
+/* Movement comes from a CSS transition on the cards themselves, because the
+   cards themselves now survive paging — psnCardNav rewrites each one's
+   transform rather than asking the server for a fresh window. That is the
+   whole reason this works: a browser can only tween an element that exists
+   either side of the change, and every previous attempt replaced them.
+
+   The View Transition API was the previous approach and is gone. It failed
+   three separate ways in this webview: outgoing snapshots stayed opaque
+   despite ::view-transition-old(*) { opacity: 0 }, groups painted in an order
+   the DOM could not control, and a card entering the window rendered
+   full-size in the centre before vanishing, having no old position to move
+   from. */
+.cgt-match-card--import {
+  transition:
+    transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    filter 260ms ease,
+    /* Short, so a departing card is gone almost as soon as it starts moving.
+       At 200ms it stayed solid for most of its travel and read as being
+       launched across the screen rather than lifted off the pile. */
+    opacity 60ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cgt-match-card--import {
+    transition: none;
+  }
+}
+
+
+/* Card-stack paging, at the screen edges. A 32px button under the card was a
+   small target for the action you perform hundreds of times, and its position
+   said nothing about direction. These sit against the viewport edges, run most
+   of its height, and stay quiet until the pointer is near them. */
+.cgt-stack-edge {
+  position: fixed;
+  /* FULL HEIGHT. At 56vh the hover fill stopped in mid-air two thirds of the
+     way down the window and a rounded corner finished it off, so it read as a
+     stray empty panel that had run out rather than as the edge of the screen
+     responding to the pointer. An edge affordance has to reach the edges. */
+  top: 0;
+  bottom: 0;
+  width: 4.5rem;
+  border: 0;
+  z-index: 20;
+  background: transparent;
+  color: var(--ctp-overlay1);
+  font-size: 2.4rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+/* No radius either: a corner is the other thing that turns a fill into a
+   shape. These are the edges of the window, not objects sitting near them. */
+.cgt-stack-edge--prev {
+  left: 0;
+}
+
+.cgt-stack-edge--next {
+  right: 0;
+}
+
+/* Bleeding IN from the edge rather than filling a box. A gradient has no far
+   side to notice and no end to stop at, so there is nothing to read as a panel
+   — just the edge of the window darkening under the pointer. */
+.cgt-stack-edge--prev:hover:not(:disabled) {
+  background: linear-gradient(to right, color-mix(in srgb, var(--ctp-surface0) 70%, transparent), transparent);
+  color: var(--ctp-text);
+}
+
+.cgt-stack-edge--next:hover:not(:disabled) {
+  background: linear-gradient(to left, color-mix(in srgb, var(--ctp-surface0) 70%, transparent), transparent);
+  color: var(--ctp-text);
+}
+
+.cgt-stack-edge:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.cgt-match-card--active {
+  z-index: 10;
+}
+
+/* Left column holds identity above the platform question; trophies take the
+   right at full height. */
+.cgt-psn-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
 @media (max-width: 720px) {
   .cgt-psn-card-split { grid-template-columns: 1fr; }
 }
 
+
+/* Stand-in for a card with no art, so every card keeps the same silhouette as
+   you page through. Flat surface rather than a broken-image box: it should read
+   as "nothing to show" and not as a failure. */
+.cgt-import-hero--empty {
+  background: linear-gradient(160deg, var(--ctp-surface0), var(--ctp-mantle));
+}
+
+/* The PSN card's hero, shorter than import review's. 96/22 on a 900px card is
+   206px of a 520px card, and a wrapped title — "Castlevania Requiem: Symphony
+   Of The Night & Rondo Of Blood" — then pushes the platform box past the
+   footer. Capping the art buys the row back without resizing a card that has
+   to stay uniform across the queue. */
+#psn-stack .cgt-import-hero {
+  max-height: 168px;
+}
+
+/* Trails the source chips on the same line rather than opening a new one. */
+.cgt-card-chip {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+/* A name and the chip that sourced it, on one line. Flex with baseline
+   alignment so a long title wraps without dragging its chip away, and the chip
+   never lands on a line of its own. */
+/* One chip, two sources — used when Sony's name and IGDB's agree, so there is a
+   single name to label. Each half keeps its own colour so the vocabulary still
+   reads: lavender is the platform family, green is "IGDB linked / confirmed".
+   The background is the platform wash, since Sony is who supplied the name. */
+.cgt-chip-agreed {
+  background: color-mix(in srgb, var(--ctp-lavender) 15%, transparent);
+}
+
+.cgt-chip-agreed__ps {
+  color: var(--ctp-lavender);
+}
+
+.cgt-chip-agreed__igdb {
+  color: var(--cgt-igdb-ink);
+}
+
+.cgt-chip-agreed__sep {
+  color: var(--ctp-overlay0);
+  margin: 0 0.25em;
+}
+
+/* Chip ABOVE its name, not inline before it. Inline, a wrapped title's second
+   line starts back at the left edge while the first is indented past the chip,
+   which reads as two ragged blocks. Stacked, the chip still labels the name
+   directly beneath it — the pairing that made leading worth doing — and every
+   line of the title starts at the same x. */
+.cgt-card-name {
+  min-width: 0;
+}
+
+.cgt-card-name > .tag-badge {
+  display: inline-block;
+  margin-bottom: 0.25rem;
+}
+
+.cgt-card-name > .cgt-review-card-title,
+.cgt-card-name > .text-secondary {
+  display: block;
+}
+
+.cgt-card-name--was {
+  margin-top: 0.15rem;
+}
+
+/* Sections inside the card's Progress box. Quieter than the box heading — they
+   divide its contents rather than announcing another panel. */
+.cgt-progress-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ctp-subtext0);
+  margin-bottom: 0.15rem;
+}
+
+.cgt-progress-playtime {
+  font-size: 1.05rem;
+  color: var(--ctp-text);
+}
+
+.cgt-progress-playtime svg {
+  opacity: 0.55;
+  vertical-align: -0.08em;
+}
 
 /* Trophy breakdown on a review card. Sony's own tier order and colours, so it
    reads the way the trophy list does on the console — and it's the shape the
@@ -2727,4 +3092,32 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .psn-attach-results {
   max-height: 190px;
   overflow-y: auto;
+}
+
+/* PSN review: a title the IGDB check proposes replacing (#180). Marked rather
+   than silently swapped — the struck-through original sits beside it so what
+   Sony called it stays visible until the decision is made. */
+.cgt-psn-proposed {
+  border-bottom: 1px dashed var(--ctp-teal);
+}
+
+/* PSN review: the row's name is an input, because a trophy-set name and an
+   IGDB suggestion can BOTH be wrong and the fix belongs here rather than in
+   the library afterwards (#180). Styled to read as text until focused, so the
+   row still looks like a list and not a form. */
+.cgt-psn-title-input {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 1px 4px;
+  width: 100%;
+  max-width: 32rem;
+  color: inherit;
+  font: inherit;
+}
+.cgt-psn-title-input:hover { border-color: var(--ctp-surface1); }
+.cgt-psn-title-input:focus {
+  background: var(--bs-input-bg);
+  border-color: var(--ctp-mauve);
+  outline: none;
 }

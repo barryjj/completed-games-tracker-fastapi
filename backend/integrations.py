@@ -399,14 +399,16 @@ def save_psn_token(
 
 def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
     """Re-render the sync report block for the PSN configure page."""
-    _review = psn.import_review_rows(db, current_user.id)
+    # The template only asks whether there are rows and how many, so build a
+    # count rather than 567 row dicts (4.6s vs 6ms).
+    _review_count = psn.count_pending_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
         context={
             "report": current_user.psn_last_sync_report,
             "last_synced_at": current_user.psn_last_synced_at,
-            "import_review": _review,
+            "import_review_count": _review_count,
             "flash": flash,
             "flash_error": error,
         },
@@ -540,6 +542,22 @@ _STEAM_KINDS: dict[str, dict] = {
         "label": "Review artwork",
         "job_label": "PSN review artwork",
     },
+    "psn_igdb_link": {
+        "fn": "link_igdb_ids",
+        "module": "psn",
+        "no_credentials": True,  # gated on Twitch/IGDB creds by the job itself
+        "started": "Matching your PlayStation library to IGDB — you'll see a toast when it finishes.",
+        "label": "IGDB match",
+        "job_label": "PSN IGDB match",
+    },
+    "psn_igdb_titles": {
+        "fn": "fill_review_proposals",
+        "module": "psn",
+        "no_credentials": True,  # gated on Twitch/IGDB creds by the job itself
+        "started": "Checking suspect PSN titles against IGDB — you'll see a toast when it finishes.",
+        "label": "Title check",
+        "job_label": "PSN title check",
+    },
     "psn_store_refresh": {
         "fn": "refresh_all_store_metadata",
         "module": "psn_store",
@@ -575,6 +593,24 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
             lines.append(f"{result['errored']:,} errored — try again later")
         if result.get("no_product"):
             lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
+        return "\n".join(lines)
+    if kind == "psn_igdb_link":
+        if result.get("skipped_no_credentials"):
+            return "IGDB match skipped\nAdd Twitch/IGDB credentials under Settings to enable it."
+        lines = [f"IGDB match complete\n{result['linked']:,} matched automatically"]
+        if result.get("queued"):
+            lines.append(f"{result['queued']:,} need you to confirm which game")
+        if result.get("no_match"):
+            lines.append(f"{result['no_match']:,} had no match")
+        return "\n".join(lines)
+    if kind == "psn_igdb_titles":
+        if result.get("skipped_no_credentials"):
+            return "PSN title check skipped\nAdd Twitch/IGDB credentials under Settings to enable it."
+        lines = [f"PSN title check complete\n{result['proposed']:,} suggestion{'' if result['proposed'] == 1 else 's'} to review"]
+        if result.get("no_match"):
+            lines.append(f"{result['no_match']:,} left as-is (no confident match)")
+        if result.get("errored"):
+            lines.append(f"{result['errored']:,} errored")
         return "\n".join(lines)
     if kind == "psn_review_art":
         return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
@@ -659,6 +695,17 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
     steps: list[tuple[str, str]] = []
     if added:
         steps.append(("psn_store_refresh", "Store metadata"))
+    if needs_review:
+        # Trophy-only rows are named after their trophy SET, which is often
+        # localized or abbreviated. Self-gating: rows already decided or already
+        # carrying a proposal are skipped, so a re-sync costs nothing (#180).
+        steps.append(("psn_igdb_titles", "Title check"))
+    if added:
+        # Phase 2: attach an IGDB id to entries that imported directly. Runs
+        # BEFORE the store refresh, because the store retitle now defers to an
+        # id — Sony repurposes listings, and the base Ghost of Tsushima SKU
+        # serves a page titled "Legends" (#180).
+        steps.append(("psn_igdb_link", "IGDB match"))
     if has_sgdb_key:
         # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
         # the covers actually being waited on.

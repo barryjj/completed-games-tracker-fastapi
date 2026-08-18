@@ -21,13 +21,33 @@
 <form id="psn-review-filters"
       hx-get="/tools/psn-review"
       hx-target="#psn-review-content"
+      {# A plain swap. This used to run inside a View Transition so cards could
+         morph between old and new positions, and it never worked in this
+         webview: the outgoing card stayed fully opaque instead of being
+         dropped, groups painted in an order DOM order could not control, and a
+         card entering the window — which has no previous position to move from
+         — appeared full-size in the middle before snapping away. Three
+         different departures from the spec.
+
+         Movement does not need it. The cards you are looking at are no longer
+         replaced when you page: psnCardNav slides the elements that are
+         already there, and this swap only refills the window afterwards, when
+         nothing is moving. #}
       hx-swap="innerHTML"
       hx-push-url="true"
-      hx-trigger="submit, input changed delay:300ms from:#psn-search">
+      hx-trigger="submit, input changed delay:300ms from:#psn-search"
+      hx-on::config-request="if (event.detail.triggeringEvent && event.detail.triggeringEvent.type === 'input') { psnResetCardIndex(); event.detail.parameters.card_index = 0; }">
   <input type="hidden" name="view" id="psn-view-field" value="{{ view }}">
+  {# Which card the stack is on. Server-side now, so paging is a request rather
+     than unhiding one of 561 cards nobody wanted in the DOM. #}
+  <input type="hidden" name="card_index" id="psn-card-index-field" value="{{ card_pos }}">
   <input type="hidden" name="kind" id="psn-kind-field" value="{{ kind }}">
   <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
-    <div class="btn-group btn-group-sm" role="group" id="psn-view-toggle">
+    {# Decided renders one shape only — an outcome and an undo — so the view
+       toggle has nothing to switch there. A control that does nothing when
+       clicked is worse than an absent one. #}
+    <div class="btn-group btn-group-sm" role="group" id="psn-view-toggle"
+         {% if kind == "decided" %}hidden{% endif %}>
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}"
               onclick="psnSetView('list')" title="List view">&equiv;</button>
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}"
@@ -97,6 +117,20 @@
           hidden>&uarr;</button>
 </div>
 
+{# Edit modal — same shell as import review's, so the two pages behave the
+   same way rather than each inventing their own. #}
+<div class="modal fade" id="psnEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit candidate</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="psn-edit-modal-body"></div>
+    </div>
+  </div>
+</div>
+
 <div id="psn-review-content">
   {% include "partials/_psn_review_content.html" %}
 </div>
@@ -127,21 +161,108 @@ function psnRememberCard(key) {
   try { localStorage.setItem(PSN_CARD_KEY, JSON.stringify(m)); } catch (e) { /* full or blocked */ }
 }
 function psnCards() { return Array.from(document.querySelectorAll('#psn-stack .cgt-match-card')); }
-function psnShowCard(idx) {
-  const cards = psnCards();
-  if (!cards.length) return;
-  psnCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
-  cards.forEach(function(c, i) {
-    c.classList.toggle('cgt-match-card--hidden', i !== psnCardIdx);
-    c.classList.toggle('cgt-match-card--active', i === psnCardIdx);
-  });
-  psnRememberCard((cards[psnCardIdx].id || '').replace('psn-card-', ''));
-  // Only the cards near this one load their art; see cgtHydrateCards.
-  cgtHydrateWhenReady(cards, psnCardIdx);
-  var counter = document.getElementById('psn-nav-counter');
-  if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
+// GEOMETRY. Must stay identical to _psn_review_cards.html, which paints the
+// first frame server-side; this moves the very same elements afterwards.
+function psnCardPlace(el, off) {
+  var mag = Math.abs(off);
+  // Ahead: parked off to the right, invisible, above everything. Behind: the
+  // done pile, under the active card. See the long note in
+  // _psn_review_cards.html for why nothing waits on the right in view.
+  var ahead = off > 0;
+  var x = ahead ? 60 : (off === 0 ? 0 : -(18 + (mag - 1) * 10));
+  el.style.transform = 'translateX(' + x + 'px) scale(' + (ahead ? 1 : 1 - mag * 0.012) + ')';
+  el.style.filter = 'brightness(' + (ahead ? 1 : 1 - mag * 0.06) + ')';
+  el.style.zIndex = 100 + off;
+  el.classList.toggle('cgt-match-card--active', off === 0);
+  el.classList.toggle('cgt-match-card--peek', off < 0 && mag < 3);
+  el.classList.toggle('cgt-match-card--hidden', ahead || mag >= 3);
 }
-window.psnCardNav = function(dir) { psnShowCard(psnCardIdx + dir); };
+
+// THE MOVE. Every card knows its absolute row, so putting the stack at a
+// position is just re-deriving each offset and writing the transform. The
+// elements are not replaced, which is the entire point: a browser can only
+// animate something that exists either side of the change, and the old design
+// — fetch a new window per click — destroyed every card on every step, so
+// there was never anything to move. CSS carries it from there.
+window.psnPlaceCards = function(pos) {
+  var stackEl = document.getElementById('psn-stack');
+  var cards = psnCards();
+  if (!cards.length || !stackEl) return;
+  var active = null, at = 0;
+  cards.forEach(function(el, i) {
+    // A card with no data-pos is not part of a stack this function understands.
+    // It used to fall back to 0, which meant EVERY such card read as row 0 and
+    // the whole queue was marked active at once -- twenty cards stacked at the
+    // same spot, their box-shadows compounding into a black halo. Skipping is
+    // the honest answer; the markup is what needs fixing.
+    if (el.dataset.pos === undefined) return;
+    var off = parseInt(el.dataset.pos, 10) - pos;
+    psnCardPlace(el, off);
+    if (off === 0) { active = el; at = i; }
+  });
+  if (active) {
+    stackEl.dataset.activeKey = active.id.replace('psn-card-', '');
+    psnRememberCard(active.id.replace('psn-card-', ''));
+    cgtHydrateWhenReady(cards, at);
+  }
+  var nav = document.getElementById('psn-nav');
+  var total = nav ? parseInt(nav.dataset.total || '0', 10) : cards.length;
+  psnCardIdx = pos;
+  stackEl.dataset.remaining = Math.max(0, Math.min(2, total - pos - 1));
+  if (nav) {
+    var prev = nav.querySelector('.cgt-stack-edge--prev');
+    var next = nav.querySelector('.cgt-stack-edge--next');
+    if (prev) prev.disabled = pos <= 0;
+    if (next) next.disabled = pos + 1 >= total;
+  }
+};
+
+function psnShowCard() {
+  var nav = document.getElementById('psn-nav');
+  psnPlaceCards(nav ? parseInt(nav.dataset.index || '0', 10) : 0);
+}
+
+// Refill the window WITHOUT moving anything. The server re-renders centred on
+// the position we are already at, using the same geometry, so the cards land
+// exactly where they are now and the swap is invisible. It only runs when the
+// pile is nearly used up, which is every couple of clicks rather than every
+// one — fewer requests than before, and none of them on the critical path.
+var psnRefilling = false;
+function psnRefillWindow(pos, total) {
+  var cards = psnCards();
+  if (!cards.length || psnRefilling) return;
+  var loaded = cards.map(function(el) { return parseInt(el.dataset.pos || '0', 10); });
+  var lo = Math.min.apply(null, loaded), hi = Math.max.apply(null, loaded);
+  // Two spare either side, unless the queue itself has run out that way.
+  var short = (pos - lo < 2 && lo > 0) || (hi - pos < 2 && hi < total - 1);
+  if (!short) return;
+  psnRefilling = true;
+  htmx.trigger('#psn-review-filters', 'submit');
+}
+
+// Paging is LOCAL. It used to ask the server for a new window on every click,
+// which is what made the movement impossible to animate.
+window.psnCardNav = function(dir) {
+  var nav = document.getElementById('psn-nav');
+  if (!nav) return;
+  var total = parseInt(nav.dataset.total || '0', 10);
+  var next = parseInt(nav.dataset.index || '0', 10) + dir;
+  if (next < 0 || next >= total) return;
+  // Off the end of what is loaded — only possible if a refill has not landed
+  // yet. Let the server place us instead of sliding to a card we do not have.
+  if (!psnCards().some(function(el) { return parseInt(el.dataset.pos || '0', 10) === next; })) {
+    nav.dataset.index = next;
+    var f = document.getElementById('psn-card-index-field');
+    if (f) f.value = next;
+    htmx.trigger('#psn-review-filters', 'submit');
+    return;
+  }
+  nav.dataset.index = next;
+  var field = document.getElementById('psn-card-index-field');
+  if (field) field.value = next;
+  psnPlaceCards(next);
+  psnRefillWindow(next, total);
+};
 
 window.psnRebuildNav = function(resetIndex) {
   var cards = psnCards();
@@ -153,15 +274,21 @@ window.psnRebuildNav = function(resetIndex) {
     return;
   }
   if (nav) nav.hidden = false;
-  psnShowCard(resetIndex ? 0 : Math.min(psnCardIdx, cards.length - 1));
+  if (resetIndex) {
+    var field = document.getElementById('psn-card-index-field');
+    if (field) field.value = 0;
+    if (nav) nav.dataset.index = 0;
+  }
+  psnShowCard();
 };
 
-// Called after a card's Confirm/Dismiss succeeds — drop it and advance.
+// Called after a card's Confirm/Dismiss succeeds. Removing the node is no
+// longer enough: the stack holds a WINDOW, so deleting one leaves four and the
+// ordered list has shifted under it. Refetch at the same index — which, with
+// the row gone, is now the next one.
 window.psnCardDone = function(key) {
-  var card = document.getElementById('psn-card-' + key);
-  if (card) card.remove();
   psnPendingDelta(-1);
-  psnRebuildNav(false);
+  htmx.trigger('#psn-review-filters', 'submit');
 };
 
 // Keep the header badge honest as rows leave, in both views.
@@ -173,6 +300,7 @@ window.psnPendingDelta = function(d) {
 };
 
 window.psnSetKind = function(kind) {
+  psnResetCardIndex();
   document.getElementById('psn-kind-field').value = kind;
   // A platform filter from the other tab would silently empty this one.
   var sel = document.querySelector('#psn-review-filters select[name="platform"]');
@@ -182,6 +310,9 @@ window.psnSetKind = function(kind) {
   // Sort keys are per-queue ("progress" means nothing on played-only).
   var sortSel = document.querySelector('#psn-review-filters select[name="sort"]');
   if (sortSel) sortSel.value = 'name';
+  // Every field above was set from script, so none of them fired a change
+  // event and none would have been stored on their own.
+  if (window.psnPersistFilters) psnPersistFilters();
   htmx.trigger('#psn-review-filters', 'submit');
 };
 
@@ -303,15 +434,37 @@ window.psnCheckedSelections = function() {
   var out = {};
   document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
     var opts = document.getElementById('psn-opts-' + cb.value);
-    out[cb.value] = opts
-      ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
-      : [];
+    var useProp = document.getElementById('psn-useprop-' + cb.value);
+    out[cb.value] = {
+      platforms: opts
+        ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
+        : [],
+      // Without this a bulk confirm created the entry under Sony's name even
+      // though the row was visibly showing the IGDB one — the per-row Confirm
+      // honoured the suggestion and bulk silently did not (#180).
+      use_proposed: !!(useProp && useProp.checked)
+    };
   });
   return JSON.stringify(out);
 };
 
+// Any change to WHAT is being listed resets the position: index 40 under the
+// old filter is a different row under the new one, and landing there silently
+// looks like the filter failed.
+function psnResetCardIndex() {
+  var field = document.getElementById('psn-card-index-field');
+  if (field) field.value = 0;
+}
+
 function psnSetView(view) {
+  psnResetCardIndex();
   document.getElementById('psn-view-field').value = view;
+  // Its OWN cookie, written unconditionally, and read by the server on first
+  // paint — the same contract the library and completions view toggles use.
+  // Nothing here depends on an event the hidden field does not fire, and
+  // nothing depends on the "Remember filters" checkbox.
+  document.cookie = 'cgt-psn-review-view=' + encodeURIComponent(view) +
+    '; Max-Age=31536000; Path=/; SameSite=Lax';
   htmx.trigger('#psn-review-filters', 'submit');
 }
 
@@ -348,9 +501,15 @@ document.addEventListener('htmx:afterSwap', function(e) {
     // place on every tab switch — and since card 1 still shows the server's
     // defaults, it read as the draft having been discarded.
     if (document.getElementById('psn-stack')) {
-      var remembered = psnLastCardKey || psnReadCardMemory()[psnCurrentKind()];
-      var back = psnCards().findIndex(function(c) { return c.id === 'psn-card-' + remembered; });
-      psnCardIdx = back > -1 ? back : 0;
+      // The server decides the position now, so the hidden field has to follow
+      // it — otherwise the NEXT request (a search, a filter) carries a stale
+      // index into a list it no longer describes.
+      var navEl = document.getElementById('psn-nav');
+      var idxField = document.getElementById('psn-card-index-field');
+      if (navEl && idxField) idxField.value = navEl.dataset.index || 0;
+      // A refill has landed (or something else re-rendered the stack); either
+      // way the window is fresh, so allow the next one.
+      psnRefilling = false;
       psnRebuildNav(false);
     }
     // The toggle lives outside the swap, so re-evaluate whether it applies to
@@ -358,6 +517,10 @@ document.addEventListener('htmx:afterSwap', function(e) {
     var kind = document.getElementById('psn-kind-field').value;
     var toggle = document.getElementById('psn-select-toggle');
     if (toggle) toggle.hidden = !(view === 'list' && kind === 'cross_play');
+    // Same reason: the view toggle lives outside the swap, so it has to be
+    // re-evaluated for the tab that just rendered.
+    var viewToggle = document.getElementById('psn-view-toggle');
+    if (viewToggle) viewToggle.hidden = (kind === 'decided');
     psnExitSelect();
   }
 });
@@ -398,7 +561,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 (function () {
   var PREFIX = 'psn-review';
-  var FIELDS = [{name:'platform',el:'psn-platform'},{name:'sort',el:'psn-sort'},{name:'view',el:'psn-view-field'},{name:'kind',el:'psn-kind-field'}];
+  // No 'view' here. Which layout you are in is a display preference, not a
+  // filter, and it has its own always-on cookie written by psnSetView — living
+  // in this opt-in bundle is exactly why it never stuck unless you happened to
+  // have "Remember filters" ticked.
+  var FIELDS = [{name:'platform',el:'psn-platform'},{name:'sort',el:'psn-sort'},{name:'kind',el:'psn-kind-field'}];
   var box = document.getElementById('psn-remember-filters');
   if (!box) return;
 
@@ -435,8 +602,72 @@ document.addEventListener('DOMContentLoaded', function() {
     var el = document.getElementById(f.el);
     if (el) el.addEventListener('change', function () { if (box.checked) persistAll(true); });
   });
+
+  // The view and kind fields are HIDDEN inputs written by psnSetView/psnSetKind.
+  // Assigning .value from script fires no 'change' event, so the listener above
+  // never ran for them and neither was ever stored: the view you picked came
+  // back as whatever it had been the last time a real <select> fired. Those
+  // functions call this instead of relying on an event they do not emit.
+  window.psnPersistFilters = function () {
+    if (box.checked) persistAll(true);
+  };
 })();
 
 
+
+// Edit modal — mirrors importOpenModal so both review pages open an edit the
+// same way (#180).
+window.psnOpenEdit = function(key) {
+  var body = document.getElementById('psn-edit-modal-body');
+  body.innerHTML = '<p class="text-secondary small mb-0">Loading&hellip;</p>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('psnEditModal')).show();
+  htmx.ajax('GET', '/tools/psn-review/' + encodeURIComponent(key) + '/edit', {
+    target: '#psn-edit-modal-body',
+    swap: 'innerHTML'
+  });
+};
+
+// The IGDB results partial calls selectIgdbGame(el) by name. The add-game modal
+// isn't on this page, so this is the only definition here — picking a result
+// fills the name AND captures the id, so an edit corrects the match rather than
+// just the text (#180).
+window.selectIgdbGame = function(el) {
+  var name = el.dataset.name || '';
+  var id = el.dataset.igdbId || '';
+  var titleEl = document.getElementById('psn-edit-title');
+  var idEl = document.getElementById('psn-edit-igdb-id');
+  if (titleEl) titleEl.value = name;
+  if (idEl) idEl.value = id;
+  var results = document.getElementById('psn-edit-igdb-results');
+  if (results) results.innerHTML = '';
+  var search = document.getElementById('psn-edit-igdb-search');
+  if (search) search.value = '';
+
+  // Show what you actually committed to. Updating the name field alone left
+  // the automatic suggestion below still on screen, so the only evidence the
+  // match had changed was the text in an input (#180).
+  var card = document.getElementById('psn-edit-igdb-linked');
+  if (card) {
+    document.getElementById('psn-edit-igdb-linked-name').textContent = name;
+    document.getElementById('psn-edit-igdb-linked-id').textContent = id ? 'IGDB #' + id : '';
+    card.classList.remove('d-none');
+  }
+  // The auto-match has been superseded — leaving it visible invites comparing
+  // your pick against a suggestion that no longer applies.
+  var suggestion = document.getElementById('psn-edit-suggestion');
+  if (suggestion) suggestion.hidden = true;
+};
+
+// "Change" on the locked card — drop the manual pick and go back to searching.
+window.psnClearIgdbSelection = function() {
+  var card = document.getElementById('psn-edit-igdb-linked');
+  if (card) card.classList.add('d-none');
+  var idEl = document.getElementById('psn-edit-igdb-id');
+  if (idEl) idEl.value = '';
+  var suggestion = document.getElementById('psn-edit-suggestion');
+  if (suggestion) suggestion.hidden = false;
+  var search = document.getElementById('psn-edit-igdb-search');
+  if (search) search.focus();
+};
 </script>
 {% endblock %}

@@ -6,6 +6,7 @@ lives in `match_review.py`; this module is only the HTTP surface for it.
 """
 
 import json as _json
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import Response
@@ -18,6 +19,7 @@ from .pages_common import (
     _build_detail_pane_visuals,
     _extract_igdb_meta,
     _extract_steam_meta,
+    _resolve_view_mode,
     get_web_user,
     remembered_filters,
     templates,
@@ -44,6 +46,37 @@ _PSN_SORTS = {
 }
 
 
+def _psn_more_url(page: int, platform: str, q: str, sort: str) -> str:
+    """Next scroll page for the PSN review list, filters carried along.
+
+    Same contract as /library/more: the sentinel swaps itself for the next
+    page's rows plus a fresh sentinel, so the filters have to survive or page 2
+    would show a different queue than page 1.
+    """
+    params: dict[str, str] = {"page": str(page)}
+    if platform:
+        params["platform"] = platform
+    if q:
+        params["q"] = q
+    if sort != "name":
+        params["sort"] = sort
+    return "/tools/psn-review/more?" + urlencode(params)
+
+
+def _sort_index_rows(rows: list[dict], sort: str) -> list[dict]:
+    """Same ordering as _sort_review_rows, over the LIGHT index.
+
+    Deliberately mirrors it key for key: the window is cut from this list, so
+    if the two disagreed the card view would show a different row than the one
+    the position claims.
+    """
+    if sort == "progress":
+        return sorted(rows, key=lambda r: (-(r.get("progress") or 0), (r["name"] or "").casefold()))
+    if sort == "platforms":
+        return sorted(rows, key=lambda r: (-len(r.get("platforms") or []), (r["name"] or "").casefold()))
+    return sorted(rows, key=lambda r: ((r["name"] or "").casefold(), r.get("set_index", 0)))
+
+
 def _sort_review_rows(rows: list[dict], sort: str, kind: str) -> list[dict]:
     """Sort a review queue. Unknown keys fall back to title, so a stale URL
     can't produce an arbitrarily ordered page."""
@@ -58,17 +91,39 @@ def _sort_review_rows(rows: list[dict], sort: str, kind: str) -> list[dict]:
     return sorted(rows, key=lambda r: ((r["name"] or "").casefold(), r.get("set_index", 0)))
 
 
-_PSN_REVIEW_KINDS = ("cross_play", "played_only")
+# title_fix: a trophy-only entry whose NAME is suspect. Lives in the same
+# queue as cross_play because one row can need both a name approval and a
+# platform choice, and deciding it twice would be absurd (#180).
+_PSN_REVIEW_KINDS = ("cross_play", "played_only", "title_fix", "media_app", "igdb_link")
+
+# Cards built either side of the one on show. FOUR, not two: you only ever see
+# two deep, but paging is a local move now — the script slides the cards it
+# already has rather than asking for a new window every click — so the extra
+# ring is the buffer that makes that possible. Two spare either side means two
+# clicks before the server is involved, and the fetch happens while nothing is
+# moving, so it is invisible.
+_CARD_RADIUS = 4
+
+# Rows per infinite-scroll page in the LIST view, same mechanism the library
+# uses: a sentinel row with hx-trigger="revealed" that swaps itself for the
+# next page. 561 rows in one response is a slow build and a heavy DOM; the
+# light index means each page builds only its own.
+_LIST_PAGE_SIZE = 50
 
 
 @router.get("/tools/psn-review")
 def psn_review_page(
     request: Request,
     kind: str = Query("cross_play"),
-    view: str = Query("list"),
+    # None rather than "list" so the resolver can tell "nothing asked for, use
+    # what they last chose" from "they just clicked list".
+    view: str | None = Query(None),
     platform: str = Query(""),
     q: str = Query(""),
     sort: str = Query("name"),
+    # Which row the card view is on. The card stack is server-windowed, so the
+    # position lives in the request rather than in JS holding 561 hidden cards.
+    card_index: int = Query(0),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -83,24 +138,71 @@ def psn_review_page(
 
     # Opt-in sticky filters (#189), same contract as Library / Completions /
     # Import review. `q` excluded — a remembered search string is surprising.
-    _f = remembered_filters(request, "psn-review", {"platform": platform, "sort": sort, "view": view, "kind": kind})
-    platform, sort, view, kind = _f["platform"], _f["sort"], _f["view"], _f["kind"]
+    _f = remembered_filters(request, "psn-review", {"platform": platform, "sort": sort, "kind": kind})
+    platform, sort, kind = _f["platform"], _f["sort"], _f["kind"]
 
-    kind = kind if kind in _PSN_REVIEW_KINDS else "cross_play"
-    view = view if view in ("list", "card") else "list"
+    kind = kind if kind in _PSN_REVIEW_KINDS or kind == "decided" else "cross_play"
+    # List or card is NOT a filter, and it does not belong in the opt-in filter
+    # bundle where it used to live: that made remembering which layout you chose
+    # conditional on having ticked a checkbox about filters, so for anyone who
+    # had not, the toggle simply never stuck. Its own cookie, always written,
+    # same as the library and completions view toggles (#189).
+    view = _resolve_view_mode(request, view, "cgt-psn-review-view", {"list", "card"})
 
-    cross_rows = psn.import_review_rows(db, current_user.id)
     played_rows = [r for r in psn.played_only_rows(db, current_user.id) if not r["decision"]]
-    counts = {"cross_play": len(cross_rows), "played_only": len(played_rows)}
+    decided = psn.decided_rows(db, current_user.id)
 
-    rows = cross_rows if kind == "cross_play" else played_rows
-    review_platforms = sorted({o["platform"] for r in cross_rows for o in r["options"]})
-    if kind == "cross_play" and platform:
-        rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
-    if q:
-        needle = q.casefold()
-        rows = [r for r in rows if needle in (r["name"] or "").casefold()]
-    rows = _sort_review_rows(rows, sort, kind)
+    # The CARD view shows one row at a time, so it builds one window rather than
+    # the whole queue: the light index orders every pending row in ~20ms, the
+    # position in that list IS the counter, and only the handful around it are
+    # built for real (~830ms for 561 rows, against a few for five). The LIST
+    # view is a table you scroll, so it still needs all of them.
+    # The index serves both views: the card stack takes a window around a
+    # position, the list takes a page and scrolls for more.
+    indexed = kind == "cross_play"
+    index_rows = psn.review_row_index(db, current_user.id) if indexed else []
+    review_platforms = sorted({p for i in index_rows for p in i["platforms"]}) if indexed else []
+    card_total = 0
+    card_pos = 0
+    active_key = None
+    active_offset = 0
+    next_page_url = None
+
+    if indexed:
+        if platform:
+            index_rows = [i for i in index_rows if platform in i["platforms"]]
+        if q:
+            needle = q.casefold()
+            index_rows = [i for i in index_rows if needle in (i["name"] or "").casefold()]
+        index_rows = _sort_index_rows(index_rows, sort)
+        card_total = len(index_rows)
+        if view == "card":
+            card_pos = max(0, min(card_index, card_total - 1)) if card_total else 0
+            slice_ = index_rows[max(0, card_pos - _CARD_RADIUS) : card_pos + _CARD_RADIUS + 1]
+            active_key = index_rows[card_pos]["key"] if card_total else None
+            # Where the active card sits WITHIN the window, so the template can
+            # tell which cards come after it — those are the pile behind it.
+            active_offset = min(card_pos, _CARD_RADIUS)
+        else:
+            slice_ = index_rows[:_LIST_PAGE_SIZE]
+            if card_total > _LIST_PAGE_SIZE:
+                next_page_url = _psn_more_url(2, platform, q, sort)
+        keys = [w["key"] for w in slice_]
+        built = {r["key"]: r for r in psn.import_review_rows(db, current_user.id, only_keys=keys)}
+        # Ordered by the index, not by whatever the builder returned.
+        rows = [built[k] for k in keys if k in built]
+        counts = {"cross_play": card_total, "played_only": len(played_rows), "decided": len(decided)}
+    else:
+        cross_rows = psn.import_review_rows(db, current_user.id)
+        counts = {"cross_play": len(cross_rows), "played_only": len(played_rows), "decided": len(decided)}
+        rows = {"cross_play": cross_rows, "played_only": played_rows, "decided": decided}.get(kind, cross_rows)
+        review_platforms = sorted({o["platform"] for r in cross_rows for o in r["options"]})
+        if kind == "cross_play" and platform:
+            rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
+        if q:
+            needle = q.casefold()
+            rows = [r for r in rows if needle in (r["name"] or "").casefold()]
+        rows = _sort_review_rows(rows, sort, kind)
 
     ctx = {
         "current_user": current_user,
@@ -108,11 +210,16 @@ def psn_review_page(
         "rows": rows,
         "kind": kind,
         "counts": counts,
+        "card_total": card_total,
+        "card_pos": card_pos,
+        "active_key": active_key,
+        "active_offset": active_offset,
+        "next_page_url": next_page_url,
         "view": view,
         "platform": platform,
         "q": q,
         "sort": sort,
-        "sorts": _PSN_SORTS[kind],
+        "sorts": _PSN_SORTS.get(kind, _PSN_SORTS["cross_play"]),
         "has_snapshot": psn.has_synced(db, current_user.id),
         "review_platforms": review_platforms,
     }
@@ -158,7 +265,13 @@ async def psn_review_bulk_confirm(
     Not just a list of ids like import review's bulk confirm: the whole value
     here is that most rows arrive pre-ticked correctly from the cross-buy
     reference, so the selection has to travel per row. Payload is JSON,
-    {external_id: [platform, ...]}.
+    {external_id: {"platforms": [...], "use_proposed": bool}}.
+
+    use_proposed travels too, or a bulk confirm would create the entry under
+    Sony's name while the row was visibly showing the IGDB one — the per-row
+    Confirm honoured the suggestion and bulk silently did not (#180). The older
+    {external_id: [platform, ...]} shape is still accepted so a page loaded
+    before this change does not post something that gets misread.
 
     Rows already decided, or platforms a trophy set doesn't cover, are dropped
     by confirm_entry_decision rather than trusted — a stale page can post
@@ -174,11 +287,19 @@ async def psn_review_bulk_confirm(
         return Response("No rows selected.", status_code=422)
 
     confirmed = created = 0
-    for key, platforms in parsed.items():
-        if not isinstance(platforms, list):
+    for key, sel in parsed.items():
+        # Tolerate the old list-only shape from a stale page.
+        if isinstance(sel, list):
+            platforms, use_proposed = sel, False
+        elif isinstance(sel, dict):
+            platforms = sel.get("platforms")
+            use_proposed = bool(sel.get("use_proposed"))
+            if not isinstance(platforms, list):
+                continue
+        else:
             continue
         try:
-            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms])
+            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms], use_proposed=use_proposed)
         except ValueError:
             continue  # already decided, or no longer in the queue
         confirmed += 1
@@ -240,7 +361,7 @@ def _review_chrome_ctx(db: Session, user: models.User, kind: str) -> dict:
         "oob": True,
         "kind": kind,
         "counts": {
-            "cross_play": len(psn.import_review_rows(db, user.id)),
+            "cross_play": psn.count_pending_review_rows(db, user.id),
             "played_only": len([r for r in psn.played_only_rows(db, user.id) if not r["decision"]]),
         },
     }
@@ -316,21 +437,165 @@ async def psn_played_only_attach(
     return _played_only_done(request, db, current_user, key, name, "play stats attached")
 
 
+@router.post("/tools/psn-review/{key}/reopen")
+async def psn_review_reopen(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Put a decided row back in the queue so the call can be changed."""
+    from . import psn
+
+    try:
+        psn.reopen_decision(db, current_user, key)
+    except ValueError:
+        return Response("That row is not in the PSN review queue.", status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "success", "body": "Back in the review queue.", "oob": False},
+    )
+
+
+@router.get("/tools/psn-review/more")
+def psn_review_more(
+    request: Request,
+    page: int = Query(2, ge=2),
+    platform: str = Query(""),
+    q: str = Query(""),
+    sort: str = Query("name"),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """One more page of review rows, plus the sentinel for the page after it.
+
+    Same contract as /library/more: the sentinel swaps ITSELF for this response,
+    so it has to carry the next one or scrolling stops silently.
+    """
+    from . import psn
+
+    index_rows = psn.review_row_index(db, current_user.id)
+    if platform:
+        index_rows = [i for i in index_rows if platform in i["platforms"]]
+    if q:
+        needle = q.casefold()
+        index_rows = [i for i in index_rows if needle in (i["name"] or "").casefold()]
+    index_rows = _sort_index_rows(index_rows, sort)
+
+    start = (page - 1) * _LIST_PAGE_SIZE
+    keys = [i["key"] for i in index_rows[start : start + _LIST_PAGE_SIZE]]
+    built = {r["key"]: r for r in psn.import_review_rows(db, current_user.id, only_keys=keys)}
+    rows = [built[k] for k in keys if k in built]
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_rows.html",
+        context={
+            "rows": rows,
+            "current_user": current_user,
+            "next_page_url": _psn_more_url(page + 1, platform, q, sort) if start + _LIST_PAGE_SIZE < len(index_rows) else None,
+        },
+    )
+
+
+@router.get("/tools/psn-review/{key}/edit")
+async def psn_review_edit_form(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Edit body for one row. Same shape as import review's edit modal."""
+    from . import psn
+
+    rows = psn.import_review_rows(db, current_user.id, only_keys=[key])
+    if not rows:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_edit_modal.html",
+        context={"r": rows[0], "current_user": current_user},
+    )
+
+
+@router.post("/tools/psn-review/{key}/edit")
+async def psn_review_edit(
+    key: str,
+    request: Request,
+    title: str = Form(...),
+    igdb_id: str = Form(default=""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Save an edited name (and any corrected IGDB match) and re-render the row."""
+    from . import psn
+
+    chosen_id = None
+    if igdb_id.strip().isdigit():
+        chosen_id = int(igdb_id.strip())
+    try:
+        psn.rename_candidate(db, current_user, key, title, igdb_id=chosen_id)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    rows = psn.import_review_rows(db, current_user.id, only_keys=[key])
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_rows.html",
+        context={"rows": rows, "current_user": current_user},
+    )
+
+
+@router.post("/tools/psn-review/{key}/reject-name")
+async def psn_review_reject_name(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Reject an IGDB name suggestion — the row reverts to raw PSN data (#180).
+
+    The whole match goes, not only the name: a lookup wrong about the name has
+    no claim to be right about the platforms it returned. The row stays pending
+    with its original title and full platform options, because the proposal was
+    stored alongside them rather than applied over them.
+    """
+    from . import psn
+
+    try:
+        psn.reject_proposal(db, current_user, key)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    rows = psn.import_review_rows(db, current_user.id, only_keys=[key])
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_rows.html",
+        context={"rows": rows, "current_user": current_user},
+    )
+
+
 @router.post("/tools/psn-review/{key}/confirm")
 async def psn_review_confirm(
     key: str,
     request: Request,
     platforms: list[str] = Form(default=[]),
+    use_proposed: bool = Form(default=False),
+    custom_title: str = Form(default=""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     """Confirm one row: create the entries for the ticked platforms and retire
     the row. Mirrors import review's per-candidate confirm — the click IS the
-    action, and the response is the row's replacement."""
+    action, and the response is the row's replacement.
+
+    use_proposed carries the IGDB name suggestion's acceptance, so approving a
+    name and choosing platforms is ONE decision on ONE row (#180) rather than
+    two queues to visit for a single game."""
     from . import psn
 
     try:
-        result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms])
+        result = psn.confirm_entry_decision(
+            db, current_user, key, [p.upper() for p in platforms], use_proposed=use_proposed, custom_title=custom_title
+        )
     except ValueError:
         # Fixed text, not the exception's: a 404 here only ever means the row
         # isn't in the queue (stale page, already actioned), and echoing an
