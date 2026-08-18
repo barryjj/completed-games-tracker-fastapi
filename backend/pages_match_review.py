@@ -58,7 +58,10 @@ def _sort_review_rows(rows: list[dict], sort: str, kind: str) -> list[dict]:
     return sorted(rows, key=lambda r: ((r["name"] or "").casefold(), r.get("set_index", 0)))
 
 
-_PSN_REVIEW_KINDS = ("cross_play", "played_only")
+# title_fix: a trophy-only entry whose NAME is suspect. Lives in the same
+# queue as cross_play because one row can need both a name approval and a
+# platform choice, and deciding it twice would be absurd (#180).
+_PSN_REVIEW_KINDS = ("cross_play", "played_only", "title_fix")
 
 
 @router.get("/tools/psn-review")
@@ -158,7 +161,13 @@ async def psn_review_bulk_confirm(
     Not just a list of ids like import review's bulk confirm: the whole value
     here is that most rows arrive pre-ticked correctly from the cross-buy
     reference, so the selection has to travel per row. Payload is JSON,
-    {external_id: [platform, ...]}.
+    {external_id: {"platforms": [...], "use_proposed": bool}}.
+
+    use_proposed travels too, or a bulk confirm would create the entry under
+    Sony's name while the row was visibly showing the IGDB one — the per-row
+    Confirm honoured the suggestion and bulk silently did not (#180). The older
+    {external_id: [platform, ...]} shape is still accepted so a page loaded
+    before this change does not post something that gets misread.
 
     Rows already decided, or platforms a trophy set doesn't cover, are dropped
     by confirm_entry_decision rather than trusted — a stale page can post
@@ -174,11 +183,19 @@ async def psn_review_bulk_confirm(
         return Response("No rows selected.", status_code=422)
 
     confirmed = created = 0
-    for key, platforms in parsed.items():
-        if not isinstance(platforms, list):
+    for key, sel in parsed.items():
+        # Tolerate the old list-only shape from a stale page.
+        if isinstance(sel, list):
+            platforms, use_proposed = sel, False
+        elif isinstance(sel, dict):
+            platforms = sel.get("platforms")
+            use_proposed = bool(sel.get("use_proposed"))
+            if not isinstance(platforms, list):
+                continue
+        else:
             continue
         try:
-            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms])
+            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms], use_proposed=use_proposed)
         except ValueError:
             continue  # already decided, or no longer in the queue
         confirmed += 1
@@ -316,21 +333,54 @@ async def psn_played_only_attach(
     return _played_only_done(request, db, current_user, key, name, "play stats attached")
 
 
+@router.post("/tools/psn-review/{key}/reject-name")
+async def psn_review_reject_name(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Reject an IGDB name suggestion — the row reverts to raw PSN data (#180).
+
+    The whole match goes, not only the name: a lookup wrong about the name has
+    no claim to be right about the platforms it returned. The row stays pending
+    with its original title and full platform options, because the proposal was
+    stored alongside them rather than applied over them.
+    """
+    from . import psn
+
+    try:
+        psn.reject_proposal(db, current_user, key)
+    except ValueError:
+        return Response("That row is no longer in the PSN review queue.", status_code=404)
+    rows = [r for r in psn.import_review_rows(db, current_user.id) if r["key"] == key]
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_psn_review_rows.html",
+        context={"rows": rows, "current_user": current_user},
+    )
+
+
 @router.post("/tools/psn-review/{key}/confirm")
 async def psn_review_confirm(
     key: str,
     request: Request,
     platforms: list[str] = Form(default=[]),
+    use_proposed: bool = Form(default=False),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
     """Confirm one row: create the entries for the ticked platforms and retire
     the row. Mirrors import review's per-candidate confirm — the click IS the
-    action, and the response is the row's replacement."""
+    action, and the response is the row's replacement.
+
+    use_proposed carries the IGDB name suggestion's acceptance, so approving a
+    name and choosing platforms is ONE decision on ONE row (#180) rather than
+    two queues to visit for a single game."""
     from . import psn
 
     try:
-        result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms])
+        result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms], use_proposed=use_proposed)
     except ValueError:
         # Fixed text, not the exception's: a 404 here only ever means the row
         # isn't in the queue (stale page, already actioned), and echoing an

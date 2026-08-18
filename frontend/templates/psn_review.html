@@ -303,9 +303,16 @@ window.psnCheckedSelections = function() {
   var out = {};
   document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
     var opts = document.getElementById('psn-opts-' + cb.value);
-    out[cb.value] = opts
-      ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
-      : [];
+    var useProp = document.getElementById('psn-useprop-' + cb.value);
+    out[cb.value] = {
+      platforms: opts
+        ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
+        : [],
+      // Without this a bulk confirm created the entry under Sony's name even
+      // though the row was visibly showing the IGDB one — the per-row Confirm
+      // honoured the suggestion and bulk silently did not (#180).
+      use_proposed: !!(useProp && useProp.checked)
+    };
   });
   return JSON.stringify(out);
 };

@@ -18,11 +18,42 @@
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}
       <div>
+        {# An accepted IGDB name is applied AT CREATION, so the row shows the
+           name that will actually be written — struck-through original beside
+           it, because you should be able to see what Sony called it (#180). #}
+        {% if r.proposal_status == "pending" and r.proposed_title %}
+        <span class="cgt-import-title cgt-psn-proposed" id="psn-title-{{ r.key }}">{{ r.proposed_title }}</span>
+        <span class="text-secondary small text-decoration-line-through ms-1">{{ r.name }}</span>
+        {% else %}
         <span class="cgt-import-title">{{ r.name }}</span>
+        {% endif %}
         {% if r.set_count > 1 %}
         <span class="tag-badge tag-source ms-1" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
         {% endif %}
         <div class="text-secondary small">{{ r.reason }}</div>
+        {% if r.proposal_status == "pending" and r.proposed_title %}
+        {# Ticked by default: the suggestion is corroborated on platform, and
+           the common case is accepting it. Unticking keeps Sony's name. #}
+        <div class="small mt-1">
+          <label class="text-secondary">
+            <input class="form-check-input me-1" type="checkbox" name="use_proposed" value="true" checked
+                   id="psn-useprop-{{ r.key }}">
+            Use IGDB name
+          </label>
+          <a href="#" class="ms-2 text-secondary"
+             hx-post="/tools/psn-review/{{ r.key }}/reject-name"
+             hx-target="#psn-row-{{ r.key }}"
+             hx-swap="outerHTML"
+             title="Discard the whole suggestion and go back to Sony's data">Reject</a>
+        </div>
+        {% elif r.proposal_status == "none" %}
+        {# Surfaced deliberately. An unidentified row kept invisible is exactly
+           how "SF3: Online Edition" reached the library unnoticed. #}
+        <div class="small mt-1 text-secondary">
+          <span class="tag-badge tag-source">Not identified</span>
+          IGDB had no confident match &mdash; confirm to keep this name, or fix it in the library after.
+        </div>
+        {% endif %}
       </div>
     </div>
   </td>
@@ -55,7 +86,7 @@
     <div class="btn-group btn-group-sm">
       <button type="button" class="btn btn-primary btn-sm"
               hx-post="/tools/psn-review/{{ r.key }}/confirm"
-              hx-include="#psn-opts-{{ r.key }} input:checked"
+              hx-include="#psn-opts-{{ r.key }} input:checked, #psn-useprop-{{ r.key }}:checked"
               hx-target="#psn-row-{{ r.key }}"
               hx-swap="outerHTML"
               hx-disabled-elt="this"

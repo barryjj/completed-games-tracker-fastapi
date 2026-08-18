@@ -540,6 +540,14 @@ _STEAM_KINDS: dict[str, dict] = {
         "label": "Review artwork",
         "job_label": "PSN review artwork",
     },
+    "psn_igdb_titles": {
+        "fn": "fill_review_proposals",
+        "module": "psn",
+        "no_credentials": True,  # gated on Twitch/IGDB creds by the job itself
+        "started": "Checking suspect PSN titles against IGDB — you'll see a toast when it finishes.",
+        "label": "Title check",
+        "job_label": "PSN title check",
+    },
     "psn_store_refresh": {
         "fn": "refresh_all_store_metadata",
         "module": "psn_store",
@@ -575,6 +583,15 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
             lines.append(f"{result['errored']:,} errored — try again later")
         if result.get("no_product"):
             lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
+        return "\n".join(lines)
+    if kind == "psn_igdb_titles":
+        if result.get("skipped_no_credentials"):
+            return "PSN title check skipped\nAdd Twitch/IGDB credentials under Settings to enable it."
+        lines = [f"PSN title check complete\n{result['proposed']:,} suggestion{'' if result['proposed'] == 1 else 's'} to review"]
+        if result.get("no_match"):
+            lines.append(f"{result['no_match']:,} left as-is (no confident match)")
+        if result.get("errored"):
+            lines.append(f"{result['errored']:,} errored")
         return "\n".join(lines)
     if kind == "psn_review_art":
         return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
@@ -659,6 +676,11 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
     steps: list[tuple[str, str]] = []
     if added:
         steps.append(("psn_store_refresh", "Store metadata"))
+    if needs_review:
+        # Trophy-only rows are named after their trophy SET, which is often
+        # localized or abbreviated. Self-gating: rows already decided or already
+        # carrying a proposal are skipped, so a re-sync costs nothing (#180).
+        steps.append(("psn_igdb_titles", "Title check"))
     if has_sgdb_key:
         # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
         # the covers actually being waited on.

@@ -467,7 +467,9 @@ def test_import_snapshot_creates_rows_and_chains_scan(db_session, monkeypatch, t
     _seed_review(db_session, user, merged)
 
     result = psn.import_merged(db_session, user, merged)
-    assert result["added"] == 2
+    # Stellar Blade imports (it has a titleId). Demon's Souls is trophy-only,
+    # so its name came from a trophy set and it waits for review instead (#180).
+    assert result["added"] == 1
     assert result["played_only_pending"] == 1
     assert result["skipped_no_platform"] == 1
     assert result["match_candidates"] >= 1  # Stellar Blade overlap queued
@@ -482,8 +484,9 @@ def test_import_snapshot_creates_rows_and_chains_scan(db_session, monkeypatch, t
     # No artwork rows by design — SGDB is the art source.
     assert db_session.query(models.GameArtwork).filter_by(release_id=sb.id).count() == 0
 
-    ds = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR555_00").one()
-    assert ds.platform_id == models.resolve_platform_id(db_session, "PS3")
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR555_00").count() == 0
+    held = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR555_00").one()
+    assert held.kind == "title_fix" and held.status == "pending"
 
     # Played-only stayed out.
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA14394_00").count() == 0
@@ -491,8 +494,8 @@ def test_import_snapshot_creates_rows_and_chains_scan(db_session, monkeypatch, t
     # Idempotent re-run: no new rows.
     result2 = psn.import_merged(db_session, user, merged)
     assert result2["added"] == 0
-    assert result2["updated"] == 2
-    assert db_session.query(models.GameRelease).filter_by(source="psn").count() == 2
+    assert result2["updated"] == 1
+    assert db_session.query(models.GameRelease).filter_by(source="psn").count() == 1
 
 
 def test_import_skips_pc_only_game_already_in_steam(db_session, monkeypatch, tmp_path):
@@ -552,9 +555,13 @@ def test_import_skips_pc_only_game_already_in_steam(db_session, monkeypatch, tmp
     assert result["skipped_pc_dupe"] == 1
     # The pspc Stellar Blade (trophy id) was skipped...
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR37356_00").count() == 0
-    # ...but the non-Steam PC game and the native PS5 copy both imported.
-    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR90001_00").count() == 1
+    # ...the native PS5 copy imported (it has a titleId)...
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="PPSA03016_00").count() == 1
+    # ...and the non-Steam PC game is trophy-only, so it waits for review
+    # rather than importing under a trophy-set name (#180). The PC-dupe skip
+    # still runs first, which is why the Steam-owned one never reaches here.
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR90001_00").count() == 0
+    assert db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR90001_00", kind="title_fix").count() == 1
 
 
 def test_played_only_actions(client, db_session):
@@ -799,8 +806,11 @@ def test_import_strips_trophy_suffix_from_existing_snapshot(db_session, monkeypa
     ]
     _seed_review(db_session, user, merged)
     psn.import_merged(db_session, user, merged)
-    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR555_00").one()
-    assert rel.game.display_title == "God of War II"
+    # Trophy-only, so it waits for review instead of importing — but the
+    # trophy-set suffix is still stripped, because the queue has to show the
+    # name a human would recognise, not "God of War II Trophies" (#180).
+    held = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR555_00").one()
+    assert held.title == "God of War II"
 
 
 def test_reimport_recleans_stale_title(db_session, monkeypatch, tmp_path):
@@ -881,7 +891,7 @@ def test_psn_sync_followups_run_in_sequence_store_metadata_first(db_session, mon
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
-    assert ran == ["psn_store_refresh", "sgdb_fill_all", "psn_review_art"]
+    assert ran == ["psn_store_refresh", "psn_igdb_titles", "sgdb_fill_all", "psn_review_art"]
     jobs.clear_all()
 
 
@@ -909,7 +919,7 @@ def test_psn_followups_skip_what_does_not_apply(db_session, monkeypatch):
 
     ran.clear()
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=False))
-    assert ran == ["psn_store_refresh"], "no key, no artwork passes"
+    assert ran == ["psn_store_refresh", "psn_igdb_titles"], "no SGDB key kills the artwork passes, not the title check"
     jobs.clear_all()
 
 
@@ -935,7 +945,7 @@ def test_one_failing_followup_does_not_strand_the_rest(db_session, monkeypatch):
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
-    assert ran == ["sgdb_fill_all", "psn_review_art"]
+    assert ran == ["psn_igdb_titles", "sgdb_fill_all", "psn_review_art"]
     jobs.clear_all()
 
 
@@ -1034,7 +1044,7 @@ def test_merge_tracks_play_minutes_per_category():
     assert psn.played_minutes_by_platform(item) == {"PS5": 600, "PS4": 30}
 
 
-def test_import_review_rows_lists_only_cross_play_games(db_session):
+def test_import_review_rows_lists_rows_awaiting_any_decision(db_session):
     """Only an ambiguous PLATFORM reaches the review. Anything on a single
     platform is settled — the import creates it without asking."""
     _seed_platforms(db_session)
@@ -1048,7 +1058,8 @@ def test_import_review_rows_lists_only_cross_play_games(db_session):
             "playByCategory": {"ps5_native_game": 600},
             "sources": ["titles", "played"],
         },
-        {  # single platform, trophy-only — nothing to ask
+        {  # single platform, but trophy-only: its NAME came from a trophy set,
+            # so it is held back for review even though its platform is settled.
             "npCommunicationId": "NPWR_ONE_00",
             "name": "TrophyOnly",
             "displayName": "TrophyOnly",
@@ -1066,8 +1077,13 @@ def test_import_review_rows_lists_only_cross_play_games(db_session):
     psn.import_merged(db_session, user, merged)
     rows = psn.import_review_rows(db_session, user.id)
 
-    assert [r["name"] for r in rows] == ["Cross"]
-    options = {o["platform"]: o for o in rows[0]["options"]}
+    # One queue: a cross-play row (platform question) and a trophy-only row
+    # (name question) both wait here. "Settled" is store-backed and single
+    # platform, so it imported without asking anything.
+    assert sorted(r["name"] for r in rows) == ["Cross", "TrophyOnly"]
+    cross = next(r for r in rows if r["name"] == "Cross")
+    assert next(r for r in rows if r["name"] == "TrophyOnly")["kind_is_title_fix"] is True
+    options = {o["platform"]: o for o in cross["options"]}
     assert set(options) == {"PS4", "PS5"}
     # Both pre-ticked: PS4 is proven by the two settled games the import just
     # created as PS4 entries, PS5 by the logged play time. Defaulting to
@@ -1626,35 +1642,6 @@ def test_playtime_is_not_attributed_across_several_trophy_sets(db_session, monke
     assert "PS4" not in played_row["reason"]
 
 
-def test_owned_platforms_narrows_the_default_to_hardware_you_have(db_session):
-    """An account whose only evidence is Vita defaults a cross-play set to Vita
-    — not to every platform Sony lists on it."""
-    _seed_platforms(db_session)
-    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
-    db_session.commit()
-    user = _user(db_session, "vita")
-    merged = [
-        {  # single-platform set: the import places it, proving a Vita
-            "npCommunicationId": "NPWR_V_00",
-            "name": "Vita Only",
-            "displayName": "Vita Only",
-            "platform": "PSVITA",
-            "sources": ["titles"],
-        },
-        {  # the ambiguous one
-            "npCommunicationId": "NPWR_C_00",
-            "name": "Cross",
-            "displayName": "Cross",
-            "platform": "PS3,PSVITA,PS4",
-            "sources": ["titles"],
-        },
-    ]
-    psn.import_merged(db_session, user, merged)
-
-    row = next(r for r in psn.import_review_rows(db_session, user.id) if r["name"] == "Cross")
-    assert [o["platform"] for o in row["options"] if o["selected"]] == ["PSVITA"]
-
-
 def test_psn_review_card_view_has_the_carousel(client, db_session, monkeypatch, tmp_path):
     """Card view is the same stack + sticky arrows + counter as the other
     review queues, not a bespoke layout."""
@@ -2086,24 +2073,6 @@ def test_tools_psn_card_offers_setup_not_sync_without_credentials(client, db_ses
     _signup_and_login(client)
     body = client.get("/tools").content
     assert b'hx-post="/integrations/psn/sync"' not in body
-
-
-def test_owned_platforms_matches_trophy_tokens_to_real_platform_rows(db_session):
-    """Trophy feeds say "PSVITA"; the platforms table says "PlayStation Vita".
-    An uppercase-and-strip-spaces comparison proved nothing for PS3 or Vita and
-    left most review rows defaulting to PS4 alone — resolve ids instead."""
-    _seed_platforms(db_session)
-    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
-    db_session.commit()
-    user = _user(db_session, "tok")
-
-    # One settled Vita game — that's proof of a Vita, and nothing else.
-    psn.import_merged(
-        db_session,
-        user,
-        [{"npCommunicationId": "NPWR_OV_00", "name": "Vita Only", "displayName": "Vita Only", "platform": "PSVITA", "sources": ["titles"]}],
-    )
-    assert "PSVITA" in psn.owned_platforms(db_session, user.id)
 
 
 def test_review_search_and_sort(client, db_session):
@@ -3062,3 +3031,495 @@ def test_attach_search_is_scoped_to_playstation_and_ranked(client, db_session):
     body = client.get("/integrations/psn/attach-search", params={"external_id": "X", "q": "devil"}).text
     assert "Devil May Cry 5 Special Edition" in body
     assert "Alt Colors" not in body, "Steam DLC is never an attach target"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IGDB title proposals (#180)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def test_trophy_only_rows_are_the_ones_with_suspect_names():
+    """A store-backed row got its name from a store listing and is fine. A row
+    whose external_id is an npCommunicationId was named after its trophy SET —
+    and the purchased feed can never supply a store record for PS3/Vita (#181),
+    so that name is permanent unless something external fixes it."""
+    assert psn.is_trophy_only("NPWR03481_00")
+    assert psn.is_trophy_only("npwr00791_00")
+    assert not psn.is_trophy_only("CUSA12431_00")
+    assert not psn.is_trophy_only("PPSA21564_00")
+    assert not psn.is_trophy_only(None)
+
+
+def test_mixed_script_titles_fall_back_to_their_latin_run():
+    """IGDB returns ZERO results for "閃乱カグラ SHINOVI VERSUS" and an exact hit
+    for "SHINOVI VERSUS" — verified against the live API 2026-08-07. Sending
+    the raw title alone would fail the case this feature exists for, and fail
+    silently, because 0 results reads as "no proposal" rather than an error."""
+    terms = psn.search_terms("閃乱カグラ SHINOVI VERSUS")
+    assert terms[0] == "閃乱カグラ SHINOVI VERSUS", "raw title is tried first"
+    assert "SHINOVI VERSUS" in terms[1], "latin run is the fallback"
+
+    # A pure-Latin title must not queue a duplicate query.
+    assert psn.search_terms("Modern Warfare 2") == ["Modern Warfare 2"]
+    assert psn.search_terms("") == []
+
+
+def test_proposal_requires_platform_overlap_not_agreement():
+    """Shinovi Versus' trophy set claims PS3 + Vita; IGDB says Vita alone. The
+    phantom PS3 IS the bad data being corrected, so demanding the sets agree
+    would reject the very row this feature targets."""
+    hits = [{"id": 4242, "name": "Senran Kagura: Shinovi Versus", "platform_ids": [46]}]
+
+    def fake_search(term, platform_ids):
+        # Faithful to the live API: the mixed-script string returns nothing,
+        # the latin run returns the exact game.
+        return hits if term == "SHINOVI VERSUS" else []
+
+    got = psn.build_proposal("閃乱カグラ SHINOVI VERSUS", ["PS3", "PSVITA"], [9, 46], fake_search)
+    assert got["proposed_title"] == "Senran Kagura: Shinovi Versus"
+    assert got["proposed_igdb_id"] == 4242
+    assert got["proposed_platforms"] == [46], "the corrected set, not the trophy set's claim"
+    assert got["matched_term"] == "SHINOVI VERSUS", "matched via the latin fallback"
+
+
+def test_no_proposal_when_nothing_overlaps():
+    """Zero overlap means no proposal. A row left raw beats a confident wrong
+    rename, which is harder to notice because it looks authoritative."""
+    hits = [{"id": 1, "name": "Some Xbox Game", "platform_ids": [12]}]
+    assert psn.build_proposal("Whatever", ["PS3"], [9], lambda t, p: hits) is None
+    assert psn.build_proposal("Whatever", ["PS3"], [9], lambda t, p: []) is None
+    # No resolvable platforms at all -> nothing to corroborate against.
+    assert psn.build_proposal("Whatever", [], [], lambda t, p: [{"id": 1, "name": "X", "platform_ids": [9]}]) is None
+
+
+def test_no_proposal_when_igdb_agrees_with_the_name_we_have():
+    """Most rows are already right. Surfacing "we propose the name you already
+    have" would bury the real corrections in noise."""
+    hits = [{"id": 7, "name": "Bloodborne", "platform_ids": [48]}]
+    assert psn.build_proposal("Bloodborne™", ["PS4"], [48], lambda t, p: hits) is None
+
+
+def test_igdb_platform_ids_come_from_the_platforms_table(db_session):
+    """The app's platform rows already carry IGDB ids, so there is no name
+    mapping to do — and a hand-rolled one would drift from the real catalogue.
+    Real ids: PS3=9, Vita=46 (confirmed against the live IGDB platform list)."""
+    db_session.add_all(
+        [
+            models.Platform(name="PlayStation 3", display_name="PS3", igdb_id=9),
+            models.Platform(name="PlayStation Vita", display_name="PS Vita", igdb_id=46),
+        ]
+    )
+    db_session.commit()
+
+    got = psn.igdb_platform_ids(db_session, ["PS3", "PSVITA"])
+    assert sorted(got) == [9, 46], f"expected the platforms table's own igdb ids, got {got}"
+    # An unresolvable token contributes nothing rather than guessing.
+    assert psn.igdb_platform_ids(db_session, ["NotAPlatform"]) == []
+
+
+def _prop_user(db, name):
+    user = models.User(name=name, username=name, password_hash="x", api_token=f"{name}-tok")
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    db.add(user)
+    db.add(models.Platform(name="PlayStation 3", display_name="PS3", igdb_id=9))
+    db.flush()
+    return user
+
+
+def _cand(db, user, ext, title, kind="title_fix", status="pending", proposal_status=None, platform="PS3"):
+    c = models.PsnReviewCandidate(
+        user_id=user.id,
+        external_id=ext,
+        title=title,
+        kind=kind,
+        status=status,
+        proposal_status=proposal_status,
+        raw_data={"platform": platform},
+    )
+    db.add(c)
+    return c
+
+
+def test_trophy_only_rows_are_held_back_for_review_not_imported(db_session):
+    """A trophy-set name is often wrong and Sony can never improve it — no store
+    record exists for these generations (#181), and there's no playtime or
+    metadata to fall back on. Importing one silently is how "SF3: Online
+    Edition" became a library entry nobody knew was wrong. So it is held back
+    and the entry is created on confirm, under the approved name. There is no
+    rename path because nothing is written under the bad name first."""
+    user = _prop_user(db_session, "u-hold")
+    db_session.commit()
+
+    merged = [
+        {"name": "SF3: Online Edition", "npCommunicationId": "NPWR01456_00", "platform": "PS3"},
+        {"name": "Bloodborne", "titleId": "CUSA00900_00", "platform": "PS4"},
+    ]
+    db_session.add(models.Platform(name="PlayStation 4", display_name="PS4", igdb_id=48))
+    db_session.commit()
+
+    result = psn.import_merged(db_session, user, merged)
+    db_session.commit()
+
+    held = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR01456_00").first()
+    assert held is not None, "a suspect trophy-set name must not import silently"
+    assert held.kind == "title_fix"
+    assert result["needs_review"] >= 1
+
+    titles_in_lib = {g.title for g in db_session.query(models.Game).all()}
+    assert "SF3: Online Edition" not in titles_in_lib, "held back, so never written under the bad name"
+    assert "Bloodborne" in titles_in_lib, "store-backed rows still import normally"
+
+
+def test_proposal_job_runs_on_candidates_not_the_library(db_session):
+    """Phase 1 is candidates only — nothing in the library is touched. Walking
+    existing library entries to attach igdb_ids is phase 2 (#161), and a
+    button rather than part of sync."""
+    user = _prop_user(db_session, "u-cand")
+    _cand(db_session, user, "NPWR00001_00", "Suspect Name")
+    _cand(db_session, user, "CUSA00001_00", "Store Backed Name")  # store name is fine
+    db_session.commit()
+
+    seen = []
+
+    def fake_search(term, platform_ids):
+        seen.append(term)
+        return [{"id": 1, "name": "The Real Name", "platform_ids": platform_ids}]
+
+    import backend.psn as psn_mod
+
+    orig = psn_mod._igdb_search_adapter
+    psn_mod._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        out = psn_mod.fill_review_proposals(db_session, user)
+    finally:
+        psn_mod._igdb_search_adapter = orig
+
+    assert seen == ["Suspect Name"], "store-backed rows are not candidates for a rename"
+    assert out["checked"] == 1 and out["proposed"] == 1
+    row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00001_00").first()
+    assert row.proposed_title == "The Real Name"
+    assert row.proposal_status == "pending"
+
+
+def test_proposal_job_records_a_miss_so_it_stays_visible(db_session):
+    """SF3: IGDB cannot expand the abbreviation. The row is marked, not
+    forgotten — it still shows in the queue so the name can be fixed by hand."""
+    user = _prop_user(db_session, "u-miss")
+    _cand(db_session, user, "NPWR09999_00", "SF3: Online Edition")
+    db_session.commit()
+
+    import backend.psn as psn_mod
+
+    orig = psn_mod._igdb_search_adapter
+    psn_mod._igdb_search_adapter = lambda *a, **k: lambda term, pids: []
+    try:
+        out = psn_mod.fill_review_proposals(db_session, user)
+    finally:
+        psn_mod._igdb_search_adapter = orig
+
+    assert out["no_match"] == 1 and out["proposed"] == 0
+    row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR09999_00").first()
+    assert row.proposal_status == "none", "recorded, so a re-sync doesn't pay for the same miss"
+    assert row.proposed_title is None
+
+
+def test_proposal_job_skips_rows_already_looked_up_or_decided(db_session):
+    """Self-gating is what makes this safe to chain off a sync."""
+    user = _prop_user(db_session, "u-skip")
+    _cand(db_session, user, "NPWR00002_00", "Decided", status="confirmed")
+    _cand(db_session, user, "NPWR00003_00", "Proposed", proposal_status="pending")
+    _cand(db_session, user, "NPWR00004_00", "Missed", proposal_status="none")
+    db_session.commit()
+
+    import backend.psn as psn_mod
+
+    called = []
+    orig = psn_mod._igdb_search_adapter
+    psn_mod._igdb_search_adapter = lambda *a, **k: lambda t, p: called.append(t) or []
+    try:
+        out = psn_mod.fill_review_proposals(db_session, user)
+    finally:
+        psn_mod._igdb_search_adapter = orig
+
+    assert called == [], f"no IGDB calls should be spent, got {called}"
+    assert out["checked"] == 0
+
+
+def test_proposal_job_is_a_no_op_without_igdb_credentials(db_session):
+    """No Twitch/IGDB key means no lookup — and it must say so rather than
+    silently reporting zero suggestions, which reads as 'nothing to fix'."""
+    user = models.User(name="u-nokey", username="u-nokey", password_hash="x", api_token="nokey-tok")
+    db_session.add(user)
+    db_session.commit()
+    out = psn.fill_review_proposals(db_session, user)
+    assert out["skipped_no_credentials"] is True
+    assert out["checked"] == 0
+
+
+def test_one_queue_carries_both_kinds_and_their_proposals(db_session):
+    """A trophy set can need its name approved, its platforms chosen, or BOTH.
+    Splitting those into two queues would mean importing one game required
+    visiting two places, with no ordering guarantee — and a row needing both
+    would either appear twice or land in whichever queue won."""
+    user = _prop_user(db_session, "u-queue")
+    db_session.add(models.Platform(name="PlayStation Vita", display_name="PS Vita", igdb_id=46))
+    db_session.flush()
+
+    # Needs BOTH: cross-play platforms AND a name fix.
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR0BOTH_00",
+            title="閃乱カグラ SHINOVI VERSUS",
+            kind="cross_play",
+            status="pending",
+            raw_data={"platform": "PS3,PSVITA", "trophyTitlePlatform": "PS3,PSVITA"},
+            proposed_title="Senran Kagura: Shinovi Versus",
+            proposed_igdb_id=11536,
+            proposed_platforms=[46],
+            proposal_status="pending",
+        )
+    )
+    # Needs only a name fix — imported cleanly, single platform.
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR0NAME_00",
+            title="SF3: Online Edition",
+            kind="title_fix",
+            status="pending",
+            raw_data={"platform": "PS3", "trophyTitlePlatform": "PS3"},
+            proposal_status="none",
+        )
+    )
+    db_session.commit()
+
+    rows = {r["external_id"]: r for r in psn.import_review_rows(db_session, user.id)}
+    assert set(rows) == {"NPWR0BOTH_00", "NPWR0NAME_00"}, "both kinds share one queue"
+
+    both = rows["NPWR0BOTH_00"]
+    assert both["proposed_title"] == "Senran Kagura: Shinovi Versus"
+    assert both["proposal_status"] == "pending"
+    assert both["proposed_platforms"] == ["PSVITA"], "accepting narrows to what IGDB confirms — the phantom PS3 goes"
+    assert both["kind_is_title_fix"] is False, "this row is here for its platforms too"
+
+    unknown = rows["NPWR0NAME_00"]
+    assert unknown["proposal_status"] == "none", "an unidentified row still has to be seen"
+    assert unknown["proposed_title"] is None
+    assert unknown["kind_is_title_fix"] is True, "a name-only row still sits in the same queue"
+
+
+def test_pre_ticks_are_not_filtered_by_hardware_owned(db_session):
+    """One cross-buy purchase puts every version on the account whether or not
+    the console was ever in the house — and a PS3 sold years ago doesn't
+    un-buy the PS3 copy. So every platform in the set is pre-ticked.
+
+    Narrowing comes from the two things that actually know something: a
+    cross-buy exception (sold separately per platform), and an accepted IGDB
+    proposal restricting to the platforms the game really shipped on."""
+    _seed_platforms(db_session)
+    user = _user(db_session, "notick")
+    # Nothing at all in the library — under an ownership filter this would be
+    # the worst case, with no evidence for any platform.
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR_XBUY_00",
+            title="Shovel Knight: Treasure Trove",
+            kind="cross_play",
+            status="pending",
+            raw_data={"platform": "PS3,PSVITA,PS4", "normalizedName": "shovelknighttreasuretrove"},
+        )
+    )
+    db_session.commit()
+
+    row = psn.import_review_rows(db_session, user.id)[0]
+    ticked = {o["platform"] for o in row["options"] if o["selected"]}
+    assert ticked == {"PS3", "PSVITA", "PS4"}, f"every platform in the set should pre-tick, got {ticked}"
+
+
+def test_accepting_the_igdb_name_creates_the_entry_under_it(client, db_session):
+    """The corrected name is applied AT CREATION — the bad name is never
+    written, so there is nothing to rename. Approving the name and choosing
+    platforms is ONE decision on ONE row."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # Most trophy-only rows are PS3/Vita, and a cross-buy set narrowed by IGDB
+    # commonly resolves to Vita alone. Seeded here rather than in the shared
+    # fixture, which other tests assert exact platform sets against.
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita"))
+    db_session.flush()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR03481_00",
+            title="閃乱カグラ SHINOVI VERSUS",
+            kind="cross_play",
+            status="pending",
+            raw_data={
+                "npCommunicationId": "NPWR03481_00",
+                "name": "閃乱カグラ SHINOVI VERSUS",
+                "displayName": "閃乱カグラ SHINOVI VERSUS",
+                "platform": "PS3,PSVITA",
+                "normalizedName": "shinoviversus",
+            },
+            proposed_title="Senran Kagura: Shinovi Versus",
+            proposed_igdb_id=11536,
+            proposed_platforms=[46],
+            proposal_status="pending",
+        )
+    )
+    db_session.commit()
+
+    r = client.post(
+        "/tools/psn-review/NPWR03481_00/confirm", data={"platforms": ["PSVITA"], "use_proposed": "true"}, headers={"HX-Request": "true"}
+    )
+    assert r.status_code == 200
+
+    games = {g.title for g in db_session.query(models.Game).all()}
+    assert "Senran Kagura: Shinovi Versus" in games
+    assert "閃乱カグラ SHINOVI VERSUS" not in games, "the bad name must never be written"
+    game = db_session.query(models.Game).filter_by(title="Senran Kagura: Shinovi Versus").one()
+    assert game.igdb_id == 11536, "the id is what later unblocks metadata and the match veto"
+
+
+def test_declining_the_name_keeps_sonys(client, db_session):
+    """Unticking the box confirms the platforms under PSN's own name."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR00791_00",
+            title="Modern Warfare 2",
+            kind="cross_play",
+            status="pending",
+            raw_data={
+                "npCommunicationId": "NPWR00791_00",
+                "name": "Modern Warfare 2",
+                "displayName": "Modern Warfare 2",
+                "platform": "PS3",
+                "normalizedName": "modernwarfare2",
+            },
+            proposed_title="Call of Duty: Modern Warfare 2",
+            proposed_igdb_id=559,
+            proposed_platforms=[9],
+            proposal_status="pending",
+        )
+    )
+    db_session.commit()
+
+    client.post("/tools/psn-review/NPWR00791_00/confirm", data={"platforms": ["PS3"]}, headers={"HX-Request": "true"})
+
+    games = {g.title for g in db_session.query(models.Game).all()}
+    assert "Modern Warfare 2" in games
+    assert "Call of Duty: Modern Warfare 2" not in games
+
+
+def test_rejecting_a_proposal_discards_the_whole_match(client, db_session):
+    """Name and platforms go together. A lookup wrong about the name has no
+    claim to be right about the platforms it returned — honouring half of a
+    rejected match would map the row to the wrong name AND platform."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR0BAD_00",
+            title="Some Trophy Set",
+            kind="cross_play",
+            status="pending",
+            raw_data={"platform": "PS3,PSVITA", "normalizedName": "sometrophyset"},
+            proposed_title="Wrong Game",
+            proposed_igdb_id=1,
+            proposed_platforms=[9],
+            proposal_status="pending",
+        )
+    )
+    db_session.commit()
+
+    r = client.post("/tools/psn-review/NPWR0BAD_00/reject-name", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR0BAD_00").one()
+    assert cand.proposal_status == "rejected"
+    assert cand.proposed_title is None and cand.proposed_igdb_id is None
+    assert cand.proposed_platforms is None, "the platform narrowing goes with the name"
+    assert cand.status == "pending", "the row stays in the queue with Sony's raw data"
+    assert cand.title == "Some Trophy Set"
+
+
+def test_bulk_confirm_honours_the_igdb_name(client, db_session):
+    """Bulk posted platforms only, so bulk-confirming a row that was visibly
+    showing the IGDB name created the entry under Sony's — the per-row Confirm
+    honoured the suggestion and bulk silently did not."""
+    import json as _json
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR00791_00",
+            title="Modern Warfare 2",
+            kind="cross_play",
+            status="pending",
+            raw_data={
+                "npCommunicationId": "NPWR00791_00",
+                "name": "Modern Warfare 2",
+                "displayName": "Modern Warfare 2",
+                "platform": "PS3",
+                "normalizedName": "modernwarfare2",
+            },
+            proposed_title="Call of Duty: Modern Warfare 2",
+            proposed_igdb_id=559,
+            proposed_platforms=[9],
+            proposal_status="pending",
+        )
+    )
+    db_session.commit()
+
+    payload = _json.dumps({"NPWR00791_00": {"platforms": ["PS3"], "use_proposed": True}})
+    r = client.post("/tools/psn-review/bulk-confirm", data={"selections": payload}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    games = {g.title for g in db_session.query(models.Game).all()}
+    assert "Call of Duty: Modern Warfare 2" in games, "bulk must honour the accepted name"
+    assert "Modern Warfare 2" not in games
+
+
+def test_bulk_confirm_still_accepts_the_old_payload_shape(client, db_session):
+    """A page loaded before the shape changed posts a bare list. It must confirm
+    the platforms rather than being silently dropped as malformed."""
+    import json as _json
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR00123_00",
+            title="Some Game",
+            kind="cross_play",
+            status="pending",
+            raw_data={
+                "npCommunicationId": "NPWR00123_00",
+                "name": "Some Game",
+                "displayName": "Some Game",
+                "platform": "PS3",
+                "normalizedName": "somegame",
+            },
+        )
+    )
+    db_session.commit()
+
+    payload = _json.dumps({"NPWR00123_00": ["PS3"]})
+    r = client.post("/tools/psn-review/bulk-confirm", data={"selections": payload}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00123_00").one()
+    assert cand.status == "confirmed"

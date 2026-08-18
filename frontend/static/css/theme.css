@@ -2728,3 +2728,10 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   max-height: 190px;
   overflow-y: auto;
 }
+
+/* PSN review: a title the IGDB check proposes replacing (#180). Marked rather
+   than silently swapped — the struck-through original sits beside it so what
+   Sony called it stays visible until the decision is made. */
+.cgt-psn-proposed {
+  border-bottom: 1px dashed var(--ctp-teal);
+}

@@ -1046,6 +1046,11 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
                 display_name=cleaned if cleaned != title else None,
                 is_dlc=False,
                 is_collection=titles._infer_is_collection(title),
+                # Present only when an IGDB proposal was accepted in review
+                # (#180). It is the payload that later unblocks metadata (#161)
+                # and the different-igdb_id match veto, which is inert today
+                # because no PSN entry carries one.
+                igdb_id=item.get("igdbId"),
             )
             db.add(game)
             db.flush()
@@ -1126,7 +1131,10 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
     if row is None:
         row = models.PsnReviewCandidate(user_id=user.id, external_id=ext_id, kind=kind, status="pending")
         db.add(row)
-    row.title = item.get("displayName") or item.get("name") or ext_id
+    # Cleaned here rather than trusting the merge to have done it: the queue is
+    # where a human reads the name, and "God of War II Trophies" is exactly the
+    # trophy-set noise this review exists to strip (#180).
+    row.title = _display_name(item.get("displayName") or item.get("name")) or ext_id
     row.kind = kind
     row.raw_data = item
     return row if row.status == "pending" else None
@@ -1158,6 +1166,18 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
     needs_review = 0
     played_only = 0
     steam_keys = _steam_title_keys(db, user.id)
+    # Only hold back rows that would be NEWLY created. A trophy-only entry
+    # already in the library still needs its re-sync refresh — diverting it to
+    # review would not un-import it, just stop it updating (#180).
+    existing_psn_ids = {
+        ext
+        for (ext,) in db.query(models.GameRelease.external_id)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user.id, models.GameRelease.source == "psn")
+        .distinct()
+        .all()
+        if ext
+    }
     # One query, not one per game — this loop runs over ~1000 items.
     decided = {
         r.external_id: r
@@ -1190,6 +1210,20 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
         row = decided.get(external_id_for(item))
         if row is None and len(platform_candidates(item)) > 1:
             if _upsert_review_candidate(db, user, item, "cross_play") is not None:
+                needs_review += 1
+            continue
+        # Trophy-only rows are named after their trophy SET, and those names are
+        # frequently wrong — localized, abbreviated, or missing a franchise
+        # prefix. Sony can never improve them: no store record exists for these
+        # generations (#181) and there is no playtime or metadata to fall back
+        # on. Importing one silently is how "SF3: Online Edition" became a
+        # library entry nobody knew was wrong.
+        #
+        # So they are held back for review rather than created. The entry is
+        # made on confirm, under whichever name the user approves — there is no
+        # rename path because nothing is written under the bad name first.
+        if row is None and is_trophy_only(external_id_for(item)) and external_id_for(item) not in existing_psn_ids:
+            if _upsert_review_candidate(db, user, item, "title_fix") is not None:
                 needs_review += 1
             continue
         if row is not None:
@@ -1304,44 +1338,6 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
     return rows
 
 
-def owned_platforms(db: Session, user_id: int) -> set[str]:
-    """PlayStation consoles this account is PROVEN to own.
-
-    Two things prove hardware. A game the sync could place on exactly one
-    platform — you cannot have a PS3-only trophy set without a PS3 — and those
-    are already library entries, so the evidence lives there. And a play
-    record, whose category names the console it ran on.
-
-    A cross-play set proves nothing on its own: it lists every platform the
-    game shipped on, not the ones you own. Which is why those are the rows
-    being asked about.
-
-    Comparison goes through resolve_platform_id, NOT string munging: trophy
-    feeds say "PSVITA" while the platforms table says "PlayStation Vita", so
-    an earlier uppercase-and-strip-spaces version silently proved nothing for
-    PS3 or Vita and left most rows defaulting to PS4 alone.
-    """
-    owned_ids = {
-        pid
-        for (pid,) in db.query(models.GameRelease.platform_id)
-        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
-        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
-        .distinct()
-        .all()
-        if pid
-    }
-    proven = {token for token in _PS_PLATFORM_RANK if models.resolve_platform_id(db, token) in owned_ids}
-    for cand in (
-        db.query(models.PsnReviewCandidate)
-        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.status == "pending")
-        .all()
-    ):
-        for platform, minutes in played_minutes_by_platform(cand.raw_data or {}).items():
-            if minutes:
-                proven.add(platform)
-    return proven
-
-
 def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
     """Whether an item's play history can be attributed to its trophy set.
 
@@ -1359,13 +1355,21 @@ def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
 
 
 def import_review_rows(db: Session, user_id: int) -> list[dict]:
-    """Pending cross-play rows — one per trophy set, one checkbox per platform.
+    """Pending review rows — one per trophy set, one checkbox per platform.
+
+    ONE queue. A row can be waiting on its platforms (cross_play), on its name
+    (title_fix), or on both, and a row needing both must be decided once rather
+    than chased through two lists (#180).
 
     A cross-play set covers several platforms and never says which you own, and
-    cross-buy means the answer is often more than one (Shovel Knight: Treasure
+    cross-buy means the answer is usually ALL of them (Shovel Knight: Treasure
     Trove is a single PS3,PSVITA,PS4 set) — so platforms are checkboxes,
-    pre-ticked with every platform in the set this account is known to own (see
-    `owned_platforms`). Unticking them all is the same as dismissing.
+    pre-ticked with every platform in the set. Not filtered by hardware owned:
+    one cross-buy purchase puts every version on the account whether or not the
+    console was ever in the house. Narrowing comes from the two things that
+    actually know something — a cross-buy exception (sold separately per
+    platform) and an accepted IGDB proposal, which restricts to the platforms
+    the game really shipped on. Unticking them all is the same as dismissing.
 
     **One row per trophy set, not per game.** Sony hands out several sets for
     one title — Crimsonland has NPWR06670 at 90% and NPWR06085 at 23%, both
@@ -1381,12 +1385,16 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         db.query(models.PsnReviewCandidate)
         .filter(
             models.PsnReviewCandidate.user_id == user_id,
-            models.PsnReviewCandidate.kind == "cross_play",
+            # ONE queue. A trophy set can need its name approved, its
+            # platforms chosen, or BOTH — and a row needing both must be
+            # decided once, in one place. Splitting them would mean a game
+            # required visiting two queues to import, with no ordering
+            # guarantee between them (#180).
+            models.PsnReviewCandidate.kind.in_(("cross_play", "title_fix")),
             models.PsnReviewCandidate.status == "pending",
         )
         .all()
     )
-    owned = owned_platforms(db, user_id)
 
     # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
     # INCLUDED. Two things need them:
@@ -1440,12 +1448,19 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
         else:
             reason = "Matched by title only — PSN gives no platform for this trophy set"
 
-        # Default: everything in the set this account can actually play.
-        # Absence of evidence is not evidence of absence — PSN reports play data
-        # only for PS4 and later, so a PS3 or Vita copy can never be confirmed
-        # or denied from the feeds. Over-offering costs a row you delete;
-        # under-offering costs a completion with nowhere to attach.
-        default = [p for p in options if p in owned] or options
+        # Default: EVERY platform the trophy set covers.
+        #
+        # Not filtered by hardware owned. A cross-buy purchase puts every
+        # version on the account whether or not you ever had the console — the
+        # PS3 copy of a PS3/PS4/Vita set is yours either way — so "do you own a
+        # PS3" is the wrong question and answering it narrowed the pre-ticks
+        # for no reason.
+        #
+        # Ambiguity is handled by the two mechanisms that actually know
+        # something: a cross-buy EXCEPTION (sold separately per platform)
+        # restricts to evidenced platforms below, and an accepted IGDB proposal
+        # narrows the options to the platforms that game genuinely shipped on.
+        default = list(options)
         # Never pre-tick a platform a sibling set already took. It stays
         # offered — you might know something the data doesn't — but choosing it
         # is now a deliberate override rather than the path of least resistance.
@@ -1501,6 +1516,22 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
                 "total_minutes": sum(minutes.values()),
                 "restricted": bool(exception and exception["restricts"]),
+                # ── IGDB name proposal (#180) ──────────────────────────────
+                # "pending" = a suggestion to accept or reject.
+                # "none"    = looked up and NOT identified. Still shown: an
+                #             unidentified row kept invisible is exactly how
+                #             "SF3: Online Edition" reached the library.
+                # A row can be here for its NAME (title_fix) or its
+                # PLATFORMS (cross_play) or both — one queue, so the view has
+                # to know which questions this row is actually asking.
+                "kind_is_title_fix": cand.kind == "title_fix",
+                "proposal_status": cand.proposal_status,
+                "proposed_title": cand.proposed_title,
+                "proposed_igdb_id": cand.proposed_igdb_id,
+                # Accepting narrows the platform choice to what IGDB confirms.
+                # Shinovi Versus' trophy set claims PS3,PSVITA; IGDB says Vita,
+                # and the phantom PS3 disappearing IS the correction.
+                "proposed_platforms": [p for p in options if _platform_in_igdb_set(db, p, cand.proposed_platforms)],
                 "options": [
                     {"platform": p, "selected": p in default, "minutes": minutes.get(p, 0), "claimed_by": taken.get(p)} for p in options
                 ],
@@ -1574,7 +1605,31 @@ def _pending_candidate(db: Session, user_id: int, key: str, kind: str = "cross_p
     )
 
 
-def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: list[str]) -> dict:
+def reject_proposal(db: Session, user: models.User, key: str) -> dict:
+    """Reject an IGDB suggestion — the row reverts to raw PSN data (#180).
+
+    The whole match goes, not just the name. A lookup that got the name wrong
+    has no claim to be right about the platforms it returned: a bad match for
+    "閃乱カグラ SHINOVI VERSUS" could plausibly return some Shinobi title on
+    PS3, and honouring its platform list would then map the row to the wrong
+    name AND the wrong platform — worse than the trophy data we started with,
+    and harder to spot because it looks authoritative.
+
+    Lossless by construction: the proposal was only ever stored alongside the
+    raw title and its original platform options, never applied over them.
+    """
+    cand = _pending_candidate(db, user.id, key)
+    if cand is None:
+        raise ValueError("That trophy set is not in the PSN review queue.")
+    cand.proposed_title = None
+    cand.proposed_igdb_id = None
+    cand.proposed_platforms = None
+    cand.proposal_status = "rejected"
+    db.commit()
+    return {"name": cand.title}
+
+
+def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: list[str], use_proposed: bool = False) -> dict:
     """Confirm one review row: create its entries and retire the row.
 
     The review IS the action — match review merges on click, import review
@@ -1584,7 +1639,15 @@ def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: 
     cand = _pending_candidate(db, user.id, key)
     if cand is None:
         raise ValueError("That trophy set is not in the PSN review queue.")
-    item = cand.raw_data or {}
+    item = dict(cand.raw_data or {})
+    # Accepting the IGDB suggestion renames the entry AT CREATION — the bad
+    # name is never written. The igdb_id rides along, which is what later
+    # unblocks metadata (#161) and the different-igdb_id match veto.
+    accepted = bool(use_proposed and cand.proposed_title)
+    if accepted:
+        item["displayName"] = cand.proposed_title
+        item["name"] = cand.proposed_title
+        item["igdbId"] = cand.proposed_igdb_id
     # Only platforms the trophy set actually covers. A stale page can post
     # anything, and an entry on a platform Sony never listed is a wrong row
     # this function has no way to take back.
@@ -1599,6 +1662,8 @@ def confirm_entry_decision(db: Session, user: models.User, key: str, platforms: 
         if _import_one(db, user, item, platform_id) == "added":
             created += 1
 
+    if accepted:
+        cand.proposal_status = "accepted"
     cand.status = "confirmed" if chosen else "dismissed"
     cand.chosen_platforms = chosen
     cand.reviewed_at = datetime.datetime.now(datetime.UTC)
@@ -1711,3 +1776,190 @@ def attach_played_only(db: Session, user: models.User, external_id: str, entry_i
     _record_decision(db, user.id, external_id, {"action": "attached", "entry_id": entry_id})
     game = release.game
     return game.display_name or game.title
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# IGDB title proposals for trophy-only entries (#180)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# A trophy-only row's external_id is an npCommunicationId. Those rows have no
+# store record behind them — the purchased feed can never return PS3/Vita/PSP
+# entitlements (#181) — so their name comes from the trophy SET, and trophy set
+# names are frequently localized, abbreviated, or missing a franchise prefix.
+_TROPHY_ONLY_PREFIX = "NPWR"
+
+# Latin letters/digits/punctuation. Used to pull the searchable run out of a
+# mixed-script title: IGDB returns NOTHING for "閃乱カグラ SHINOVI VERSUS" but
+# matches "SHINOVI VERSUS" exactly. Verified against the live API 2026-08-07.
+_LATIN_RUN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 '&:!.\-]*")
+
+
+def is_trophy_only(external_id: str | None) -> bool:
+    """True for rows named after a trophy set rather than a store listing."""
+    return bool(external_id) and str(external_id).upper().startswith(_TROPHY_ONLY_PREFIX)
+
+
+def search_terms(title: str) -> list[str]:
+    """Search terms to try for a title, most-specific first.
+
+    The raw title first. Then, only if the title mixes scripts, its Latin run —
+    because IGDB's search returns zero results for a mixed Japanese/Latin string
+    and an exact hit for the Latin part alone. Splitting is free; romanizing the
+    non-Latin run would need a transliteration dependency and buys nothing until
+    a title turns up with no Latin run at all.
+    """
+    if not title:
+        return []
+    terms = [title.strip()]
+    latin = " ".join(m.group(0).strip() for m in _LATIN_RUN_RE.finditer(title)).strip()
+    # Only a fallback when it is genuinely a SUBSET — for a pure-Latin title the
+    # run equals the title and retrying it would just repeat the same query.
+    if latin and latin.casefold() != title.strip().casefold() and len(latin) >= 3:
+        terms.append(latin)
+    return terms
+
+
+def igdb_platform_ids(db: Session, platform_tokens: list[str]) -> list[int]:
+    """Trophy platform tokens ("PS3", "PSVITA") -> IGDB platform ids.
+
+    Goes through resolve_platform_id and the platforms table's own igdb_id
+    rather than matching names: the app's platform rows already carry IGDB ids
+    (74 of 75; the exception is the Steam construct), so there is nothing to map.
+    """
+    out: list[int] = []
+    for token in platform_tokens:
+        pid = models.resolve_platform_id(db, token)
+        if not pid:
+            continue
+        row = db.query(models.Platform).filter(models.Platform.id == pid).first()
+        if row and row.igdb_id and row.igdb_id not in out:
+            out.append(row.igdb_id)
+    return out
+
+
+def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int], search_fn) -> dict | None:
+    """Ask IGDB what this trophy set really is. Returns None when unsure.
+
+    search_fn(term, platform_ids) -> list of {id, name, platforms:[...]}, so the
+    network call is injectable and this stays testable.
+
+    Acceptance is platform OVERLAP, never equality. A trophy set claiming
+    "PS3,PSVITA" against an IGDB entry listing only Vita is the NORMAL shape for
+    that era — and the vanishing PS3 is the correction, not a warning sign.
+    Requiring agreement would reject exactly the cases this exists to fix.
+
+    Zero overlap means no proposal at all. A row left raw is a better outcome
+    than a confident wrong rename, which is harder to spot precisely because it
+    looks authoritative.
+    """
+    if not igdb_ids:
+        return None
+    for term in search_terms(title):
+        for hit in search_fn(term, igdb_ids) or []:
+            name = (hit.get("name") or "").strip()
+            hit_ids = [p for p in (hit.get("platform_ids") or []) if p in igdb_ids]
+            if not name or not hit_ids:
+                continue
+            # Nothing to propose when IGDB agrees with the name we already have.
+            if titles.normalize_for_match(name) == titles.normalize_for_match(title):
+                return None
+            return {
+                "proposed_title": name,
+                "proposed_igdb_id": hit.get("id"),
+                "proposed_platforms": hit_ids,
+                "matched_term": term,
+            }
+    return None
+
+
+def _igdb_search_adapter(client_id: str, client_secret: str):
+    """search_fn for build_proposal, bound to real IGDB credentials.
+
+    Filters on platform in the query itself (`where platforms=(9,46)`). That is
+    not a nicety: an unfiltered search for "Modern Warfare 2" returns the 2022
+    PS4/PS5 game FIRST and the 2009 PS3 one second, so the top proposal would be
+    the wrong game. With the filter, the wrong one is not returned at all.
+    """
+    from . import igdb
+
+    def search(term: str, platform_ids: list[int]) -> list[dict]:
+        rows = igdb.search_games_on_platforms(client_id, client_secret, term, platform_ids, limit=5)
+        return [{"id": r["id"], "name": r["name"], "platform_ids": r.get("platform_ids") or []} for r in rows]
+
+    return search
+
+
+def fill_review_proposals(db: Session, user: models.User, progress_callback=None) -> dict:
+    """Ask IGDB what each suspect trophy-set name really is (#180), phase 1.
+
+    Operates on pending review CANDIDATES — rows the sync held back rather than
+    imported. Nothing in the library is touched and nothing is renamed: the
+    entry is created on confirm under whichever name the user approves.
+
+    (Phase 2 — walking the existing PSN library to attach igdb_ids to entries
+    that are already there — is #161 and is a button, not part of sync.)
+
+    Self-gating: decided rows and rows already looked up are skipped, so a
+    re-sync spends nothing on settled work.
+    """
+    if not (user.twitch_client_id and user.twitch_client_secret):
+        return {"checked": 0, "proposed": 0, "no_match": 0, "errored": 0, "skipped_no_credentials": True}
+
+    search = _igdb_search_adapter(user.twitch_client_id, user.twitch_client_secret)
+    rows = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user.id,
+            models.PsnReviewCandidate.status == "pending",
+            models.PsnReviewCandidate.proposal_status.is_(None),
+        )
+        .all()
+    )
+    # Only trophy-set names are in doubt. A store-backed row got its name from a
+    # store listing and is fine as-is.
+    rows = [r for r in rows if is_trophy_only(r.external_id)]
+
+    out = {"checked": 0, "proposed": 0, "no_match": 0, "errored": 0}
+    for i, cand in enumerate(rows):
+        if progress_callback:
+            progress_callback(i, len(rows), cand.title)
+        item = cand.raw_data or {}
+        tokens = [t for t in str(item.get("platform") or item.get("trophyTitlePlatform") or "").split(",") if t.strip()]
+        igdb_ids = igdb_platform_ids(db, tokens)
+        out["checked"] += 1
+        try:
+            proposal = build_proposal(cand.title, tokens, igdb_ids, search)
+        except Exception:
+            _logger.exception("IGDB proposal lookup failed for %s", cand.external_id)
+            out["errored"] += 1
+            continue
+        if proposal:
+            cand.proposed_title = proposal["proposed_title"]
+            cand.proposed_igdb_id = proposal["proposed_igdb_id"]
+            cand.proposed_platforms = proposal["proposed_platforms"]
+            cand.proposal_status = "pending"
+            out["proposed"] += 1
+        else:
+            # "none" is distinct from NULL (never looked up), so a re-sync does
+            # not pay for the same miss again. The row still shows in the queue —
+            # an unidentified row kept invisible is the original problem.
+            cand.proposal_status = "none"
+            out["no_match"] += 1
+        db.commit()
+        time.sleep(_PAGE_SLEEP_S)
+    return out
+
+
+def _platform_in_igdb_set(db: Session, token: str, igdb_ids: list | None) -> bool:
+    """Is this Sony platform token one of the IGDB platform ids on a proposal?
+
+    Goes through the platforms table's own igdb_id rather than comparing names —
+    the rows already carry IGDB's ids, so there is nothing to map (#180).
+    """
+    if not igdb_ids:
+        return False
+    pid = models.resolve_platform_id(db, token)
+    if not pid:
+        return False
+    row = db.query(models.Platform).filter(models.Platform.id == pid).first()
+    return bool(row and row.igdb_id and row.igdb_id in igdb_ids)

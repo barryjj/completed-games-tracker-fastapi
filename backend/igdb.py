@@ -134,6 +134,50 @@ def search_games(
     return results
 
 
+def search_games_on_platforms(
+    client_id: str,
+    client_secret: str,
+    query: str,
+    platform_ids: list[int],
+    limit: int = 5,
+) -> list[dict]:
+    """Search IGDB restricted to specific platforms (#180).
+
+    Apicalypse reads `where platforms=(9,46);` as "any of", which is the
+    overlap semantics PSN trophy sets need — a set claiming PS3,PSVITA against
+    an IGDB entry listing only Vita is the normal shape for that era.
+
+    The filter is load-bearing, not a refinement. Unfiltered, "Modern Warfare 2"
+    returns the 2022 PS4/PS5 game FIRST and the 2009 PS3 one second, so the top
+    hit would be the wrong game entirely. Filtered to PS3, the 2022 entry is not
+    returned at all.
+
+    Returns {id, name, platform_ids, year} — platform_ids rather than names,
+    since the caller intersects against ids it already resolved.
+    """
+    if not platform_ids:
+        return []
+    token = get_token(client_id, client_secret)
+    ids = ",".join(str(int(p)) for p in platform_ids)
+    body = (
+        f'search "{query}"; fields id, name, platforms, first_release_date; where platforms=({ids}) & version_parent = null; limit {limit};'
+    )
+    resp = httpx.post(
+        f"{_IGDB_BASE}/games",
+        headers=_igdb_headers(client_id, token),
+        content=body,
+        timeout=15,
+    )
+    resp.raise_for_status()
+    out = []
+    for g in resp.json():
+        year = None
+        if g.get("first_release_date"):
+            year = datetime.datetime.fromtimestamp(g["first_release_date"], datetime.UTC).year
+        out.append({"id": g.get("id"), "name": g.get("name"), "platform_ids": g.get("platforms") or [], "year": year})
+    return out
+
+
 def _igdb_image_url(raw_url: str, size: str) -> str:
     """Convert an IGDB image URL to the requested size variant.
 
