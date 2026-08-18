@@ -29,7 +29,6 @@ from collections import Counter
 from urllib.parse import parse_qsl, urlparse
 
 import httpx
-import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from . import models, psn_store, titles
@@ -305,12 +304,22 @@ _ROMAN = [
     ("I", "1"),
 ]
 
-_NON_GAME_NAME_RE = re.compile(r"\b(demo|beta|trial version|trial edition|art of|soundtrack)\b", re.IGNORECASE)
+# "online test" is Sony's own phrasing for a beta — "Everybody's Golf Closed
+# Online Test ver." says nothing our beta/demo words match. Anchored to the
+# pair so a real title containing "test" (Test Drive Unlimited) is untouched.
+_NON_GAME_NAME_RE = re.compile(
+    r"\b(demo|beta|trial version|trial edition|art of|soundtrack|digital comic"
+    r"|(?:closed|open|network|online)\s+test|test\s+ver)\b",
+    re.IGNORECASE,
+)
 # DEMO is anchored to the end of the id; BETA matches anywhere (Sony buries it
 # mid-string, e.g. entitlementId "UP0002-CUSA30374_00-RENEGDBETAPS4000" for the
 # Diablo IV beta). Matches the prototype's two separate checks — an earlier
 # port wrongly anchored BETA too, letting betas through.
-_NON_GAME_ID_RE = re.compile(r"DEMO\d*$|BETA", re.IGNORECASE)
+# BONUSSET is Sony's marker for a pre-order extra sold under the game's own
+# titleId — "ELDEN RING Adventure Guide" is EREPBONUSSET0000, a digital guide
+# that imported as if it were the game.
+_NON_GAME_ID_RE = re.compile(r"DEMO\d*$|BETA|COMICBOOK|BONUSSET", re.IGNORECASE)
 
 
 def _normalized_name(name: str | None) -> str:
@@ -1303,7 +1312,11 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
     #                    resync silently re-asks a refused question, which is
     #                    the exact treadmill the refusal memory exists to stop.
     #   proposalVersion  which matcher produced the current proposal.
-    carried = {k: v for k, v in (row.raw_data or {}).items() if k in ("storeTitle", "rejectedTitle", "proposalVersion")}
+    carried = {
+        k: v
+        for k, v in (row.raw_data or {}).items()
+        if k in ("storeTitle", "rejectedTitle", "proposalVersion", "matchedVia", "artForTitle")
+    }
     row.raw_data = {**item, **carried}
     return row if row.status == "pending" else None
 
@@ -1513,6 +1526,16 @@ def sync_library(db: Session, user: models.User) -> dict:
     # re-sync costs nothing and a credential-less user skips it entirely.
     proposals = fill_review_proposals(db, user)
     result = {**result, "proposals": proposals}
+    # Art last, because it searches on the name the lookup just settled. Self-
+    # gating on rows that have none, so a re-sync costs nothing, and skipped
+    # entirely without an SGDB key rather than failing the sync over artwork.
+    if user.steamgriddb_api_key:
+        try:
+            from . import steamgriddb
+
+            result = {**result, "review_art": steamgriddb.fill_psn_review_thumbnails(db, user)}
+        except Exception:
+            _logger.exception("SGDB review artwork pass failed for user %s", user.id)
     user.psn_last_sync_report = report
     user.psn_last_synced_at = datetime.datetime.now(datetime.UTC)
     db.commit()
@@ -1663,6 +1686,23 @@ def count_pending_review_rows(db: Session, user_id: int) -> int:
         )
         if platform_candidates(raw or {})
     )
+
+
+def hero_video_for(hero_url: str | None) -> str | None:
+    """SGDB's webm twin of an ANIMATED hero, or None for a still one.
+
+    SGDB serves animated heroes as animated WebP. Chrome decodes those on a
+    fast path; WKWebView decodes them frame by frame on the main thread, and an
+    11MB hero (Beat Hazard Ultra's is 10,928,256 bytes) plays as a slideshow in
+    the desktop shell while being fine in a browser. The same asset exists under
+    hero_thumb as webm at roughly a third the size, and video goes through the
+    media pipeline instead of image decode.
+
+    Only .webp heroes are animated; stills are png/jpg and want a plain <img>.
+    """
+    if not hero_url or not hero_url.endswith(".webp") or "/hero/" not in hero_url:
+        return None
+    return hero_url.replace("/hero/", "/hero_thumb/").rsplit(".", 1)[0] + ".webm"
 
 
 def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -> list[dict]:
@@ -1838,6 +1878,17 @@ def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -
         elif cand.kind == "title_fix" and len(options) <= 1:
             reason = "Confirming what this is before it lands in your library"
 
+        # Sets only COMPETE when they claim the same platform. Big Sky Infinity
+        # has two sets naming PS3 and PSVITA — distinct, so each is already
+        # determined and there is nothing to warn about. Crimsonland has two
+        # both declaring PS3,PSVITA,PS4, where nothing says which covers which
+        # and picking wrong silently drops one as a (game, platform) conflict.
+        # Warning on set_count alone cried wolf on every ordinary cross-gen
+        # pair, which is most of them.
+        contested = any(
+            sib.external_id != cand.external_id and (set(options) & set(platform_candidates(sib.raw_data or {}))) for sib in group
+        )
+
         verdict = review_verdict(cand, item)
         earned = item.get("earnedTrophies") or {}
         defined = item.get("trophies") or {}
@@ -1856,6 +1907,7 @@ def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -
                 # review card. Falls back to the grid so a row whose hero fetch
                 # failed still renders something rather than an empty box.
                 "hero": cand.hero_url or cand.thumbnail_url or (item.get("image") or {}).get("url"),
+                "hero_video": hero_video_for(cand.hero_url),
                 "logo": cand.logo_url,
                 "trophy_progress": item.get("trophyProgress"),
                 "trophy_earned": sum(v or 0 for v in earned.values()),
@@ -1872,6 +1924,7 @@ def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -
                 "trophy_last_updated": (item.get("trophyLastUpdated") or "")[:10],
                 "set_index": set_index,
                 "set_count": sets_for_title,
+                "contested": contested,
                 "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
                 "total_minutes": sum(minutes.values()),
                 "restricted": bool(exception and exception["restricts"]),
@@ -1911,19 +1964,34 @@ def review_thumbnail_gaps(db: Session, user_id: int) -> list[dict]:
     borrow art from (entries exist only once a row is confirmed), which is
     exactly ImportCandidate's position — hence the same thumbnail_url column.
     """
-    return [
-        {"external_id": c.external_id, "title": c.title}
-        for c in db.query(models.PsnReviewCandidate)
+    # Search the BEST name we hold, not Sony's. A sparse feed name is exactly
+    # the case SGDB cannot resolve — "Batman" returns nothing usable — and it is
+    # also exactly the case IGDB has already corrected on this row. Looking up
+    # the raw name meant the rows most in need of art were the ones guaranteed
+    # not to get any.
+    rows = (
+        db.query(models.PsnReviewCandidate)
         .filter(
             models.PsnReviewCandidate.user_id == user_id,
             models.PsnReviewCandidate.status == "pending",
-            # hero_url too: rows cached before the card used hero art have a
-            # thumbnail but no hero, and would otherwise never be topped up.
-            sa.or_(models.PsnReviewCandidate.thumbnail_url.is_(None), models.PsnReviewCandidate.hero_url.is_(None)),
         )
         .all()
-        if c.title
-    ]
+    )
+    gaps = []
+    for c in rows:
+        if not c.title:
+            continue
+        best = c.proposed_title or c.title
+        # hero_url too: rows cached before the card used hero art have a
+        # thumbnail but no hero, and would otherwise never be topped up.
+        missing = c.thumbnail_url is None or c.hero_url is None
+        # And art fetched under a name the row no longer has is wrong, not
+        # merely stale — "Batman" art on a row that now reads "Batman: The
+        # Telltale Series" is a different game's cover.
+        moved_on = (c.raw_data or {}).get("artForTitle") not in (None, best)
+        if missing or moved_on:
+            gaps.append({"external_id": c.external_id, "title": best})
+    return gaps
 
 
 def save_review_thumbnails(db: Session, user_id: int, art: dict[str, dict]) -> int:
@@ -1941,6 +2009,10 @@ def save_review_thumbnails(db: Session, user_id: int, art: dict[str, dict]) -> i
         cand.thumbnail_url = row.get("thumbnail_url") or cand.thumbnail_url
         cand.hero_url = row.get("hero_url") or cand.hero_url
         cand.logo_url = row.get("logo_url") or cand.logo_url
+        # Remember the name it was fetched under. A later lookup can rename the
+        # row — "Batman" becomes "Batman: The Telltale Series" — and art found
+        # for the old name is then confidently wrong, which is worse than none.
+        cand.raw_data = {**(cand.raw_data or {}), "artForTitle": cand.proposed_title or cand.title}
         written += 1
     db.commit()
     return written
@@ -2271,6 +2343,15 @@ def search_terms(title: str) -> list[str]:
     # run equals the title and retrying it would just repeat the same query.
     if latin and latin.casefold() != title.strip().casefold() and len(latin) >= 3:
         terms.append(latin)
+
+    # Punctuation-spaced variant. Sony writes "NieR:Automata" with no space
+    # after the colon, and IGDB's search returns ZERO results for that while
+    # matching "NieR Automata" exactly — the words never get tokenized apart.
+    # Cheap to add and it only fires when the title actually has punctuation
+    # jammed against a word.
+    spaced = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", title)).strip()
+    if spaced and spaced.casefold() not in {t.strip().casefold() for t in terms} and len(spaced) >= 3:
+        terms.append(spaced)
     return terms
 
 
@@ -2289,7 +2370,24 @@ def igdb_platform_ids(db: Session, platform_tokens: list[str]) -> list[int]:
         row = db.query(models.Platform).filter(models.Platform.id == pid).first()
         if row and row.igdb_id and row.igdb_id not in out:
             out.append(row.igdb_id)
+            # Sony has no VR platform: a PSVR game's trophy set and purchase
+            # both report PS4. IGDB DOES model it separately, so Moss
+            # (platforms 165/390/163/…, no 48) was excluded from its own search
+            # and the row got whatever else mentioned "moss" — "Where Moss
+            # Grows". ASTRO BOT Rescue Mission came back unidentified the same
+            # way. The filter is "any of", so widening only lets the real game
+            # back in.
+            for headset in _IGDB_VR_COMPANIONS.get(row.igdb_id, ()):
+                if headset not in out:
+                    out.append(headset)
     return out
+
+
+# IGDB platform ids for the headsets Sony reports as the console they plug into.
+_IGDB_VR_COMPANIONS = {
+    48: (165,),  # PS4  -> PlayStation VR
+    167: (390,),  # PS5 -> PlayStation VR2
+}
 
 
 # IGDB's own game_type. Authoritative where guessing from the title was not:
@@ -2305,6 +2403,16 @@ _IGDB_EPISODE = 6
 # was outranking "Metal Gear Solid 4: Guns of the Patriots" purely because it
 # added fewer words to the title.
 _IGDB_NOT_A_GAME_ON_ITS_OWN = {1, 2, 3, 5, 7, 13, 14}
+# Types that, WITH a version_parent, mean "the same game in a different box":
+# main (a plain edition), bundle, port, pack. Collapse them onto the parent.
+#
+# Deliberately excludes expanded/expansion/standalone: those carry a
+# version_parent too but are genuinely more game — Devil May Cry 5: Special
+# Edition is `expanded` and must keep its own identity. Requiring `main` alone
+# was too narrow, and let "Nier: Automata - Game of the Yorha Edition" (bundle),
+# "Gone Home: Console Edition" (port) and "Nioh 2: The Complete Edition"
+# (bundle) survive as proposed renames of the games they repackage.
+_IGDB_REPACKAGED = {0, 3, 11, 13}
 
 
 def _is_same_game(searched: str, found: str) -> bool:
@@ -2374,8 +2482,20 @@ def _collapse_edition(hit: dict) -> dict:
     is why that game reported "no IGDB match" while existing on IGDB.
     """
     parent = hit.get("version_parent")
-    if hit.get("game_type") == _IGDB_MAIN_GAME and isinstance(parent, dict) and parent.get("id") and parent.get("name"):
-        return {**hit, "id": parent["id"], "name": parent["name"], "collapsed_from": hit.get("name")}
+    if hit.get("game_type") in _IGDB_REPACKAGED and isinstance(parent, dict) and parent.get("id") and parent.get("name"):
+        return {
+            **hit,
+            "id": parent["id"],
+            "name": parent["name"],
+            # It now REPRESENTS the parent, so it takes the parent's nature. A
+            # collapsed bundle that keeps game_type=bundle is then thrown out by
+            # the not-a-game filter — the fold succeeds and the result is
+            # discarded, which is worse than not folding at all. Same reason the
+            # episode branch below inherits its series' type.
+            "game_type": _IGDB_MAIN_GAME,
+            "collapsed_from": hit.get("name"),
+            "collapsed_from_id": hit.get("id"),
+        }
 
     # An EPISODE resolves to the series it belongs to. A concept page names the
     # current SKU, and for an episodic game that is episode one — searched
@@ -2398,6 +2518,7 @@ def _collapse_edition(hit: dict) -> dict:
                 # as the main game it now is, not as the episode it came from.
                 "game_type": series.get("game_type", _IGDB_MAIN_GAME),
                 "collapsed_from": hit.get("name"),
+                "collapsed_from_id": hit.get("id"),
             }
     return hit
 
@@ -2471,9 +2592,14 @@ def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int],
                 # spin-off wins. A main game beats a derivative; ties keep the
                 # earlier hit, so behaviour is stable when nothing distinguishes
                 # them.
+                # The ranked path below rejects these; an exact match must not
+                # be exempt, or a bundle that happens to match the store name
+                # wins before the check is ever reached.
+                if hit.get("game_type") in _IGDB_NOT_A_GAME_ON_ITS_OWN:
+                    continue
                 rank = 0 if hit.get("game_type") == _IGDB_MAIN_GAME else 1
                 if exact_best is None or rank < exact_best[0]:
-                    exact_best = (rank, hit.get("id"), hit_ids, term, name)
+                    exact_best = (rank, hit.get("id"), hit_ids, term, name, hit.get("collapsed_from"), hit.get("collapsed_from_id"))
                 continue
             if not _is_same_game(term, matched_as):
                 continue
@@ -2487,11 +2613,11 @@ def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int],
             # the original "Marvel vs. Capcom 3" over "Ultimate".
             score = (0 if gtype == _IGDB_MAIN_GAME else 1, _added_words(titles.normalize_for_match(term), theirs))
             if best is None or score < best[0]:
-                best = (score, name, hit.get("id"), hit_ids, term)
+                best = (score, name, hit.get("id"), hit_ids, term, hit.get("collapsed_from"), hit.get("collapsed_from_id"))
     # An exact match still beats any ranked near-miss — the name we hold is
     # already right and the id is the payload.
     if exact_best is not None:
-        _rank, igdb_id, hit_ids, term, name = exact_best
+        _rank, igdb_id, hit_ids, term, name, folded, folded_id = exact_best
         # An exact match on the STORE name is still a rename for us: the row is
         # held under Sony's feed name, and that sparse name is what the library
         # would otherwise show. Matching our own name proposes nothing.
@@ -2502,15 +2628,21 @@ def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int],
             "proposed_platforms": hit_ids,
             "matched_term": term,
             "exact": True,
+            # Which IGDB entry was folded to get here, if any. "NieR: Automata"
+            # via "Game of the Yorha Edition" is a different fact from matching
+            # NieR: Automata outright — the edition is what you actually own,
+            # and it is the record that survives Sony renaming a store page.
+            "matched_via": {"name": folded, "igdb_id": folded_id} if folded else None,
         }
     if best is None:
         return None
-    _score, name, igdb_id, hit_ids, term = best
+    _score, name, igdb_id, hit_ids, term, folded, folded_id = best
     return {
         "proposed_title": name,
         "proposed_igdb_id": igdb_id,
         "proposed_platforms": hit_ids,
         "matched_term": term,
+        "matched_via": {"name": folded, "igdb_id": folded_id} if folded else None,
     }
 
 
@@ -2642,7 +2774,10 @@ def _store_title_for(cand, sleep: float = 1.0) -> str:
 #
 # 2: version_parent/parent_game classification, store+concept second name,
 #    episodes resolved to their series.
-_PROPOSAL_VERSION = 2
+# 3: bundles/ports collapse onto their parent too, exact matches are no longer
+#    exempt from the not-a-game filter, punctuation-spaced search terms, and
+#    PSVR games searched on the headset as well as the console.
+_PROPOSAL_VERSION = 3
 
 
 def fill_review_proposals(db: Session, user: models.User, progress_callback=None, store_sleep: float = 1.0) -> dict:
@@ -2702,6 +2837,12 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
             out["errored"] += 1
             continue
         if proposal:
+            # Which IGDB entry was folded to reach this match, when one was.
+            # Kept because the EDITION is what the user actually owns — "Game of
+            # the Yorha Edition" bundles content the base game does not — and it
+            # rides raw_data onto the library entry at confirm.
+            if proposal.get("matched_via"):
+                cand.raw_data = {**(cand.raw_data or {}), "matchedVia": proposal["matched_via"]}
             cand.proposed_title = proposal["proposed_title"]
             cand.proposed_igdb_id = proposal["proposed_igdb_id"]
             cand.proposed_platforms = proposal["proposed_platforms"]
@@ -2750,7 +2891,14 @@ def _platform_in_igdb_set(db: Session, token: str, igdb_ids: list | None) -> boo
     if not pid:
         return False
     row = db.query(models.Platform).filter(models.Platform.id == pid).first()
-    return bool(row and row.igdb_id and row.igdb_id in igdb_ids)
+    if not (row and row.igdb_id):
+        return False
+    # The headset counts as its console, or accepting a proposal would strike
+    # out the only platform a VR game has: Moss is on IGDB 165 and not on 48,
+    # while Sony reports the trophy set as PS4. Without this the picker empties
+    # and confirming creates nothing.
+    accepted = {row.igdb_id, *_IGDB_VR_COMPANIONS.get(row.igdb_id, ())}
+    return bool(accepted & set(igdb_ids))
 
 
 def link_igdb_ids(db: Session, user: models.User, progress_callback=None) -> dict:

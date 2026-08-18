@@ -12,6 +12,8 @@ html[data-bs-theme="dark"] {
      have to exist in all three palettes or anything deriving from them (a
      progress fill tinted from the button's own hue, say) breaks in dark only.
      Pointed at the accents Mocha's buttons already use. */
+  --cgt-ps-ink: var(--ctp-lavender);  /* pale lavender reads fine on dark */
+  --cgt-igdb-ink: var(--ctp-green);  /* pale green reads fine as text on dark */
   --cgt-btn-primary:        var(--ctp-mauve);
   --cgt-btn-primary-hover:  var(--ctp-lavender);
   --cgt-btn-primary-rgb:    203,166,247;
@@ -117,6 +119,8 @@ html[data-bs-theme="light"] {
   /* Filled-button shades. Accents are too pale to carry white text at full
      strength, so each is darkened along its own hue to the same weight Latte's
      hand-tuned fills already used. Buttons only — never applied to text. */
+  --cgt-ps-ink: #6b6584;  /* nord15+10 darkened along hue */
+  --cgt-igdb-ink: #6f8c58;  /* nord14 darkened along hue */
   --cgt-btn-primary:        #a77a9f;
   --cgt-btn-primary-hover:  #98658e;
   --cgt-btn-success:        #8eaf72;
@@ -194,6 +198,8 @@ html[data-palette="latte"] {
   --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
   --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
 
+  --cgt-ps-ink: #5566d8;  /* latte lavender darkened */
+  --cgt-igdb-ink: #40a02b;  /* latte green is already dark enough */
   --cgt-btn-primary:        #a370e8;
   --cgt-btn-primary-hover:  #8f5cd4;
   --cgt-btn-success:        #5aba54;
@@ -643,9 +649,23 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 /* Source chips. PlayStation reuses the platform family's recipe so it sits with
    the PS4/PSVITA chips; IGDB takes the green DESIGN.md already assigns to
    "IGDB linked / confirmed". */
+/* Green ink on a green wash is unreadable in Nord, whose green (#a3be8c) is a
+   pale sage. Same problem the filled buttons have — an accent too light to
+   carry as text — and the same remedy: an explicit shade darkened along its own
+   hue, per palette, rather than mixing toward ink (which is the saturation-
+   stripping regression test_stat_values_are_not_mixed_toward_ink guards). */
 .tag-igdb {
-  color: var(--ctp-green);
-  background: color-mix(in srgb, var(--ctp-green) 15%, transparent);
+  color: var(--cgt-igdb-ink);
+  background: color-mix(in srgb, var(--ctp-green) 18%, transparent);
+}
+
+/* Nord's lavender (#9089ad) as ink on its own 15% wash is the same
+   too-pale-to-read problem the IGDB chip had, and takes the same remedy: an
+   explicit shade darkened along the hue, per palette. Scoped to these source
+   chips — the platform TAGS elsewhere are larger and already legible. */
+.cgt-chip-agreed__ps,
+.cgt-card-name > .tag-platform-playstation {
+  color: var(--cgt-ps-ink);
 }
 
 /* PSN review, shadow mode (#180). The sync computes what it WOULD have done
@@ -2779,12 +2799,161 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   display: grid;
   grid-template-columns: 3fr 2fr;
   gap: 1rem;
-  align-items: start;
+  /* stretch, not start: the right column holds ONE box against a stacked pair,
+     and starting it left a ragged gap under the trophies. */
+  align-items: stretch;
 }
+
+.cgt-psn-card-split > .cgt-detail-block {
+  height: 100%;
+}
+/* Stack depth. The layers live on the STAGE, not on the card: .cgt-match-card
+   is absolutely positioned and centred with margin-left:-450px, so giving it
+   position:relative knocked it out of that centring and threw the card off the
+   page — and its overflow:hidden would have clipped anything drawn below it
+   anyway. Same geometry as .cgt-match-card--import (900px wide, 520px tall,
+   centred), inset and pushed down so only the bottom edge shows.
+
+   Empty layers, not cards. The coverflow attempt died on the cost of rendering
+   neighbours, and all that actually helps is seeing a pile remains. Driven by
+   data-remaining, so it thins out and the last card sits flat. */
+/* The PSN review card carries THREE boxes (identity, the platform question,
+   progress) where import review carries one comparison, and it never gained the
+   height for the third — the hero takes 206px of a 520px card and the footer
+   another 60, leaving ~254px for content that needs ~300. Scoped to this stage
+   so import review's cards are untouched. */
+.cgt-match-stage--import::before,
+.cgt-match-stage--import::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 900px;
+  height: var(--cgt-psn-card-h, 520px);
+  margin-left: -450px;
+  border-radius: 8px;
+  background: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface2);
+  pointer-events: none;
+  transform: translateY(9px) scaleX(0.985);
+}
+
+.cgt-match-stage--import::after {
+  transform: translateY(18px) scaleX(0.97);
+  opacity: 0.7;
+}
+
+/* Thins as the queue empties: nothing behind the last card, one layer behind
+   the second-to-last. */
+.cgt-match-stage--import[data-remaining="0"]::before,
+.cgt-match-stage--import[data-remaining="0"]::after,
+.cgt-match-stage--import[data-remaining="1"]::after {
+  display: none;
+}
+
+/* Left column holds identity above the platform question; trophies take the
+   right at full height. */
+.cgt-psn-card-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
 @media (max-width: 720px) {
   .cgt-psn-card-split { grid-template-columns: 1fr; }
 }
 
+
+/* Stand-in for a card with no art, so every card keeps the same silhouette as
+   you page through. Flat surface rather than a broken-image box: it should read
+   as "nothing to show" and not as a failure. */
+.cgt-import-hero--empty {
+  background: linear-gradient(160deg, var(--ctp-surface0), var(--ctp-mantle));
+}
+
+/* The PSN card's hero, shorter than import review's. 96/22 on a 900px card is
+   206px of a 520px card, and a wrapped title — "Castlevania Requiem: Symphony
+   Of The Night & Rondo Of Blood" — then pushes the platform box past the
+   footer. Capping the art buys the row back without resizing a card that has
+   to stay uniform across the queue. */
+#psn-stack .cgt-import-hero {
+  max-height: 168px;
+}
+
+/* Trails the source chips on the same line rather than opening a new one. */
+.cgt-card-chip {
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+/* A name and the chip that sourced it, on one line. Flex with baseline
+   alignment so a long title wraps without dragging its chip away, and the chip
+   never lands on a line of its own. */
+/* One chip, two sources — used when Sony's name and IGDB's agree, so there is a
+   single name to label. Each half keeps its own colour so the vocabulary still
+   reads: lavender is the platform family, green is "IGDB linked / confirmed".
+   The background is the platform wash, since Sony is who supplied the name. */
+.cgt-chip-agreed {
+  background: color-mix(in srgb, var(--ctp-lavender) 15%, transparent);
+}
+
+.cgt-chip-agreed__ps {
+  color: var(--ctp-lavender);
+}
+
+.cgt-chip-agreed__igdb {
+  color: var(--cgt-igdb-ink);
+}
+
+.cgt-chip-agreed__sep {
+  color: var(--ctp-overlay0);
+  margin: 0 0.25em;
+}
+
+/* Chip ABOVE its name, not inline before it. Inline, a wrapped title's second
+   line starts back at the left edge while the first is indented past the chip,
+   which reads as two ragged blocks. Stacked, the chip still labels the name
+   directly beneath it — the pairing that made leading worth doing — and every
+   line of the title starts at the same x. */
+.cgt-card-name {
+  min-width: 0;
+}
+
+.cgt-card-name > .tag-badge {
+  display: inline-block;
+  margin-bottom: 0.25rem;
+}
+
+.cgt-card-name > .cgt-review-card-title,
+.cgt-card-name > .text-secondary {
+  display: block;
+}
+
+.cgt-card-name--was {
+  margin-top: 0.15rem;
+}
+
+/* Sections inside the card's Progress box. Quieter than the box heading — they
+   divide its contents rather than announcing another panel. */
+.cgt-progress-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--ctp-subtext0);
+  margin-bottom: 0.15rem;
+}
+
+.cgt-progress-playtime {
+  font-size: 1.05rem;
+  color: var(--ctp-text);
+}
+
+.cgt-progress-playtime svg {
+  opacity: 0.55;
+  vertical-align: -0.08em;
+}
 
 /* Trophy breakdown on a review card. Sony's own tier order and colours, so it
    reads the way the trophy list does on the console — and it's the shape the

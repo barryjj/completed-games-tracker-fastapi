@@ -544,6 +544,12 @@ def _placeholder_art(api_key: str, title: str) -> dict:
             art["hero_url"] = heroes[0].get("url")
     except Exception as e:
         logger.warning("SGDB hero fetch failed for %r: %s", title, e)
+    # A game can have heroes and no horizontal grid at all — Big Sky: Infinity
+    # has 2 heroes, 1 logo and 0 h-grids. The caller drops the whole row when
+    # there is no thumbnail, so that art was fetched and then thrown away. Fall
+    # back to the hero: a wide crop of it beats an empty box.
+    if not art.get("thumbnail_url") and art.get("hero_url"):
+        art["thumbnail_url"] = art["hero_url"]
     try:
         logos = get_logos_for_game(api_key, sgdb_game["id"])
         if logos:

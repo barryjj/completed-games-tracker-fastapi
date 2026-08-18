@@ -217,7 +217,9 @@ window.cgtHydrateCards = function(cards, activeIdx, radius) {
   var lo = Math.max(0, activeIdx - radius);
   var hi = Math.min(cards.length - 1, activeIdx + radius);
   for (var i = lo; i <= hi; i++) {
-    var pending = cards[i].querySelectorAll('img[data-src]');
+    // video too: animated heroes render as <video> so WKWebView plays them
+    // through the media pipeline instead of decoding WebP frames by hand.
+    var pending = cards[i].querySelectorAll('img[data-src], video[data-src]');
     for (var j = 0; j < pending.length; j++) {
       pending[j].src = pending[j].getAttribute('data-src');
       pending[j].removeAttribute('data-src');

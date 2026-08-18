@@ -125,6 +125,25 @@ def _completion_date(obj) -> str:
     return d.strftime("%B %-d, %Y")
 
 
+def _long_date(value) -> str:
+    """A plain "YYYY-MM-DD" (or date) as "March 8, 2024".
+
+    Same shape completion_date renders, but that one takes a Completion and
+    reads its precision field. These dates arrive as ISO strings sliced off
+    Sony's timestamps, and ISO is not what this app shows a human anywhere else.
+    """
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return value.strftime("%B %-d, %Y")
+
+
+templates.env.filters["long_date"] = _long_date
+
 templates.env.filters["completion_date"] = _completion_date
 
 

@@ -27,7 +27,11 @@
   <input type="hidden" name="view" id="psn-view-field" value="{{ view }}">
   <input type="hidden" name="kind" id="psn-kind-field" value="{{ kind }}">
   <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
-    <div class="btn-group btn-group-sm" role="group" id="psn-view-toggle">
+    {# Decided renders one shape only — an outcome and an undo — so the view
+       toggle has nothing to switch there. A control that does nothing when
+       clicked is worse than an absent one. #}
+    <div class="btn-group btn-group-sm" role="group" id="psn-view-toggle"
+         {% if kind == "decided" %}hidden{% endif %}>
       <button type="button" class="btn btn-surface{% if view == 'list' %} active{% endif %}"
               onclick="psnSetView('list')" title="List view">&equiv;</button>
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}"
@@ -154,6 +158,12 @@ function psnShowCard(idx) {
   cgtHydrateWhenReady(cards, psnCardIdx);
   var counter = document.getElementById('psn-nav-counter');
   if (counter) counter.textContent = (psnCardIdx + 1) + ' of ' + cards.length;
+  // How much pile is left to draw behind this card. Capped at 2 because that
+  // is all the CSS renders — beyond that the depth stops meaning anything.
+  var stackEl = document.getElementById('psn-stack');
+  if (stackEl) {
+    stackEl.dataset.remaining = Math.min(2, cards.length - psnCardIdx - 1);
+  }
 }
 window.psnCardNav = function(dir) { psnShowCard(psnCardIdx + dir); };
 
@@ -379,6 +389,10 @@ document.addEventListener('htmx:afterSwap', function(e) {
     var kind = document.getElementById('psn-kind-field').value;
     var toggle = document.getElementById('psn-select-toggle');
     if (toggle) toggle.hidden = !(view === 'list' && kind === 'cross_play');
+    // Same reason: the view toggle lives outside the swap, so it has to be
+    // re-evaluated for the tab that just rendered.
+    var viewToggle = document.getElementById('psn-view-toggle');
+    if (viewToggle) viewToggle.hidden = (kind === 'decided');
     psnExitSelect();
   }
 });

@@ -85,9 +85,11 @@ def test_a_bonus_product_does_not_swallow_the_game_it_came_with():
     ]
     merged = {m["normalizedName"]: m for m in psn.merge_library(purchased, titles, played)["merged"]}
 
-    guide = merged["eldenringadventureguide"]
-    assert "played" not in guide["sources"], "the bonus item must not absorb the game's playtime"
-    assert not guide.get("playDuration")
+    # The guide is now dropped outright by the BONUSSET marker, so it is not
+    # even a record to absorb anything. Belt and braces: the platform guard
+    # below is what protects the case where a non-game slips the filter, which
+    # is how this one got through for weeks.
+    assert "eldenringadventureguide" not in merged, "a pre-order bonus is not a game"
 
     game = merged["eldenring"]
     assert game["playDuration"] == "PT140H52M31S"
@@ -3471,6 +3473,35 @@ def _cand(db, user, ext, title, kind="title_fix", status="pending", proposal_sta
     return c
 
 
+def test_only_overlapping_sets_are_flagged_as_contested(db_session):
+    """Two sets for a title only COMPETE when they claim the same platform.
+
+    Big Sky Infinity has a PS3 set and a PSVITA set — each already says which
+    console it covers, so there is nothing to choose and nothing to warn about.
+    Crimsonland has two sets both declaring PS3,PSVITA,PS4, where nothing says
+    which is which and picking wrong silently drops one as a (game, platform)
+    conflict.
+
+    Warning on set_count alone cried wolf on every ordinary cross-gen pair."""
+    user = _prop_user(db_session, "u-contested")
+    for n in ("PS3", "PlayStation 4", "PlayStation Vita"):
+        db_session.add(models.Platform(name=n, display_name=n))
+
+    for ext, plat in (("NPWR03639_00", "PS3"), ("NPWR03640_00", "PSVITA")):
+        c = _cand(db_session, user, ext, "Big Sky Infinity", kind="title_fix", platform=plat)
+        c.raw_data = {"platform": plat, "normalizedName": "bigskyinfinity"}
+    for ext in ("NPWR06670_00", "NPWR06085_00"):
+        c = _cand(db_session, user, ext, "Crimsonland", kind="title_fix", platform="PS3,PSVITA,PS4")
+        c.raw_data = {"platform": "PS3,PSVITA,PS4", "normalizedName": "crimsonland"}
+    db_session.commit()
+
+    rows = {r["key"]: r for r in psn.import_review_rows(db_session, user.id)}
+    assert rows["NPWR03639_00"]["contested"] is False, "distinct platforms are already determined"
+    assert rows["NPWR03640_00"]["contested"] is False
+    assert rows["NPWR06670_00"]["contested"] is True, "identical claims genuinely compete"
+    assert rows["NPWR06085_00"]["contested"] is True
+
+
 def test_two_trophy_sets_for_one_title_still_say_so(db_session):
     """Big Sky Infinity has a PS3 set and a Vita set — consecutive npCommIds,
     same 14 trophies, both 3/14, last played a month apart. Two real progress
@@ -3493,6 +3524,33 @@ def test_two_trophy_sets_for_one_title_still_say_so(db_session):
     assert len(rows) == 2
     assert all(r["set_count"] == 2 for r in rows), "title_fix rows must see their siblings too"
     assert sorted(r["set_index"] for r in rows) == [1, 2]
+
+
+def test_a_platform_claimed_by_a_decided_set_is_marked_on_its_sibling(db_session):
+    """Crimsonland. Two trophy sets for one title, both declaring the identical
+    PS3,PSVITA,PS4 — nothing in any feed says which console each covers. Confirm
+    one on PS4 and the other must SHOW that PS4 is spoken for, or confirming it
+    too drops silently as a (game, platform) conflict. That is how the 90% set's
+    data vanished and Vita ended up showing 23%.
+
+    Still overridable: the platform stays tickable, it just says who has it.
+
+    Seeded as title_fix, because the sync holds every new title back that way
+    now and the guard was scoped to cross_play until #180."""
+    user = _prop_user(db_session, "u-claim")
+    for n in ("PS3", "PlayStation 4", "PlayStation Vita"):
+        db_session.add(models.Platform(name=n, display_name=n))
+    decided = _cand(db_session, user, "NPWR06670_00", "Crimsonland", kind="title_fix", status="confirmed", platform="PS3,PSVITA,PS4")
+    decided.raw_data = {"platform": "PS3,PSVITA,PS4", "normalizedName": "crimsonland"}
+    decided.chosen_platforms = ["PS4"]
+    pending = _cand(db_session, user, "NPWR06085_00", "Crimsonland", kind="title_fix", platform="PS3,PSVITA,PS4")
+    pending.raw_data = {"platform": "PS3,PSVITA,PS4", "normalizedName": "crimsonland"}
+    db_session.commit()
+
+    row = next(r for r in psn.import_review_rows(db_session, user.id) if r["key"] == "NPWR06085_00")
+    opts = {o["platform"]: o for o in row["options"]}
+    assert opts["PS4"]["claimed_by"], "PS4 is taken by the other set and must say so"
+    assert not opts["PS3"]["claimed_by"] and not opts["PSVITA"]["claimed_by"]
 
 
 def test_rows_without_a_normalized_name_are_not_siblings(db_session):
@@ -3587,6 +3645,131 @@ def test_an_exact_match_that_still_renames_is_a_question(db_session, monkeypatch
     row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA04483_00").one()
     assert row.proposed_title == "Battle Worlds: Kronos", "the spacing fix is a real improvement"
     assert row.proposal_status == "pending", "a rename is a question, not a settled match"
+
+
+def test_search_terms_space_out_jammed_punctuation():
+    """Sony writes "NieR:Automata" with no space after the colon, and IGDB
+    returns ZERO results for that string while matching "NieR Automata"
+    exactly — the words never get tokenized apart. Without this the row got no
+    proposal at all once its store name (a bundle) was correctly rejected."""
+    assert "NieR Automata" in psn.search_terms("NieR:Automata")
+    # A title already spaced gains nothing and must not be searched twice.
+    assert psn.search_terms("Gone Home") == ["Gone Home"]
+    assert psn.search_terms("Ghost of Tsushima") == ["Ghost of Tsushima"]
+
+
+def test_the_edition_that_matched_reaches_the_library(db_session, monkeypatch):
+    """When an edition is folded onto its base game, WHICH edition matched is
+    kept — the user owns "Game of the Yorha Edition", which bundles content the
+    base game does not, and that is a different fact from matching NieR:
+    Automata outright.
+
+    Recorded rather than displayed, and it rides raw_data onto the library entry
+    at confirm, which is where it is actually wanted (#180)."""
+    user = _prop_user(db_session, "u-via")
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4", igdb_id=48))
+    cand = _cand(db_session, user, "CUSA0NIER_00", "NieR Automata", platform="PS4")
+    cand.raw_data = {"platform": "PS4", "normalizedName": "nierautomata", "titleId": "CUSA0NIER_00", "name": "NieR Automata"}
+    db_session.commit()
+
+    monkeypatch.setattr(psn.psn_store, "fetch_product", lambda p, locale=None: {"name": ""})
+
+    def fake_search(term, platform_ids):
+        # the edition, typed as a bundle, carrying its version_parent
+        return [
+            {
+                "id": 55555,
+                "name": "Nier: Automata - Game of the Yorha Edition",
+                "platform_ids": platform_ids,
+                "game_type": 3,
+                "version_parent": {"id": 11208, "name": "NieR: Automata"},
+            }
+        ]
+
+    orig = psn._igdb_search_adapter
+    psn._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        psn.fill_review_proposals(db_session, user, store_sleep=0)
+        db_session.commit()
+    finally:
+        psn._igdb_search_adapter = orig
+
+    row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA0NIER_00").one()
+    assert row.proposed_igdb_id == 11208, "folded onto the base game"
+    assert row.raw_data["matchedVia"] == {"name": "Nier: Automata - Game of the Yorha Edition", "igdb_id": 55555}
+
+    psn.confirm_entry_decision(db_session, user, "CUSA0NIER_00", ["PS4"])
+    db_session.commit()
+    rel = db_session.query(models.GameRelease).filter_by(source="psn", external_id="CUSA0NIER_00").one()
+    assert rel.raw_data["matchedVia"]["igdb_id"] == 55555, "and it reaches the library entry"
+
+
+def test_psvr_games_are_searched_on_the_headset_too(db_session):
+    """Sony has no VR platform — a PSVR game's trophy set and its purchase both
+    report PS4 — but IGDB models PlayStation VR separately.
+
+    Moss is IGDB 37095 on platforms 165/390/163/…, with NO 48. Filtering the
+    search to 48 excluded the game from its own lookup, so the row got whatever
+    else mentioned "moss": "Where Moss Grows". ASTRO BOT Rescue Mission came
+    back unidentified by the same route. The filter is "any of", so widening
+    only lets the real game back in."""
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4", igdb_id=48))
+    db_session.add(models.Platform(name="PS5", display_name="PlayStation 5", igdb_id=167))
+    db_session.commit()
+
+    assert psn.igdb_platform_ids(db_session, ["PS4"]) == [48, 165], "PS4 carries PlayStation VR"
+    assert psn.igdb_platform_ids(db_session, ["PS5"]) == [167, 390], "PS5 carries PSVR2"
+
+    # And the reverse, or accepting a VR game's proposal strikes out the only
+    # platform it has and confirming creates nothing.
+    assert psn._platform_in_igdb_set(db_session, "PS4", [165]) is True
+    assert psn._platform_in_igdb_set(db_session, "PS4", [48]) is True
+    assert psn._platform_in_igdb_set(db_session, "PS5", [165]) is False, "a PS4 headset is not a PS5"
+
+
+def test_artwork_is_refetched_when_the_name_moves_on(db_session):
+    """Art found for "Batman" is a different game's cover once the row reads
+    "Batman: The Telltale Series" — confidently wrong, which is worse than none.
+
+    The gap query only ever looked for MISSING art, so a renamed row kept its
+    old cover forever. It now also refetches when the name it was fetched under
+    is no longer the name the row carries."""
+    user = _prop_user(db_session, "u-refetch")
+
+    settled = _cand(db_session, user, "CUSA0AAA_00", "Bloodborne", platform="PS4")
+    settled.thumbnail_url, settled.hero_url = "grid.png", "hero.png"
+    settled.raw_data = {"platform": "PS4", "artForTitle": "Bloodborne"}
+
+    renamed = _cand(db_session, user, "CUSA0BBB_00", "Batman", platform="PS4")
+    renamed.thumbnail_url, renamed.hero_url = "grid.png", "hero.png"
+    renamed.proposed_title = "Batman: The Telltale Series"
+    renamed.raw_data = {"platform": "PS4", "artForTitle": "Batman"}
+    db_session.commit()
+
+    gaps = {g["external_id"]: g["title"] for g in psn.review_thumbnail_gaps(db_session, user.id)}
+    assert "CUSA0AAA_00" not in gaps, "art still matches its name — nothing to do"
+    assert gaps["CUSA0BBB_00"] == "Batman: The Telltale Series", "refetch under the name it has now"
+
+
+def test_artwork_searches_the_corrected_name(db_session):
+    """SGDB is asked for the best name we hold, not Sony's (#180).
+
+    A sparse feed name is precisely what SGDB cannot resolve — "Batman" returns
+    nothing usable — and precisely what IGDB has already corrected on the row.
+    Searching the raw name meant the rows most in need of art were the ones
+    guaranteed never to get any."""
+    user = _prop_user(db_session, "u-art")
+    sparse = _cand(db_session, user, "CUSA05332_00", "Batman", platform="PS4")
+    sparse.proposed_title = "Batman: The Telltale Series"
+    sparse.proposed_igdb_id = 14746
+    sparse.proposal_status = "pending"
+    plain = _cand(db_session, user, "CUSA00900_00", "Bloodborne", platform="PS4")
+    plain.proposal_status = "matched"
+    db_session.commit()
+
+    gaps = {g["external_id"]: g["title"] for g in psn.review_thumbnail_gaps(db_session, user.id)}
+    assert gaps["CUSA05332_00"] == "Batman: The Telltale Series"
+    assert gaps["CUSA00900_00"] == "Bloodborne", "with nothing proposed, Sony's name is the best we have"
 
 
 def test_better_sony_data_reopens_a_settled_row(db_session):
