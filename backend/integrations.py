@@ -399,14 +399,16 @@ def save_psn_token(
 
 def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
     """Re-render the sync report block for the PSN configure page."""
-    _review = psn.import_review_rows(db, current_user.id)
+    # The template only asks whether there are rows and how many, so build a
+    # count rather than 567 row dicts (4.6s vs 6ms).
+    _review_count = psn.count_pending_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
         context={
             "report": current_user.psn_last_sync_report,
             "last_synced_at": current_user.psn_last_synced_at,
-            "import_review": _review,
+            "import_review_count": _review_count,
             "flash": flash,
             "flash_error": error,
         },

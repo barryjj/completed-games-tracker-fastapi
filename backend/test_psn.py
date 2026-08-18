@@ -1144,11 +1144,10 @@ def test_import_review_rows_lists_rows_awaiting_any_decision(db_session):
     assert options["PS5"]["selected"] is True
     assert options["PS4"]["selected"] is True
 
-    # Shadow mode (#180): each row reports what the sync WOULD have done. The
-    # cross-play row is unsettled on platform (that IS its question) and has no
-    # IGDB id either, so the badge has to name both halves rather than shrug.
+    # Shadow mode (#180). The row carries only whether it WOULD have imported
+    # unattended — the wordier label lives on review_verdict, which is what the
+    # eventual automation gates on, not something the row renders.
     assert cross["verdict_auto"] is False
-    assert cross["verdict_label"] == "Needs you: platform and identity"
 
 
 def test_verdict_needs_both_halves_settled(db_session):
@@ -1174,8 +1173,11 @@ def test_verdict_needs_both_halves_settled(db_session):
     # settled platform, no IGDB identity at all
     assert psn.review_verdict(_Cand(), single_platform)["label"] == "Needs you: identity"
 
-    # an id, but a rename is being proposed — a judgement call, not a verdict
-    assert psn.review_verdict(_Cand(igdb_id=42, title="Something Else"), single_platform)["auto"] is False
+    # an id, but a rename is being proposed — a judgement call, not a verdict.
+    # NOT an identity question: IGDB knows the game, the name awaits approval.
+    renaming = psn.review_verdict(_Cand(igdb_id=42, title="Something Else"), single_platform)
+    assert renaming["auto"] is False
+    assert renaming["label"] == "Needs you: name"
 
     # platform unsettled, identity fine
     two_platform = {**single_platform, "platform": "PS4,PS5"}
@@ -3469,6 +3471,44 @@ def _cand(db, user, ext, title, kind="title_fix", status="pending", proposal_sta
     return c
 
 
+def test_two_trophy_sets_for_one_title_still_say_so(db_session):
+    """Big Sky Infinity has a PS3 set and a Vita set — consecutive npCommIds,
+    same 14 trophies, both 3/14, last played a month apart. Two real progress
+    records wanting two entries, and without the "Set 1 of 2" badge they read as
+    an accidental duplicate.
+
+    The siblings query was scoped to kind == "cross_play", which was fine while
+    that was the only kind a multi-set title could land in. Once the sync began
+    holding every new title back as title_fix, the badge silently stopped
+    appearing — and so did claimed_by, the guard that stops two sets claiming
+    the same platform and one of them being dropped as a conflict."""
+    user = _prop_user(db_session, "u-sets")
+    db_session.add(models.Platform(name="PS3", display_name="PlayStation 3"))
+    for ext, plat in (("NPWR03639_00", "PS3"), ("NPWR03640_00", "PSVITA")):
+        c = _cand(db_session, user, ext, "Big Sky Infinity", kind="title_fix", platform=plat)
+        c.raw_data = {"platform": plat, "normalizedName": "bigskyinfinity"}
+    db_session.commit()
+
+    rows = psn.import_review_rows(db_session, user.id)
+    assert len(rows) == 2
+    assert all(r["set_count"] == 2 for r in rows), "title_fix rows must see their siblings too"
+    assert sorted(r["set_index"] for r in rows) == [1, 2]
+
+
+def test_rows_without_a_normalized_name_are_not_siblings(db_session):
+    """They used to all bucket under "", so unrelated titles counted as several
+    sets for one title — which marks their playtime unattributable and hides it."""
+    user = _prop_user(db_session, "u-nosib")
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4"))
+    for ext, title in (("CUSA0AA_00", "Alpha"), ("CUSA0BB_00", "Beta")):
+        c = _cand(db_session, user, ext, title, kind="title_fix", platform="PS4")
+        c.raw_data = {"platform": "PS4"}  # no normalizedName
+    db_session.commit()
+
+    rows = psn.import_review_rows(db_session, user.id)
+    assert all(r["set_count"] == 1 for r in rows), "unrelated titles are not each other's sets"
+
+
 def test_each_kind_of_row_says_why_it_is_actually_there(db_session):
     """The reason line only ever reported PLATFORM reasoning, so a media app
     read "Only one platform on this trophy set" — true, and not why it was in
@@ -3492,6 +3532,61 @@ def test_each_kind_of_row_says_why_it_is_actually_there(db_session):
     assert "platform" not in rows["Amazon Prime Video"].lower(), "the old bug: platform reasoning on a non-platform question"
     assert "library" in rows["Bloodborne"].lower()
     assert "already in your library" in rows["Already Here"].lower()
+
+
+def test_the_merge_carries_the_concept_id():
+    """Regression, and the second seam of its kind today (#180).
+
+    merge_library builds merged items from a fixed set of keys, and `concept`
+    was not one of them — so the concept fallback in _store_title_for could
+    never fire. "Batman" had a concept page naming it properly, never reached
+    it, and the lookup fell back to the bare word and proposed "Batman: The
+    Enemy Within".
+
+    Only the id is carried: concept.titleIds is the whole SKU family (37 for
+    ELDEN RING) and nothing downstream reads it off the row."""
+    played = [
+        {
+            "titleId": "CUSA05332_00",
+            "name": "Batman",
+            "category": "ps4_game",
+            "concept": {"id": 221667, "titleIds": ["CUSA05332_00", "CUSA05333_00"]},
+        }
+    ]
+    merged = psn.merge_library([], [], played)["merged"]
+    assert merged[0]["conceptId"] == 221667
+    assert "titleIds" not in str(merged[0].get("conceptId")), "just the id, not the family"
+
+
+def test_an_exact_match_that_still_renames_is_a_question(db_session, monkeypatch):
+    """ "matched" means IGDB knows the game AND our name is already right.
+
+    An exact match can still produce a rename — Sony's "BattleWorldsKronos"
+    matches "Battle Worlds: Kronos" once spacing is ignored — and labelling that
+    matched made the modal say "the name is already right" while proposing to
+    change it, and the row report an identity problem it did not have."""
+    user = _prop_user(db_session, "u-spaceless")
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4", igdb_id=48))
+    cand = _cand(db_session, user, "CUSA04483_00", "BattleWorldsKronos", platform="PS4")
+    cand.raw_data = {"platform": "PS4"}
+    db_session.commit()
+
+    monkeypatch.setattr(psn.psn_store, "fetch_product", lambda p, locale=None: {"name": ""})
+
+    def fake_search(term, platform_ids):
+        return [{"id": 7206, "name": "Battle Worlds: Kronos", "platform_ids": platform_ids, "game_type": 0}]
+
+    orig = psn._igdb_search_adapter
+    psn._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        psn.fill_review_proposals(db_session, user, store_sleep=0)
+        db_session.commit()
+    finally:
+        psn._igdb_search_adapter = orig
+
+    row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA04483_00").one()
+    assert row.proposed_title == "Battle Worlds: Kronos", "the spacing fix is a real improvement"
+    assert row.proposal_status == "pending", "a rename is a question, not a settled match"
 
 
 def test_better_sony_data_reopens_a_settled_row(db_session):
@@ -3545,6 +3640,36 @@ def test_a_dismissal_is_never_reopened(db_session):
     db_session.commit()
     assert out["reopened"] == 0
     assert db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA00130_00").one().status == "dismissed"
+
+
+def test_a_resync_does_not_forget_what_you_refused(db_session):
+    """The crawl payload is refreshed wholesale on every sync — trophy progress
+    and playtime move — but three keys on that blob are NOT crawl data.
+
+    rejectedTitle is the name you already turned down. Losing it meant a resync
+    silently re-asked a refused question, so the refusal memory lasted exactly
+    until the next sync. storeTitle is the fetch cache; losing it re-fetched
+    hundreds of store pages for nothing."""
+    user = _prop_user(db_session, "u-carry")
+    cand = _cand(db_session, user, "CUSA07000_00", "Thing", platform="PS4")
+    cand.raw_data = {
+        "platform": "PS4",
+        "rejectedTitle": "Wrong Guess",
+        "storeTitle": "Thing: Special Edition",
+        "proposalVersion": 1,
+        "trophyProgress": 10,
+    }
+    db_session.commit()
+
+    fresh = {"name": "Thing", "titleId": "CUSA07000_00", "platform": "PS4", "trophyProgress": 55, "sources": ["titles"]}
+    psn._upsert_review_candidate(db_session, user, fresh, "title_fix")
+    db_session.commit()
+
+    raw = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA07000_00").one().raw_data
+    assert raw["trophyProgress"] == 55, "crawl data IS refreshed"
+    assert raw["rejectedTitle"] == "Wrong Guess", "a refusal must survive a resync"
+    assert raw["storeTitle"] == "Thing: Special Edition"
+    assert raw["proposalVersion"] == 1
 
 
 def test_a_refused_name_is_not_proposed_again(db_session, monkeypatch):
@@ -3740,11 +3865,19 @@ def test_proposal_job_records_a_miss_so_it_stays_visible(db_session):
 
 
 def test_proposal_job_skips_rows_already_looked_up_or_decided(db_session):
-    """Self-gating is what makes this safe to chain off a sync."""
+    """Self-gating is what makes this safe to chain off a sync — but it gates on
+    "looked up BY THIS MATCHER", not merely "looked up".
+
+    Gating on the latter froze every answer in place: a matcher improvement
+    could never reach rows that had already been asked about, and the only way
+    to revisit them was hand-written SQL against the candidates table."""
     user = _prop_user(db_session, "u-skip")
     _cand(db_session, user, "NPWR00002_00", "Decided", status="confirmed")
-    _cand(db_session, user, "NPWR00003_00", "Proposed", proposal_status="pending")
-    _cand(db_session, user, "NPWR00004_00", "Missed", proposal_status="none")
+    current = {"platform": "PS3", "proposalVersion": psn._PROPOSAL_VERSION}
+    proposed = _cand(db_session, user, "NPWR00003_00", "Proposed", proposal_status="pending")
+    proposed.raw_data = dict(current)
+    missed = _cand(db_session, user, "NPWR00004_00", "Missed", proposal_status="none")
+    missed.raw_data = dict(current)
     db_session.commit()
 
     import backend.psn as psn_mod
@@ -3759,6 +3892,20 @@ def test_proposal_job_skips_rows_already_looked_up_or_decided(db_session):
 
     assert called == [], f"no IGDB calls should be spent, got {called}"
     assert out["checked"] == 0
+
+    # ...but a row answered by an OLDER matcher is asked again, so an
+    # improvement reaches it on the next sync without anyone running SQL.
+    stale = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00003_00").one()
+    stale.raw_data = {"platform": "PS3", "proposalVersion": psn._PROPOSAL_VERSION - 1}
+    db_session.commit()
+
+    called.clear()
+    psn_mod._igdb_search_adapter = lambda *a, **k: lambda t, p: called.append(t) or []
+    try:
+        out = psn_mod.fill_review_proposals(db_session, user, store_sleep=0)
+    finally:
+        psn_mod._igdb_search_adapter = orig
+    assert out["checked"] == 1, "a stale proposal is revisited"
 
 
 def test_proposal_job_is_a_no_op_without_igdb_credentials(db_session):
@@ -4532,3 +4679,53 @@ def test_store_retitle_defers_to_an_igdb_id():
     block = src[src.index("def _apply_title(") : src.index("def apply_metadata(")]
     assert "if game.igdb_id:" in block, "the retitle must defer when an id exists"
     assert "return False" in block[block.index("if game.igdb_id:") :][:80]
+
+
+def test_a_review_row_renders_its_new_shape(client, db_session):
+    """The row said the same thing three times — a "Needs you: …" verdict, a
+    generic reason line, and a rename badge — while showing raw minutes and a
+    redundant "100% 30/30" (#180).
+
+    Now: each name carries its source, so the strikethrough explains itself; one
+    short badge says why the row is here; playtime goes through the same filter
+    as the Steam library; trophies get a glyph, a count and a bar.
+
+    Rendered for real, because none of that is reachable from unit tests — a
+    missing filter or a bad include only fails at request time."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso = "n" * 64
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4"))
+    cand = _cand(db_session, user, "CUSA0RENDER_00", "Atelier Totori The Adventurer of Arland", platform="PS4")
+    cand.raw_data = {
+        "platform": "PS4",
+        "trophyProgress": 62,
+        "playByCategory": {"ps4_game": 690},
+        "trophies": {"bronze": 30, "silver": 8},
+        "earnedTrophies": {"bronze": 20, "silver": 4},
+    }
+    cand.proposed_title = "Atelier Totori Plus: The Adventurer of Arland"
+    cand.proposed_igdb_id = 999
+    cand.proposal_status = "pending"
+    db_session.commit()
+
+    # A row IGDB vouched for WITHOUT needing a rename. Before, it rendered
+    # identically to one IGDB could not identify at all — nothing on the row
+    # said a match had been found.
+    matched = _cand(db_session, user, "CUSA0MATCH_00", "Assassin's Creed II", platform="PS4")
+    matched.raw_data = {"platform": "PS4", "trophies": {"bronze": 51}, "earnedTrophies": {"bronze": 51}}
+    matched.proposed_igdb_id = 4321
+    matched.proposal_status = "matched"
+    db_session.commit()
+
+    body = client.get("/tools/psn-review", headers={"HX-Request": "true"}).text
+
+    assert "Matched to IGDB 4321" in body, "a match with nothing to rename must still say so"
+    assert "Atelier Totori Plus: The Adventurer of Arland" in body
+    assert "IGDB" in body and "PlayStation" in body, "each name says where it came from"
+    assert "Edit to correct the match" not in body, "no reasoning line — it was true of every row"
+    assert "tag-platform-playstation" in body and "tag-igdb" in body, "sources are coloured chips"
+    assert "Name corrected" not in body, "reason badges are gone — the strikethrough says it"
+    assert "11.5 hours" in body, "playtime uses the shared filter, beside the title where width is free"
+    assert "690m" not in body
+    assert "24/38" in body and "cgt-trophy-bar" in body

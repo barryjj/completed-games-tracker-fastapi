@@ -18,52 +18,75 @@
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}
       <div>
-        {# An accepted IGDB name is applied AT CREATION, so the row shows the
-           name that will actually be written — struck-through original beside
-           it, because you should be able to see what Sony called it (#180). #}
-        {# Name is read-only here; Edit opens the modal, same as every other
-           review page. The row's job is the platform decision. #}
+        {# Layout J. Playtime rides beside the NAME, where there is horizontal
+           room, so the stats column carries one figure and every bar in the
+           list starts at the same x. Sources sit on the line below as coloured
+           chips: PlayStation takes the platform family's lavender (same recipe
+           as the PS4/PSVITA chips), IGDB takes the green DESIGN.md already
+           assigns to "IGDB linked / confirmed".
+
+           No reasoning line. "Confirming what this is before it lands in your
+           library" was true of every row in the queue and told you nothing;
+           the absence of an IGDB chip is what says a row is unidentified. #}
         {% if r.proposal_status == "pending" and r.proposed_title %}
         <span class="cgt-import-title cgt-psn-proposed">{{ r.proposed_title }}</span>
+        {% if r.total_minutes %}<span class="cgt-psn-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</span>{% endif %}
         <div class="text-secondary small text-decoration-line-through">{{ r.name }}</div>
         {% else %}
         <span class="cgt-import-title">{{ r.name }}</span>
+        {% if r.total_minutes %}<span class="cgt-psn-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</span>{% endif %}
         {% endif %}
-        {% if r.set_count > 1 %}
-        <span class="tag-badge tag-source ms-1" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
-        {% endif %}
-        <span class="tag-badge {{ 'tag-verdict-auto' if r.verdict_auto else 'tag-source' }} ms-1"
-              title="{{ 'Platform and identity are both settled — this is what the sync would import on its own once automation is switched on' if r.verdict_auto else 'Held back for you because this half is not settled yet' }}">{{ r.verdict_label }}</span>
-        <div class="text-secondary small">{{ r.reason }}</div>
-        {% if r.proposal_status == "pending" and r.proposed_title %}
-        <div class="small mt-1 text-secondary">
-          <span class="tag-badge tag-source">Rename suggested</span>
-          Edit to change or keep Sony&rsquo;s name.
+        <div class="mt-1">
+          <span class="tag-badge tag-platform-playstation">PlayStation</span>
+          {# Present whenever IGDB vouched for the row — whether it renamed it or
+             agreed with Sony. Its ABSENCE is how an unidentified row reads. #}
+          {% if r.proposed_igdb_id %}
+          <span class="tag-badge tag-igdb ms-1" title="Matched to IGDB {{ r.proposed_igdb_id }}">IGDB</span>
+          {% endif %}
+          {% if r.set_count > 1 %}
+          <span class="tag-badge tag-source ms-1" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
+          {% endif %}
+          {# Shadow-mode scaffolding — the one status nothing else conveys. It
+             retires itself once these rows import unattended. #}
+          {% if r.verdict_auto %}
+          <span class="tag-badge tag-verdict-auto ms-1"
+                title="Platform and identity are both settled — this would import on its own once automation is switched on">Auto-import</span>
+          {% endif %}
         </div>
-        {% elif r.proposal_status == "none" %}
-        {# Only ever shown when IGDB genuinely returned nothing. An exact match
-           is "matched", not this — conflating them labelled ~279 correctly
-           identified games as unidentified. #}
-        <div class="small mt-1 text-secondary">
-          <span class="tag-badge tag-source">Not identified</span>
-          No IGDB match &mdash; confirming keeps this name.
-        </div>
-        {% endif %}
       </div>
     </div>
   </td>
-  <td class="align-middle text-nowrap">
+  {# Count over a THIN bar. The bar was briefly a 20px pill with the number
+     inside it, which put a third solid object in a row that already has
+     checkbox chips and a filled button — three things of similar weight
+     competing across the right half. As a rule under the number it is
+     subordinate: the count is the content, the bar annotates it. #}
+  <td class="align-middle cgt-psn-progress">
     {% if r.trophy_defined %}
-    <span class="small">{{ r.trophy_progress }}%</span>
-    <span class="text-secondary small">{{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
+    <span class="cgt-trophy-stat">
+      {# The glyph is its own column, centred against the count-over-bar pair,
+         so it never has to match the digits' cap height — which is what made
+         every size we tried look either too tall or blobby. As an icon beside
+         a two-line block it can be sized for legibility alone. #}
+      {% include "partials/_icon_trophy.svg" %}
+      <span class="cgt-trophy-figures">
+        <span class="cgt-trophy-count">{{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
+        <span class="cgt-trophy-bar" role="img"
+              aria-label="{{ r.trophy_earned }} of {{ r.trophy_defined }} trophies earned">
+          <i style="width: {{ (r.trophy_earned / r.trophy_defined * 100) | round | int }}%;"></i>
+        </span>
+      </span>
+    </span>
     {% else %}
     <span class="text-secondary small">&mdash;</span>
     {% endif %}
   </td>
-  <td class="align-middle">
+  {# Right-aligned: with one chip, left-aligning left a wide gap before Confirm
+     while the chips floated far from the button they act on. #}
+  <td class="align-middle text-end cgt-psn-plats">
     {# Pre-ticked with every platform in the set this account is known to own.
        Unticking them all and confirming is the same as Dismiss. #}
-    <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-2">
+    <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-2 justify-content-end">
       {% for o in r.options %}
       <label class="cgt-psn-plat-check{% if o.claimed_by %} cgt-psn-plat-check--claimed{% endif %}"
              {% if o.claimed_by %}title="Already assigned to {{ o.claimed_by }} — tick to claim it here anyway"{% endif %}>
@@ -71,8 +94,7 @@
                onchange="psnRememberDraft('{{ r.key }}')"
                {% if o.selected %}checked{% endif %}>
         <span class="tag-badge {{ o.platform | platform_color }}">{{ o.platform }}</span>
-        {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken</span>
-        {% elif o.minutes %}<span class="text-secondary small ms-1">{{ o.minutes }}m</span>{% endif %}
+        {% if o.claimed_by %}<span class="cgt-psn-claimed-note">taken</span>{% endif %}
       </label>
       {% endfor %}
     </div>

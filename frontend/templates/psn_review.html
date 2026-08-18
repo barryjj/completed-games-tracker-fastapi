@@ -487,6 +487,32 @@ window.selectIgdbGame = function(el) {
   if (results) results.innerHTML = '';
   var search = document.getElementById('psn-edit-igdb-search');
   if (search) search.value = '';
+
+  // Show what you actually committed to. Updating the name field alone left
+  // the automatic suggestion below still on screen, so the only evidence the
+  // match had changed was the text in an input (#180).
+  var card = document.getElementById('psn-edit-igdb-linked');
+  if (card) {
+    document.getElementById('psn-edit-igdb-linked-name').textContent = name;
+    document.getElementById('psn-edit-igdb-linked-id').textContent = id ? 'IGDB #' + id : '';
+    card.classList.remove('d-none');
+  }
+  // The auto-match has been superseded — leaving it visible invites comparing
+  // your pick against a suggestion that no longer applies.
+  var suggestion = document.getElementById('psn-edit-suggestion');
+  if (suggestion) suggestion.hidden = true;
+};
+
+// "Change" on the locked card — drop the manual pick and go back to searching.
+window.psnClearIgdbSelection = function() {
+  var card = document.getElementById('psn-edit-igdb-linked');
+  if (card) card.classList.add('d-none');
+  var idEl = document.getElementById('psn-edit-igdb-id');
+  if (idEl) idEl.value = '';
+  var suggestion = document.getElementById('psn-edit-suggestion');
+  if (suggestion) suggestion.hidden = false;
+  var search = document.getElementById('psn-edit-igdb-search');
+  if (search) search.focus();
 };
 </script>
 {% endblock %}

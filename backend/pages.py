@@ -148,7 +148,10 @@ def _psn_pending(db: Session, user: models.User) -> int:
     one page and a card showing only half the work is a card that lies."""
     if not user.psn_npsso:
         return 0
-    cross = len(_psn.import_review_rows(db, user.id))
+    # Counting by BUILDING every row cost 4.6s on a 567-row queue and was the
+    # whole of the Tools page's load time — every other helper on that page
+    # totals under 70ms.
+    cross = _psn.count_pending_review_rows(db, user.id)
     played = len([r for r in _psn.played_only_rows(db, user.id) if not r["decision"]])
     return cross + played
 

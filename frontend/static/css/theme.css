@@ -4,6 +4,23 @@ html[data-bs-theme="dark"] {
   /* Stat-number outline. Each theme strokes with its own darkest surface, not
      black — on Mocha a black stroke against pale accents just reads grimy. */
   --cgt-stat-stroke: rgba(17,17,27,0.55);
+
+  /* Dark defined NONE of these, so every var(--cgt-btn-*) reference silently
+     resolved to nothing here while working in both light palettes. Mocha's
+     accents are already pale enough to carry dark text, which is why the
+     filled-button shades were only ever needed for light — but the TOKENS
+     have to exist in all three palettes or anything deriving from them (a
+     progress fill tinted from the button's own hue, say) breaks in dark only.
+     Pointed at the accents Mocha's buttons already use. */
+  --cgt-btn-primary:        var(--ctp-mauve);
+  --cgt-btn-primary-hover:  var(--ctp-lavender);
+  --cgt-btn-primary-rgb:    203,166,247;
+  --cgt-btn-success:        var(--ctp-green);
+  --cgt-btn-success-hover:  var(--ctp-teal);
+  --cgt-btn-danger:         var(--ctp-red);
+  --cgt-btn-danger-hover:   var(--ctp-maroon);
+  --cgt-btn-on-fill:        var(--ctp-crust);
+
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
   --ctp-overlay0: #6c7086; --ctp-overlay1: #7f849c; --ctp-text:     #cdd6f4;
@@ -543,11 +560,108 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   flex-shrink: 0;
 }
 
+/* Trophy progress bar on a PSN review row. A bare "100% 30/30" said the same
+   thing twice and still needed reading; the bar carries the proportion at a
+   glance and the count stays for the exact figure. Deliberately thin — it sits
+   under two lines of text and must not compete with them. */
+/* PSN review row, layout J. Fixed column widths so a row with three platform
+   chips lines up with a row that has one — right-aligning a flex row let the
+   stats drift as the chip group grew. */
+.cgt-psn-progress {
+  width: 7.5rem;
+}
+
+.cgt-psn-playtime {
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--ctp-subtext0);
+  white-space: nowrap;
+}
+
+/* Glyph in its own column, centred against the count-over-bar pair. Matching an
+   icon to adjacent digits is a losing game — an em-sized glyph fills its whole
+   em box while digits reach ~70% of it as cap height, so the icon always stands
+   taller. Shrinking it to compensate closed up the trophy's negative space and
+   turned it to mush. Given its own column it answers to neither constraint. */
+.cgt-trophy-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ctp-text);
+  white-space: nowrap;
+}
+
+.cgt-trophy-figures {
+  display: inline-block;
+}
+
+.cgt-trophy-count {
+  display: block;
+  font-size: 0.9rem;
+  line-height: 1.15;
+  /* Tabular figures: 10/12 and 5/77 must occupy the same width or the column
+     jitters row to row. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* The trophy needs MORE size and LESS contrast, not less of both. It is a dense
+   glyph with fine negative space around the handles and inside the bowl; below
+   ~11px those gaps close and it reads as a blob, which is why shrinking it to
+   match the digits' weight made it worse. The clock gets away with a smaller
+   size because it is thin outlines with nothing to fill in.
+
+   So: full size for legibility, opacity for weight. */
+/* Sized for legibility now that nothing has to line up with it: big enough for
+   the handles and bowl to stay open, soft enough not to outweigh the count. */
+.cgt-trophy-stat > svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: 0 0 auto;
+  opacity: 0.42;
+}
+
+.cgt-trophy-bar {
+  display: block;
+  width: 5rem;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--ctp-surface1);
+  overflow: hidden;
+}
+
+.cgt-trophy-bar > i {
+  display: block;
+  height: 100%;
+  /* The button's own hue, so bar and Confirm read as one family instead of two
+     competing accents. Defined in all three palettes as of #180. */
+  background: var(--cgt-btn-primary);
+  opacity: 0.45;
+}
+
+/* Source chips. PlayStation reuses the platform family's recipe so it sits with
+   the PS4/PSVITA chips; IGDB takes the green DESIGN.md already assigns to
+   "IGDB linked / confirmed". */
+.tag-igdb {
+  color: var(--ctp-green);
+  background: color-mix(in srgb, var(--ctp-green) 15%, transparent);
+}
+
 /* PSN review, shadow mode (#180). The sync computes what it WOULD have done
    and reports it rather than acting, so the verdict can be watched being right
    across a real library before anything imports on its own. Green is the
    success/confirmed accent, so rows that would import unattended read as
    settled at a glance while everything still needing a human stays neutral. */
+/* Bootstrap ships no min-w-0 utility — it is a Tailwind idiom — but three
+   templates use it on flex children that must be allowed to shrink. Without
+   min-width:0 a flex item cannot go below its content width, so .text-truncate
+   silently does nothing and a long IGDB result name overflows its container
+   instead of ellipsing. */
+.min-w-0 {
+  min-width: 0;
+}
+
 .tag-verdict-auto {
   color: var(--ctp-crust);
   background: var(--ctp-green);

@@ -52,7 +52,9 @@
       <tr>
         <th class="psn-bulk-cell"><input class="form-check-input" type="checkbox" onchange="psnSelectAll(this.checked)" title="Select all"></th>
         <th>Title</th>
-        <th class="text-nowrap">Trophies</th>
+        {# No label: the column carries playtime AND trophies, each with its own
+           glyph, so a heading either lies or repeats them. #}
+        <th class="text-nowrap"></th>
         <th>Platforms owned</th>
         <th></th>
       </tr>

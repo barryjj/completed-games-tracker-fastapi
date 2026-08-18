@@ -2713,18 +2713,29 @@ def test_latte_overrides_come_after_the_default_light_palette():
     assert css.index('html[data-palette="latte"] {') > css.index('html[data-bs-theme="light"] {')
 
 
-def test_palette_specific_button_shades_stay_light_scoped():
-    """--cgt-btn-* are only declared in the light palettes. Any use that isn't
-    scoped to a light rule resolves to nothing under Mocha — an invisible
-    button, not a build error."""
+def test_button_shade_tokens_exist_in_every_palette():
+    """--cgt-btn-* used to be declared only in the light palettes, so any use
+    that wasn't light-scoped resolved to nothing under Mocha — an invisible
+    element, not a build error. The old guard enforced that by demanding every
+    USE be light-scoped, which blocked deriving anything from them.
+
+    Dark now declares them too (#180), so the invariant is the stronger one:
+    every token consumed anywhere exists in all three palettes. That is what
+    makes it safe for a progress fill to take the button's own hue."""
     import re
 
     css = _theme_css()
-    for m in re.finditer(r"var\(--cgt-btn-[a-z-]+\)", css):
-        start = css.rfind("}", 0, m.start())
-        start = 0 if start < 0 else start + 1
-        selector = css[start : css.index("{", start)].strip().splitlines()[-1]
-        assert 'data-bs-theme="light"' in selector or "data-palette" in selector, selector[:90]
+    used = set(re.findall(r"var\((--cgt-btn-[a-z-]+)\)", css))
+    assert used, "no button tokens consumed — did they get renamed?"
+
+    blocks = {
+        "dark": css[css.index('html[data-bs-theme="dark"]') : css.index('html[data-bs-theme="light"]')],
+        "light": css[css.index('html[data-bs-theme="light"]') : css.index('html[data-palette="latte"]')],
+        "latte": css[css.index('html[data-palette="latte"]') :],
+    }
+    for token in sorted(used):
+        for palette, block in blocks.items():
+            assert f"{token}:" in block, f"{token} is consumed but undefined in {palette} — invisible there only"
 
 
 def test_boot_script_migrates_pre_nord_theme_settings():

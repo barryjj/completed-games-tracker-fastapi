@@ -640,6 +640,16 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             "lastPlayed": p.get("lastPlayedDateTime") or (existing or {}).get("lastPlayed"),
             "playDuration": p.get("playDuration") or (existing or {}).get("playDuration"),
             "category": p.get("category") or (existing or {}).get("category"),
+            # The concept id is the ONLY route to a store page for a row with
+            # no purchase — trophy-only generations, and anything that left
+            # the purchased feed when PS+ lapsed. Dropping it here made the
+            # concept fallback dead code: "Batman" had a concept naming it
+            # properly and never reached it, so the lookup fell back to the
+            # bare word and proposed "Batman: The Enemy Within" (#180).
+            #
+            # Just the id. concept.titleIds is the whole SKU family (37 for
+            # ELDEN RING) and nothing downstream reads it off the row.
+            "conceptId": (p.get("concept") or {}).get("id") or (existing or {}).get("conceptId"),
             "sources": sorted(set((existing or {}).get("sources", []) + ["played"])),
             "platform": ((p.get("platform") or (existing or {}).get("platform") or "").upper() or None),
         }
@@ -1080,12 +1090,16 @@ def review_verdict(cand, item: dict) -> dict:
     identity_ok = bool(cand.proposed_igdb_id) and not cand.proposed_title
     if platform_ok and identity_ok:
         return {"auto": True, "holdout": None, "label": "Would auto-import"}
-    if not platform_ok and not identity_ok:
-        holdout = "platform and identity"
-    elif platform_ok:
-        holdout = "identity"
-    else:
-        holdout = "platform"
+    holdouts = []
+    if not platform_ok:
+        holdouts.append("platform")
+    if not identity_ok:
+        # A row IGDB has already identified is not an identity question — the
+        # game is known and a better name is waiting for approval. Calling that
+        # "identity" made rows reporting a perfectly good match read as if
+        # nothing had been found.
+        holdouts.append("name" if cand.proposed_igdb_id else "identity")
+    holdout = " and ".join(holdouts)
     return {"auto": False, "holdout": holdout, "label": f"Needs you: {holdout}"}
 
 
@@ -1280,7 +1294,17 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
     # trophy-set noise this review exists to strip (#180).
     row.title = _display_name(item.get("displayName") or item.get("name")) or ext_id
     row.kind = kind
-    row.raw_data = item
+    # The crawl payload is refreshed wholesale — trophy progress and playtime
+    # move — but three keys live on this blob and are NOT crawl data:
+    #
+    #   storeTitle       the store/concept fetch cache. Losing it re-fetches
+    #                    hundreds of pages on every sync.
+    #   rejectedTitle    the name you already turned down. Losing it means a
+    #                    resync silently re-asks a refused question, which is
+    #                    the exact treadmill the refusal memory exists to stop.
+    #   proposalVersion  which matcher produced the current proposal.
+    carried = {k: v for k, v in (row.raw_data or {}).items() if k in ("storeTitle", "rejectedTitle", "proposalVersion")}
+    row.raw_data = {**item, **carried}
     return row if row.status == "pending" else None
 
 
@@ -1617,7 +1641,31 @@ def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
     return item.get("trophyJoin") != "name" and sets_for_title < 2
 
 
-def import_review_rows(db: Session, user_id: int) -> list[dict]:
+def count_pending_review_rows(db: Session, user_id: int) -> int:
+    """How many rows the queue would show, without building any of them.
+
+    The tab badges refresh after every row action, and doing that by calling
+    import_review_rows and taking len() meant rebuilding the whole queue —
+    platform resolution, verdicts, sibling lookups and trophy tiers for 589
+    rows — to produce one number, twice per click.
+
+    Not a plain SQL COUNT: a candidate with no platform options is skipped by
+    the builder, so counting rows in the table would overstate the badge.
+    platform_candidates is pure and cheap, so the rule is applied here in
+    Python over one query instead.
+    """
+    return sum(
+        1
+        for (raw,) in db.query(models.PsnReviewCandidate.raw_data).filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS),
+            models.PsnReviewCandidate.status == "pending",
+        )
+        if platform_candidates(raw or {})
+    )
+
+
+def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -> list[dict]:
     """Pending review rows — one per trophy set, one checkbox per platform.
 
     ONE queue. A row can be waiting on its platforms (cross_play), on its name
@@ -1644,20 +1692,24 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
     Confirming CREATES the entries, so a decided row leaves the list the way a
     merged pair leaves match review.
     """
-    candidates = (
-        db.query(models.PsnReviewCandidate)
-        .filter(
-            models.PsnReviewCandidate.user_id == user_id,
-            # ONE queue. A trophy set can need its name approved, its
-            # platforms chosen, or BOTH — and a row needing both must be
-            # decided once, in one place. Splitting them would mean a game
-            # required visiting two queues to import, with no ordering
-            # guarantee between them (#180).
-            models.PsnReviewCandidate.kind.in_(("cross_play", "title_fix", "media_app", "igdb_link")),
-            models.PsnReviewCandidate.status == "pending",
-        )
-        .all()
+    candidates = db.query(models.PsnReviewCandidate).filter(
+        models.PsnReviewCandidate.user_id == user_id,
+        # ONE queue. A trophy set can need its name approved, its
+        # platforms chosen, or BOTH — and a row needing both must be
+        # decided once, in one place. Splitting them would mean a game
+        # required visiting two queues to import, with no ordering
+        # guarantee between them (#180).
+        models.PsnReviewCandidate.kind.in_(("cross_play", "title_fix", "media_app", "igdb_link")),
+        models.PsnReviewCandidate.status == "pending",
     )
+    # The edit modal wants ONE row. Building all of them and discarding
+    # the rest cost ~5s on a 589-row queue, because every row pays for
+    # platform resolution, a verdict, sibling lookup and trophy tiers.
+    # siblings/claimed_by come from their own query below, so narrowing
+    # here leaves "Set 1 of 2" and the platform-claim logic intact.
+    if only_key:
+        candidates = candidates.filter(models.PsnReviewCandidate.external_id == only_key)
+    candidates = candidates.all()
 
     # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
     # INCLUDED. Two things need them:
@@ -1670,13 +1722,26 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
     #      _import_one would silently drop the second as a (game, platform)
     #      conflict. That's how the 90% set's data vanished and Vita ended up
     #      showing 23%.
+    #
+    # Scoped to EVERY queue kind, not just cross_play. It used to filter to
+    # cross_play, which was fine while that was the only kind a multi-set title
+    # could land in — but once the sync began holding every new title back as
+    # title_fix, both of the things below silently stopped working: Big Sky
+    # Infinity showed as two identical rows with nothing saying why, and the
+    # claim guard stopped guarding.
     siblings: dict[str, list] = {}
     for cand in (
         db.query(models.PsnReviewCandidate)
-        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind == "cross_play")
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS))
         .all()
     ):
-        siblings.setdefault((cand.raw_data or {}).get("normalizedName") or "", []).append(cand)
+        # A row with no normalized name cannot be anyone's sibling. Bucketing
+        # them all under "" made unrelated titles count as several sets for one
+        # title, which suppresses their playtime as unattributable.
+        norm = (cand.raw_data or {}).get("normalizedName")
+        if not norm:
+            continue
+        siblings.setdefault(norm, []).append(cand)
     for group in siblings.values():
         group.sort(key=lambda c: c.external_id or "")
 
@@ -1709,7 +1774,11 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
             # to the other trophy set for the same game.
             reason = f"{sets_for_title} trophy sets for this title — PSN doesn't say which platform each covers"
         else:
-            reason = "Matched by title only — PSN gives no platform for this trophy set"
+            # NOT "PSN gives no platform" — every trophy set names its
+            # platforms, and claiming otherwise invented a Sony failure that
+            # does not exist. What is unknown is whether the PLAY RECORD
+            # belongs to this set: it reached it on title alone.
+            reason = "Matched by title only — playtime can't be attributed to this set"
 
         # A pending IGDB proposal NARROWS the choice to the platforms that game
         # actually shipped on. Shinovi Versus' trophy set claims PS3,PSVITA and
@@ -1780,7 +1849,6 @@ def import_review_rows(db: Session, user_id: int) -> list[dict]:
                 "reason": reason,
                 # Shadow mode: what the sync would have done on its own.
                 "verdict_auto": verdict["auto"],
-                "verdict_label": verdict["label"],
                 # SGDB grid first — PSN's own image is a square icon0.png, the
                 # wrong shape for a review card's hero.
                 "image": cand.thumbnail_url or (item.get("image") or {}).get("url") or item.get("trophyIconUrl"),
@@ -2498,8 +2566,10 @@ def _can_do_better_now(cand, item: dict) -> bool:
     if cand.status != "confirmed" or cand.proposed_igdb_id:
         return False
     raw = cand.raw_data or {}
-    had = bool(raw.get("productId") or (raw.get("concept") or {}).get("id"))
-    now = bool(item.get("productId") or (item.get("concept") or {}).get("id"))
+    # Same keys the store lookup uses, or this silently stops noticing that
+    # Sony can now identify something.
+    had = bool(raw.get("productId") or raw.get("conceptId"))
+    now = bool(item.get("productId") or item.get("conceptId"))
     return now and not had
 
 
@@ -2543,7 +2613,7 @@ def _store_title_for(cand, sleep: float = 1.0) -> str:
     # rows with the sparsest names, so falling back to the CONCEPT page is what
     # stops the neediest cases getting nothing. Sony's PS4 "Batman" has no
     # product but concept 221667 names it "Batman: The Telltale Series".
-    concept_id = (raw.get("concept") or {}).get("id")
+    concept_id = raw.get("conceptId")
     if not product_id and not concept_id:
         return ""
     try:
@@ -2564,6 +2634,17 @@ def _store_title_for(cand, sleep: float = 1.0) -> str:
     return name
 
 
+# Bumped whenever the matcher changes what it would decide. A pending row
+# whose proposal came from an older matcher is looked up again on the next
+# sync, so an improvement reaches rows that were already asked about —
+# otherwise the self-gating that makes re-syncs cheap also freezes every
+# bad answer in place, and fixing them means hand-written SQL.
+#
+# 2: version_parent/parent_game classification, store+concept second name,
+#    episodes resolved to their series.
+_PROPOSAL_VERSION = 2
+
+
 def fill_review_proposals(db: Session, user: models.User, progress_callback=None, store_sleep: float = 1.0) -> dict:
     """Ask IGDB what each suspect trophy-set name really is (#180), phase 1.
 
@@ -2581,15 +2662,23 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
         return {"checked": 0, "proposed": 0, "no_match": 0, "errored": 0, "skipped_no_credentials": True}
 
     search = _igdb_search_adapter(user.twitch_client_id, user.twitch_client_secret)
-    rows = (
-        db.query(models.PsnReviewCandidate)
+    # Never looked up, OR looked up by an older matcher. The second half is what
+    # lets an improvement reach rows that were already asked about: without it
+    # the self-gating freezes every bad answer in place, and revisiting them
+    # means hand-written SQL against the candidates table.
+    #
+    # Cheap to re-run because storeTitle survives the crawl refresh, so store
+    # and concept pages are not fetched again.
+    rows = [
+        r
+        for r in db.query(models.PsnReviewCandidate)
         .filter(
             models.PsnReviewCandidate.user_id == user.id,
             models.PsnReviewCandidate.status == "pending",
-            models.PsnReviewCandidate.proposal_status.is_(None),
         )
         .all()
-    )
+        if r.proposal_status is None or (r.raw_data or {}).get("proposalVersion") != _PROPOSAL_VERSION
+    ]
     # EVERY pending row is looked up, not just trophy-only ones. This used to
     # filter to `is_trophy_only`, on the theory that a store-backed row "got its
     # name from a store listing and is fine as-is" — the same assumption the
@@ -2619,7 +2708,12 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
             # "matched" = IGDB knows this game and our name is already right, so
             # there is nothing to approve — but the id still attaches on confirm.
             # "pending" = a rename is being suggested and needs a decision.
-            if proposal.get("exact"):
+            # "matched" means IGDB knows the game AND our name is already
+            # right. An exact match can still yield a rename — Sony's
+            # "BattleWorldsKronos" matches "Battle Worlds: Kronos" once
+            # spacing is ignored — and calling that matched made the modal
+            # say "the name is already right" while proposing to change it.
+            if proposal.get("exact") and not proposal["proposed_title"]:
                 cand.proposal_status = "matched"
                 out["matched"] = out.get("matched", 0) + 1
             elif proposal["proposed_title"] and proposal["proposed_title"] == item.get("rejectedTitle"):
@@ -2637,6 +2731,8 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
             # an unidentified row kept invisible is the original problem.
             cand.proposal_status = "none"
             out["no_match"] += 1
+        # Stamp what produced this answer, so a later matcher knows to redo it.
+        cand.raw_data = {**(cand.raw_data or {}), "proposalVersion": _PROPOSAL_VERSION}
         db.commit()
         time.sleep(_PAGE_SLEEP_S)
     return out

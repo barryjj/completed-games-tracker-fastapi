@@ -258,7 +258,7 @@ def _review_chrome_ctx(db: Session, user: models.User, kind: str) -> dict:
         "oob": True,
         "kind": kind,
         "counts": {
-            "cross_play": len(psn.import_review_rows(db, user.id)),
+            "cross_play": psn.count_pending_review_rows(db, user.id),
             "played_only": len([r for r in psn.played_only_rows(db, user.id) if not r["decision"]]),
         },
     }
@@ -365,7 +365,7 @@ async def psn_review_edit_form(
     """Edit body for one row. Same shape as import review's edit modal."""
     from . import psn
 
-    rows = [r for r in psn.import_review_rows(db, current_user.id) if r["key"] == key]
+    rows = psn.import_review_rows(db, current_user.id, only_key=key)
     if not rows:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
     return templates.TemplateResponse(
@@ -394,7 +394,7 @@ async def psn_review_edit(
         psn.rename_candidate(db, current_user, key, title, igdb_id=chosen_id)
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
-    rows = [r for r in psn.import_review_rows(db, current_user.id) if r["key"] == key]
+    rows = psn.import_review_rows(db, current_user.id, only_key=key)
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_rows.html",
@@ -422,7 +422,7 @@ async def psn_review_reject_name(
         psn.reject_proposal(db, current_user, key)
     except ValueError:
         return Response("That row is no longer in the PSN review queue.", status_code=404)
-    rows = [r for r in psn.import_review_rows(db, current_user.id) if r["key"] == key]
+    rows = psn.import_review_rows(db, current_user.id, only_key=key)
     return templates.TemplateResponse(
         request=request,
         name="partials/_psn_review_rows.html",
