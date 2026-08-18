@@ -143,6 +143,42 @@ def fetch_product(product_id: str, locale: str = _DEFAULT_LOCALE) -> dict:
     return normalize(parse_product(fetch_html(product_id, locale), product_id), product_id)
 
 
+def concept_url(concept_id, locale: str = _DEFAULT_LOCALE) -> str:
+    return f"{_BASE}/{locale}/concept/{concept_id}"
+
+
+def fetch_concept(concept_id, locale: str = _DEFAULT_LOCALE) -> dict:
+    """Name a game from its CONCEPT page — for rows with no purchase (#180).
+
+    A productId comes from the purchased feed, so trophy-only generations never
+    have one, and neither does anything that dropped out of that feed when PS+
+    lapsed. Those are precisely the rows with the sparsest names, so without
+    this they get no store name at all: Sony's PS4 "Batman" has no product, but
+    concept 221667 names it "Batman: The Telltale Series".
+
+    Only the schema.org block is read. A concept page's product payload is not
+    keyed by a productId we hold, so the harvesting parse_product does has
+    nothing to match on, while the ld+json name is present and correct.
+
+    Caller beware: a concept names the CURRENT SKU, so it drifts to the newest
+    edition — Ghost of Tsushima's concept reads "DIRECTOR'S CUT", The Last of
+    Us Part II's reads "Remastered". That is why this is only ever a candidate
+    name for IGDB to arbitrate, never a title to adopt.
+    """
+    resp = httpx.get(concept_url(concept_id, locale), headers=_HEADERS, timeout=20, follow_redirects=True)
+    if resp.status_code == 404:
+        raise ProductNotFound(f"No concept page for {concept_id}")
+    resp.raise_for_status()
+    ld = _LD_JSON_RE.search(resp.text)
+    if not ld:
+        return {}
+    try:
+        return {"name": json.loads(ld.group(1)).get("name")}
+    except json.JSONDecodeError:
+        logger.warning("PS Store: concept %s ld+json did not parse", concept_id)
+        return {}
+
+
 def product_id_for(release) -> str | None:
     """The store productId recorded on a PSN release, if any. Only ~70% of PSN
     releases have one — trophy-only (old Vita/PS3) entries never do."""
@@ -248,8 +284,40 @@ def _apply_title(db, release) -> bool:
         e.g. Bleed and Bleed 2 both got titled "Bleed Complete Bundle".
       - otherwise adopt the cleaned store name.
     """
+    from . import models
+
     game = release.game
     if game is None or game.display_name_user_set or not _is_psn_only(db, game):
+        return False
+    # The sync ALREADY considered this store name. It fetches the store/concept
+    # title during review and hands it to IGDB as a candidate, so a completed
+    # lookup that produced no id means IGDB would not vouch for that name.
+    # Adopting it here anyway is precisely how "Ghost of Tsushima" became
+    # "Ghost of Tsushima: Legends" — Sony repurposes SKUs, and this guard used
+    # to be the only thing standing between that and the library.
+    #
+    # A NULL proposal_status means nobody ever looked (no IGDB credentials),
+    # and there the store is still the best answer available — which is the
+    # case this retitle was built for.
+    vetted = (
+        db.query(models.PsnReviewCandidate.id)
+        .filter(
+            models.PsnReviewCandidate.external_id == release.external_id,
+            models.PsnReviewCandidate.proposal_status.isnot(None),
+        )
+        .first()
+    )
+    if vetted is not None:
+        return False
+    # Something better already identified this game. The store retitle exists
+    # because a sparse feed name like "Batman" had no other fix; an IGDB id
+    # means the name came from a source that verified it against the platform.
+    #
+    # Sony's store listings get repurposed: the base "Ghost of Tsushima" SKU
+    # (UP9000-CUSA11456_00-GHOSTSHIP0000001) now serves a page titled "Ghost of
+    # Tsushima: Legends", a separate standalone product. Adopting that renamed
+    # the game to something the user never bought (#180).
+    if game.igdb_id:
         return False
     raw = release.raw_data or {}
     store = raw.get("store") or {}

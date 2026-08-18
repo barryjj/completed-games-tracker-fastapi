@@ -543,6 +543,17 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   flex-shrink: 0;
 }
 
+/* PSN review, shadow mode (#180). The sync computes what it WOULD have done
+   and reports it rather than acting, so the verdict can be watched being right
+   across a real library before anything imports on its own. Green is the
+   success/confirmed accent, so rows that would import unattended read as
+   settled at a glance while everything still needing a human stays neutral. */
+.tag-verdict-auto {
+  color: var(--ctp-crust);
+  background: var(--ctp-green);
+  flex-shrink: 0;
+}
+
 /* Import review: paired Library/Sheet comparison. A real HTML table instead
    of CSS grid/flex — browsers guarantee table column widths match across
    every row natively, which repeated grid/flex attempts here kept almost

@@ -540,6 +540,14 @@ _STEAM_KINDS: dict[str, dict] = {
         "label": "Review artwork",
         "job_label": "PSN review artwork",
     },
+    "psn_igdb_link": {
+        "fn": "link_igdb_ids",
+        "module": "psn",
+        "no_credentials": True,  # gated on Twitch/IGDB creds by the job itself
+        "started": "Matching your PlayStation library to IGDB — you'll see a toast when it finishes.",
+        "label": "IGDB match",
+        "job_label": "PSN IGDB match",
+    },
     "psn_igdb_titles": {
         "fn": "fill_review_proposals",
         "module": "psn",
@@ -583,6 +591,15 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
             lines.append(f"{result['errored']:,} errored — try again later")
         if result.get("no_product"):
             lines.append(f"{result['no_product']:,} have no store link (trophy-only)")
+        return "\n".join(lines)
+    if kind == "psn_igdb_link":
+        if result.get("skipped_no_credentials"):
+            return "IGDB match skipped\nAdd Twitch/IGDB credentials under Settings to enable it."
+        lines = [f"IGDB match complete\n{result['linked']:,} matched automatically"]
+        if result.get("queued"):
+            lines.append(f"{result['queued']:,} need you to confirm which game")
+        if result.get("no_match"):
+            lines.append(f"{result['no_match']:,} had no match")
         return "\n".join(lines)
     if kind == "psn_igdb_titles":
         if result.get("skipped_no_credentials"):
@@ -681,6 +698,12 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
         # localized or abbreviated. Self-gating: rows already decided or already
         # carrying a proposal are skipped, so a re-sync costs nothing (#180).
         steps.append(("psn_igdb_titles", "Title check"))
+    if added:
+        # Phase 2: attach an IGDB id to entries that imported directly. Runs
+        # BEFORE the store refresh, because the store retitle now defers to an
+        # id — Sony repurposes listings, and the base Ghost of Tsushima SKU
+        # serves a page titled "Legends" (#180).
+        steps.append(("psn_igdb_link", "IGDB match"))
     if has_sgdb_key:
         # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
         # the covers actually being waited on.

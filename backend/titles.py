@@ -141,7 +141,7 @@ def _clean_title(title: str) -> str:
     unchanged). Decision: leave the platform's casing alone. If a user
     dislikes a SHOUTING title, the edit modal lets them override
     display_name."""
-    return _JUNK_RE.sub("", html.unescape(title)).strip()
+    return re.sub(r"\s+", " ", _JUNK_RE.sub("", html.unescape(title))).strip()
 
 
 # ─── Match normalization ────────────────────────────────────────────────────

@@ -160,6 +160,61 @@ def test_apply_metadata_stores_blob_and_adopts_title(db_session):
     assert rel.metadata_fetched_at is not None
 
 
+def test_a_store_name_igdb_would_not_vouch_for_is_not_adopted(db_session):
+    """The sync already considered this store name (#180).
+
+    It fetches the store/concept title during review and offers it to IGDB as a
+    candidate, so a COMPLETED lookup that produced no id means IGDB would not
+    stand behind that name. Adopting it here anyway is exactly how "Ghost of
+    Tsushima" became "Ghost of Tsushima: Legends" — Sony repurposes SKUs, and
+    this retitle used to be the only thing between that and the library.
+
+    Guarding on proposal_status rather than on the store name itself, because
+    the two cases are indistinguishable from the string alone: "Batman" ->
+    "Batman: The Telltale Series" and "Ghost of Tsushima" -> "...: Legends" are
+    the same shape, and only the lookup tells them apart."""
+    user = _user(db_session, "vouch")
+    rel = _psn_release(db_session, "Batman", user=user)
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id=rel.external_id,
+            title="Batman",
+            kind="title_fix",
+            status="confirmed",
+            proposal_status="none",  # asked IGDB, got nothing
+        )
+    )
+    db_session.commit()
+
+    assert psn_store.apply_metadata(db_session, rel, _META) is False
+    assert rel.game.title == "Batman", "unvouched store name must not be adopted"
+    # The blob still lands — the detail pane wants it either way.
+    assert rel.raw_data["store"]["name"] == "Batman: The Telltale Series"
+
+
+def test_a_store_name_is_still_adopted_when_nobody_ever_looked(db_session):
+    """A NULL proposal_status means no IGDB credentials, so nobody ever checked.
+    There the store is the best answer available — which is the case this
+    retitle was built for, and it must keep working."""
+    user = _user(db_session, "nolook")
+    rel = _psn_release(db_session, "Batman", user=user)
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id=rel.external_id,
+            title="Batman",
+            kind="title_fix",
+            status="confirmed",
+            proposal_status=None,
+        )
+    )
+    db_session.commit()
+
+    assert psn_store.apply_metadata(db_session, rel, _META) is True
+    assert rel.game.title == "Batman: The Telltale Series"
+
+
 def test_apply_metadata_never_overwrites_a_user_set_title(db_session):
     rel = _psn_release(db_session, "My Batman", display_name_user_set=True)
     assert psn_store.apply_metadata(db_session, rel, _META) is False

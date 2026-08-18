@@ -26,6 +26,8 @@
         {% if r.set_count > 1 %}<span class="tag-badge tag-source">Set {{ r.set_index }}/{{ r.set_count }}</span>{% endif %}
       </div>
 
+      <span class="tag-badge {{ 'tag-verdict-auto' if r.verdict_auto else 'tag-source' }} ms-1"
+            title="{{ 'Platform and identity are both settled — this is what the sync would import on its own once automation is switched on' if r.verdict_auto else 'Held back for you because this half is not settled yet' }}">{{ r.verdict_label }}</span>
       <p class="text-secondary small mb-3">{{ r.reason }}</p>
 
       {# Side by side, matching the played-only card. The question you're here

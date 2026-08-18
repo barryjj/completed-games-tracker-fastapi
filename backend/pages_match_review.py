@@ -61,7 +61,7 @@ def _sort_review_rows(rows: list[dict], sort: str, kind: str) -> list[dict]:
 # title_fix: a trophy-only entry whose NAME is suspect. Lives in the same
 # queue as cross_play because one row can need both a name approval and a
 # platform choice, and deciding it twice would be absurd (#180).
-_PSN_REVIEW_KINDS = ("cross_play", "played_only", "title_fix", "media_app")
+_PSN_REVIEW_KINDS = ("cross_play", "played_only", "title_fix", "media_app", "igdb_link")
 
 
 @router.get("/tools/psn-review")

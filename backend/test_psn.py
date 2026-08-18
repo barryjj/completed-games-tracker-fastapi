@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from backend import models, psn
@@ -51,6 +52,48 @@ def test_merge_joins_by_title_id_and_by_normalized_name():
     assert ff["npCommunicationId"] == "NPWR002_00"
 
 
+def test_a_bonus_product_does_not_swallow_the_game_it_came_with():
+    """Real shapes from the 2026-08-11 crawl (#180).
+
+    concept.titleIds lists every SKU Sony shipped for a concept — 37 of them for
+    ELDEN RING, including CUSA30022_00, which belongs to the "ELDEN RING
+    Adventure Guide" pre-order bonus. That guide founded a purchased record, and
+    the 140-hour PS5 play record merged into it: the library showed the bonus
+    item's name and the real game survived only as an orphaned trophy row.
+
+    The play record is PS5 and the guide is PS4, so platform overlap refuses the
+    match and the game keeps its own identity."""
+    purchased = [
+        _purchased("ELDEN RING Adventure Guide", "CUSA30022_00", platform="PS4", product_id="UP0700-PPSA04610_00-EREPBONUSSET0000")
+    ]
+    titles = [
+        {
+            "npCommunicationId": "NPWR25067_00",
+            "trophyTitleName": "ELDEN RING™",
+            "trophyTitlePlatform": "PS5",
+            "progress": 100,
+        }
+    ]
+    played = [
+        {
+            "titleId": "PPSA04610_00",
+            "name": "ELDEN RING",
+            "category": "ps5_native_game",
+            "playDuration": "PT140H52M31S",
+            "concept": {"titleIds": ["CUSA30022_00", "PPSA04610_00", "CUSA18746_00"]},
+        }
+    ]
+    merged = {m["normalizedName"]: m for m in psn.merge_library(purchased, titles, played)["merged"]}
+
+    guide = merged["eldenringadventureguide"]
+    assert "played" not in guide["sources"], "the bonus item must not absorb the game's playtime"
+    assert not guide.get("playDuration")
+
+    game = merged["eldenring"]
+    assert game["playDuration"] == "PT140H52M31S"
+    assert game["npCommunicationId"] == "NPWR25067_00", "the trophy set belongs to the game, not the guide"
+
+
 def test_merge_name_join_respects_platform_guard():
     purchased = [_purchased("Resident Evil 4", "PPSA100_00", platform="PS5")]
     titles = [{"npCommunicationId": "NPWR900_00", "trophyTitleName": "Resident Evil 4", "trophyTitlePlatform": "PS4", "progress": 50}]
@@ -97,7 +140,7 @@ def test_merge_accumulates_all_play_categories():
     ]
     item = psn.merge_library([], titles, played)["merged"][0]
     assert item["playCategories"] == ["ps5_native_game", "pspc_game"]
-    assert psn.is_pc_copy(item, {psn._normalized_name("Cross Play Game")}) is False
+    assert psn.is_pc_copy(item) is False
 
 
 def test_is_pc_copy_uses_evidence_not_sonys_platform_string():
@@ -106,14 +149,15 @@ def test_is_pc_copy_uses_evidence_not_sonys_platform_string():
     owned on Steam, played on PC, never owned on a PlayStation. Requiring the
     set to be PC-ONLY missed the second one and minted a phantom PS5 entry.
 
-    The test is: mentions PSPC, already in the Steam library, and no
-    PlayStation-side evidence (no purchase, no native play time)."""
-    steam_keys = {psn._normalized_name("PC Only Game")}
+    The test is: mentions PSPC and there is no PlayStation-side evidence — no
+    purchase, no native play time. The Steam library is NOT required. Requiring
+    it made the answer depend on whether Steam happened to be synced yet, which
+    minted a phantom PS5 entry for MARVEL Tokon."""
     titles = [{"npCommunicationId": "NPWR701_00", "trophyTitleName": "PC Only Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 100}]
     played = [{"npCommunicationId": "NPWR701_00", "name": "PC Only Game", "category": "pspc_game", "playDuration": "PT80H"}]
     item = psn.merge_library([], titles, played)["merged"][0]
     assert item["playCategories"] == ["pspc_game"]
-    assert psn.is_pc_copy(item, steam_keys) is True
+    assert psn.is_pc_copy(item) is True
 
     # The Until Dawn shape: trophy-only, no play record at all, PS5,PSPC.
     # 100% trophies prove it was PLAYED, never on which platform — so trophies
@@ -123,14 +167,23 @@ def test_is_pc_copy_uses_evidence_not_sonys_platform_string():
         [{"npCommunicationId": "NPWR37139_00", "trophyTitleName": "PC Only Game", "trophyTitlePlatform": "PS5,PSPC", "progress": 100}],
         [],
     )["merged"][0]
-    assert psn.is_pc_copy(remake, steam_keys) is True
+    assert psn.is_pc_copy(remake) is True
 
-    # Not in the Steam library → not a duplicate of anything; keep it.
-    assert psn.is_pc_copy(remake, set()) is False
     # A real purchase is PlayStation-side evidence; keep it.
-    assert psn.is_pc_copy({**remake, "sources": ["purchased", "titles"]}, steam_keys) is False
+    assert psn.is_pc_copy({**remake, "sources": ["purchased", "titles"]}) is False
     # No PSPC anywhere → never in scope.
-    assert psn.is_pc_copy({"platform": "PS5", "sources": ["purchased"]}, steam_keys) is False
+    assert psn.is_pc_copy({"platform": "PS5", "sources": ["purchased"]}) is False
+    # Conflicting evidence — played on PC AND natively — means a PlayStation
+    # copy exists, so this is not merely the PC one.
+    both = psn.merge_library(
+        [],
+        [{"npCommunicationId": "NPWR702_00", "trophyTitleName": "Both Ways", "trophyTitlePlatform": "PS5,PSPC"}],
+        [
+            {"npCommunicationId": "NPWR702_00", "name": "Both Ways", "category": "pspc_game", "playDuration": "PT10H"},
+            {"npCommunicationId": "NPWR702_00", "name": "Both Ways", "category": "ps5_native_game", "playDuration": "PT5H"},
+        ],
+    )["merged"][0]
+    assert psn.is_pc_copy(both) is False
 
 
 def test_exchange_npsso_expired_raises_typed_error():
@@ -498,7 +551,7 @@ def test_import_snapshot_creates_rows_and_chains_scan(db_session, monkeypatch, t
     assert db_session.query(models.GameRelease).filter_by(source="psn").count() == 1
 
 
-def test_import_skips_pc_only_game_already_in_steam(db_session, monkeypatch, tmp_path):
+def test_import_skips_pc_copies_whether_or_not_steam_is_synced(db_session, monkeypatch, tmp_path):
     """A pspc (PC) game that's already a Steam entry is the same copy surfacing
     through PSN's PC integration — skip it instead of minting a phantom PS entry.
     A pspc game NOT in Steam still imports; a natively-played game always does."""
@@ -552,16 +605,16 @@ def test_import_skips_pc_only_game_already_in_steam(db_session, monkeypatch, tmp
     _seed_review(db_session, user, merged)
 
     result = psn.import_merged(db_session, user, merged)
-    assert result["skipped_pc_dupe"] == 1
-    # The pspc Stellar Blade (trophy id) was skipped...
+    # BOTH pspc-only rows are skipped now. Requiring the game to be in the Steam
+    # library made the answer depend on whether Steam happened to be synced yet
+    # — which minted a phantom PS5 entry for MARVEL Tokon. With no purchase and
+    # no native play there is no PlayStation copy to have an opinion about.
+    assert result["skipped_pc_dupe"] == 2
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR37356_00").count() == 0
     # ...the native PS5 copy imported (it has a titleId)...
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="PPSA03016_00").count() == 1
-    # ...and the non-Steam PC game is trophy-only, so it waits for review
-    # rather than importing under a trophy-set name (#180). The PC-dupe skip
-    # still runs first, which is why the Steam-owned one never reaches here.
+    # The non-Steam PC game is skipped as a PC copy too — no library entry.
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR90001_00").count() == 0
-    assert db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR90001_00", kind="title_fix").count() == 1
 
 
 def test_played_only_actions(client, db_session):
@@ -891,7 +944,7 @@ def test_psn_sync_followups_run_in_sequence_store_metadata_first(db_session, mon
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
-    assert ran == ["psn_store_refresh", "psn_igdb_titles", "sgdb_fill_all", "psn_review_art"]
+    assert ran == ["psn_store_refresh", "psn_igdb_titles", "psn_igdb_link", "sgdb_fill_all", "psn_review_art"]
     jobs.clear_all()
 
 
@@ -919,7 +972,7 @@ def test_psn_followups_skip_what_does_not_apply(db_session, monkeypatch):
 
     ran.clear()
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=False))
-    assert ran == ["psn_store_refresh", "psn_igdb_titles"], "no SGDB key kills the artwork passes, not the title check"
+    assert ran == ["psn_store_refresh", "psn_igdb_titles", "psn_igdb_link"], "no SGDB key kills the artwork passes, not the IGDB steps"
     jobs.clear_all()
 
 
@@ -945,7 +998,7 @@ def test_one_failing_followup_does_not_strand_the_rest(db_session, monkeypatch):
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
-    assert ran == ["psn_igdb_titles", "sgdb_fill_all", "psn_review_art"]
+    assert ran == ["psn_igdb_titles", "psn_igdb_link", "sgdb_fill_all", "psn_review_art"]
     jobs.clear_all()
 
 
@@ -1090,6 +1143,43 @@ def test_import_review_rows_lists_rows_awaiting_any_decision(db_session):
     # everything the account can actually run beats defaulting to one guess.
     assert options["PS5"]["selected"] is True
     assert options["PS4"]["selected"] is True
+
+    # Shadow mode (#180): each row reports what the sync WOULD have done. The
+    # cross-play row is unsettled on platform (that IS its question) and has no
+    # IGDB id either, so the badge has to name both halves rather than shrug.
+    assert cross["verdict_auto"] is False
+    assert cross["verdict_label"] == "Needs you: platform and identity"
+
+
+def test_verdict_needs_both_halves_settled(db_session):
+    """ "Would auto-import" means BOTH questions are answered. A row is routinely
+    certain about one and not the other — a single-platform trophy set with no
+    IGDB match (HITMAN 2 Expansion) is settled on platform and unknown on
+    identity — so the badge names the holdout instead of a useless "not sure".
+
+    A pending RENAME is not settled identity: proposing a different name is a
+    judgement call by definition, and a wrong id attaches wrong metadata
+    quietly."""
+    single_platform = {"name": "Solo", "npCommunicationId": "NPWR_V_00", "platform": "PS4", "sources": ["titles"]}
+
+    class _Cand:
+        def __init__(self, igdb_id=None, title=None):
+            self.proposed_igdb_id, self.proposed_title = igdb_id, title
+
+    # settled platform + exact IGDB match (an id, nothing to rename)
+    got = psn.review_verdict(_Cand(igdb_id=42), single_platform)
+    assert got["auto"] is True
+    assert got["label"] == "Would auto-import"
+
+    # settled platform, no IGDB identity at all
+    assert psn.review_verdict(_Cand(), single_platform)["label"] == "Needs you: identity"
+
+    # an id, but a rename is being proposed — a judgement call, not a verdict
+    assert psn.review_verdict(_Cand(igdb_id=42, title="Something Else"), single_platform)["auto"] is False
+
+    # platform unsettled, identity fine
+    two_platform = {**single_platform, "platform": "PS4,PS5"}
+    assert psn.review_verdict(_Cand(igdb_id=42), two_platform)["label"] == "Needs you: platform"
 
 
 def test_confirm_validates_platforms_against_the_trophy_set(db_session):
@@ -1771,6 +1861,45 @@ def _stub_crawl(monkeypatch, purchased=None, titles_=None, played=None):
     monkeypatch.setattr(psn, "_fetch_purchased", lambda tok, acct: purchased or [])
     monkeypatch.setattr(psn, "_fetch_trophy_titles", lambda tok, acct: (titles_ or [], len(titles_ or [])))
     monkeypatch.setattr(psn, "_fetch_played", lambda tok, acct: (played or [], len(played or [])))
+
+
+def test_sync_attaches_igdb_suggestions_without_a_second_button(db_session, monkeypatch, tmp_path):
+    """A row that says only "held back for review" is a chore, not a review —
+    the user still has to work out what the game actually is.
+
+    So the lookup runs INSIDE the sync (#180): the suggestion is already
+    attached the first time the queue is opened, and there is no second job to
+    remember to press."""
+    _seed_platforms(db_session)
+    # The lookup is platform-scoped, so the Vita needs its IGDB id to resolve.
+    db_session.add(models.Platform(name="PSVITA", display_name="PlayStation Vita", igdb_id=46))
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="chain", username="chain", password_hash="x", api_token="ctok", psn_npsso="n" * 64, psn_online_id="dude")
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    db_session.add(user)
+    db_session.commit()
+
+    _stub_crawl(
+        monkeypatch,
+        titles_=[
+            {"npCommunicationId": "NPWR09999_00", "trophyTitleName": "SHINOVI VERSUS", "trophyTitlePlatform": "PSVITA", "progress": 20}
+        ],
+    )
+
+    def fake_search(term, platform_ids):
+        return [{"id": 77, "name": "Senran Kagura: Shinovi Versus", "platform_ids": platform_ids, "game_type": 0}]
+
+    orig = psn._igdb_search_adapter
+    psn._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        result = psn.sync_library(db_session, user)
+    finally:
+        psn._igdb_search_adapter = orig
+
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR09999_00").one()
+    assert cand.proposed_title == "Senran Kagura: Shinovi Versus", "the sync itself should have asked IGDB"
+    assert cand.proposed_igdb_id == 77
+    assert "proposals" in result, "and report what it found alongside the library delta"
 
 
 def test_sync_library_crawls_and_creates_entries_in_one_step(db_session, monkeypatch, tmp_path):
@@ -3108,6 +3237,197 @@ def test_an_already_correct_name_still_keeps_its_igdb_id():
     assert got["proposed_platforms"] == [48]
 
 
+def test_an_edition_collapses_to_the_game_it_repackages():
+    """version_parent + game_type main means "same game, different box" (#180).
+
+    Shapes taken from a live IGDB probe on 2026-08-11. The library wants
+    "Mass Effect: Andromeda", not the edition words trailing off the end."""
+    hit = {
+        "id": 9999,
+        "name": "Mass Effect: Andromeda - Super Deluxe Edition",
+        "platform_ids": [48],
+        "game_type": 0,
+        "version_parent": {"id": 11, "name": "Mass Effect: Andromeda"},
+    }
+    got = psn._collapse_edition(hit)
+    assert got["id"] == 11, "the parent's id, so metadata attaches to the real game"
+    assert got["name"] == "Mass Effect: Andromeda"
+    assert got["collapsed_from"] == "Mass Effect: Andromeda - Super Deluxe Edition"
+
+
+def test_a_distinct_product_is_never_collapsed():
+    """Devil May Cry 5: Special Edition is game_type EXPANDED — a different
+    product that happens to carry a version_parent, not a repackaging. Ghost of
+    Tsushima: Legends links by parent_game only, which is also not an edition.
+
+    Collapsing either would erase a game the user genuinely owns separately."""
+    dmc = {
+        "id": 5,
+        "name": "Devil May Cry 5: Special Edition",
+        "platform_ids": [167],
+        "game_type": 10,
+        "version_parent": {"id": 4, "name": "Devil May Cry 5"},
+        "parent_game": {"id": 4, "name": "Devil May Cry 5"},
+    }
+    assert psn._collapse_edition(dmc)["id"] == 5
+    assert psn._collapse_edition(dmc)["name"] == "Devil May Cry 5: Special Edition"
+
+    legends = {
+        "id": 6,
+        "name": "Ghost of Tsushima: Legends",
+        "platform_ids": [48],
+        "game_type": 4,
+        "parent_game": {"id": 3, "name": "Ghost of Tsushima"},
+    }
+    assert psn._collapse_edition(legends)["id"] == 6
+
+
+def test_the_search_adapter_preserves_both_igdb_parent_links():
+    """Regression. The adapter reshapes IGDB rows, and it used to drop
+    version_parent and parent_game — which disabled _collapse_edition entirely
+    in production while every test still passed, because the tests hand-build
+    hits with those fields already present.
+
+    Live symptom: editions never collapsed onto their game, and the Telltale
+    Batman episode never resolved to its series, so a sparse "Batman" got a
+    confident dart-throw rename to "LEGO Batman 3: Beyond Gotham" instead."""
+    rows = [
+        {
+            "id": 26638,
+            "name": "Batman: The Telltale Series - Episode 1: Realm of Shadows",
+            "platform_ids": [48],
+            "game_type": 6,
+            "version_parent": None,
+            "parent_game": {"id": 14746, "name": "Batman: The Telltale Series"},
+        }
+    ]
+    with patch("backend.igdb.search_games_on_platforms", return_value=rows):
+        got = psn._igdb_search_adapter("cid", "sec")("Batman", [48])
+    assert got[0]["parent_game"] == {"id": 14746, "name": "Batman: The Telltale Series"}
+    assert "version_parent" in got[0], "both links must survive the reshape"
+    # and the collapse it feeds actually fires on what the adapter returns
+    assert psn._collapse_edition(got[0])["id"] == 14746
+
+
+def test_an_episode_resolves_to_the_series_it_belongs_to():
+    """A concept page names the current SKU, and for an episodic game that is
+    episode one. Searched verbatim, IGDB returns ONLY the episode — so without
+    this we would propose one chapter as the whole game.
+
+    Resolved via IGDB's own parent_game rather than by stripping "Episode N"
+    off the string: the relationship is authoritative, and it cannot misfire on
+    a title where "Episode" is genuinely part of the name (Episode Gladiolus,
+    Episode Prologue). Shapes verified live — Telltale Batman episodes 1 and 5
+    both point at series id 14746."""
+    episode = {
+        "id": 26638,
+        "name": "Batman: The Telltale Series - Episode 1: Realm of Shadows",
+        "platform_ids": [48],
+        "game_type": 6,
+        "parent_game": {"id": 14746, "name": "Batman: The Telltale Series", "game_type": 0},
+    }
+    got = psn._collapse_edition(episode)
+    assert got["id"] == 14746
+    assert got["name"] == "Batman: The Telltale Series"
+    assert got["game_type"] == 0, "ranks as the main game it resolved to, not as an episode"
+
+    # A title that merely CONTAINS "Episode" is untouched — no parent, no type 6.
+    gladiolus = {"id": 900, "name": "Final Fantasy XV: Episode Gladiolus", "platform_ids": [48], "game_type": 1}
+    assert psn._collapse_edition(gladiolus)["id"] == 900
+
+
+def test_the_store_name_rescues_a_sparse_feed_name():
+    """Batman. Sony's PS4 trophy set is named just "Batman" — unidentifiable,
+    and IGDB on that term is a dart throw. The store page names it properly.
+
+    The store title is offered to IGDB as a second candidate name rather than
+    applied as an override, so the match is something IGDB vouched for and the
+    id comes with it. This is the case the store retitle was built for (#180)."""
+
+    def fake_search(term, platform_ids):
+        # Only the store's name finds anything; "Batman" alone matches nothing
+        # this search is willing to stand behind.
+        if "telltale" not in term.lower():
+            return []
+        return [{"id": 501, "name": "Batman: The Telltale Series", "platform_ids": platform_ids, "game_type": 0}]
+
+    got = psn.build_proposal("Batman", ["PS4"], [48], fake_search, store_title="Batman: The Telltale Series")
+    assert got is not None, "the store name is a lead, not noise"
+    assert got["proposed_igdb_id"] == 501
+    assert got["proposed_title"] == "Batman: The Telltale Series", "matching the store name IS a rename for us"
+
+
+def test_the_feed_name_wins_when_the_store_sku_was_repurposed():
+    """Ghost of Tsushima. Sony's store SKU now serves a page titled "Ghost of
+    Tsushima: Legends", a separate standalone product — adopting it renamed the
+    game to something never bought.
+
+    Both names match IGDB exactly, so ordering cannot decide it. The main game
+    beats the standalone expansion, and the feed name survives. Same rule as
+    Batman, opposite input, opposite answer — which is the point: no global
+    winner between the two sources, IGDB arbitrates per row."""
+    hits = {
+        "Ghost of Tsushima": {"id": 3, "name": "Ghost of Tsushima", "platform_ids": [48], "game_type": 0},
+        "Ghost of Tsushima: Legends": {
+            "id": 44,
+            "name": "Ghost of Tsushima: Legends",
+            "platform_ids": [48],
+            "game_type": 4,  # standalone expansion
+            "parent_game": {"id": 3, "name": "Ghost of Tsushima"},
+        },
+    }
+
+    def fake_search(term, platform_ids):
+        # The expansion is returned FIRST for every term, so position alone
+        # would hand it the win.
+        return [hits["Ghost of Tsushima: Legends"], hits["Ghost of Tsushima"]]
+
+    got = psn.build_proposal("Ghost of Tsushima", ["PS4"], [48], fake_search, store_title="Ghost of Tsushima: Legends")
+    assert got["proposed_igdb_id"] == 3, "the game, not the standalone expansion"
+    assert got["proposed_title"] is None, "our name was already right — nothing to rename"
+
+
+def test_an_exact_match_prefers_the_main_game_over_a_derivative():
+    """Exact matches are collected, not returned on sight (#180).
+
+    IGDB routinely lists several entries under the SAME name — a main game and
+    a port, a remaster, a bundle. Returning whichever came back first meant the
+    derivative won on ordering alone, and ordering is not identity. It also
+    blocks feeding a second source name (the store title) into the same search,
+    because then two genuinely different names can each match exactly and the
+    spin-off would win by position.
+
+    The derivative is deliberately listed FIRST here — first-hit logic passes
+    this test only by accident."""
+    hits = [
+        {"id": 11, "name": "Ghost of Tsushima", "platform_ids": [48], "game_type": 11},  # port
+        {"id": 3, "name": "Ghost of Tsushima", "platform_ids": [48], "game_type": 0},  # main
+    ]
+    got = psn.build_proposal("Ghost of Tsushima", ["PS4"], [48], lambda t, p: hits)
+    assert got["exact"] is True
+    assert got["proposed_igdb_id"] == 3, "the main game, not whichever IGDB listed first"
+
+
+def test_an_edition_hit_can_exact_match_a_plain_trophy_title():
+    """The payoff. PSN's trophy set is named "Ghost of Tsushima"; IGDB returns
+    the Special Edition. The old `version_parent = null` filter dropped that hit
+    before ranking, so the row reported no match at all — the same mechanism
+    that made Devil May Cry 5: Special Edition unfindable."""
+    hits = [
+        {
+            "id": 99,
+            "name": "Ghost of Tsushima: Special Edition",
+            "platform_ids": [48],
+            "game_type": 0,
+            "version_parent": {"id": 3, "name": "Ghost of Tsushima"},
+        }
+    ]
+    got = psn.build_proposal("Ghost of Tsushima", ["PS4"], [48], lambda t, p: hits)
+    assert got is not None, "an edition of the game IS the game"
+    assert got["exact"] is True
+    assert got["proposed_igdb_id"] == 3, "the parent's id, not the edition's"
+
+
 def test_igdb_platform_ids_come_from_the_platforms_table(db_session):
     """The app's platform rows already carry IGDB ids, so there is no name
     mapping to do — and a hand-rolled one would drift from the real catalogue.
@@ -3149,6 +3469,179 @@ def _cand(db, user, ext, title, kind="title_fix", status="pending", proposal_sta
     return c
 
 
+def test_each_kind_of_row_says_why_it_is_actually_there(db_session):
+    """The reason line only ever reported PLATFORM reasoning, so a media app
+    read "Only one platform on this trophy set" — true, and not why it was in
+    front of you. The queue became multi-kind; this text never did (#180).
+
+    An igdb_link row is the one that already exists in the library, so it must
+    not read like a pending import."""
+    user = _prop_user(db_session, "u-reasons")
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4"))
+    for ext, title, kind in (
+        ("CUSA00130_00", "Amazon Prime Video", "media_app"),
+        ("CUSA00900_00", "Bloodborne", "title_fix"),
+        ("CUSA00901_00", "Already Here", "igdb_link"),
+    ):
+        c = _cand(db_session, user, ext, title, kind=kind, platform="PS4")
+        c.raw_data = {"platform": "PS4"}
+    db_session.commit()
+
+    rows = {r["name"]: r["reason"] for r in psn.import_review_rows(db_session, user.id)}
+    assert "media app" in rows["Amazon Prime Video"].lower()
+    assert "platform" not in rows["Amazon Prime Video"].lower(), "the old bug: platform reasoning on a non-platform question"
+    assert "library" in rows["Bloodborne"].lower()
+    assert "already in your library" in rows["Already Here"].lower()
+
+
+def test_better_sony_data_reopens_a_settled_row(db_session):
+    """The PS+ lifecycle (#180). "Batman" was confirmed under Sony's sparse name
+    because nothing could identify it — no purchase meant no productId meant no
+    store name. Renewing PS+ puts the purchase back, so the sync can now do
+    better and says so, instead of leaving the entry wrong forever and relying
+    on the user knowing a relink button exists."""
+    user = _prop_user(db_session, "u-reopen")
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    cand = _cand(db_session, user, "CUSA05332_00", "Batman", status="confirmed", platform="PS4")
+    cand.raw_data = {"platform": "PS4"}  # no productId, no concept: nothing to go on
+    cand.chosen_platforms = ["PS4"]
+    db_session.commit()
+
+    # Same data again: nothing new, so nothing is disturbed.
+    same = {"name": "Batman", "titleId": "CUSA05332_00", "platform": "PS4", "sources": ["titles"]}
+    out = psn.import_merged(db_session, user, [same])
+    db_session.commit()
+    assert out["reopened"] == 0, "a re-sync with identical data must never resurface a decision"
+    assert db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA05332_00").one().status == "confirmed"
+
+    # PS+ renewed: the purchase is back, so a store name is reachable.
+    richer = {**same, "productId": "UP1018-CUSA05332_00-BATMANTELLTALE00", "sources": ["purchased", "titles"]}
+    out = psn.import_merged(db_session, user, [richer])
+    db_session.commit()
+    assert out["reopened"] == 1
+    row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA05332_00").one()
+    assert row.status == "pending", "back in the queue as a proposed change"
+    assert row.proposal_status is None, "and eligible to be looked up again"
+
+
+def test_a_dismissal_is_never_reopened(db_session):
+    """A dismissal is an answer, not a gap. Better data does not entitle the
+    sync to re-ask something already refused outright — that is how a queue
+    turns into a treadmill."""
+    user = _prop_user(db_session, "u-dismissed")
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    cand = _cand(db_session, user, "CUSA00130_00", "Amazon Prime Video", status="dismissed", platform="PS4")
+    cand.raw_data = {"platform": "PS4"}
+    db_session.commit()
+
+    richer = {
+        "name": "Amazon Prime Video",
+        "titleId": "CUSA00130_00",
+        "platform": "PS4",
+        "productId": "UP0000-CUSA00130_00-XXXXXXXXXXXXXXXX",
+        "sources": ["purchased"],
+    }
+    out = psn.import_merged(db_session, user, [richer])
+    db_session.commit()
+    assert out["reopened"] == 0
+    assert db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA00130_00").one().status == "dismissed"
+
+
+def test_a_refused_name_is_not_proposed_again(db_session, monkeypatch):
+    """Reopening must carry refusals forward. Otherwise the next lookup offers
+    the name you already turned down, every sync, and a row reappearing stops
+    meaning anything changed."""
+    user = _prop_user(db_session, "u-refused")
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4", igdb_id=48))
+    cand = _cand(db_session, user, "CUSA09999_00", "Sparse", platform="PS4")
+    cand.raw_data = {"platform": "PS4", "rejectedTitle": "Sparse Name Deluxe"}
+    db_session.commit()
+
+    monkeypatch.setattr(psn.psn_store, "fetch_product", lambda p, locale=None: {"name": ""})
+
+    def fake_search(term, platform_ids):
+        return [{"id": 77, "name": "Sparse Name Deluxe", "platform_ids": platform_ids, "game_type": 0}]
+
+    orig = psn._igdb_search_adapter
+    psn._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        psn.fill_review_proposals(db_session, user, store_sleep=0)
+        db_session.commit()
+    finally:
+        psn._igdb_search_adapter = orig
+
+    row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA09999_00").one()
+    assert row.proposal_status == "rejected", "the same refused name must not come back as a question"
+
+
+def test_the_store_name_is_fetched_during_the_sync_and_cached(db_session, monkeypatch):
+    """Batman, end to end. The store name is fetched HERE — during the review
+    lookup — rather than by the store-metadata job, because that job works on
+    library ENTRIES and this row is not an entry yet. Waiting until after
+    import is what forced the correct-then-relink dance across three buttons.
+
+    Cached on the row, so a re-sync over hundreds of rows spends nothing."""
+    user = _prop_user(db_session, "u-store")
+    db_session.add(models.Platform(name="PS4", display_name="PlayStation 4", igdb_id=48))
+    cand = _cand(db_session, user, "CUSA05332_00", "Batman", platform="PS4")
+    cand.raw_data = {"platform": "PS4", "productId": "UP1018-CUSA05332_00-BATMANTELLTALE00"}
+    db_session.commit()
+
+    fetches = []
+
+    def fake_fetch(product_id, locale=None):
+        fetches.append(product_id)
+        return {"name": "Batman: The Telltale Series"}
+
+    monkeypatch.setattr(psn.psn_store, "fetch_product", fake_fetch)
+
+    def fake_search(term, platform_ids):
+        # Sony's "Batman" is a dart throw; only the store's name identifies it.
+        if "telltale" not in term.lower():
+            return []
+        return [{"id": 501, "name": "Batman: The Telltale Series", "platform_ids": platform_ids, "game_type": 0}]
+
+    orig = psn._igdb_search_adapter
+    psn._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        psn.fill_review_proposals(db_session, user, store_sleep=0)
+        db_session.commit()
+        row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA05332_00").one()
+        assert row.proposed_title == "Batman: The Telltale Series", "the store name identified it"
+        assert row.proposed_igdb_id == 501
+        assert row.raw_data["storeTitle"] == "Batman: The Telltale Series", "cached on the row"
+
+        # A re-sync must not pay for it again. Reset the row's lookup state so
+        # it is eligible, and confirm the cache — not the network — answers.
+        row.proposal_status = None
+        db_session.commit()
+        psn.fill_review_proposals(db_session, user, store_sleep=0)
+    finally:
+        psn._igdb_search_adapter = orig
+
+    assert fetches == ["UP1018-CUSA05332_00-BATMANTELLTALE00"], "fetched once, then cached"
+
+
+def test_a_transient_store_failure_is_not_cached_as_no_name(db_session, monkeypatch):
+    """A flaky fetch must not permanently decide this game has no store name.
+    A 404 is a real answer (delisted) and is cached; anything else retries."""
+    user = _prop_user(db_session, "u-flaky")
+    cand = _cand(db_session, user, "CUSA07777_00", "Sparse", platform="PS3")
+    cand.raw_data = {"platform": "PS3", "productId": "UP0000-CUSA07777_00-XXXXXXXXXXXXXXXX"}
+    db_session.commit()
+
+    def boom(product_id, locale=None):
+        raise httpx.ConnectError("network went away")
+
+    monkeypatch.setattr(psn.psn_store, "fetch_product", boom)
+    assert psn._store_title_for(cand, sleep=0) == ""
+    assert "storeTitle" not in (cand.raw_data or {}), "a transient failure must stay retryable"
+
+    monkeypatch.setattr(psn.psn_store, "fetch_product", lambda p, locale=None: (_ for _ in ()).throw(psn.psn_store.ProductNotFound("gone")))
+    assert psn._store_title_for(cand, sleep=0) == ""
+    assert cand.raw_data["storeTitle"] == "", "delisted IS an answer — cache it"
+
+
 def test_trophy_only_rows_are_held_back_for_review_not_imported(db_session):
     """A trophy-set name is often wrong and Sony can never improve it — no store
     record exists for these generations (#181), and there's no playtime or
@@ -3176,7 +3669,14 @@ def test_trophy_only_rows_are_held_back_for_review_not_imported(db_session):
 
     titles_in_lib = {g.title for g in db_session.query(models.Game).all()}
     assert "SF3: Online Edition" not in titles_in_lib, "held back, so never written under the bad name"
-    assert "Bloodborne" in titles_in_lib, "store-backed rows still import normally"
+    # This user HAS IGDB credentials, so store-backed titles are vetted too and
+    # wait alongside the trophy-only one — Sony's store names go wrong in their
+    # own way ("Ghost of Tsushima Legends", edition suffixes, an Elden Ring
+    # bonus guide arriving as a game). Without credentials there is nothing to
+    # check against and they import directly, which the other import tests cover.
+    assert "Bloodborne" not in titles_in_lib
+    store_row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA00900_00").first()
+    assert store_row is not None and store_row.kind == "title_fix"
 
 
 def test_proposal_job_runs_on_candidates_not_the_library(db_session):
@@ -3206,8 +3706,12 @@ def test_proposal_job_runs_on_candidates_not_the_library(db_session):
     finally:
         psn_mod._igdb_search_adapter = orig
 
-    assert seen == ["Shinovi Versus"], "store-backed rows are not candidates for a rename"
-    assert out["checked"] == 1 and out["proposed"] == 1
+    # Store-backed rows ARE looked up now. The old rule skipped them on the
+    # theory that a store name is fine as-is, which the PS4/PS5 import
+    # disproved — and with the sync holding those rows back too, skipping them
+    # would queue them and then never ask IGDB anything about them (#180).
+    assert seen == ["Shinovi Versus", "Store Backed Name"]
+    assert out["checked"] == 2 and out["proposed"] == 1
     row = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00001_00").first()
     assert row.proposed_title == "Senran Kagura: Shinovi Versus"
     assert row.proposal_status == "pending"
@@ -3919,3 +4423,112 @@ def test_a_completed_trophy_set_is_never_absorbed_by_a_play_record():
     assert vita[0]["trophyProgress"] == 100
     assert vita[0]["platform"] == "PSVITA"
     assert psn.is_played_only(vita[0]) is False, "it has a trophy set, so it is not played-only"
+
+
+def _linkable(db, user, ext, title, platform="PS4"):
+    g = models.Game(title=title, display_name=title)
+    db.add(g)
+    db.flush()
+    rel = models.GameRelease(
+        game_id=g.id,
+        source="psn",
+        external_id=ext,
+        platform=platform,
+        platform_id=models.resolve_platform_id(db, platform),
+        raw_data={"platform": platform},
+    )
+    db.add(rel)
+    db.flush()
+    db.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="psn_import"))
+    db.flush()
+    return g
+
+
+def test_phase2_attaches_a_confident_match_and_queues_an_ambiguous_one(db_session):
+    """Store-backed entries import directly, so their name is fine and there is
+    nothing to rename — but without an id there is no metadata (#161) and the
+    match veto stays inert.
+
+    An exact name match attaches silently. Anything else is a judgement call, so
+    it goes to the queue rather than guessing: a wrong id attaches wrong
+    metadata, which is quiet and only visible if you go looking."""
+    _seed_platforms(db_session)
+    user = _prop_user(db_session, "link")
+    # _seed_platforms already made PS4 — give it the real IGDB id (48).
+    db_session.query(models.Platform).filter_by(name="PS4").update({"igdb_id": 48})
+    db_session.flush()
+    sure = _linkable(db_session, user, "CUSA00001_00", "Bloodborne")
+    unsure = _linkable(db_session, user, "CUSA00002_00", "Some Ambiguous Game")
+    db_session.commit()
+
+    def fake_search(term, ids):
+        if term == "Bloodborne":
+            return [{"id": 7, "name": "Bloodborne", "platform_ids": ids, "game_type": 0}]
+        return [
+            {"id": 11, "name": "Some Ambiguous Game: Director's Cut", "platform_ids": ids, "game_type": 0},
+            {"id": 12, "name": "Some Ambiguous Game Remake", "platform_ids": ids, "game_type": 0},
+        ]
+
+    import backend.psn as psn_mod
+
+    orig = psn_mod._igdb_search_adapter
+    psn_mod._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        out = psn_mod.link_igdb_ids(db_session, user)
+    finally:
+        psn_mod._igdb_search_adapter = orig
+
+    assert out["linked"] == 1 and out["queued"] == 1, out
+    db_session.refresh(sure)
+    assert sure.igdb_id == 7, "an exact match attaches without asking"
+    db_session.refresh(unsure)
+    assert unsure.igdb_id is None, "an ambiguous one must not guess"
+
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA00002_00").one()
+    assert cand.kind == "igdb_link"
+    assert cand.proposed_igdb_id == 11
+
+
+def test_confirming_an_igdb_link_row_attaches_rather_than_creating(db_session):
+    """These entries are ALREADY in the library. Confirming attaches the id to
+    the existing entry — creating would duplicate it."""
+    _seed_platforms(db_session)
+    user = _prop_user(db_session, "attach")
+    # _seed_platforms already made PS4 — give it the real IGDB id (48).
+    db_session.query(models.Platform).filter_by(name="PS4").update({"igdb_id": 48})
+    db_session.flush()
+    game = _linkable(db_session, user, "CUSA00003_00", "Some Game")
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="CUSA00003_00",
+            title="Some Game",
+            kind="igdb_link",
+            status="pending",
+            proposed_igdb_id=42,
+            proposed_platforms=[48],
+            proposal_status="pending",
+            raw_data={"platform": "PS4"},
+        )
+    )
+    db_session.commit()
+    before = db_session.query(models.GameRelease).filter_by(source="psn").count()
+
+    psn.confirm_entry_decision(db_session, user, "CUSA00003_00", [])
+    db_session.refresh(game)
+
+    assert game.igdb_id == 42
+    assert db_session.query(models.GameRelease).filter_by(source="psn").count() == before, "must not create a release"
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA00003_00").one()
+    assert cand.status == "confirmed"
+
+
+def test_store_retitle_defers_to_an_igdb_id():
+    """Sony repurposes store listings: the base Ghost of Tsushima SKU now serves
+    a page titled "Ghost of Tsushima: Legends", a separate standalone product.
+    An id means something already verified the name against the platform, so the
+    store must not overwrite it."""
+    src = open("backend/psn_store.py").read()
+    block = src[src.index("def _apply_title(") : src.index("def apply_metadata(")]
+    assert "if game.igdb_id:" in block, "the retitle must defer when an id exists"
+    assert "return False" in block[block.index("if game.igdb_id:") :][:80]

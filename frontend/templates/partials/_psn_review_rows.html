@@ -32,6 +32,8 @@
         {% if r.set_count > 1 %}
         <span class="tag-badge tag-source ms-1" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
         {% endif %}
+        <span class="tag-badge {{ 'tag-verdict-auto' if r.verdict_auto else 'tag-source' }} ms-1"
+              title="{{ 'Platform and identity are both settled — this is what the sync would import on its own once automation is switched on' if r.verdict_auto else 'Held back for you because this half is not settled yet' }}">{{ r.verdict_label }}</span>
         <div class="text-secondary small">{{ r.reason }}</div>
         {% if r.proposal_status == "pending" and r.proposed_title %}
         <div class="small mt-1 text-secondary">

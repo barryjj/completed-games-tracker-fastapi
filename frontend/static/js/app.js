@@ -715,8 +715,15 @@ window.cgtPsnReviewDecisions = function () {
 // Delegated on document so it covers HTMX-swapped content too. Inert in a
 // normal browser — links behave natively there.
 (function () {
-  if (!window.__TAURI__) return;
+  // The listener binds ALWAYS and tests for __TAURI__ at CLICK time. It used to
+  // bail here if the global was missing, which is evaluated once when this
+  // deferred script parses — and the app loads from a remote origin
+  // (127.0.0.1:8000), so Tauri injects its API asynchronously. Lose that race
+  // and every external link is dead for the life of the page, silently,
+  // because target="_blank" does nothing in WKWebView either.
   document.addEventListener('click', function (e) {
+    var tauri = window.__TAURI__;
+    if (!tauri || !tauri.core) return;  // plain browser — links behave natively
     var link = e.target.closest && e.target.closest('a[href]');
     if (!link) return;
     var href = link.getAttribute('href') || '';
@@ -724,7 +731,7 @@ window.cgtPsnReviewDecisions = function () {
     // Same-origin links are in-app navigation — leave them alone.
     if (link.hostname === window.location.hostname) return;
     e.preventDefault();
-    window.__TAURI__.core.invoke('open_external', { url: link.href }).catch(function (err) {
+    tauri.core.invoke('open_external', { url: link.href }).catch(function (err) {
       console.error('open_external failed', err);
     });
   });

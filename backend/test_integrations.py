@@ -737,6 +737,22 @@ def test_clean_title_preserves_casing():
     assert _clean_title("Halo: Combat Evolved") == "Halo: Combat Evolved"
 
 
+def test_clean_title_collapses_embedded_newlines():
+    """Sony's feed puts a bare newline where a subtitle separator belongs. Both
+    of these are real PSN titles. We collapse to a single space rather than
+    inventing a colon: Totori would read well with one, but Dark Witch's
+    -Chronicle 2D ACT- would not, so a space is the only rule that fits both.
+
+    The raw string is untouched in Game.title — this only feeds display_name."""
+    from backend.steam import _clean_title
+
+    assert _clean_title("Atelier Totori\nThe Adventurer of Arland") == "Atelier Totori The Adventurer of Arland"
+    assert _clean_title("The Legend of Dark Witch\n-Chronicle 2D ACT-") == "The Legend of Dark Witch -Chronicle 2D ACT-"
+    # tabs and doubled spaces normalise too, and no colon is ever synthesised
+    assert _clean_title("Ys\tOrigin") == "Ys Origin"
+    assert _clean_title("Gravity  Rush") == "Gravity Rush"
+
+
 def test_clean_title_is_idempotent():
     from backend.steam import _clean_title
 

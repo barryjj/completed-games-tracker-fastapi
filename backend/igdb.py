@@ -161,8 +161,9 @@ def search_games_on_platforms(
     ids = ",".join(str(int(p)) for p in platform_ids)
     body = (
         f'search "{query}"; '
-        f"fields id, name, platforms, first_release_date, game_type; "
-        f"where platforms=({ids}) & version_parent = null; "
+        f"fields id, name, platforms, first_release_date, game_type, "
+        f"version_parent.name, parent_game.name; "
+        f"where platforms=({ids}); "
         f"limit {limit};"
     )
     resp = httpx.post(
@@ -187,6 +188,17 @@ def search_games_on_platforms(
                 # 9 remaster, 10 expanded, 11 port. Authoritative where guessing
                 # from the title is not (#180).
                 "game_type": g.get("game_type"),
+                # IGDB has TWO parent links and they mean different things.
+                # version_parent is a repackaging of the same game ("Super
+                # Deluxe Edition"); parent_game is derived-but-distinct content
+                # ("Legends", "Director's Cut"). We used to filter
+                # `version_parent = null`, which hid editions (right) but also
+                # hid Devil May Cry 5: Special Edition, making it unfindable,
+                # while leaving parent_game rows like Ghost of Tsushima:
+                # Legends to out-rank the game they derive from. Both are
+                # returned now and classified by the caller.
+                "version_parent": g.get("version_parent"),
+                "parent_game": g.get("parent_game"),
             }
         )
     return out

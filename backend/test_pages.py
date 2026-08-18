@@ -3163,3 +3163,21 @@ def test_psn_review_filters_are_remembered_when_opted_in(client, db_session):
     client.cookies.set("cgt-psn-review-remember", "1")
     r = client.get("/tools/psn-review")
     assert r.status_code == 200
+
+
+def test_external_link_interceptor_binds_unconditionally():
+    """It used to bail at parse time if window.__TAURI__ was missing. app.js is
+    deferred and the app loads from a REMOTE origin (127.0.0.1:8000), so Tauri
+    injects its API asynchronously — lose that race and the listener never
+    binds, killing every external link for the life of the page. Silently, since
+    target="_blank" does nothing in WKWebView either.
+
+    The check has to happen at CLICK time, not at load."""
+    js = open("frontend/static/js/app.js").read()
+    start = js.index("WKWebView has no popup handler")
+    block = js[start : js.index("})();", start)]
+    assert "if (!window.__TAURI__) return;" not in block, "early return at parse time kills the listener"
+    assert "addEventListener('click'" in block
+    # The guard lives inside the handler.
+    handler = block[block.index("addEventListener('click'") :]
+    assert "__TAURI__" in handler, "the Tauri check must be inside the click handler"
