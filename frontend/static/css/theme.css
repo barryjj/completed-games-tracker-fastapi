@@ -1901,11 +1901,6 @@ body:has(.cgt-sticky-actions) {
      height to correctly compute internal overflow. With only max-height,
      the body never actually scrolled and the footer got pushed off-card. */
   height: 520px;
-  transition: none;
-}
-.cgt-match-card--import.cgt-match-card--hidden,
-.cgt-match-card--import.cgt-match-card--active {
-  transform: none;
 }
 .cgt-match-card--import .cgt-match-card__body {
   overflow-y: auto;
@@ -2807,48 +2802,124 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-psn-card-split > .cgt-detail-block {
   height: 100%;
 }
-/* Stack depth. The layers live on the STAGE, not on the card: .cgt-match-card
-   is absolutely positioned and centred with margin-left:-450px, so giving it
-   position:relative knocked it out of that centring and threw the card off the
-   page — and its overflow:hidden would have clipped anything drawn below it
-   anyway. Same geometry as .cgt-match-card--import (900px wide, 520px tall,
-   centred), inset and pushed down so only the bottom edge shows.
+/* Card-stack paging, at the screen edges. A 32px button under the card was a
+   small target for the action you perform hundreds of times, and its position
+   said nothing about direction. These sit against the viewport edges, run most
+   of its height, and stay quiet until the pointer is near them. */
+/* Coverflow. The window holds two rows either side of the active card, so the
+   ones you have done stack LEFT and the ones ahead stack RIGHT, their edges
+   showing past the card in front.
 
-   Empty layers, not cards. The coverflow attempt died on the cost of rendering
-   neighbours, and all that actually helps is seeing a pile remains. Driven by
-   data-remaining, so it thins out and the last card sits flat. */
-/* The PSN review card carries THREE boxes (identity, the platform question,
-   progress) where import review carries one comparison, and it never gained the
-   height for the third — the hero takes 206px of a 520px card and the footer
-   another 60, leaving ~254px for content that needs ~300. Scoped to this stage
-   so import review's cards are untouched. */
-.cgt-match-stage--import::before,
-.cgt-match-stage--import::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0;
-  width: 900px;
-  height: var(--cgt-psn-card-h, 520px);
-  margin-left: -450px;
-  border-radius: 8px;
-  background: var(--ctp-surface0);
-  border: 1px solid var(--ctp-surface2);
+   Vertical offsets could not convey direction: everything moved the same way
+   whichever button you pressed, so the movement read as a flicker. Sideways,
+   the direction is the movement. */
+.cgt-match-card--peek {
   pointer-events: none;
-  transform: translateY(9px) scaleX(0.985);
+  z-index: calc(10 - var(--mag, 1));
+  /* OPAQUE. Fading them was a coverflow leftover, and it made stacked cards
+     translucent, so you saw one card through another — the overlap read as a
+     rendering fault rather than as a pile. Cards in a deck are solid; depth
+     comes from position and shading. */
+  opacity: 1;
+  /* A tight deck, not a fan. A constant step per card (54px, 108px, ...) spread
+     into a triangle that grew with the window. Piles read as piles when they
+     CLUSTER: the first card out sets the edge, the rest sit just behind it, so
+     what changes as you page is how many edges show, not how far they reach.
+     --x is the signed offset, computed per card in the template, because CSS
+     sign() is not dependable in this webview.
+
+     Barely scaled, too: a card two deep should look like the one in front of
+     it, not like it is off in the distance. */
+  transform: translateX(var(--x, 0)) scale(calc(1 - var(--mag, 1) * 0.012));
+  filter: brightness(calc(1 - var(--mag, 1) * 0.06));
 }
 
-.cgt-match-stage--import::after {
-  transform: translateY(18px) scaleX(0.97);
-  opacity: 0.7;
+.cgt-match-card--active {
+  z-index: 10;
 }
 
-/* Thins as the queue empties: nothing behind the last card, one layer behind
-   the second-to-last. */
-.cgt-match-stage--import[data-remaining="0"]::before,
-.cgt-match-stage--import[data-remaining="0"]::after,
-.cgt-match-stage--import[data-remaining="1"]::after {
-  display: none;
+/* Movement comes from a CSS transition on the cards themselves, because the
+   cards themselves now survive paging — psnCardNav rewrites each one's
+   transform rather than asking the server for a fresh window. That is the
+   whole reason this works: a browser can only tween an element that exists
+   either side of the change, and every previous attempt replaced them.
+
+   The View Transition API was the previous approach and is gone. It failed
+   three separate ways in this webview: outgoing snapshots stayed opaque
+   despite ::view-transition-old(*) { opacity: 0 }, groups painted in an order
+   the DOM could not control, and a card entering the window rendered
+   full-size in the centre before vanishing, having no old position to move
+   from. */
+.cgt-match-card--import {
+  transition:
+    transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    filter 260ms ease,
+    /* Short, so a departing card is gone almost as soon as it starts moving.
+       At 200ms it stayed solid for most of its travel and read as being
+       launched across the screen rather than lifted off the pile. */
+    opacity 60ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cgt-match-card--import {
+    transition: none;
+  }
+}
+
+
+/* Card-stack paging, at the screen edges. A 32px button under the card was a
+   small target for the action you perform hundreds of times, and its position
+   said nothing about direction. These sit against the viewport edges, run most
+   of its height, and stay quiet until the pointer is near them. */
+.cgt-stack-edge {
+  position: fixed;
+  /* FULL HEIGHT. At 56vh the hover fill stopped in mid-air two thirds of the
+     way down the window and a rounded corner finished it off, so it read as a
+     stray empty panel that had run out rather than as the edge of the screen
+     responding to the pointer. An edge affordance has to reach the edges. */
+  top: 0;
+  bottom: 0;
+  width: 4.5rem;
+  border: 0;
+  z-index: 20;
+  background: transparent;
+  color: var(--ctp-overlay1);
+  font-size: 2.4rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+/* No radius either: a corner is the other thing that turns a fill into a
+   shape. These are the edges of the window, not objects sitting near them. */
+.cgt-stack-edge--prev {
+  left: 0;
+}
+
+.cgt-stack-edge--next {
+  right: 0;
+}
+
+/* Bleeding IN from the edge rather than filling a box. A gradient has no far
+   side to notice and no end to stop at, so there is nothing to read as a panel
+   — just the edge of the window darkening under the pointer. */
+.cgt-stack-edge--prev:hover:not(:disabled) {
+  background: linear-gradient(to right, color-mix(in srgb, var(--ctp-surface0) 70%, transparent), transparent);
+  color: var(--ctp-text);
+}
+
+.cgt-stack-edge--next:hover:not(:disabled) {
+  background: linear-gradient(to left, color-mix(in srgb, var(--ctp-surface0) 70%, transparent), transparent);
+  color: var(--ctp-text);
+}
+
+.cgt-stack-edge:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.cgt-match-card--active {
+  z-index: 10;
 }
 
 /* Left column holds identity above the platform question; trophies take the

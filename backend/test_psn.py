@@ -1,5 +1,6 @@
 """PSN crawl + snapshot tests (PR 1 of #135 — no library writes yet)."""
 
+import re
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -1137,7 +1138,7 @@ def test_import_review_rows_lists_rows_awaiting_any_decision(db_session):
     # platform, so it imported without asking anything.
     assert sorted(r["name"] for r in rows) == ["Cross", "TrophyOnly"]
     cross = next(r for r in rows if r["name"] == "Cross")
-    assert next(r for r in rows if r["name"] == "TrophyOnly")["kind_is_title_fix"] is True
+    assert next(r for r in rows if r["name"] == "TrophyOnly")["kind"] == "title_fix"
     options = {o["platform"]: o for o in cross["options"]}
     assert set(options) == {"PS4", "PS5"}
     # Both pre-ticked: PS4 is proven by the two settled games the import just
@@ -1758,9 +1759,13 @@ def test_psn_review_card_view_has_the_carousel(client, db_session, monkeypatch, 
     body = client.get("/tools/psn-review?view=card").content
     assert b'id="psn-stack"' in body
     assert b"cgt-match-stage" in body and b"cgt-match-card" in body
-    assert b"cgt-match-nav--sticky" in body
+    # Paging lives at the screen edges now, not in a bar under the card.
+    assert b"cgt-stack-edge--prev" in body and b"cgt-stack-edge--next" in body
     assert b"psnCardNav(-1)" in body and b"psnCardNav(1)" in body
-    assert b'id="psn-nav-counter"' in body
+    # No visible counter: "561 pending" is already in the header and on the
+    # tab, and the position rides #psn-nav as data for the paging to read.
+    assert b'id="psn-nav-counter"' not in body
+    assert b'id="psn-nav"' in body and b"data-total=" in body
     # Per-card actions, same contract as the list rows.
     assert b"/tools/psn-review/NPWR_CARD_00/confirm" in body
     assert b"/tools/psn-review/NPWR_CARD_00/dismiss" in body
@@ -2126,7 +2131,8 @@ def test_review_tabs_carry_the_view_and_reset_the_platform_filter(client, db_ses
 
     body = client.get("/tools/psn-review?kind=played_only&view=card").content
     assert b'id="psn-stack"' in body
-    assert b"cgt-match-nav--sticky" in body
+    # Paging lives at the screen edges now, not in a bar under the card.
+    assert b"cgt-stack-edge--prev" in body and b"cgt-stack-edge--next" in body
     assert b"/tools/psn-review/PPSA_TB_00/played-only/import" in body
     # The filter form carries the kind so the view toggle doesn't drop the tab.
     assert b'id="psn-kind-field"' in body
@@ -2306,17 +2312,18 @@ def test_cross_buy_reference_restricts_defaults_on_both_axes(db_session, monkeyp
     # cross-buy, so both copies are genuinely owned and both belong.
     paid = by_name["Paid Twice"]
     assert [o["platform"] for o in paid["options"]] == ["PS4", "PSVITA"]
+    # Nothing pre-ticked and the reason says why. That IS the restriction --
+    # the row used to also carry a "restricted" boolean, which no view read.
     assert [o["platform"] for o in paid["options"] if o["selected"]] == []
-    assert paid["restricted"] is True
     assert "Sold separately" in paid["reason"]
 
     split = by_name["Split Lists"]
-    assert split["restricted"] is False
     assert all(o["selected"] for o in split["options"])
+    assert "Sold separately" not in (split["reason"] or "")
 
     # A confirmed cross-buy title changes nothing — that's already the default.
     assert all(o["selected"] for o in by_name["Real Cross Buy"]["options"])
-    assert by_name["Real Cross Buy"]["restricted"] is False
+    assert "Sold separately" not in (by_name["Real Cross Buy"]["reason"] or "")
 
 
 def test_restricted_row_still_credits_the_platform_you_bought(db_session, monkeypatch, tmp_path):
@@ -2880,12 +2887,224 @@ def test_review_rows_wire_up_draft_persistence(client, db_session):
     assert "psnClearActedDrafts" in js
 
 
+def test_the_list_scrolls_a_page_at_a_time(client, db_session):
+    """The list is a table you scroll, so it cannot take a window — but it does
+    not need 561 rows in one response either. Same mechanism as the library: a
+    sentinel row that swaps ITSELF for the next page, which carries its own
+    sentinel, or scrolling stops silently after page two."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_L{i:03d}_00",
+                "name": f"Game {i:03d}",
+                "displayName": f"Game {i:03d}",
+                "platform": "PS4",
+                "normalizedName": f"game{i:03d}",
+                "sources": ["titles"],
+            }
+            for i in range(120)
+        ],
+    )
+    db_session.commit()
+
+    first = client.get("/tools/psn-review?view=list", headers={"HX-Request": "true"}).text
+    assert first.count('class="cgt-import-title') == 50, "one page, not the whole queue"
+    assert 'id="psn-scroll-sentinel"' in first
+    assert "page=2" in first
+
+    second = client.get("/tools/psn-review/more?page=2", headers={"HX-Request": "true"}).text
+    assert second.count('class="cgt-import-title') == 50
+    assert "page=3" in second, "each page carries the next sentinel"
+    assert "Game 000" not in second and "Game 050" in second, "page 2 continues where 1 stopped"
+
+    last = client.get("/tools/psn-review/more?page=3", headers={"HX-Request": "true"}).text
+    assert last.count('class="cgt-import-title') == 20
+    assert "psn-scroll-sentinel" not in last, "no sentinel on the final page"
+
+    # Filters have to survive into the next page or it shows a different queue.
+    filtered = client.get("/tools/psn-review/more?page=2&q=Game%2005", headers={"HX-Request": "true"}).text
+    assert "psn-scroll-sentinel" not in filtered
+
+
+def test_the_server_marks_which_card_is_showing(client, db_session):
+    """Cards used to render hidden and rely on JS to un-hide one. Any error
+    before that call — or any path that did not re-run it after an htmx swap —
+    left every card at opacity 0: a blank stage with a working counter beside
+    it, which is exactly what it looked like.
+
+    The server marks it now, so the stack renders correctly with no script at
+    all and the JS only corrects local interactions."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_A{i}_00",
+                "name": f"Game {i}",
+                "displayName": f"Game {i}",
+                "platform": "PS4",
+                "normalizedName": f"game{i}",
+                "sources": ["titles"],
+            }
+            for i in range(6)
+        ],
+    )
+    db_session.commit()
+
+    def cards(html):
+        """(key, state) per card, read structurally — the class attribute wraps
+        across lines, so a positional regex breaks the moment it is reformatted."""
+        out = []
+        for chunk in html.split('<div class="cgt-match-card')[1:]:
+            head = chunk[: chunk.index(">") + 1]
+            key = re.search(r'id="psn-card-(\w+)"', head)
+            state = "active" if "--active" in head else "peek" if "--peek" in head else "hidden"
+            if key:
+                out.append((key.group(1), state))
+        return out
+
+    for idx, want in ((0, "NPWR_A0_00"), (3, "NPWR_A3_00"), (5, "NPWR_A5_00")):
+        html = client.get(f"/tools/psn-review?view=card&card_index={idx}", headers={"HX-Request": "true"}).text
+        shown = [k for k, st in cards(html) if st == "active"]
+        assert shown == [want], f"index {idx} should show {want}, got {shown}"
+
+    # Depth comes from real cards on BOTH sides: what you have worked through
+    # stacks left, what is ahead stacks right. Vertical offsets could not say
+    # which way you were moving, since everything shifted the same direction
+    # whichever button you pressed.
+    html = client.get("/tools/psn-review?view=card&card_index=3", headers={"HX-Request": "true"}).text
+    states = dict(cards(html))
+    assert states["NPWR_A3_00"] == "active"
+    assert states["NPWR_A1_00"] == "peek" and states["NPWR_A2_00"] == "peek", "the pile behind you"
+    # NOTHING waits in view on the right. A card at +1 used to sit UNDER the
+    # active card and then had to become the card ON TOP of it, which no
+    # physical deck does -- it read as two cards trading places rather than one
+    # arriving. What is ahead is parked off-stage, above, and gets dealt in.
+    assert states["NPWR_A4_00"] == "hidden" and states["NPWR_A5_00"] == "hidden", "ahead is off-stage"
+    # The pile CLUSTERS rather than fanning: the first card out sets the edge at
+    # 18px and each one behind it adds only 10px, so a deeper stack shows more
+    # edges without reaching further across the screen. A constant step per card
+    # spread into a triangle. The sign carries the direction.
+    #
+    # An inline transform, not a custom property: paging moves these same
+    # elements with a CSS transition, and transitions do not run on
+    # unregistered custom properties. psnCardPlace() in psn_review.html writes
+    # exactly this string, and the two have to agree or the window would jump
+    # the moment a refill landed.
+    assert "transform: translateX(0px) scale(1.0);" in html, "the active card sits square"
+    for off, x in ((-2, -28), (-1, -18)):
+        assert f"translateX({x}px) scale({1 - abs(off) * 0.012});" in html
+    # Everything ahead waits at the same off-stage spot, unscaled: it is not
+    # part of the pile, it is the next card in the dealer's hand.
+    assert html.count("translateX(60px) scale(1)") == 2, "both cards ahead are parked"
+    # Coming is above here is above done, so the incoming card lands ON the
+    # active one rather than swapping depth with it mid-slide.
+    for off in (-2, -1, 0, 1, 2):
+        assert f"z-index: {100 + off};" in html
+
+    # Every card carries its place in the WHOLE queue, which is what lets the
+    # script work out new offsets without asking the server.
+    for off in (-2, -1, 0, 1, 2):
+        assert f'data-pos="{3 + off}"' in html
+
+    # No view transitions anywhere. They failed three separate ways in the
+    # desktop shell's webview -- outgoing snapshots stayed opaque, groups
+    # painted in an order the DOM could not control, and a card entering the
+    # window rendered full-size in the centre before vanishing. Movement comes
+    # from a CSS transition on cards that survive paging instead.
+    assert "view-transition-name" not in html
+
+    # DOM ORDER IS PAINT ORDER, and it has to run deepest-first with the active
+    # card LAST. A view transition paints its groups in DOM order and ignores
+    # z-index entirely, so rendering the window in queue order put the card one
+    # ahead on top of the card actually arriving -- 900px wide, 18px apart, so
+    # it covered it for the whole animation. You saw the wrong game flash and
+    # then snap to the right one when the transition ended.
+    order = [k for k, _ in cards(html)]
+    assert order[-1] == "NPWR_A3_00", f"the active card must paint last, got {order}"
+    depth = [abs(int(k[6]) - 3) for k in order]
+    assert depth == sorted(depth, reverse=True), f"deepest card must paint first, got {order}"
+
+
+def test_the_card_stack_is_a_window_that_moves(client, db_session):
+    """The card view shows one row out of ~561, and used to build every one of
+    them on every interaction to find it. It now builds a window around a
+    server-side position: the light index orders the queue in ~20ms, the
+    position IS the counter, and only the rows either side are built.
+
+    The window has to MOVE with the index, and the counter has to keep counting
+    the whole queue rather than the handful in the DOM."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_W{i:02d}_00",
+                "name": f"Game {i:02d}",
+                "displayName": f"Game {i:02d}",
+                "platform": "PS4",
+                "normalizedName": f"game{i:02d}",
+                "sources": ["titles"],
+            }
+            for i in range(10)
+        ],
+    )
+    db_session.commit()
+
+    def window(idx):
+        html = client.get(f"/tools/psn-review?view=card&card_index={idx}", headers={"HX-Request": "true"}).text
+        return html, sorted(set(re.findall(r"psn-card-(NPWR_W\d\d_00)", html)))
+
+    first, keys = window(0)
+    assert keys == [f"NPWR_W{i:02d}_00" for i in range(5)], "clamped at the start"
+    assert "1 of 10" in first, "counts the queue, not the window"
+
+    middle, keys = window(5)
+    # FOUR either side, not two. You still only see two deep; the extra ring is
+    # the buffer that lets paging be a local move instead of a fetch per click.
+    assert keys == [f"NPWR_W{i:02d}_00" for i in (1, 2, 3, 4, 5, 6, 7, 8, 9)], "four either side"
+    assert "6 of 10" in middle
+    assert 'data-active-key="NPWR_W05_00"' in middle, "the server says which one is on show"
+
+    last, keys = window(9)
+    assert keys == [f"NPWR_W{i:02d}_00" for i in range(5, 10)], "clamped at the end"
+    assert "10 of 10" in last
+
+    # Out of range is clamped rather than 500ing or rendering an empty stage.
+    _, keys = window(99)
+    assert keys == [f"NPWR_W{i:02d}_00" for i in range(5, 10)]
+
+
 def test_card_stacks_defer_their_images(client, db_session):
-    """Every card in a stack is in the DOM and hidden ones use opacity: 0, not
-    display: none — so the browser fetched and decoded ALL of them up front, and
-    loading="lazy" didn't help because they're absolutely positioned at the same
-    spot and all count as in-viewport. 54 PSN cards meant 102 SGDB heroes
-    decoded before the first one appeared."""
+    """Card art is deferred behind data-src, and only a WINDOW of cards reaches
+    the DOM at all.
+
+    Hidden cards use opacity: 0 rather than display: none, so the browser
+    fetched and decoded every one up front — loading="lazy" does not help when
+    they are absolutely positioned at the same spot and all count as
+    in-viewport. 54 cards meant 102 SGDB heroes decoded before the first
+    appeared, and the queue is now ~561.
+
+    Four seeded rows all fit inside one window (_CARD_RADIUS is 4), so this
+    guards the rule rather than the arithmetic: what loads is the window, and
+    the window is bounded — it does not grow with the 561-row queue."""
     import re
 
     _seed_platforms(db_session)
@@ -2917,8 +3136,30 @@ def test_card_stacks_defer_their_images(client, db_session):
     )
 
     card = client.get("/tools/psn-review?view=card").text
-    assert len(re.findall(r'<img [^>]*\ssrc="https?://', card)) == 0, "no card image loads up front"
-    assert len(re.findall(r'data-src="https?://', card)) == 8, "hero + logo per card, deferred"
+    # One hero + one logo per card IN THE WINDOW. What this guards is that the
+    # count follows the window and not the queue: nine cards maximum however
+    # long the list gets, against the 561 x 2 that made the stack unusable.
+    assert card.count("cgt-match-card--import") == 4, "all four fit one window"
+    assert len(re.findall(r'<img [^>]*\ssrc="https?://', card)) == 8, "only the window's art loads"
+
+    # The real proof, with more rows than a window holds.
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_HZ{i:02d}_00",
+                "name": f"Zross {i}",
+                "displayName": f"Zross {i}",
+                "platform": "PS3,PS4",
+                "sources": ["titles"],
+            }
+            for i in range(20)
+        ],
+    )
+    db_session.commit()
+    wide = client.get("/tools/psn-review?view=card&card_index=12").text
+    assert wide.count("cgt-match-card--import") == 9, "the window is bounded, the queue is not"
 
     # The list view keeps eager thumbnails — small, and in a normal scrolling
     # list where the browser's own lazy-loading actually works.
@@ -2926,21 +3167,29 @@ def test_card_stacks_defer_their_images(client, db_session):
     assert 'class="cgt-list-row-thumb" src="https://sgdb/g.png"' in rows
 
 
-def test_every_card_stack_uses_the_shared_window():
-    """PSN and import both render stacks; the fix has to cover both or the
-    other one keeps the bug — import is the bigger stack at 253 cards."""
+def test_unwindowed_card_stacks_still_defer_their_images():
+    """Deferring art exists for stacks that put EVERY card in the DOM — import
+    review is 253 — where loading them all up front decoded hundreds of heroes
+    before the first appeared.
+
+    The PSN review stack is windowed now: five cards, of which the browser has
+    just been showing three, so deferring buys nothing and costs a blip on every
+    advance while JS fills in src. It loads directly instead. The helper still
+    governs the stacks that need it."""
     helper = open("frontend/static/js/app.js").read()
     assert "window.cgtHydrateCards" in helper
     for page in ("frontend/templates/psn_review.html", "frontend/templates/import_review.html"):
         assert "cgtHydrateCards(" in open(page).read(), page
     for tpl in (
-        "frontend/templates/partials/_psn_review_cards.html",
         "frontend/templates/partials/_psn_played_only_cards.html",
         "frontend/templates/partials/_import_cards.html",
     ):
         body = open(tpl).read()
         assert "data-src=" in body, tpl
         assert 'hero__img" src=' not in body, tpl
+
+    windowed = open("frontend/templates/partials/_psn_review_cards.html").read()
+    assert 'hero__img" src=' in windowed, "the windowed stack loads its art directly"
 
 
 def test_stack_pages_do_not_call_deferred_helpers_at_parse_time():
@@ -2966,6 +3215,87 @@ def test_stack_pages_do_not_call_deferred_helpers_at_parse_time():
     assert "DOMContentLoaded" in psn_page
     # The bare top-level call is what blanked the stage.
     assert "\npsnRebuildNav(true);" not in psn_page
+
+
+def test_played_only_cards_carry_their_position(client, db_session):
+    """Every stacked card must declare its row, in EVERY stack.
+
+    psnPlaceCards derives each card's offset from data-pos. When the played-only
+    partial did not emit it, every card read as row 0, so the whole queue was
+    marked active at once: twenty cards at the same spot with twenty identical
+    box-shadows compounding into a black halo around the stage. The cross-play
+    stack had it and this one did not, which is exactly the trap waiting for
+    import review and match review when the stack mechanics are ported to them.
+    """
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": f"CUSA9{i:04d}_00",
+                "name": f"Played {i}",
+                "displayName": f"Played {i}",
+                "category": "ps4_game",
+                "playDuration": "PT2M16S",
+                "playCount": 3,
+                "sources": ["played"],
+            }
+            for i in range(4)
+        ],
+        kind="played_only",
+    )
+    db_session.commit()
+
+    html = client.get("/tools/psn-review?view=card&kind=played_only", headers={"HX-Request": "true"}).text
+    cards = re.findall(r'<div class="cgt-match-card[^"]*"[^>]*?id="psn-card-[^"]+"', html, re.S)
+    assert len(cards) == 4, f"expected four cards, got {len(cards)}"
+    for i in range(4):
+        assert f'data-pos="{i}"' in html, f"row {i} must declare its position"
+    # Exactly one active card, not all of them.
+    assert html.count("cgt-match-card--active") == 1
+
+
+def test_the_view_toggle_is_remembered_without_opting_in(client, db_session):
+    """Which layout you chose is a display preference, not a filter.
+
+    It used to live in the opt-in "Remember filters" bundle, which meant it was
+    only remembered if you had ALSO ticked a checkbox about filters -- and it
+    was written by a listener bound to 'change', an event a hidden input set
+    from script never fires. So for anyone who had not ticked that box the
+    toggle never stuck at all. It has its own always-on cookie now, the same
+    contract the library and completions toggles use.
+    """
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_V_00", "name": "Viewy", "displayName": "Viewy", "platform": "PS4,PS5", "sources": ["titles"]}],
+    )
+    db_session.commit()
+
+    # No remember-filters cookie anywhere: this must work regardless of it.
+    client.cookies.set("cgt-psn-review-view", "card")
+    html = client.get("/tools/psn-review", headers={"HX-Request": "true"}).text
+    assert 'id="psn-stack"' in html, "the stored view is the card stack"
+
+    # An explicit choice still wins over the stored one -- that is the user
+    # clicking the toggle right now.
+    html = client.get("/tools/psn-review?view=list", headers={"HX-Request": "true"}).text
+    assert 'id="psn-stack"' not in html, "?view=list must beat the cookie"
+
+    client.cookies.set("cgt-psn-review-view", "list")
+    html = client.get("/tools/psn-review", headers={"HX-Request": "true"}).text
+    assert 'id="psn-stack"' not in html
+    client.cookies.delete("cgt-psn-review-view")
 
 
 def test_card_position_is_remembered_per_queue(client, db_session):
@@ -4146,13 +4476,17 @@ def test_one_queue_carries_both_kinds_and_their_proposals(db_session):
     both = rows["NPWR0BOTH_00"]
     assert both["proposed_title"] == "Senran Kagura: Shinovi Versus"
     assert both["proposal_status"] == "pending"
-    assert both["proposed_platforms"] == ["PSVITA"], "accepting narrows to what IGDB confirms — the phantom PS3 goes"
-    assert both["kind_is_title_fix"] is False, "this row is here for its platforms too"
+    # Accepting narrows the platform choice to what IGDB confirms: the trophy
+    # set claims PS3,PSVITA, IGDB says Vita, and the phantom PS3 losing its
+    # tick IS the correction. Asserted through the options the view renders
+    # rather than a proposed_platforms field nothing read.
+    assert [o["platform"] for o in both["options"] if o["selected"]] == ["PSVITA"]
+    assert both["kind"] == "cross_play", "this row is here for its platforms too"
 
     unknown = rows["NPWR0NAME_00"]
     assert unknown["proposal_status"] == "none", "an unidentified row still has to be seen"
     assert unknown["proposed_title"] is None
-    assert unknown["kind_is_title_fix"] is True, "a name-only row still sits in the same queue"
+    assert unknown["kind"] == "title_fix", "a name-only row still sits in the same queue"
 
 
 def test_pre_ticks_are_not_filtered_by_hardware_owned(db_session):

@@ -1,8 +1,66 @@
 {# Card items for the PSN review's card view. Bare cards only — the
    .cgt-match-stage wrapper and the nav live in _psn_review_content.html, same
    split as _import_cards.html / _import_tab_content.html. #}
-{% for r in rows %}
-<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.key }}">
+{# Deepest card first, ACTIVE LAST. Paint order, not queue order — see
+   stack_cards(): a view transition paints its groups in DOM order and ignores
+   z-index, so rendering in queue order let the card behind cover the card
+   arriving for the whole animation. #}
+{% for r, off in stack_cards(rows, active_offset or 0) %}
+{# The SERVER marks which card is on show. Every card used to render hidden and
+   JS un-hid one after the fact, so any error before that — or any path that did
+   not re-run it after a swap — left the whole stack at opacity 0: a blank stage
+   with a working counter beside it. The view should not depend on a callback
+   firing. #}
+{# Coverflow, from real cards. The window holds two rows either side of the
+   active one, so the pile you have worked through stacks to the LEFT and the
+   pile ahead stacks to the RIGHT. Vertical offsets could not say which way you
+   were moving — everything shifted the same direction whichever button you
+   pressed. Sideways, the direction IS the movement.
+
+   off is signed (-2..2) for the direction, mag is its size for the scaling,
+   because CSS has no abs() we can rely on here. Both come from stack_cards
+   now, since the render order is no longer the queue order. #}
+{% set mag = off if off > 0 else -off %}
+{# GEOMETRY. Kept identical to psnCardPlace() in psn_review.html, which moves
+   these same elements when you page; the server paints the first frame so the
+   stack is right before any script runs. Pinned by
+   test_the_server_marks_which_card_is_showing.
+
+   CARDS ARE DEALT, NOT SWAPPED. Everything you have not reached waits off to
+   the RIGHT, invisible, ABOVE the pile. Advancing slides the next one in over
+   the top of the current card and lands it there; going back slides the top
+   card off to the right again and reveals what was underneath. The pile you
+   have worked through stays on the LEFT, under the active card, edges showing.
+
+   The previous version kept a visible pile on both sides, which meant the card
+   at +1 was sitting UNDER the active card and then had to become the card ON
+   TOP of it. Nothing physical changes depth like that, and no amount of
+   easing hides it -- the movement read as two cards trading places rather than
+   as one arriving.
+
+     off < 0   x = -(18 + (mag-1)*10)   the done pile, under, two deep
+     off = 0   x = 0                    on top of the done pile
+     off > 0   x = 60                   waiting just off the edge, above, invisible
+
+   z is 100 + off, so what is coming is always above what is here, and what is
+   done is always below. Inline transform rather than a custom property because
+   transitions do not run on unregistered custom properties. #}
+{% set mag = off if off > 0 else -off %}
+{% set x = 60 if off > 0 else (0 if off == 0 else -(18 + (mag - 1) * 10)) %}
+<div class="cgt-match-card cgt-match-card--import
+            {%- if not active_key %} cgt-match-card--hidden
+            {%- elif off == 0 %} cgt-match-card--active
+            {%- elif off < 0 and mag < 3 %} cgt-match-card--peek
+            {%- else %} cgt-match-card--hidden{% endif %}"
+     {# Its place in the WHOLE queue, not in the window. Paging is local now, so
+        the script needs to know which absolute row each loaded card is, both to
+        work out the new offsets and to tell when it is running out of window
+        and should quietly fetch more. #}
+     data-pos="{{ card_pos + off }}"
+     style="transform: translateX({{ x }}px) scale({{ 1 if off > 0 else 1 - mag * 0.012 }});
+            filter: brightness({{ 1 if off > 0 else 1 - mag * 0.06 }});
+            z-index: {{ 100 + off }};"
+     id="psn-card-{{ r.key }}">
   <div class="cgt-match-card__body">
     {# Hero + logo overlay, same as import review's cards and the library detail
        pane. The hero is SGDB's ~1920x620 art, which is what the 96/22 box is
@@ -14,14 +72,19 @@
          in the desktop shell while being fine in a browser. SGDB has the same
          asset as webm at a third the size; video goes through the media
          pipeline instead. Stills stay plain <img>. #}
+      {# src, not data-src. Deferring art existed to stop 561 cards fetching at
+         once; the window is five, and the indirection meant every card started
+         empty and painted only after JS ran — a visible blip on every advance.
+         With a real src the browser paints from cache immediately, because the
+         card behind you was showing the same URL a moment ago. #}
       {% if r.hero_video %}
-      <video class="cgt-detail-hero__img" data-src="{{ r.hero_video }}"
-             autoplay loop muted playsinline preload="none"></video>
+      <video class="cgt-detail-hero__img" src="{{ r.hero_video }}"
+             autoplay loop muted playsinline preload="auto"></video>
       {% else %}
-      <img class="cgt-detail-hero__img" data-src="{{ r.hero }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__img" src="{{ r.hero }}" alt="" decoding="async">
       {% endif %}
       {% if r.logo %}
-      <img class="cgt-detail-hero__logo" data-src="{{ r.logo }}" alt="" loading="lazy">
+      <img class="cgt-detail-hero__logo" src="{{ r.logo }}" alt="" decoding="async">
       {% endif %}
     </div>
     {% else %}

@@ -1,7 +1,23 @@
 {# Card items for the played-only queue. Bare cards only — the stage wrapper
    and nav live in _psn_review_content.html, same split as the cross-play set. #}
+{# This queue is not server-windowed -- it is twenty rows, so they all render --
+   but the stack mechanics are the same as the cross-play set: data-pos is the
+   card's place in the list, and psnPlaceCards derives every offset from it.
+   Without data-pos every card read as row 0, so the whole queue was marked
+   active at once and twenty identical box-shadows piled up into a black halo
+   around the stage. #}
 {% for r in rows %}
-<div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden" id="psn-card-{{ r.external_id }}">
+{# Same geometry as the cross-play stack -- see the note there. This queue
+   opens on its first row, so every other card is ahead of you: parked off to
+   the right, invisible, waiting to be dealt in over the top. #}
+{% set off = loop.index0 %}
+<div class="cgt-match-card cgt-match-card--import
+            {%- if off == 0 %} cgt-match-card--active
+            {%- else %} cgt-match-card--hidden{% endif %}"
+     data-pos="{{ off }}"
+     style="transform: translateX({{ 0 if off == 0 else 60 }}px);
+            z-index: {{ 100 + off }};"
+     id="psn-card-{{ r.external_id }}">
   <div class="cgt-match-card__body">
     {# Hero + logo, same as the cross-play cards — same table, same art columns,
        and the fill job was already populating them. #}

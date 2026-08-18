@@ -1664,6 +1664,59 @@ def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
     return item.get("trophyJoin") != "name" and sets_for_title < 2
 
 
+def review_row_index(db: Session, user_id: int) -> list[dict]:
+    """Every pending row reduced to what filtering and sorting need — no display
+    rows built.
+
+    The card view shows one row at a time out of ~570, but the page built all of
+    them on every interaction to find the one it wanted. This is the ordered
+    list the window is cut from: the total comes from len(), the position IS the
+    index, and only the handful around it are built for real.
+
+    Everything here is derivable from the candidate and its raw_data — the
+    cross-play sorts are title, trophy progress and platform count — so it costs
+    two queries and some pure Python rather than platform resolution, verdicts,
+    sibling lookups and trophy tiers per row.
+    """
+    rows = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS),
+            models.PsnReviewCandidate.status == "pending",
+        )
+        .all()
+    )
+    # Set index needs the same sibling grouping the builder uses, so two rows for
+    # one title keep a stable order rather than shuffling between requests.
+    groups: dict[str, list] = {}
+    for cand in rows:
+        norm = (cand.raw_data or {}).get("normalizedName")
+        if norm:
+            groups.setdefault(norm, []).append(cand)
+    for group in groups.values():
+        group.sort(key=lambda c: c.external_id or "")
+
+    out = []
+    for cand in rows:
+        raw = cand.raw_data or {}
+        options = platform_candidates(raw)
+        if not options:
+            continue  # the builder skips these, so the index must too
+        norm = raw.get("normalizedName") or ""
+        group = groups.get(norm, [])
+        out.append(
+            {
+                "key": cand.external_id,
+                "name": cand.title or "",
+                "platforms": options,
+                "progress": raw.get("trophyProgress") or 0,
+                "set_index": next((i + 1 for i, c in enumerate(group) if c.external_id == cand.external_id), 1),
+            }
+        )
+    return out
+
+
 def count_pending_review_rows(db: Session, user_id: int) -> int:
     """How many rows the queue would show, without building any of them.
 
@@ -1705,7 +1758,7 @@ def hero_video_for(hero_url: str | None) -> str | None:
     return hero_url.replace("/hero/", "/hero_thumb/").rsplit(".", 1)[0] + ".webm"
 
 
-def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -> list[dict]:
+def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = None) -> list[dict]:
     """Pending review rows — one per trophy set, one checkbox per platform.
 
     ONE queue. A row can be waiting on its platforms (cross_play), on its name
@@ -1742,13 +1795,14 @@ def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -
         models.PsnReviewCandidate.kind.in_(("cross_play", "title_fix", "media_app", "igdb_link")),
         models.PsnReviewCandidate.status == "pending",
     )
-    # The edit modal wants ONE row. Building all of them and discarding
+    # Callers that want a FEW rows: the edit modal wants one, the card view a
+    # window of five. Building all of them and discarding
     # the rest cost ~5s on a 589-row queue, because every row pays for
     # platform resolution, a verdict, sibling lookup and trophy tiers.
     # siblings/claimed_by come from their own query below, so narrowing
     # here leaves "Set 1 of 2" and the platform-claim logic intact.
-    if only_key:
-        candidates = candidates.filter(models.PsnReviewCandidate.external_id == only_key)
+    if only_keys is not None:
+        candidates = candidates.filter(models.PsnReviewCandidate.external_id.in_(only_keys))
     candidates = candidates.all()
 
     # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
@@ -1927,27 +1981,21 @@ def import_review_rows(db: Session, user_id: int, only_key: str | None = None) -
                 "contested": contested,
                 "last_played": (item.get("lastPlayed") or "")[:10] if trusted else "",
                 "total_minutes": sum(minutes.values()),
-                "restricted": bool(exception and exception["restricts"]),
+                # One queue, two kinds of question: a row can be here for its
+                # PLATFORMS (cross_play), its NAME (title_fix), or both, and
+                # nothing else on the row tells them apart -- a name-only row
+                # can have a single platform option exactly like a settled one.
+                # Was a kind_is_title_fix boolean; the value itself is the same
+                # information without pre-deciding which comparison matters.
+                "kind": cand.kind,
                 # ── IGDB name proposal (#180) ──────────────────────────────
                 # "pending" = a suggestion to accept or reject.
                 # "none"    = looked up and NOT identified. Still shown: an
                 #             unidentified row kept invisible is exactly how
                 #             "SF3: Online Edition" reached the library.
-                # A row can be here for its NAME (title_fix) or its
-                # PLATFORMS (cross_play) or both — one queue, so the view has
-                # to know which questions this row is actually asking.
-                "kind_is_title_fix": cand.kind == "title_fix",
                 "proposal_status": cand.proposal_status,
-                # "matched" rows are identified and correctly named — nothing
-                # to decide, so the row must not nag. Only a "pending" rename
-                # is a question.
-                "igdb_matched": cand.proposal_status in ("matched", "pending") and bool(cand.proposed_igdb_id),
                 "proposed_title": cand.proposed_title,
                 "proposed_igdb_id": cand.proposed_igdb_id,
-                # Accepting narrows the platform choice to what IGDB confirms.
-                # Shinovi Versus' trophy set claims PS3,PSVITA; IGDB says Vita,
-                # and the phantom PS3 disappearing IS the correction.
-                "proposed_platforms": proposed_opts,
                 "options": [
                     {"platform": p, "selected": p in default, "minutes": minutes.get(p, 0), "claimed_by": taken.get(p)} for p in options
                 ],

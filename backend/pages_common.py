@@ -144,6 +144,38 @@ def _long_date(value) -> str:
 
 templates.env.filters["long_date"] = _long_date
 
+
+def _stack_cards(rows: list, active_offset: int = 0) -> list[tuple]:
+    """Order a card-stack window for PAINTING: deepest first, active last.
+
+    Returns (row, offset) pairs. The offset is signed — negative for the pile
+    you have worked through, positive for the pile ahead — and it used to be
+    inferred from the loop position, which forced the template to render in
+    queue order.
+
+    Queue order is the wrong paint order. A view transition lifts every named
+    element into a flat set of ::view-transition-group pseudo-elements and
+    paints THOSE IN DOM ORDER — z-index does not apply to them. So the card one
+    ahead in the queue painted on top of the card actually arriving, and since
+    the cards are 900px wide and sit 18px apart, it covered it completely for
+    the whole transition. You saw the wrong game, then it snapped to the right
+    one when the transition ended and the real z-index took over.
+
+    Emitting deepest-first fixes it in both places at once: the live DOM and the
+    transition agree, because later siblings paint on top and the active card is
+    now the last one. Nothing moves on screen as a result — the cards are
+    absolutely positioned by transform, so DOM order is free.
+
+    Shared, not PSN-specific: match review and import review stack cards the
+    same way and need the same ordering when they get view transitions.
+    """
+    numbered = [(r, i - active_offset) for i, r in enumerate(rows)]
+    # Stable, so a card and its mirror on the other side keep left-then-right.
+    return sorted(numbered, key=lambda c: -abs(c[1]))
+
+
+templates.env.globals["stack_cards"] = _stack_cards
+
 templates.env.filters["completion_date"] = _completion_date
 
 
@@ -687,7 +719,7 @@ def remembered_filters(request: Request, prefix: str, fields: dict[str, object])
     return out
 
 
-def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: str) -> str:
+def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: str, allowed: set[str] | None = None) -> str:
     """Resolve the effective view_mode for a list page.
 
     Order of precedence:
@@ -698,11 +730,20 @@ def _resolve_view_mode(request: Request, query_value: str | None, cookie_name: s
       3. Default "list".
 
     Falls back to "list" on junk values from any source.
+
+    `allowed` names the modes this page has; it defaults to the grid/list set
+    the library and completions use. PSN review's toggle is list/card, and
+    folding its view into the opt-in "Remember filters" bundle instead of using
+    this meant the view was only remembered if you had also ticked a checkbox
+    about FILTERS — which is not what a view toggle is. Which layout you prefer
+    is a display preference, and every other list page in the app persists it
+    unconditionally.
     """
+    modes = allowed or VIEW_MODES
     if query_value:
-        return query_value if query_value in VIEW_MODES else "list"
+        return query_value if query_value in modes else "list"
     cookie_value = request.cookies.get(cookie_name)
-    if cookie_value in VIEW_MODES:
+    if cookie_value in modes:
         return cookie_value
     return "list"
 
