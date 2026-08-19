@@ -1037,6 +1037,83 @@ def test_platform_candidates_ranks_and_drops_pspc():
     assert psn.platform_candidates({"platform": ""}) == []
 
 
+def test_building_the_queue_does_not_scale_its_queries_with_its_rows(db_session):
+    """The query count must not grow with the number of rows (#196).
+
+    resolve_platform_id read the platforms table from the database on every
+    call -- up to five queries each, two of them full-table scans -- and the
+    queue calls it once per platform per row. 561 rows cost 3,369 queries and
+    534ms, nearly all of it re-reading the same twelve platform rows. It is
+    read once per session now and answered from memory: the same build is 5
+    queries and 32ms.
+
+    Asserted as a shape rather than a number: whatever the queue costs, ten
+    times the rows must not cost ten times the queries.
+    """
+    from sqlalchemy import event
+
+    _seed_platforms(db_session)
+    user = models.User(name="Perf", username="perf", api_token="p" * 20)
+    db_session.add(user)
+    db_session.commit()
+
+    def build(n, start):
+        for i in range(start, start + n):
+            db_session.add(
+                models.PsnReviewCandidate(
+                    user_id=user.id,
+                    external_id=f"NPWR_P{i:04d}_00",
+                    title=f"Perf {i}",
+                    kind="cross_play",
+                    status="pending",
+                    raw_data={
+                        "platform": "PS3,PS4,PS5",
+                        "trophyTitlePlatform": "PS3,PS4,PS5",
+                        "normalizedName": f"perf{i}",
+                        "sources": ["titles"],
+                    },
+                    proposed_platforms=[48],
+                    proposal_status="pending",
+                    proposed_igdb_id=9000 + i,
+                    proposed_title=f"Perf {i}",
+                )
+            )
+        db_session.commit()
+
+        seen = []
+        bind = db_session.get_bind()
+        listener = lambda *a, **k: seen.append(1)  # noqa: E731
+        event.listen(bind, "before_cursor_execute", listener)
+        try:
+            rows = psn.import_review_rows(db_session, user.id)
+        finally:
+            event.remove(bind, "before_cursor_execute", listener)
+        return len(rows), len(seen)
+
+    small_rows, small_q = build(5, 0)
+    big_rows, big_q = build(50, 100)
+    assert small_rows == 5 and big_rows == 55, "both builds produced their rows"
+    assert big_q <= small_q + 2, f"queries scaled with rows: {small_q} -> {big_q} for 5 -> 55 rows"
+
+
+def test_a_new_platform_is_visible_in_the_session_that_added_it(db_session):
+    """The platform index is cached per session, so it has to be dropped when
+    a platform or alias changes -- otherwise a caller that adds one and then
+    resolves against it in the same session is answered from a stale copy,
+    which is exactly what the tests do (#196)."""
+    _seed_platforms(db_session)
+    assert models.resolve_platform_id(db_session, "Dreamcast") is None, "not there yet"
+
+    db_session.add(models.Platform(name="Dreamcast", display_name="Sega Dreamcast"))
+    db_session.commit()
+    pid = models.resolve_platform_id(db_session, "Dreamcast")
+    assert pid is not None, "the index must have been rebuilt"
+
+    db_session.add(models.PlatformAlias(platform_id=pid, alias="DC"))
+    db_session.commit()
+    assert models.resolve_platform_id(db_session, "DC") == pid, "and again for aliases"
+
+
 def test_resolve_platform_single_is_confident():
     p, _, confident = psn.resolve_platform_choice({"platform": "PS4"})
     assert (p, confident) == ("PS4", True)

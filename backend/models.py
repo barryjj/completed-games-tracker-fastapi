@@ -2,7 +2,7 @@ import datetime
 import os
 from collections.abc import Iterator
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, create_engine, event
 from sqlalchemy.orm import Mapped, Session, declarative_base, mapped_column, relationship, sessionmaker
 from sqlalchemy.types import JSON
 
@@ -248,6 +248,68 @@ def _norm_platform(s: str) -> str:
     return s
 
 
+# The platforms table is a dozen rows that never change during a request, and
+# resolve_platform_id was reading it from the database on every single call --
+# up to five queries each, two of them full-table scans. Building the PSN
+# review queue calls it once per platform per row: 3,369 queries and 534ms for
+# 561 rows, nearly all of it re-reading the same twelve rows. Read once per
+# session and answered from memory, the same build is 5 queries and 32ms.
+#
+# Same lookup order, same results; the only thing that changes is where the
+# data comes from. Invalidated on flush whenever a Platform or PlatformAlias is
+# touched, so a caller that adds a platform mid-session still sees it (#196).
+_PLATFORM_INDEX_KEY = "_cgt_platform_index"
+
+
+class _PlatformIndex:
+    """Every lookup resolve_platform_id needs, resolved in memory."""
+
+    __slots__ = ("by_name", "by_display", "by_alias", "normalized", "igdb_by_id")
+
+    def __init__(self, platforms: list, aliases: list):
+        self.by_name: dict[str, int] = {}
+        self.by_display: dict[str, int] = {}
+        self.by_alias: dict[str, int] = {}
+        self.normalized: dict[str, int] = {}
+        self.igdb_by_id: dict[int, int | None] = {}
+        # First row wins, matching what .first() returned on an unordered query.
+        for p in platforms:
+            self.igdb_by_id[p.id] = p.igdb_id
+            if p.name:
+                self.by_name.setdefault(p.name, p.id)
+                self.normalized.setdefault(_norm_platform(p.name), p.id)
+            if p.display_name:
+                self.by_display.setdefault(p.display_name.casefold(), p.id)
+                self.normalized.setdefault(_norm_platform(p.display_name), p.id)
+        for a in aliases:
+            if a.alias:
+                self.by_alias.setdefault(a.alias.casefold(), a.platform_id)
+                self.normalized.setdefault(_norm_platform(a.alias), a.platform_id)
+
+
+def platform_index(db: Session) -> _PlatformIndex:
+    """The session's platform index, built on first use."""
+    idx = db.info.get(_PLATFORM_INDEX_KEY)
+    if idx is None:
+        idx = _PlatformIndex(db.query(Platform).order_by(Platform.id).all(), db.query(PlatformAlias).all())
+        db.info[_PLATFORM_INDEX_KEY] = idx
+    return idx
+
+
+@event.listens_for(Session, "after_flush")
+def _drop_platform_index(session, _flush_context):
+    """Any change to a platform or an alias throws the index away.
+
+    Without this, a caller that adds a platform and then resolves against it in
+    the same session would be answered from a stale copy -- which is exactly
+    what the tests do.
+    """
+    for obj in (*session.new, *session.dirty, *session.deleted):
+        if isinstance(obj, (Platform, PlatformAlias)):
+            session.info.pop(_PLATFORM_INDEX_KEY, None)
+            return
+
+
 def resolve_platform_id(db: Session, platform_name: str) -> int | None:
     """Look up a Platform row by name, display_name, or alias and return its id.
 
@@ -267,21 +329,20 @@ def resolve_platform_id(db: Session, platform_name: str) -> int | None:
     if not platform_name:
         return None
     name = platform_name.strip()
+    idx = platform_index(db)
 
     # 1. Exact name
-    row = db.query(Platform).filter(Platform.name == name).first()
-    if row:
-        return row.id
+    if name in idx.by_name:
+        return idx.by_name[name]
 
     # 2. Case-insensitive display_name
-    row = db.query(Platform).filter(Platform.display_name.ilike(name)).first()
-    if row:
-        return row.id
+    folded = name.casefold()
+    if folded in idx.by_display:
+        return idx.by_display[folded]
 
     # 3. Case-insensitive alias
-    alias = db.query(PlatformAlias).filter(PlatformAlias.alias.ilike(name)).first()
-    if alias:
-        return alias.platform_id
+    if folded in idx.by_alias:
+        return idx.by_alias[folded]
 
     # Ambiguous brand-only strings — too vague to fuzzy-match confidently.
     # Return None unless an explicit alias already matched above.
@@ -289,20 +350,10 @@ def resolve_platform_id(db: Session, platform_name: str) -> int | None:
     if _norm_platform(name) in _AMBIGUOUS:
         return None
 
-    # Build normalized candidate list: {normalized_string: platform_id}
     needle = _norm_platform(name)
     if not needle:
         return None
-
-    candidates: dict[str, int] = {}
-    for p in db.query(Platform).all():
-        if p.name:
-            candidates[_norm_platform(p.name)] = p.id
-        if p.display_name:
-            candidates[_norm_platform(p.display_name)] = p.id
-    for a in db.query(PlatformAlias).all():
-        if a.alias:
-            candidates[_norm_platform(a.alias)] = a.platform_id
+    candidates = idx.normalized
 
     # 4. Normalized exact match
     if needle in candidates:

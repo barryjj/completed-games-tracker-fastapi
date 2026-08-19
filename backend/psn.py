@@ -2415,9 +2415,9 @@ def igdb_platform_ids(db: Session, platform_tokens: list[str]) -> list[int]:
         pid = models.resolve_platform_id(db, token)
         if not pid:
             continue
-        row = db.query(models.Platform).filter(models.Platform.id == pid).first()
-        if row and row.igdb_id and row.igdb_id not in out:
-            out.append(row.igdb_id)
+        row_igdb = models.platform_index(db).igdb_by_id.get(pid)
+        if row_igdb and row_igdb not in out:
+            out.append(row_igdb)
             # Sony has no VR platform: a PSVR game's trophy set and purchase
             # both report PS4. IGDB DOES model it separately, so Moss
             # (platforms 165/390/163/…, no 48) was excluded from its own search
@@ -2425,7 +2425,7 @@ def igdb_platform_ids(db: Session, platform_tokens: list[str]) -> list[int]:
             # Grows". ASTRO BOT Rescue Mission came back unidentified the same
             # way. The filter is "any of", so widening only lets the real game
             # back in.
-            for headset in _IGDB_VR_COMPANIONS.get(row.igdb_id, ()):
+            for headset in _IGDB_VR_COMPANIONS.get(row_igdb, ()):
                 if headset not in out:
                     out.append(headset)
     return out
@@ -2938,14 +2938,16 @@ def _platform_in_igdb_set(db: Session, token: str, igdb_ids: list | None) -> boo
     pid = models.resolve_platform_id(db, token)
     if not pid:
         return False
-    row = db.query(models.Platform).filter(models.Platform.id == pid).first()
-    if not (row and row.igdb_id):
+    # Straight off the session's platform index -- this used to be its own
+    # SELECT, once per platform per row, on top of the resolve above (#196).
+    igdb_id = models.platform_index(db).igdb_by_id.get(pid)
+    if not igdb_id:
         return False
     # The headset counts as its console, or accepting a proposal would strike
     # out the only platform a VR game has: Moss is on IGDB 165 and not on 48,
     # while Sony reports the trophy set as PS4. Without this the picker empties
     # and confirming creates nothing.
-    accepted = {row.igdb_id, *_IGDB_VR_COMPANIONS.get(row.igdb_id, ())}
+    accepted = {igdb_id, *_IGDB_VR_COMPANIONS.get(igdb_id, ())}
     return bool(accepted & set(igdb_ids))
 
 
