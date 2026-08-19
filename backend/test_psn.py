@@ -1037,6 +1037,52 @@ def test_platform_candidates_ranks_and_drops_pspc():
     assert psn.platform_candidates({"platform": ""}) == []
 
 
+def test_the_other_tabs_do_not_build_the_cross_play_queue(client, db_session, monkeypatch):
+    """Played-only and Decided show none of the cross-play rows.
+
+    They were building all 561 of them anyway, to get a number for the tab
+    badge and a list of platform names for the filter -- the same mistake
+    count_pending_review_rows was written to fix for the header badge, missed
+    on this path. Both now come off the light index (#196).
+    """
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": f"NPWR_T{i}_00",
+                "name": f"Tabby {i}",
+                "displayName": f"Tabby {i}",
+                "platform": "PS4,PS5",
+                "sources": ["titles"],
+            }
+            for i in range(3)
+        ],
+    )
+    db_session.commit()
+
+    calls = []
+    real = psn.import_review_rows
+    monkeypatch.setattr(psn, "import_review_rows", lambda *a, **k: calls.append(k.get("only_keys")) or real(*a, **k))
+
+    for kind in ("played_only", "decided"):
+        calls.clear()
+        body = client.get(f"/tools/psn-review?kind={kind}", headers={"HX-Request": "true"}).text
+        assert "3" in body, "the badge still shows the cross-play count"
+        assert calls == [], f"{kind} built the cross-play queue: {calls}"
+
+    # The cross-play tab still builds -- it has rows to show. Windowed, so it
+    # builds its page rather than the queue.
+    calls.clear()
+    client.get("/tools/psn-review?kind=cross_play", headers={"HX-Request": "true"})
+    assert calls and all(k is not None for k in calls), "cross_play builds only the keys it needs"
+
+
 def test_building_the_queue_does_not_scale_its_queries_with_its_rows(db_session):
     """The query count must not grow with the number of rows (#196).
 

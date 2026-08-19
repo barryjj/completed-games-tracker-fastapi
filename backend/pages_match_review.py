@@ -193,10 +193,27 @@ def psn_review_page(
         rows = [built[k] for k in keys if k in built]
         counts = {"cross_play": card_total, "played_only": len(played_rows), "decided": len(decided)}
     else:
-        cross_rows = psn.import_review_rows(db, current_user.id)
-        counts = {"cross_play": len(cross_rows), "played_only": len(played_rows), "decided": len(decided)}
-        rows = {"cross_play": cross_rows, "played_only": played_rows, "decided": decided}.get(kind, cross_rows)
-        review_platforms = sorted({o["platform"] for r in cross_rows for o in r["options"]})
+        # The played-only and decided tabs do not show cross-play rows at all --
+        # they only need its COUNT for the tab badge and its platforms for the
+        # filter. Building all 561 to produce a number and a list of platform
+        # names is the same mistake count_pending_review_rows was written to fix
+        # for the header badge, missed here (#196).
+        #
+        # Both come off the light index instead, which is one query and no row
+        # building. It also makes the platform filter agree with the cross-play
+        # tab, which already sourced it from the index.
+        counts = {
+            "cross_play": psn.count_pending_review_rows(db, current_user.id),
+            "played_only": len(played_rows),
+            "decided": len(decided),
+        }
+        review_platforms = sorted({p for i in psn.review_row_index(db, current_user.id) for p in i["platforms"]})
+        if kind in ("played_only", "decided"):
+            rows = played_rows if kind == "played_only" else decided
+        else:
+            # A kind that is neither -- reachable by URL (title_fix, media_app,
+            # igdb_link) and genuinely needs the rows.
+            rows = psn.import_review_rows(db, current_user.id)
         if kind == "cross_play" and platform:
             rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
         if q:
