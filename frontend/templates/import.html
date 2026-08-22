@@ -19,36 +19,20 @@
   </div>
 </div>
 
-<div class="row g-3">
+{# The pane carries its own card and its own width: the upload form is a small
+   thing that belongs in half a column, and the mapping step is a wide table
+   that does not. Sharing one col-md-6 wrapper squeezed the wizard into half
+   the page and wrapped every cell (#197). #}
+<div id="import-upload-pane">
+  {% include "partials/_import_upload_form.html" %}
+</div>
+
+<div class="row g-3 mt-0">
   <div class="col-md-6">
-    <div class="card">
-      <div class="card-body">
-        <h5 class="card-title mb-1">Upload spreadsheet</h5>
-        <p class="text-secondary small mb-3">
-          Upload a Google Sheets export (.xlsx). Each tab should be a year.
-          Columns recognised: <code>#</code>, <code>Game</code>, <code>Platform</code>,
-          <code>Date</code>, <code>Playthroughs</code>, <code>Notes</code>, <code>Collection</code>.
-        </p>
-        <form hx-post="/tools/import/upload"
-              hx-encoding="multipart/form-data"
-              hx-swap="none"
-              hx-sync="this:drop"
-              hx-disabled-elt="find button[type='submit']"
-              hx-on::after-request="if(event.detail.successful) htmx.ajax('GET', '/tools/import/progress', {target:'#import-progress', swap:'outerHTML'})">
-          <div class="mb-3">
-            <input class="form-control form-control-sm" type="file" name="file" accept=".xlsx,.xls" required>
-          </div>
-          <button type="submit" class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2">
-            <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
-            Upload
-          </button>
-        </form>
-        <div id="import-progress"
-             hx-get="/tools/import/progress"
-             hx-trigger="load, every 2s"
-             hx-swap="outerHTML"></div>
-      </div>
-    </div>
+    <div id="import-progress"
+         hx-get="/tools/import/progress"
+         hx-trigger="load, every 2s"
+         hx-swap="outerHTML"></div>
   </div>
 </div>
 <script>

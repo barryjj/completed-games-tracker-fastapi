@@ -10,11 +10,13 @@ Columns recognised (case-insensitive, order-independent):
 Tabs: one per year; tab name is the fallback year for blank/month-only dates.
 """
 
+import csv
 import datetime
 import difflib
 import re
 import time
-from io import BytesIO
+from io import BytesIO, StringIO
+from pathlib import Path
 
 import openpyxl
 from sqlalchemy import or_
@@ -916,96 +918,9 @@ def _row_values(sheet_row) -> tuple:
     return tuple(out)
 
 
-def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
-    """Parse an xlsx file and return grouped ImportCandidate data (not yet written to DB)."""
-    wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
-    result = ParseResult()
-
-    # groups: group_key → {raw_title, raw_platform, platform_id, rows:[row_dict,...]}
-    groups: dict[str, dict] = {}
-
-    for sheet in wb.worksheets:
-        tab_year = _tab_year(sheet.title)
-        rows = [_row_values(r) for r in sheet.iter_rows()]
-        if not rows:
-            continue
-
-        # Find header row — first row that has "game" or "title" in any cell
-        header_idx = None
-        for i, row in enumerate(rows):
-            cells = [str(c).strip().lower() for c in row if c is not None]
-            if any(c in ("game", "title") for c in cells):
-                header_idx = i
-                break
-        if header_idx is None:
-            result.skipped_rows += len(rows)
-            continue
-
-        header_list = list(rows[header_idx])
-        # Some tabs have sequential row numbers in col A with no header — treat as #
-        if header_list and header_list[0] is None and "#" not in _col_map(header_list):
-            header_list = list(header_list)
-            header_list[0] = "#"
-        cols = _col_map(header_list)
-
-        for row in rows[header_idx + 1 :]:
-            result.total_rows += 1
-
-            # Skip entirely blank rows
-            if all(c is None or str(c).strip() == "" for c in row):
-                result.skipped_rows += 1
-                continue
-
-            raw_title = _cell(row, cols, "game", "title")
-            if not raw_title:
-                result.skipped_rows += 1
-                continue
-
-            raw_platform = _cell(row, cols, "platform") or ""
-            raw_date = _cell(row, cols, "date")
-            raw_playthroughs = _cell(row, cols, "playthroughs", "times completed")
-            raw_notes = _cell(row, cols, "notes")
-            raw_collection = _cell(row, cols, "collection")
-
-            # Row number from # column
-            row_num_raw = _cell(row, cols, "#")
-            try:
-                row_number = int(float(str(row_num_raw))) if row_num_raw else None
-            except (ValueError, TypeError):
-                row_number = None
-
-            platform_str = re.split(r"[·|/]", raw_platform)[0].strip() if raw_platform else ""
-            platform_id = models.resolve_platform_id(db, platform_str) if platform_str else None
-            completed_at, completed_at_precision = _parse_date(raw_date, tab_year)
-            playthroughs = _parse_playthroughs(raw_playthroughs)
-
-            key = _group_key(raw_title, platform_id, raw_platform)
-
-            if key not in groups:
-                groups[key] = {
-                    "raw_title": raw_title,
-                    "raw_platform": raw_platform,
-                    "platform_id": platform_id,
-                    "rows": [],
-                }
-
-            groups[key]["rows"].append(
-                {
-                    "raw_title": raw_title,
-                    "raw_platform": raw_platform,
-                    "raw_date": str(raw_date) if raw_date else None,
-                    "raw_playthroughs": str(raw_playthroughs) if raw_playthroughs else None,
-                    "raw_notes": raw_notes,
-                    "raw_collection": raw_collection,
-                    "source_tab": sheet.title,
-                    "row_number": row_number,
-                    "completed_at": completed_at,
-                    "completed_at_precision": completed_at_precision,
-                    "playthroughs": playthroughs,
-                }
-            )
-
-    # Dedup rows within each group — same game can appear across multiple tabs
+def _dedup_group_rows(groups: dict) -> None:
+    """Drop repeated rows within each group — the same game can appear on
+    several tabs, and a re-export can repeat it inside one."""
     for group in groups.values():
         seen: set = set()
         unique_rows = []
@@ -1016,6 +931,357 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
                 unique_rows.append(r)
         group["rows"] = unique_rows
 
+
+# The fields a column can be mapped to. The keys are what _cell() already looks
+# up, so a user-supplied mapping and an auto-detected one are the same shape and
+# the parser below cannot tell them apart (#197).
+IMPORT_FIELDS: tuple[tuple[str, str], ...] = (
+    ("game", "Title"),
+    ("platform", "Platform"),
+    ("date", "Completed date"),
+    ("playthroughs", "Playthroughs"),
+    ("notes", "Notes"),
+    ("collection", "Collection"),
+)
+
+# Header text -> field. Everything the parser used to accept, in one place so
+# the wizard's guesses and the parser's behaviour cannot drift apart.
+_HEADER_GUESSES: dict[str, str] = {
+    "game": "game",
+    "title": "game",
+    "platform": "platform",
+    "date": "date",
+    "completed": "date",
+    "completed date": "date",
+    "playthroughs": "playthroughs",
+    "times completed": "playthroughs",
+    "notes": "notes",
+    "collection": "collection",
+}
+
+
+def _find_header_row(rows: list) -> int | None:
+    """First row that names a title column. None when nothing looks like one."""
+    for i, row in enumerate(rows):
+        cells = [str(c).strip().lower() for c in row if c is not None]
+        if any(c in ("game", "title") for c in cells):
+            return i
+    return None
+
+
+def _header_labels(rows: list, header_idx: int | None) -> list:
+    """The header row with the unnamed leading row-number column filled in.
+
+    Sheets exported from Sheets often have sequential numbers in column A under
+    a blank header -- the real file this was built against does exactly that.
+    """
+    if header_idx is None:
+        return []
+    header_list = list(rows[header_idx])
+    if header_list and header_list[0] is None and "#" not in _col_map(header_list):
+        header_list[0] = "#"
+    return header_list
+
+
+def _guess_columns(header_list: list) -> dict[str, int]:
+    """Auto-detected {field: column index} — what the parser did on its own."""
+    cols: dict[str, int] = {}
+    for i, cell in enumerate(header_list):
+        if cell is None:
+            continue
+        field = _HEADER_GUESSES.get(str(cell).strip().lower().lstrip("#").strip() or "#")
+        if field and field not in cols:
+            cols[field] = i
+    return cols
+
+
+def _parse_sheet(
+    rows: list,
+    sheet_title: str,
+    groups: dict,
+    result: "ParseResult",
+    db: Session,
+    user_id: int,
+    spec: dict | None = None,
+) -> None:
+    """Fold one sheet's worth of rows into `groups`.
+
+    Split out of parse_xlsx so a CSV can use it too. A CSV is one sheet with no
+    tabs, and nothing below this line cares where the rows came from -- rows are
+    rows (#197).
+
+    `sheet_title` is only a fallback for the year: a row whose Date column
+    carries a full date already knows its year, and _parse_date only reaches for
+    the tab year when the date is a bare month or blank. So a single sheet with
+    complete dates behaves identically whether it arrived as xlsx or csv.
+    """
+    if not rows:
+        return
+
+    # `spec` is the wizard's answer for this sheet: which row is the header,
+    # which column is which field, and what year to fall back on. Without one
+    # the sheet is auto-detected exactly as before, so every existing caller is
+    # unchanged (#197).
+    if spec is None:
+        header_idx = _find_header_row(rows)
+        if header_idx is None:
+            result.skipped_rows += len(rows)
+            return
+        cols = _guess_columns(_header_labels(rows, header_idx))
+        tab_year = _tab_year(sheet_title)
+    else:
+        header_idx = spec.get("header_row")
+        cols = {f: i for f, i in (spec.get("cols") or {}).items() if i is not None}
+        tab_year = spec.get("year") or _tab_year(sheet_title)
+        if "game" not in cols:
+            # Nothing to import without a title, and silently skipping is the
+            # behaviour this whole feature exists to remove.
+            result.skipped_rows += len(rows)
+            return
+        # A headerless sheet starts at row 0; -1 makes the slice below work out.
+        if header_idx is None:
+            header_idx = -1
+
+    # Position IS the row number. It exists only to become Completion.sort_order,
+    # which is what keeps two completions in the same month in the order the
+    # sheet had them -- month-precision dates all land on the 1st, so without it
+    # they have nothing to order by. Reading it out of a "#" column asked the
+    # user to map a column whose only job was to restate the order the rows were
+    # already in, and it did not work at all on a sheet that has no such column
+    # (#197).
+    position = 0
+    for row in rows[header_idx + 1 :]:
+        result.total_rows += 1
+
+        # Skip entirely blank rows
+        if all(c is None or str(c).strip() == "" for c in row):
+            result.skipped_rows += 1
+            continue
+
+        raw_title = _cell(row, cols, "game", "title")
+        if not raw_title:
+            result.skipped_rows += 1
+            continue
+
+        raw_platform = _cell(row, cols, "platform") or ""
+        raw_date = _cell(row, cols, "date")
+        raw_playthroughs = _cell(row, cols, "playthroughs", "times completed")
+        raw_notes = _cell(row, cols, "notes")
+        raw_collection = _cell(row, cols, "collection")
+
+        position += 1
+        row_number = position
+
+        platform_str = re.split(r"[·|/]", raw_platform)[0].strip() if raw_platform else ""
+        platform_id = models.resolve_platform_id(db, platform_str) if platform_str else None
+        completed_at, completed_at_precision = _parse_date(raw_date, tab_year)
+        playthroughs = _parse_playthroughs(raw_playthroughs)
+
+        key = _group_key(raw_title, platform_id, raw_platform)
+
+        if key not in groups:
+            groups[key] = {
+                "raw_title": raw_title,
+                "raw_platform": raw_platform,
+                "platform_id": platform_id,
+                "rows": [],
+            }
+
+        groups[key]["rows"].append(
+            {
+                "raw_title": raw_title,
+                "raw_platform": raw_platform,
+                "raw_date": str(raw_date) if raw_date else None,
+                "raw_playthroughs": str(raw_playthroughs) if raw_playthroughs else None,
+                "raw_notes": raw_notes,
+                "raw_collection": raw_collection,
+                "source_tab": sheet_title,
+                "row_number": row_number,
+                "completed_at": completed_at,
+                "completed_at_precision": completed_at_precision,
+                "playthroughs": playthroughs,
+            }
+        )
+
+
+def _sheets_from_upload(file_bytes: bytes, filename: str) -> list[tuple[str, list]]:
+    """(sheet name, rows) for either format. One entry for a CSV, named after
+    the file, since the name is where a CSV keeps its year."""
+    if filename.lower().endswith(".csv"):
+        text = file_bytes.decode("utf-8-sig", errors="replace")
+        try:
+            dialect = csv.Sniffer().sniff(text[:4096], delimiters=",\t;")
+        except csv.Error:
+            dialect = csv.excel
+        rows = [[(c if c.strip() != "" else None) for c in row] for row in csv.reader(StringIO(text), dialect)]
+        return [(Path(filename).stem, rows)]
+    wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
+    return [(sheet.title, [_row_values(r) for r in sheet.iter_rows()]) for sheet in wb.worksheets]
+
+
+def inspect_upload(file_bytes: bytes, filename: str, db: Session, samples: int = 3) -> list[dict]:
+    """What the parser THINKS it found, without importing anything.
+
+    The importer used to guess in silence: a sheet whose header it did not
+    recognise was skipped whole, and a column named "Completed" instead of
+    "Date" dropped every date without a word. You found out days later, by
+    noticing the count was wrong.
+
+    This returns the guesses so they can be shown and corrected first. Per
+    sheet: the header row, every column with the field it would be read as, and
+    a few rows rendered the way they would actually be imported -- the parsed
+    date with its precision, the resolved platform, the parsed playthrough
+    count. Nothing is written and no candidates are built (#197).
+    """
+    out = []
+    for name, rows in _sheets_from_upload(file_bytes, filename):
+        header_idx = _find_header_row(rows)
+        labels = _header_labels(rows, header_idx)
+        cols = _guess_columns(labels)
+        width = max((len(r) for r in rows[: (header_idx or 0) + 1 + samples]), default=0)
+        by_index = {i: f for f, i in cols.items()}
+        columns = [
+            {
+                "index": i,
+                "letter": _column_letter(i),
+                "label": (str(labels[i]).strip() if header_idx is not None and i < len(labels) and labels[i] is not None else ""),
+                "field": by_index.get(i, ""),
+            }
+            for i in range(width)
+        ]
+        year = _tab_year(name)
+        data = [r for r in rows[(header_idx + 1) if header_idx is not None else 0 :] if any(c is not None and str(c).strip() for c in r)]
+        # A row with no title is skipped by the parser. Usually that is a
+        # pre-numbered empty row waiting to be filled in -- the real file has 20
+        # of them -- but "52 rows" with no further explanation invites you to
+        # wonder where the other 20 went, so both numbers are reported.
+        importable = [r for r in data if (_cell(r, cols, "game", "title") or "").strip()]
+        preview = []
+        for row in importable[:samples]:
+            raw_date = _cell(row, cols, "date")
+            raw_playthroughs = _cell(row, cols, "playthroughs", "times completed")
+            completed, precision = _parse_date(raw_date, year)
+            raw_platform = _cell(row, cols, "platform") or ""
+            platform_str = re.split(r"[·|/]", raw_platform)[0].strip() if raw_platform else ""
+            preview.append(
+                {
+                    "title": _cell(row, cols, "game", "title"),
+                    "platform": raw_platform,
+                    # The resolved row, so the preview can show the same badge
+                    # the review list shows rather than a bare word. None means
+                    # unmatched, which the template flags the way an unlinked
+                    # import row does.
+                    "platform_row": (db.get(models.Platform, models.resolve_platform_id(db, platform_str)) if platform_str else None),
+                    "completed": completed,
+                    "precision": precision,
+                    "playthroughs": _parse_playthroughs(raw_playthroughs),
+                    "raw_playthroughs": raw_playthroughs,
+                    # Marked in the preview and explained once underneath,
+                    # rather than repeating "from 2+" on every affected row.
+                    "playthroughs_coerced": bool(raw_playthroughs) and str(raw_playthroughs) != str(_parse_playthroughs(raw_playthroughs)),
+                    "date_vague": bool(precision) and precision != "day",
+                    "collection": _cell(row, cols, "collection"),
+                }
+            )
+        # Does this sheet actually need a fallback year? Only if some row's date
+        # cannot supply one on its own -- a blank cell, or a bare month like
+        # "January". Scanned across every importable row, not just the three
+        # shown, so a file with complete dates is never asked a question it has
+        # already answered.
+        needs_year = any(_parse_date(_cell(r, cols, "date"), None)[0] is None for r in importable)
+
+        # One note per kind, under the table, instead of a parenthetical on
+        # every row that happens to trip it.
+        notes = []
+        if any(p["playthroughs_coerced"] for p in preview):
+            notes.append(("Playthroughs", "must be a whole number — anything else in the cell is dropped."))
+        if any(p["date_vague"] for p in preview):
+            notes.append(("Completed", "no day given, so the completion is recorded to the month or year only."))
+        out.append(
+            {
+                "name": name,
+                "notes": notes,
+                "needs_year": needs_year,
+                "header_row": header_idx,
+                "columns": columns,
+                "cols": cols,
+                "year": year,
+                "data_rows": len(data),
+                "importable_rows": len(importable),
+                "preview": preview,
+            }
+        )
+    return out
+
+
+def _column_letter(i: int) -> str:
+    """0 -> A, 25 -> Z, 26 -> AA. For naming columns on a headerless sheet."""
+    out = ""
+    i += 1
+    while i:
+        i, rem = divmod(i - 1, 26)
+        out = chr(65 + rem) + out
+    return out
+
+
+def parse_csv(file_bytes: bytes, filename: str, db: Session, user_id: int) -> ParseResult:
+    """Parse a CSV export. One sheet, named after the file.
+
+    A CSV is a spreadsheet with the tabs taken away, and the tabs were only ever
+    a source of the YEAR -- and only for rows whose Date column does not carry
+    one. Everything else about parsing is row-level, so a CSV goes through the
+    same code as a worksheet (#197).
+
+    The filename stands in for the tab name, which means "Completed Games -
+    2026.csv" still dates a row that only says "January". A file with no year in
+    its name degrades exactly the way a badly-named tab does today: rows with
+    complete dates are fine, rows without one lose their year.
+    """
+    text = file_bytes.decode("utf-8-sig", errors="replace")
+    # Sniff the delimiter -- exports are comma or tab depending on where the
+    # Export as menu was clicked. Falls back to comma on an unreadable sample.
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",\t;")
+    except csv.Error:
+        dialect = csv.excel
+    rows = [[(c if c.strip() != "" else None) for c in row] for row in csv.reader(StringIO(text), dialect)]
+
+    result = ParseResult()
+    groups: dict[str, dict] = {}
+    _parse_sheet(rows, Path(filename).stem, groups, result, db, user_id)
+    _dedup_group_rows(groups)
+    result.candidates = list(groups.values())
+    return result
+
+
+def parse_upload(file_bytes: bytes, filename: str, db: Session, user_id: int, specs: dict | None = None) -> ParseResult:
+    """Parse an uploaded file of either format. The one entry point the job uses.
+
+    `specs` is the wizard's answers, keyed by sheet name: which row is the
+    header, which column is which field, which year to fall back on. Without it
+    every sheet is auto-detected exactly as before.
+    """
+    result = ParseResult()
+    groups: dict[str, dict] = {}
+    for name, rows in _sheets_from_upload(file_bytes, filename):
+        _parse_sheet(rows, name, groups, result, db, user_id, spec=(specs or {}).get(name))
+    _dedup_group_rows(groups)
+    result.candidates = list(groups.values())
+    return result
+
+
+def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
+    """Parse an xlsx file and return grouped ImportCandidate data (not yet written to DB)."""
+    wb = openpyxl.load_workbook(BytesIO(file_bytes), data_only=True)
+    result = ParseResult()
+
+    # groups: group_key → {raw_title, raw_platform, platform_id, rows:[row_dict,...]}
+    groups: dict[str, dict] = {}
+
+    for sheet in wb.worksheets:
+        _parse_sheet([_row_values(r) for r in sheet.iter_rows()], sheet.title, groups, result, db, user_id)
+
+    _dedup_group_rows(groups)
     result.candidates = list(groups.values())
     return result
 

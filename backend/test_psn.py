@@ -841,7 +841,32 @@ def test_strip_trophy_suffix():
     # Don't over-strip a title where 'trophy' isn't the trailing tag.
     assert psn._strip_trophy_suffix("Trophy Hunter") == "Trophy Hunter"
     assert psn._strip_trophy_suffix("Resident Evil 4") == "Resident Evil 4"
-    assert psn._display_name("God of War II Trophies™") == "God of War II"
+    assert psn._display_name("God of War II Trophies\u2122") == "God of War II"
+    # Whitespace is trimmed by the caller, not matched in the pattern, so runs
+    # of it still strip correctly.
+    assert psn._strip_trophy_suffix("Name   Trophies") == "Name"
+    assert psn._strip_trophy_suffix("  Padded Trophies  ") == "Padded"
+    assert psn._strip_trophy_suffix("Spaced Out Trophy Collection!") == "Spaced Out"
+
+
+def test_stripping_a_trophy_suffix_does_not_blow_up_on_whitespace():
+    """py/polynomial-redos, high. The pattern was
+    `\\s+(?:trophies|…)[.!]?\\s*$`: every space in a long run is another
+    position the engine can start `\\s+` from, and each attempt rescans to the
+    end before failing, so the cost is quadratic in the length of the run.
+
+    These names come off Sony's feeds -- 20,000 spaces took 2.3 seconds, and a
+    name is parsed once per trophy set per sync. The whitespace is trimmed in
+    Python now and the pattern matches a single separator, which the caller's
+    strip() makes sufficient."""
+    import time
+
+    evil = "a" + " " * 60000 + "b"
+    started = time.perf_counter()
+    assert psn._strip_trophy_suffix(evil) == evil
+    elapsed = time.perf_counter() - started
+    # Generously loose -- the old pattern needed seconds for a third of this.
+    assert elapsed < 0.5, f"took {elapsed:.2f}s, which means the backtracking is back"
 
 
 def test_import_strips_trophy_suffix_from_existing_snapshot(db_session, monkeypatch, tmp_path):

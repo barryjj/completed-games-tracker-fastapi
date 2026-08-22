@@ -14,6 +14,12 @@ html[data-bs-theme="dark"] {
      Pointed at the accents Mocha's buttons already use. */
   --cgt-ps-ink: var(--ctp-lavender);  /* pale lavender reads fine on dark */
   --cgt-igdb-ink: var(--ctp-green);  /* pale green reads fine as text on dark */
+  /* Badge ink. On dark the accents ARE the readable colour, so these are
+     pass-throughs and only the light palettes override them. */
+  --cgt-teal-ink:   var(--ctp-teal);
+  --cgt-sky-ink:    var(--ctp-sky);
+  --cgt-yellow-ink: var(--ctp-yellow);
+  --cgt-green-ink:  var(--ctp-green);
   --cgt-btn-primary:        var(--ctp-mauve);
   --cgt-btn-primary-hover:  var(--ctp-lavender);
   --cgt-btn-primary-rgb:    203,166,247;
@@ -121,6 +127,15 @@ html[data-bs-theme="light"] {
      hand-tuned fills already used. Buttons only — never applied to text. */
   --cgt-ps-ink: #6b6584;  /* nord15+10 darkened along hue */
   --cgt-igdb-ink: #6f8c58;  /* nord14 darkened along hue */
+  /* Badge ink. Nord's teal, sky, yellow and green are pale by design and turn
+     to mush as small uppercase text on a white card -- the Steam chip in a
+     table row was the case that prompted this. Each is darkened along its own
+     hue to L .45, the same move --cgt-igdb-ink already makes, so the accents
+     themselves are untouched and nothing else that uses them changes. */
+  --cgt-teal-ink:   #56908e;  /* nord7  darkened along hue */
+  --cgt-sky-ink:    #418ea5;  /* nord8  darkened along hue */
+  --cgt-yellow-ink: #c48e22;  /* nord13 darkened along hue */
+  --cgt-green-ink:  #709353;  /* nord14 darkened along hue */
   --cgt-btn-primary:        #a77a9f;
   --cgt-btn-primary-hover:  #98658e;
   --cgt-btn-success:        #8eaf72;
@@ -200,6 +215,12 @@ html[data-palette="latte"] {
 
   --cgt-ps-ink: #5566d8;  /* latte lavender darkened */
   --cgt-igdb-ink: #40a02b;  /* latte green is already dark enough */
+  /* Latte's accents are saturated and dark already (#179299 teal, #40a02b
+     green) -- they need no help, so these are pass-throughs. */
+  --cgt-teal-ink:   var(--ctp-teal);
+  --cgt-sky-ink:    var(--ctp-sky);
+  --cgt-yellow-ink: var(--ctp-yellow);
+  --cgt-green-ink:  var(--ctp-green);
   --cgt-btn-primary:        #a370e8;
   --cgt-btn-primary-hover:  #8f5cd4;
   --cgt-btn-success:        #5aba54;
@@ -516,6 +537,10 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
   padding: 0.18em 0.5em; border-radius: 4px;
   margin-right: 0.25em;
   white-space: nowrap;
+  /* An edge, so the chip reads as an object rather than as tinted text on a
+     barely-there wash. Taken from currentColor, so it follows whatever ink the
+     badge resolved to in this palette without a rule per accent. */
+  border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
 }
 .tag-badge:last-child { margin-right: 0; }
 
@@ -527,10 +552,10 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 .tag-platform-red       { color: var(--ctp-red);       background: color-mix(in srgb, var(--ctp-red)       15%, transparent); }
 .tag-platform-maroon    { color: var(--ctp-maroon);    background: color-mix(in srgb, var(--ctp-maroon)    15%, transparent); }
 .tag-platform-peach     { color: var(--ctp-peach);     background: color-mix(in srgb, var(--ctp-peach)     15%, transparent); }
-.tag-platform-yellow    { color: var(--ctp-yellow);    background: color-mix(in srgb, var(--ctp-yellow)    15%, transparent); }
-.tag-platform-green     { color: var(--ctp-green);     background: color-mix(in srgb, var(--ctp-green)     15%, transparent); }
-.tag-platform-teal      { color: var(--ctp-teal);      background: color-mix(in srgb, var(--ctp-teal)      15%, transparent); }
-.tag-platform-sky       { color: var(--ctp-sky);       background: color-mix(in srgb, var(--ctp-sky)       15%, transparent); }
+.tag-platform-yellow    { color: var(--cgt-yellow-ink, var(--ctp-yellow));    background: color-mix(in srgb, var(--ctp-yellow)    15%, transparent); }
+.tag-platform-green     { color: var(--cgt-green-ink, var(--ctp-green));     background: color-mix(in srgb, var(--ctp-green)     15%, transparent); }
+.tag-platform-teal      { color: var(--cgt-teal-ink, var(--ctp-teal));      background: color-mix(in srgb, var(--ctp-teal)      15%, transparent); }
+.tag-platform-sky       { color: var(--cgt-sky-ink, var(--ctp-sky));       background: color-mix(in srgb, var(--ctp-sky)       15%, transparent); }
 .tag-platform-sapphire  { color: var(--ctp-sapphire);  background: color-mix(in srgb, var(--ctp-sapphire)  15%, transparent); }
 .tag-platform-blue      { color: var(--ctp-blue);      background: color-mix(in srgb, var(--ctp-blue)      15%, transparent); }
 .tag-platform-lavender  { color: var(--ctp-lavender);  background: color-mix(in srgb, var(--ctp-lavender)  15%, transparent); }

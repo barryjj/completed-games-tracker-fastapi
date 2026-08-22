@@ -340,11 +340,21 @@ def _normalized_name(name: str | None) -> str:
 # Matches a trailing trophy-set tag: bare ' Trophy'/' Trophies', or
 # ' Trophy Set/Pack/Collection/List', with optional trailing punctuation
 # ('STREET FIGHTER IV Trophy pack.').
-_TROPHY_SUFFIX_RE = re.compile(r"\s+(?:trophies|trophy(?:\s+(?:set|pack|collection|list))?)[.!]?\s*$", re.IGNORECASE)
+#
+# The surrounding whitespace and punctuation are trimmed in Python rather than
+# matched here. `\s+(?:…)[.!]?\s*$` is quadratic on a long run of spaces --
+# every space is another position the engine can start `\s+` from, and each
+# attempt rescans to the end before failing (CodeQL py/polynomial-redos, high).
+# These names come off Sony's feeds, so the input is not ours to trust.
+#
+# A single `\s` is enough because the caller strips: "Name   Trophies" leaves
+# "Name  ", which .strip() finishes off.
+_TROPHY_SUFFIX_RE = re.compile(r"\s(?:trophies|trophy(?:\s(?:set|pack|collection|list))?)$", re.IGNORECASE)
 
 
 def _strip_trophy_suffix(name: str | None) -> str:
-    return _TROPHY_SUFFIX_RE.sub("", name or "").strip()
+    cleaned = (name or "").strip().rstrip(".!").rstrip()
+    return _TROPHY_SUFFIX_RE.sub("", cleaned).strip()
 
 
 def _display_name(name: str | None) -> str:

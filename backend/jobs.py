@@ -54,17 +54,56 @@ _lock = Lock()
 _import_queue: dict[int, list[tuple[str, str, bytes]]] = {}
 
 
-def enqueue_import(user_id: int, filename: str, file_bytes: bytes) -> Job:
-    """Create a QUEUED import job and append it to the user's queue. Returns the job."""
+# Uploads waiting on the mapping wizard. The file is read once, held here
+# while the user checks what the parser found, and dropped as soon as it is
+# either imported or abandoned. Same lifetime as the import queue itself --
+# process memory, gone on restart, which is fine for something that only has
+# to survive one round trip (#197).
+_staged: dict[str, tuple[int, str, bytes]] = {}
+
+
+def stage_upload(user_id: int, filename: str, file_bytes: bytes) -> str:
+    """Hold an uploaded file for the mapping step. Returns its token."""
+    token = str(uuid.uuid4())
+    with _lock:
+        # One at a time per user: a second upload replaces the first, so an
+        # abandoned wizard cannot pin a file in memory forever.
+        for tok, (uid, _, _) in list(_staged.items()):
+            if uid == user_id:
+                del _staged[tok]
+        _staged[token] = (user_id, filename, file_bytes)
+    return token
+
+
+def staged_upload(token: str, user_id: int) -> tuple[str, bytes] | None:
+    """The staged file, if the token is this user's."""
+    with _lock:
+        item = _staged.get(token)
+    if not item or item[0] != user_id:
+        return None
+    return item[1], item[2]
+
+
+def drop_staged_upload(token: str) -> None:
+    with _lock:
+        _staged.pop(token, None)
+
+
+def enqueue_import(user_id: int, filename: str, file_bytes: bytes, specs: dict | None = None) -> Job:
+    """Create a QUEUED import job and append it to the user's queue. Returns the job.
+
+    `specs` is the column mapping confirmed in the wizard, one entry per sheet.
+    None means auto-detect, which is what every caller did before (#197).
+    """
     job = Job(id=str(uuid.uuid4()), user_id=user_id, kind="import_xlsx", label=f"Import: {filename}")
     with _lock:
         _jobs[job.id] = job
-        _import_queue.setdefault(user_id, []).append((job.id, filename, file_bytes))
+        _import_queue.setdefault(user_id, []).append((job.id, filename, file_bytes, specs))
     return job
 
 
-def next_queued_import(user_id: int) -> tuple[str, str, bytes] | None:
-    """Pop and return the next (job_id, filename, file_bytes) for this user, or None."""
+def next_queued_import(user_id: int) -> tuple[str, str, bytes, dict | None] | None:
+    """Pop and return the next (job_id, filename, file_bytes, specs) for this user, or None."""
     with _lock:
         q = _import_queue.get(user_id, [])
         if not q:

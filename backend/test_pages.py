@@ -3192,3 +3192,200 @@ def test_external_link_interceptor_binds_unconditionally():
     # The guard lives inside the handler.
     handler = block[block.index("addEventListener('click'") :]
     assert "__TAURI__" in handler, "the Tauri check must be inside the click handler"
+
+
+# ── Import mapping wizard (#197) ────────────────────────────────────────────
+_WIZARD_CSV = (
+    ",Game,Platform,Notes,Date,Playthroughs,Collection\n"
+    "1,Disc Room,Steam,,1/1/2026,1,\n"
+    "2,Terminator 2D: NO FATE,Steam,100%,1/1/2026,2+,\n"
+    "3,Contra: Hard Corps,Steam,,1/3/2026,4,Contra Anniversary Collection\n"
+    "4,,,,,,\n"
+)
+
+
+def _upload_wizard_csv(client, name="Completed Games - 2026.csv", body=None):
+    return client.post(
+        "/tools/import/upload",
+        files={"file": (name, (body or _WIZARD_CSV).encode(), "text/csv")},
+    )
+
+
+def test_uploading_shows_what_was_found_and_imports_nothing(client, db_session):
+    """Upload used to import straight away, guessing in silence: a sheet whose
+    header it did not recognise was skipped whole, and a column named
+    "Completed" rather than "Date" dropped every date without a word.
+
+    It shows its work now and waits for confirmation (#197)."""
+    _signup_and_login(client)
+    db_session.add(models.Platform(name="Steam", display_name="Steam"))
+    db_session.commit()
+
+    html = _upload_wizard_csv(client).text
+
+    # The header it found, and every column with the field it will be read as.
+    assert "Completed Games - 2026" in html
+    for label in ("Game", "Platform", "Notes", "Date", "Playthroughs", "Collection"):
+        assert label in html, f"column {label} not shown"
+
+    # Sample rows, rendered the way they would actually land -- this is the
+    # whole point: "2+" silently becoming 2 is visible before it happens.
+    assert "Disc Room" in html
+    assert "Terminator 2D: NO FATE" in html
+    # "2+" is stored as 2. That is flagged on the value and explained once
+    # under the table, rather than repeated on every row it happens to hit.
+    assert "whole number" in html, "the coercion must be explained"
+
+    # The empty pre-numbered row is counted separately rather than vanishing.
+    assert "3 rows to import" in html
+    assert "1 empty" in html
+
+    # And the table says it is a sample, not the import.
+    assert "First 3 of 3 rows" in html
+
+    # And nothing has been written.
+    assert db_session.query(models.ImportCandidate).count() == 0
+
+
+def test_the_mapping_chosen_in_the_wizard_is_what_gets_imported(client, db_session, monkeypatch):
+    """The wizard's answers have to reach the parser, or it is decoration."""
+    _signup_and_login(client)
+    db_session.add(models.Platform(name="Steam", display_name="Steam"))
+    db_session.commit()
+
+    import re as _re
+
+    from . import jobs, pages_import
+
+    # Captured at the enqueue: the background drain pops the queue as soon as
+    # the task runs, so reading it back afterwards is a race.
+    queued: list[tuple] = []
+    monkeypatch.setattr(
+        pages_import.jobs,
+        "enqueue_import",
+        lambda uid, fn, body, specs=None: queued.append((fn, specs)) or jobs.Job(id="t", user_id=uid, kind="import_xlsx", label=fn),
+    )
+
+    html = _upload_wizard_csv(client).text
+    token = _re.search(r'name="token" value="([^"]+)"', html)[1]
+
+    # Map Title and Date only -- Notes deliberately left on Ignore.
+    resp = client.post(
+        "/tools/import/process",
+        data={
+            "token": token,
+            "sheet.0.name": "Completed Games - 2026",
+            "sheet.0.header": "0",
+            "sheet.0.year": "2026",
+            "sheet.0.col.1": "game",
+            "sheet.0.col.2": "platform",
+            "sheet.0.col.4": "date",
+            "sheet.0.col.3": "",
+        },
+    )
+    assert resp.status_code == 200
+    assert "Queued" in resp.text
+
+    assert queued, "the import was never queued"
+    filename, specs = queued[0]
+    assert filename == "Completed Games - 2026.csv"
+    assert specs["Completed Games - 2026"]["cols"] == {"game": 1, "platform": 2, "date": 4}, "Notes must not be mapped"
+    assert specs["Completed Games - 2026"]["year"] == 2026
+
+
+def test_the_year_is_only_asked_for_when_the_dates_cannot_answer(client, db_session):
+    """A sheet whose Date column carries full dates already knows every year,
+    so asking is noise. It is asked only when something is blank or says just
+    "January" -- and scanned across every row, not just the ones shown."""
+    _signup_and_login(client)
+    db_session.add(models.Platform(name="Steam", display_name="Steam"))
+    db_session.commit()
+
+    full = _upload_wizard_csv(client).text
+    assert "Year to use for dates" not in full, "every date here carries its own year"
+
+    vague = _upload_wizard_csv(
+        client,
+        name="Backlog.csv",
+        body=",Game,Platform,Date\n1,Some Game,Steam,January\n2,Other Game,Steam,\n",
+    ).text
+    assert "Year to use for dates" in vague
+    assert "nothing in the sheet name to go on" in vague, "and it says so when it cannot guess"
+
+
+def test_row_order_comes_from_position_not_from_a_numbering_column(db_session):
+    """row_number exists only to become Completion.sort_order, which keeps two
+    completions in the same month in the order the sheet had them -- the
+    fabricated month dates all land on the 1st, so nothing else can order them.
+
+    Reading it out of a "#" column asked the user to map a column whose only job
+    was to restate the order the rows were already in, and it did nothing at all
+    for a sheet without one. Position answers it for every sheet (#197)."""
+    from . import importer
+
+    db_session.add(models.Platform(name="Steam", display_name="Steam"))
+    user = models.User(name="Pos", username="pos", api_token="q" * 20)
+    db_session.add(user)
+    db_session.commit()
+
+    # Numbering that is present, out of order, and full of gaps.
+    csv = b",Game,Platform,Date\n7,Gamma,Steam,1/3/2026\n2,Alpha,Steam,1/1/2026\n99,Beta,Steam,1/2/2026\n"
+    result = importer.parse_upload(csv, "Odd - 2026.csv", db_session, user.id)
+    order = {c["raw_title"]: c["rows"][0]["row_number"] for c in result.candidates}
+    assert order == {"Gamma": 1, "Alpha": 2, "Beta": 3}, "position wins over the column's own numbers"
+
+    # A sheet with no numbering column at all still orders.
+    plain = b"Game,Platform,Date\nOne,Steam,1/1/2026\nTwo,Steam,1/1/2026\n"
+    result = importer.parse_upload(plain, "Plain - 2026.csv", db_session, user.id)
+    assert {c["raw_title"]: c["rows"][0]["row_number"] for c in result.candidates} == {"One": 1, "Two": 2}
+
+    # And it is no longer something the wizard asks about.
+    assert "#" not in dict(importer.IMPORT_FIELDS)
+    assert "Row number" not in [label for _, label in importer.IMPORT_FIELDS]
+
+
+def test_a_file_the_parser_cannot_read_says_so_instead_of_queueing(client, db_session):
+    """A sheet with no title column can produce nothing, and saying that up
+    front is the entire point of the step."""
+    _signup_and_login(client)
+    html = _upload_wizard_csv(client, body="Alpha,Beta\n1,2\n").text
+    assert "no header found" in html
+    assert "no column is mapped to Title" in html.replace("&mdash;", "-")
+    assert db_session.query(models.ImportCandidate).count() == 0
+
+
+def test_pale_nord_badges_get_their_own_ink_in_every_palette():
+    """Nord's teal, sky, yellow and green are pale by design — DESIGN.md says so
+    and forbids darkening the accents themselves, because that turns yellow into
+    mustard. As small uppercase text on a white card they were mush; the Steam
+    chip in a table row is the case that prompted this.
+
+    Each gets a --cgt-*-ink darkened along its own hue, the same move
+    --cgt-igdb-ink already makes (nord14 #a3be8c -> #6f8c58). The accents are
+    untouched, so nothing else that uses them changes.
+    """
+    css = open("frontend/static/css/theme.css").read()
+
+    for accent in ("teal", "sky", "yellow", "green"):
+        rule = css[css.index(f".tag-platform-{accent}") :][:200]
+        assert f"var(--cgt-{accent}-ink" in rule, f"{accent} badge must use its ink"
+        # The wash still comes from the accent — only the text changed.
+        assert f"var(--ctp-{accent}) " in rule or f"var(--ctp-{accent})\n" in rule, f"{accent} wash must stay the accent"
+
+    # Defined in all three palettes, or one silently inherits the wrong colour.
+    dark = css[css.index('html[data-bs-theme="dark"] {') :][:2600]
+    nord = css[css.index('html[data-bs-theme="light"] {') :][:2600]
+    latte = css[css.index('html[data-palette="latte"] {') :][:2600]
+    for accent in ("teal", "sky", "yellow", "green"):
+        for name, block in (("mocha", dark), ("nord", nord), ("latte", latte)):
+            assert f"--cgt-{accent}-ink" in block, f"{accent} ink missing from {name}"
+
+    # And Nord's are actually darker than the accents they come from, which is
+    # the entire point.
+    assert "--cgt-teal-ink:   #56908e" in nord
+    assert "--ctp-teal:     #8fbcbb" in nord
+
+    # The chip carries an edge so it reads as an object, taken from currentColor
+    # so it follows whatever ink each palette resolved to.
+    badge = css[css.index(".tag-badge {") :][:600]
+    assert "border: 1px solid color-mix(in srgb, currentColor 45%, transparent)" in badge

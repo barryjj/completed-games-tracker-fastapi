@@ -1,0 +1,32 @@
+{# The upload form itself. Split out so the mapping wizard can replace it in
+   place and Cancel can put it back. Carries its own card and column, because
+   the wizard that replaces it needs the full page width and this does not
+   (#197). #}
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card">
+      <div class="card-body">
+        <h5 class="card-title mb-1">Upload spreadsheet</h5>
+        <p class="text-secondary small mb-3">
+          A Google Sheets export &mdash; <code>.xlsx</code> or <code>.csv</code>. In an xlsx each tab
+          is treated as its own sheet. Columns are matched by name, in any order, and you get
+          to check and correct that before anything is imported.
+        </p>
+        <form hx-post="/tools/import/upload"
+              hx-encoding="multipart/form-data"
+              hx-target="#import-upload-pane"
+              hx-swap="innerHTML"
+              hx-sync="this:drop"
+              hx-disabled-elt="find button[type='submit']">
+          <div class="mb-3">
+            <input class="form-control form-control-sm" type="file" name="file" accept=".xlsx,.xls,.csv" required>
+          </div>
+          <button type="submit" class="btn btn-sm btn-primary d-inline-flex align-items-center gap-2">
+            <span class="htmx-indicator spinner-border spinner-border-sm" role="status"></span>
+            Upload
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>

@@ -58,6 +58,12 @@ def import_page(
     )
 
 
+@router.get("/tools/import/upload-pane")
+def import_upload_pane(request: Request, current_user: models.User = Depends(get_web_user)):
+    """The bare upload form — what Cancel puts back after the mapping step."""
+    return templates.TemplateResponse(request=request, name="partials/_import_upload_form.html", context={})
+
+
 @router.post("/tools/import/upload")
 async def import_upload(
     request: Request,
@@ -65,24 +71,100 @@ async def import_upload(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    if not file.filename or not file.filename.endswith((".xlsx", ".xls")):
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xls", ".csv")):
         return templates.TemplateResponse(
             request=request,
             name="partials/_toast.html",
-            context={"kind": "error", "body": "Please upload an xlsx file."},
+            context={"kind": "error", "body": "Upload a .xlsx or .csv file."},
             headers={"HX-Reswap": "none"},
         )
     contents = await file.read()
-    jobs.enqueue_import(current_user.id, file.filename, contents)
-    # Start draining the queue only if nothing is currently running
+    # Uploading no longer imports. It shows what the parser found -- which sheets,
+    # which header row, what each column will be read as, and a few rows rendered
+    # the way they would land -- and waits. The importer used to guess in silence,
+    # so a sheet it did not recognise was skipped whole and an unrecognised column
+    # was dropped without a word (#197).
+    try:
+        sheets = await asyncio.to_thread(importer.inspect_upload, contents, file.filename, db)
+    except Exception as exc:  # a corrupt or unreadable file
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_toast.html",
+            context={"kind": "error", "body": f"Could not read that file: {exc}"},
+            headers={"HX-Reswap": "none"},
+        )
+    token = jobs.stage_upload(current_user.id, file.filename, contents)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_wizard.html",
+        context={
+            "token": token,
+            "filename": file.filename,
+            "sheets": sheets,
+            "fields": importer.IMPORT_FIELDS,
+        },
+    )
+
+
+@router.post("/tools/import/process")
+async def import_process(
+    request: Request,
+    token: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Second half of the upload: run the import with the confirmed mapping."""
+    staged = jobs.staged_upload(token, current_user.id)
+    if not staged:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/_toast.html",
+            context={"kind": "error", "body": "That upload expired — choose the file again."},
+            headers={"HX-Reswap": "none"},
+        )
+    filename, contents = staged
+    form = await request.form()
+    specs = _specs_from_form(form)
+    jobs.drop_staged_upload(token)
+    jobs.enqueue_import(current_user.id, filename, contents, specs)
     active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx" and j.status == jobs.JobStatus.RUNNING]
     if not active:
         asyncio.create_task(_drain_import_queue(current_user.id))
     return templates.TemplateResponse(
         request=request,
         name="partials/_toast.html",
-        context={"kind": "success", "body": f"Queued: {file.filename}"},
+        context={"kind": "success", "body": f"Queued: {filename}"},
     )
+
+
+def _specs_from_form(form) -> dict:
+    """Turn the wizard's fields back into one spec per sheet.
+
+    Fields are keyed by the sheet's POSITION, not its name, because a tab name
+    can contain anything -- dots included -- and parsing it back out of a field
+    name would be a guessing game. The name rides along in a hidden field:
+
+      sheet.<i>.name        the sheet this block belongs to
+      sheet.<i>.header      header row index, or "none" for a headerless sheet
+      sheet.<i>.year        fallback year for dates that carry none
+      sheet.<i>.col.<n>     the field column n was mapped to; absent = ignored
+    """
+    by_index: dict[str, dict] = {}
+    for key, value in form.multi_items():
+        parts = key.split(".")
+        if len(parts) < 3 or parts[0] != "sheet":
+            continue
+        idx, what = parts[1], parts[2]
+        spec = by_index.setdefault(idx, {"name": None, "header_row": None, "cols": {}, "year": None})
+        if what == "name":
+            spec["name"] = value
+        elif what == "header":
+            spec["header_row"] = int(value) if value.strip().isdigit() else None
+        elif what == "year":
+            spec["year"] = int(value) if value.strip().isdigit() else None
+        elif what == "col" and len(parts) == 4 and value:
+            spec["cols"][value] = int(parts[3])
+    return {spec.pop("name"): spec for spec in by_index.values() if spec.get("name")}
 
 
 async def _drain_import_queue(user_id: int) -> None:
@@ -91,15 +173,15 @@ async def _drain_import_queue(user_id: int) -> None:
         item = jobs.next_queued_import(user_id)
         if not item:
             break
-        job_id, _filename, file_bytes = item
-        await _run_import_job(job_id, user_id, file_bytes)
+        job_id, filename, file_bytes, specs = item
+        await _run_import_job(job_id, user_id, file_bytes, filename, specs)
 
 
-async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes) -> None:
+async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes, filename: str = "", specs: dict | None = None) -> None:
     jobs.update(job_id, status=jobs.JobStatus.RUNNING, progress={"phase": "Parsing", "done": 0, "total": 0})
     db = models.SessionLocal()
     try:
-        result = await asyncio.to_thread(importer.parse_xlsx, file_bytes, db, user_id)
+        result = await asyncio.to_thread(importer.parse_upload, file_bytes, filename, db, user_id, specs)
         total = len(result.candidates)
         jobs.update(job_id, progress={"phase": "Writing", "done": 0, "total": total})
 

@@ -1,0 +1,148 @@
+{# Mapping step for a spreadsheet upload (#197).
+
+   Uploading no longer imports. The parser used to guess in silence — a sheet
+   whose header it did not recognise was skipped whole, and a column named
+   "Completed" instead of "Date" dropped every date without a word, which you
+   found out days later by noticing the count was wrong.
+
+   Markup follows import review (_import_tab_content / _import_rows): same
+   heading shape, same tag-badge platforms, same full-width table, same sticky
+   action bar. Nothing has been written when this renders — the file is held
+   server-side against `token` until Import is pressed. #}
+<form id="import-wizard"
+      hx-post="/tools/import/process"
+      hx-target="#import-upload-pane"
+      hx-swap="innerHTML"
+      hx-disabled-elt="#import-wizard button">
+  <input type="hidden" name="token" value="{{ token }}">
+
+  <div class="mb-3">
+    <h4 class="mb-0">{{ filename }}</h4>
+    <p class="text-secondary small mb-0">
+      Check what was found in {{ sheets|length }} sheet{{ "s" if sheets|length != 1 }}, then import.
+    </p>
+  </div>
+
+  {% for sheet in sheets %}
+  {# Captured because the column loop below shadows loop.index0, and every
+     field name has to stay keyed to the SHEET's position. #}
+  {% set si = loop.index0 %}
+  <input type="hidden" name="sheet.{{ si }}.name" value="{{ sheet.name }}">
+  <input type="hidden" name="sheet.{{ si }}.header" value="{{ sheet.header_row if sheet.header_row is not none else 'none' }}">
+
+  <div class="cgt-detail-block__heading-row mt-4">
+    <h6 class="cgt-detail-block__heading mb-0">{{ sheet.name }}</h6>
+    <span class="text-secondary small">
+      {% if sheet.header_row is not none %}header on row {{ sheet.header_row + 1 }}{% else %}no header found{% endif %}
+      &middot; {{ sheet.importable_rows }} row{{ "s" if sheet.importable_rows != 1 }} to import
+      {%- if sheet.data_rows != sheet.importable_rows %} &middot; {{ sheet.data_rows - sheet.importable_rows }} empty{% endif %}
+    </span>
+  </div>
+
+  {# A grid, not a flex row: every label sits in the same place in its cell and
+     every select is the same width, so the mappings read as a column of pairs
+     rather than a ragged line that rewraps whenever a header name is long. #}
+  <div class="row g-2 align-items-center mb-3">
+    {% for col in sheet.columns %}
+    <div class="col-12 col-md-6 col-xl-4">
+      <div class="d-flex align-items-center gap-2">
+        <span class="text-secondary small text-truncate" style="flex:0 0 9rem"
+              title="{{ col.label or 'no header' }}">{{ col.letter }} &middot; {{ col.label or "no header" }}</span>
+        <select class="form-select form-select-sm" name="sheet.{{ si }}.col.{{ col.index }}">
+          <option value=""{% if not col.field %} selected{% endif %}>Ignore</option>
+          {% for key, label in fields %}
+          <option value="{{ key }}"{% if col.field == key %} selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  {# Asked only when the sheet cannot answer it: every row whose Date carries a
+     full date already knows its year, so a file with complete dates never sees
+     this. It appears when something is blank or says only "January".
+
+     Set apart from the mapping grid rather than sitting in it -- it is a
+     different kind of question, and as one more cell in the row it read as a
+     column mapping with a cut-off label. #}
+  {% if sheet.needs_year %}
+  <div class="cgt-detail-block mb-3">
+    <div class="d-flex align-items-center flex-wrap gap-2">
+      <label class="mb-0" for="year-{{ si }}">Year to use for dates that don&rsquo;t give one</label>
+      <input type="text" class="form-control form-control-sm" style="width:5.5rem"
+             id="year-{{ si }}" name="sheet.{{ si }}.year"
+             value="{{ sheet.year or '' }}" placeholder="none" inputmode="numeric">
+      <span class="text-secondary small">
+        {%- if sheet.year %}taken from the sheet name &mdash; change it if that&rsquo;s wrong
+        {%- else %}nothing in the sheet name to go on; leave it blank and those rows import without a date
+        {%- endif %}
+      </span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if sheet.preview %}
+  {# Say what the table IS. Without this it reads as the import itself rather
+     than as a sample, and three rows under a header called "Title / Platform /
+     Completed" looks like a very short spreadsheet. #}
+  <p class="text-secondary small mb-2">
+    First {{ sheet.preview|length }} of {{ sheet.importable_rows }} row{{ "s" if sheet.importable_rows != 1 }},
+    shown as {{ "they" if sheet.preview|length != 1 else "it" }} will be imported.
+  </p>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Title</th>
+          <th>Platform</th>
+          <th>Completed</th>
+          <th class="text-nowrap">Playthroughs</th>
+          <th>Collection</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in sheet.preview %}
+        <tr>
+          <td><span class="cgt-import-title">{{ r.title or "—" }}</span></td>
+          <td>
+            {% if r.platform_row %}
+            <span class="tag-badge {{ r.platform_row | platform_color }}">{{ r.platform_row.display_name or r.platform_row.name }}</span>
+            {% elif r.platform %}
+            <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ r.platform }}</span>
+            {% else %}
+            <span class="text-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-nowrap">
+            {% if r.completed %}{{ r.completed|long_date }}{% if r.date_vague %}<span class="text-secondary">*</span>{% endif %}
+            {% else %}<span class="text-secondary">none</span>{% endif %}
+          </td>
+          <td class="text-nowrap">
+            {{ r.playthroughs }}{% if r.playthroughs_coerced %}<span class="text-secondary">*</span>{% endif %}
+          </td>
+          <td>{{ r.collection or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if sheet.notes %}
+  <ul class="list-unstyled text-secondary small mt-2 mb-0">
+    {% for column, note in sheet.notes %}
+    <li>* <strong>{{ column }}</strong> &mdash; {{ note }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% else %}
+  <p class="text-secondary small">Nothing here can be imported &mdash; no column is mapped to Title.</p>
+  {% endif %}
+  {% endfor %}
+
+  <div class="cgt-sticky-actions">
+    <span class="text-secondary small me-auto">Nothing has been imported yet.</span>
+    <button type="button" class="btn btn-sm btn-surface"
+            hx-get="/tools/import/upload-pane" hx-target="#import-upload-pane" hx-swap="innerHTML">Cancel</button>
+    <button type="submit" class="btn btn-sm btn-primary">Import</button>
+  </div>
+</form>
