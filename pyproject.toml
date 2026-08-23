@@ -30,3 +30,11 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # Test files use a lot of "assigned but never used" via fixtures and setup.
 "backend/test_*.py" = ["F841"]
+
+[tool.pytest.ini_options]
+# The suite runs offline: conftest blocks httpx's real transports so a test can
+# never reach a live service, and no longer sits waiting on one (#201).
+markers = [
+    "allow_http: this test genuinely needs httpx's real transport",
+    "enrichment: let this test spawn the real PSN enrichment task",
+]

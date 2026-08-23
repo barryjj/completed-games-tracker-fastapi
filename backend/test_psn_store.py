@@ -6,6 +6,7 @@ reproduces the exact nesting the live store uses — including the decoy
 instead of silently yielding empty metadata.
 """
 
+import datetime
 import json
 from unittest.mock import MagicMock, patch
 
@@ -382,6 +383,11 @@ def test_multigame_bundle_title_not_adopted_and_repaired(db_session):
     # Simulate prior damage: title already clobbered to the bundle name...
     r2.game.title = "Bleed Complete Bundle"
     r2.raw_data = {**r2.raw_data, "store": {"name": "Bleed Complete Bundle"}}
+    # ...and mark it freshly fetched, so the re-run takes the REPAIR path rather
+    # than the fetch path. Without this the release was stale, the pass went to
+    # the network for real, and the assertion below was answered by Sony rather
+    # than by the repair logic this test is about (#201).
+    r2.metadata_fetched_at = datetime.datetime.now(datetime.UTC)
     db_session.flush()
     # ...a re-run's repair pass restores it from raw_data['displayName'].
     counts = psn_store.refresh_all_store_metadata(db_session, user, sleep=0)

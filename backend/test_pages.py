@@ -3389,3 +3389,24 @@ def test_pale_nord_badges_get_their_own_ink_in_every_palette():
     # so it follows whatever ink each palette resolved to.
     badge = css[css.index(".tag-badge {") :][:600]
     assert "border: 1px solid color-mix(in srgb, currentColor 45%, transparent)" in badge
+
+
+def test_the_suite_cannot_reach_the_network(client, db_session):
+    """The guard has to actually guard, or it rots (#201).
+
+    Every PSN review action spawns an enrichment task that fetches PSN store
+    metadata and SteamGridDB artwork for real, and TestClient drains the loop on
+    exit — so those tests sat in teardown waiting on the internet. Measured
+    2026-08-19: 28s to 197s, with 25s of CPU. Worse than slow: a test run could
+    reach live services with whatever credentials were around, and results
+    depended on the network rather than on the code.
+    """
+    import httpx
+    import pytest as _pytest
+
+    with _pytest.raises(RuntimeError, match="over the network"):
+        httpx.get("https://store.playstation.com/en-us/product/UP0000-TEST_00-X")
+
+    # And TestClient still works, because it drives the app over its own ASGI
+    # transport rather than the real one.
+    assert client.get("/login").status_code == 200
