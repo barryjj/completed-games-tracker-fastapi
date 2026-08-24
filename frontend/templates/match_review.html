@@ -499,48 +499,31 @@
   const cards = Array.from(stack.querySelectorAll('.cgt-match-card'));
   let current = 0;
 
-  const CLASSES = ['far-prev', 'prev', 'active', 'next', 'far-next'];
-
   function show(idx) {
     current = idx;
-    cards.forEach((card, i) => {
-      const offset = i - idx;
-      card.className = card.className
-        .replace(/\bcgt-match-card--(active|prev|next|far-prev|far-next|hidden)\b/g, '')
-        .trim();
-      if (offset === 0)       card.classList.add('cgt-match-card--active');
-      else if (offset === -1) card.classList.add('cgt-match-card--prev');
-      else if (offset === 1)  card.classList.add('cgt-match-card--next');
-      else if (offset === -2) card.classList.add('cgt-match-card--far-prev');
-      else if (offset === 2)  card.classList.add('cgt-match-card--far-next');
-      else                    card.classList.add('cgt-match-card--hidden');
-    });
-    // Update dots
+    // The shared stack, same as PSN review and import review (#195). This page
+    // had its own: five hand-written classes (--prev/--next/--far-prev/
+    // --far-next) fanning cards out either side, which meant the card at +1 sat
+    // UNDER the active one and then had to become the card ON TOP of it. Cards
+    // are dealt now -- what is ahead waits off the right edge, above, and lands
+    // on the pile; what is done stays left and underneath.
+    //
+    // Assigned here rather than rendered because cgtCandidateDone splices cards
+    // out of the array as they are decided, so rows renumber as you work.
+    cards.forEach((card, i) => { card.dataset.pos = i; });
+    cgtPlaceCards(cards, idx);
     const dots = document.querySelectorAll('.cgt-match-nav__dot');
     dots.forEach((d, i) => d.classList.toggle('cgt-match-nav__dot--active', i === idx));
     // Buttons always enabled — navigation wraps around
   }
 
   window.cgtNav = function(dir) {
-    const next = (current + dir + cards.length) % cards.length;
-    const wrapping = (dir > 0 && next < current) || (dir < 0 && next > current);
-    if (wrapping) {
-      // Snap the incoming card to the correct entry side without animating,
-      // then let the transition carry it to center naturally.
-      const incoming = cards[next];
-      incoming.style.transition = 'none';
-      incoming.className = incoming.className
-        .replace(/\bcgt-match-card--(active|prev|next|far-prev|far-next|hidden)\b/g, '')
-        .trim();
-      incoming.classList.add(dir > 0 ? 'cgt-match-card--far-next' : 'cgt-match-card--far-prev');
-      incoming.offsetHeight; // force reflow
-      requestAnimationFrame(() => {
-        incoming.style.transition = '';
-        show(next);
-      });
-    } else {
-      show(next);
-    }
+    // Wrapping needs no special case now. Every card is positioned from its own
+    // offset on every move, so the card you wrap to is simply a long way off and
+    // arrives from the correct side; the old code had to snap it across without
+    // animating first, because the class-based version had no notion of "how
+    // far away".
+    show((current + dir + cards.length) % cards.length);
   };
 
   window.cgtCardOptionDismiss = function(dismissedId, cardId) {

@@ -209,6 +209,69 @@ document.addEventListener('htmx:beforeSwap', function(evt) {
 // So images ship as data-src and are materialized only near the active card.
 // Paging by one extends the window by one on that side, which is the "+1 in the
 // direction of travel" behaviour for free.
+// ── Card stacks ─────────────────────────────────────────────────────────────
+//
+// One implementation for every stack in the app: PSN review, import review and
+// match review. Written for PSN first (#180) and moved here so the other two
+// stop each having their own idea of what a stack is (#195).
+//
+// CARDS ARE DEALT, NOT SWAPPED. Everything you have not reached waits off to
+// the RIGHT, invisible, ABOVE the pile; advancing slides the next one in over
+// the top of the current card and lands it there. Going back slides the top
+// card off to the right again and reveals what was underneath. The pile you
+// have worked through stays on the LEFT, under the active card, two deep.
+//
+// The earlier design kept a visible pile on both sides, which meant the card at
+// +1 sat UNDER the active card and then had to become the card ON TOP of it.
+// Nothing physical changes depth like that, and no easing hides it -- it read
+// as two cards trading places rather than as one arriving.
+//
+//   off < 0   x = -(18 + (mag-1)*10)   the done pile, under, two deep
+//   off = 0   x = 0                    on top of the done pile
+//   off > 0   x = 60                   waiting just off the edge, above
+//
+// z is 100 + offset, so what is coming is always above what is here and what is
+// done is always below; the order never inverts mid-animation.
+//
+// Kept identical to the server-rendered first frame -- see the geometry note in
+// _psn_review_cards.html. The two have to agree or the stack jumps the moment a
+// server render lands on top of a client one.
+window.cgtCardPlace = function(el, off) {
+  var mag = Math.abs(off);
+  var ahead = off > 0;
+  var x = ahead ? 60 : (off === 0 ? 0 : -(18 + (mag - 1) * 10));
+  el.style.transform = 'translateX(' + x + 'px) scale(' + (ahead ? 1 : 1 - mag * 0.012) + ')';
+  el.style.filter = 'brightness(' + (ahead ? 1 : 1 - mag * 0.06) + ')';
+  el.style.zIndex = 100 + off;
+  el.classList.toggle('cgt-match-card--active', off === 0);
+  el.classList.toggle('cgt-match-card--peek', off < 0 && mag < 3);
+  el.classList.toggle('cgt-match-card--hidden', ahead || mag >= 3);
+};
+
+// Put a stack at a position. Every card knows its own row via data-pos, so this
+// is just re-deriving each offset and writing the transform -- the ELEMENTS are
+// not replaced, which is the whole point. A browser can only animate something
+// that exists either side of the change, and the design this replaces asked the
+// server for a fresh set of cards on every click, so there was never anything
+// to move. CSS carries it from there.
+//
+// Returns the index of the active card within `cards`, or -1.
+window.cgtPlaceCards = function(cards, pos) {
+  var at = -1;
+  for (var i = 0; i < cards.length; i++) {
+    var el = cards[i];
+    // A card with no data-pos is not part of a stack this understands.
+    // Defaulting it to 0 made EVERY such card read as row 0, so a whole queue
+    // was marked active at once and its box-shadows compounded into a black
+    // halo -- skipping is the honest answer, the markup is what needs fixing.
+    if (el.dataset.pos === undefined) continue;
+    var off = parseInt(el.dataset.pos, 10) - pos;
+    window.cgtCardPlace(el, off);
+    if (off === 0) at = i;
+  }
+  return at;
+};
+
 window.cgtHydrateCards = function(cards, activeIdx, radius) {
   if (!cards || !cards.length) return;
   // Anything still deferred when this first ran gets picked up here.
