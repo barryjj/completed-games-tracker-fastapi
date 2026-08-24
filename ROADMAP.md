@@ -8,9 +8,8 @@
 
 | Issue | Item | Horizon |
 |-------|------|---------|
-| #135 | PSN library integration — crawl + merge from prototype | now |
 | #136 | Achievements / trophies (Steam first, PSN after) | now |
-| #140 | "Group by title" library view (ignore platform) | next |
+| #140 | Library grouping — partition platforms into groups | now |
 | #142 | Local artwork cache — download + serve same-origin | next |
 | #143 | Platform overlay glyphs on cover art | next |
 | #144 | Unified confidence-coding box (import + sync match review) | next |
@@ -24,7 +23,8 @@
 | #148 | User-configurable DLC auto-hide keywords | later |
 | #149 | Platform ownership preferences | later |
 | #150 | Collection contents view + bulk-complete sub-games | later |
-| #151 | Polished README — screenshots, CI badges | later |
+| #203 | "Playing" status — mark entries in progress, Home widget | next |
+| #194 | A real README, with screenshots | later |
 
 ## Possible improvements — not yet issues
 
@@ -34,7 +34,7 @@ Speculative or undesigned. Promote one to an issue when it becomes almost-certai
 - **Bulk re-apply heuristics** — re-run classification on cached `appdetails` with no re-fetch, for when heuristic logic changes. A dev-maintenance tool, useful only right after classification code changes.
 - **Multiple completions on merge** — decide collapse vs. keep when both merged entries have completions.
 - **DLC completion visibility on library page** — surface a DLC-completion count/indicator on the parent's card.
-- **Tags → personal collections + "now playing" (epic)** — arbitrary tags, tag-driven views/collections, an in-progress status; reconcile with the current `is_collection` hierarchy. The "franchise" grouping idea (from the sort-name issue #147) belongs here too. Undesigned.
+- **Tags → personal collections (epic)** — arbitrary tags and tag-driven views/collections; reconcile with the current `is_collection` hierarchy. The "franchise" grouping idea (from the sort-name issue #147) belongs here too. Undesigned. (The "now playing" / in-progress half is no longer speculative — it is #203.)
 - **Collection membership + hierarchy fixes** — membership is per-`Game`, so a game can't be both standalone and in a collection (DS *Dawn of Sorrow* vs. a Steam Castlevania collection); and adding a child requires the parent to already be `is_collection` (Shovel Knight → Treasure Trove). Real design work; connects to #150.
 
 ---

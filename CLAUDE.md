@@ -55,7 +55,15 @@ Personal game completion tracker. FastAPI backend, Jinja2/HTMX frontend, SQLite 
 - No top-level directory restructuring without approval.
 - Match existing patterns before introducing new ones.
 - Tests live in `backend/test_*.py` and use pytest with in-memory SQLite. Run them before committing.
-- **Test workflow: `ruff format` first, then `pytest` once.** Never format → test → reformat → test again.
+- **Before pushing, run what CI runs — all three, in this order:**
+  `ruff check .` → `ruff format .` → `pytest backend/ -q`.
+  Never format → test → reformat → test again. `ruff check` is the one that gets
+  forgotten: the workflow (`.github/workflows/ci.yml`) runs `ruff check .` *and*
+  `ruff format --check .`, so passing the formatter alone is not passing CI.
+- **Never open a PR in order to trigger CI.** It runs on `push: [main]` and
+  `pull_request`, so a feature branch has no run until a PR exists — that is not
+  a reason to open one. The commands above are the same commands. A PR is opened
+  because the work is ready.
 - **Test isolation for library/completion endpoints:** pass `headers={"HX-Request": "true"}` so the server skips populating `base_game_options` / `collections` for the modal dropdowns. Without it, game titles appear in `<select>` options and confuse assertions that check body text.
 
 ## UI
