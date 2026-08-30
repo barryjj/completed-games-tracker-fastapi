@@ -50,8 +50,11 @@ def _platform_heuristic_css(name: str) -> str:
         return "tag-platform-mauve"
     if any(kw in p for kw in ("atari", "3do", "evercade")):
         return "tag-platform-peach"
+    # Blue, matching the Sega family in the platforms table -- the logo, Sonic.
+    # Yellow is now reserved for "this platform string matched nothing", which
+    # would otherwise render the same as a recognised-but-unlinked Sega name.
     if any(kw in p for kw in ("sega", "dreamcast", "genesis", "saturn", "master system", "game gear", "mega drive", "sg-1000")):
-        return "tag-platform-yellow"
+        return "tag-platform-blue"
     if "ps" in p or "playstation" in p:
         return "tag-platform-lavender"
     if any(

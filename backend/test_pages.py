@@ -3410,3 +3410,55 @@ def test_the_suite_cannot_reach_the_network(client, db_session):
     # And TestClient still works, because it drives the app over its own ASGI
     # transport rather than the real one.
     assert client.get("/login").status_code == 200
+
+
+def test_every_pale_nord_accent_has_an_ink_and_sega_is_blue():
+    """Nord's accents are pale by design — DESIGN.md says so and forbids
+    darkening the accents themselves. Badge text therefore reads from a
+    --cgt-*-ink darkened along each accent's own hue; four had one, and the PC
+    chip (sapphire) showed that the other nine needed the same.
+
+    Sega moves to blue in the same pass. The palette is brand-derived —
+    Nintendo red, Xbox green — and Sega is the logo and Sonic. It also frees
+    yellow to mean one thing: "this platform string matched nothing".
+    """
+    css = open("frontend/static/css/theme.css").read()
+    pale = ["teal", "sky", "yellow", "green", "sapphire", "lavender", "mauve", "pink", "red", "maroon", "flamingo", "rosewater", "peach"]
+
+    blocks = {
+        "mocha": 'html[data-bs-theme="dark"] {',
+        "nord": 'html[data-bs-theme="light"] {',
+        "latte": 'html[data-palette="latte"] {',
+    }
+    for name, sel in blocks.items():
+        block = css[css.index(sel) :][:4000]
+        for accent in pale:
+            assert f"--cgt-{accent}-ink" in block, f"{accent} ink missing from {name}"
+        assert "--cgt-chip-wash" in block, f"{name} defines no chip wash"
+
+    # Nord leans on a heavier wash because its accents are muted; the others
+    # would look heavy with it.
+    nord = css[css.index(blocks["nord"]) :][:4000]
+    assert "--cgt-chip-wash: 26%" in nord
+    for other in ("mocha", "latte"):
+        block = css[css.index(blocks[other]) :][:4000]
+        assert "--cgt-chip-wash: 15%" in block, other
+
+    # Every chip takes its ink and the palette's wash — no hardcoded 15%.
+    for accent in pale:
+        rule = css[css.index(f".tag-platform-{accent}") :][:220]
+        assert f"var(--cgt-{accent}-ink" in rule, f"{accent} chip ignores its ink"
+        assert "var(--cgt-chip-wash" in rule, f"{accent} chip hardcodes its wash"
+
+    # The state chip the import templates use was defined nowhere at all, and
+    # coloured by an inline style that bypassed the ink.
+    assert ".tag-platform-unknown" in css, "the unmatched-platform chip needs a rule"
+    for tpl in ("_import_rows.html", "_import_wizard.html"):
+        html = open(f"frontend/templates/partials/{tpl}").read()
+        assert 'style="color:var(--ctp-yellow)"' not in html, f"{tpl} still overrides the ink inline"
+
+    # Sega is blue in the heuristic too, or an unlinked "Dreamcast" string would
+    # render yellow while a linked one renders blue.
+    models_src = open("backend/models.py").read()
+    sega = models_src[models_src.index('"dreamcast"') :][:200]
+    assert "tag-platform-blue" in sega, "the heuristic still paints Sega yellow"

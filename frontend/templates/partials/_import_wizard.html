@@ -90,7 +90,7 @@
     First {{ sheet.preview|length }} of {{ sheet.importable_rows }} row{{ "s" if sheet.importable_rows != 1 }},
     shown as {{ "they" if sheet.preview|length != 1 else "it" }} will be imported.
   </p>
-  <div class="table-responsive">
+  <div class="table-responsive cgt-table-box">
     <table class="table table-striped align-middle mb-0">
       <thead>
         <tr>
@@ -109,7 +109,7 @@
             {% if r.platform_row %}
             <span class="tag-badge {{ r.platform_row | platform_color }}">{{ r.platform_row.display_name or r.platform_row.name }}</span>
             {% elif r.platform %}
-            <span class="tag-badge tag-platform-unknown" style="color:var(--ctp-yellow)">{{ r.platform }}</span>
+            <span class="tag-badge tag-platform-unknown">{{ r.platform }}</span>
             {% else %}
             <span class="text-secondary">—</span>
             {% endif %}

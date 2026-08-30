@@ -20,6 +20,18 @@ html[data-bs-theme="dark"] {
   --cgt-sky-ink:    var(--ctp-sky);
   --cgt-yellow-ink: var(--ctp-yellow);
   --cgt-green-ink:  var(--ctp-green);
+  --cgt-sapphire-ink:  var(--ctp-sapphire);
+  --cgt-lavender-ink:  var(--ctp-lavender);
+  --cgt-mauve-ink:     var(--ctp-mauve);
+  --cgt-pink-ink:      var(--ctp-pink);
+  --cgt-red-ink:       var(--ctp-red);
+  --cgt-maroon-ink:    var(--ctp-maroon);
+  --cgt-flamingo-ink:  var(--ctp-flamingo);
+  --cgt-rosewater-ink: var(--ctp-rosewater);
+  --cgt-peach-ink:     var(--ctp-peach);
+  /* How much accent goes into a chip's background wash. Dark needs less:
+     the accents already separate from a near-black surface. */
+  --cgt-chip-wash: 15%;
   --cgt-btn-primary:        var(--ctp-mauve);
   --cgt-btn-primary-hover:  var(--ctp-lavender);
   --cgt-btn-primary-rgb:    203,166,247;
@@ -136,6 +148,19 @@ html[data-bs-theme="light"] {
   --cgt-sky-ink:    #418ea5;  /* nord8  darkened along hue */
   --cgt-yellow-ink: #c48e22;  /* nord13 darkened along hue */
   --cgt-green-ink:  #709353;  /* nord14 darkened along hue */
+  --cgt-sapphire-ink:  #4c739a;  /* darkened along hue */
+  --cgt-lavender-ink:  #665e87;  /* darkened along hue */
+  --cgt-mauve-ink:     #8a5c81;  /* darkened along hue */
+  --cgt-pink-ink:      #94516b;  /* darkened along hue */
+  --cgt-red-ink:       #a3424b;  /* darkened along hue */
+  --cgt-maroon-ink:    #a44242;  /* darkened along hue */
+  --cgt-flamingo-ink:  #a84a3d;  /* darkened along hue */
+  --cgt-rosewater-ink: #b56a30;  /* darkened along hue */
+  --cgt-peach-ink:     #ad5539;  /* darkened along hue */
+  /* A heavier wash than the other palettes: Nord's accents are muted by
+     design, so a 15% tint of one barely registers on a white card. The PC
+     chip (sapphire) was the case that showed it. */
+  --cgt-chip-wash: 26%;
   --cgt-btn-primary:        #a77a9f;
   --cgt-btn-primary-hover:  #98658e;
   --cgt-btn-success:        #8eaf72;
@@ -190,7 +215,9 @@ html[data-bs-theme="light"] {
   --bs-input-focus-border-color:  #a77a9f;
   --bs-input-focus-box-shadow:    0 0 0 0.25rem rgba(167,122,159,0.2);
   --bs-table-bg:                  transparent;
-  --bs-table-striped-bg:          rgba(0,0,0,0.04);
+  /* A lift toward the card colour rather than a black wash. rgba(0,0,0,.04)
+     greyed everything sitting on the striped row, chips included. */
+  --bs-table-striped-bg:          rgba(255,255,255,0.55);
   --bs-table-border-color:        #b3bcc9;
 
   --bs-focus-ring-color: rgba(167,122,159,0.2);
@@ -221,6 +248,16 @@ html[data-palette="latte"] {
   --cgt-sky-ink:    var(--ctp-sky);
   --cgt-yellow-ink: var(--ctp-yellow);
   --cgt-green-ink:  var(--ctp-green);
+  --cgt-sapphire-ink:  var(--ctp-sapphire);
+  --cgt-lavender-ink:  var(--ctp-lavender);
+  --cgt-mauve-ink:     var(--ctp-mauve);
+  --cgt-pink-ink:      var(--ctp-pink);
+  --cgt-red-ink:       var(--ctp-red);
+  --cgt-maroon-ink:    var(--ctp-maroon);
+  --cgt-flamingo-ink:  var(--ctp-flamingo);
+  --cgt-rosewater-ink: var(--ctp-rosewater);
+  --cgt-peach-ink:     var(--ctp-peach);
+  --cgt-chip-wash: 15%;
   --cgt-btn-primary:        #a370e8;
   --cgt-btn-primary-hover:  #8f5cd4;
   --cgt-btn-success:        #5aba54;
@@ -487,6 +524,32 @@ html[data-bs-theme="light"] tr.completion-editing > td { background-color: rgba(
 tr.completion-editing > td:first-child { border-left: 3px solid var(--ctp-mauve); }
 html[data-bs-theme="light"] tr.completion-editing > td:first-child { border-left-color: var(--cgt-btn-primary); }
 
+/* Bootstrap stripes nth-of-type(odd), so the FIRST row is the tinted one and a
+   table opens on its alternate colour. Shift it to the even rows. */
+.table-striped > tbody > tr:nth-of-type(odd) > * {
+  --bs-table-bg-type: initial;
+}
+.table-striped > tbody > tr:nth-of-type(even) > * {
+  --bs-table-bg-type: var(--bs-table-striped-bg);
+}
+
+/* A table that sits directly on the page needs an edge, or its striped rows
+   bleed into the background and it reads as loose rows rather than as one
+   thing. Not for tables inside a .card -- that is already a bordered surface,
+   and a box inside a box is the mistake this is meant to avoid. */
+.cgt-table-box {
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cgt-table-box > .table {
+  margin-bottom: 0;
+}
+/* The outer border supplies the last rule. */
+.cgt-table-box > .table > tbody > tr:last-child > * {
+  border-bottom: 0;
+}
+
 /* ─── Cards ──────────────────────────────────────────────────────────────── */
 .card { background-color: var(--ctp-mantle); border-color: var(--ctp-surface1); }
 
@@ -545,29 +608,36 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
 .tag-badge:last-child { margin-right: 0; }
 
 /* Platform colors — Catppuccin accent keys (used by linked Platform rows) */
-.tag-platform-rosewater { color: var(--ctp-rosewater); background: color-mix(in srgb, var(--ctp-rosewater) 15%, transparent); }
-.tag-platform-flamingo  { color: var(--ctp-flamingo);  background: color-mix(in srgb, var(--ctp-flamingo)  15%, transparent); }
-.tag-platform-pink      { color: var(--ctp-pink);      background: color-mix(in srgb, var(--ctp-pink)      15%, transparent); }
-.tag-platform-mauve     { color: var(--ctp-mauve);     background: color-mix(in srgb, var(--ctp-mauve)     15%, transparent); }
-.tag-platform-red       { color: var(--ctp-red);       background: color-mix(in srgb, var(--ctp-red)       15%, transparent); }
-.tag-platform-maroon    { color: var(--ctp-maroon);    background: color-mix(in srgb, var(--ctp-maroon)    15%, transparent); }
-.tag-platform-peach     { color: var(--ctp-peach);     background: color-mix(in srgb, var(--ctp-peach)     15%, transparent); }
-.tag-platform-yellow    { color: var(--cgt-yellow-ink, var(--ctp-yellow));    background: color-mix(in srgb, var(--ctp-yellow)    15%, transparent); }
-.tag-platform-green     { color: var(--cgt-green-ink, var(--ctp-green));     background: color-mix(in srgb, var(--ctp-green)     15%, transparent); }
-.tag-platform-teal      { color: var(--cgt-teal-ink, var(--ctp-teal));      background: color-mix(in srgb, var(--ctp-teal)      15%, transparent); }
-.tag-platform-sky       { color: var(--cgt-sky-ink, var(--ctp-sky));       background: color-mix(in srgb, var(--ctp-sky)       15%, transparent); }
-.tag-platform-sapphire  { color: var(--ctp-sapphire);  background: color-mix(in srgb, var(--ctp-sapphire)  15%, transparent); }
-.tag-platform-blue      { color: var(--ctp-blue);      background: color-mix(in srgb, var(--ctp-blue)      15%, transparent); }
-.tag-platform-lavender  { color: var(--ctp-lavender);  background: color-mix(in srgb, var(--ctp-lavender)  15%, transparent); }
+.tag-platform-rosewater { color: var(--cgt-rosewater-ink, var(--ctp-rosewater)); background: color-mix(in srgb, var(--ctp-rosewater) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-flamingo  { color: var(--cgt-flamingo-ink, var(--ctp-flamingo));  background: color-mix(in srgb, var(--ctp-flamingo) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-pink      { color: var(--cgt-pink-ink, var(--ctp-pink));      background: color-mix(in srgb, var(--ctp-pink) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-mauve     { color: var(--cgt-mauve-ink, var(--ctp-mauve));     background: color-mix(in srgb, var(--ctp-mauve) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-red       { color: var(--cgt-red-ink, var(--ctp-red));       background: color-mix(in srgb, var(--ctp-red) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-maroon    { color: var(--cgt-maroon-ink, var(--ctp-maroon));    background: color-mix(in srgb, var(--ctp-maroon) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-peach     { color: var(--cgt-peach-ink, var(--ctp-peach));     background: color-mix(in srgb, var(--ctp-peach) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-yellow    { color: var(--cgt-yellow-ink, var(--ctp-yellow));    background: color-mix(in srgb, var(--ctp-yellow) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-green     { color: var(--cgt-green-ink, var(--ctp-green));     background: color-mix(in srgb, var(--ctp-green) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-teal      { color: var(--cgt-teal-ink, var(--ctp-teal));      background: color-mix(in srgb, var(--ctp-teal) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-sky       { color: var(--cgt-sky-ink, var(--ctp-sky));       background: color-mix(in srgb, var(--ctp-sky) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-sapphire  { color: var(--cgt-sapphire-ink, var(--ctp-sapphire));  background: color-mix(in srgb, var(--ctp-sapphire) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-blue      { color: var(--cgt-blue-ink, var(--ctp-blue));      background: color-mix(in srgb, var(--ctp-blue) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-lavender  { color: var(--cgt-lavender-ink, var(--ctp-lavender));  background: color-mix(in srgb, var(--ctp-lavender) var(--cgt-chip-wash, 15%), transparent); }
+/* NOT a platform — the state an import row is in when its platform string
+   matched nothing, so the raw text is shown and you are being invited to add an
+   alias for it. It was used by two templates and defined nowhere, coloured by
+   an inline style with the RAW accent, which is why its border (currentColor at
+   45%) was barely visible. Yellow is the warning, and it is never assigned to a
+   real platform, so it cannot collide with one. */
+.tag-platform-unknown   { color: var(--cgt-yellow-ink, var(--ctp-yellow));  background: color-mix(in srgb, var(--ctp-yellow) var(--cgt-chip-wash, 15%), transparent); }
 .tag-platform-other     { color: var(--ctp-subtext0);  background: color-mix(in srgb, var(--ctp-subtext0)  12%, transparent); }
 
 /* Legacy semantic aliases — kept for any unlinked entries using the string heuristic */
-.tag-platform-steam       { color: var(--ctp-teal);     background: color-mix(in srgb, var(--ctp-teal)     15%, transparent); }
-.tag-platform-playstation { color: var(--ctp-lavender); background: color-mix(in srgb, var(--ctp-lavender) 15%, transparent); }
-.tag-platform-nintendo    { color: var(--ctp-red);      background: color-mix(in srgb, var(--ctp-red)      15%, transparent); }
-.tag-platform-xbox        { color: var(--ctp-green);    background: color-mix(in srgb, var(--ctp-green)    15%, transparent); }
-.tag-platform-apple       { color: var(--ctp-sky);      background: color-mix(in srgb, var(--ctp-sky)      15%, transparent); }
-.tag-platform-pc          { color: var(--ctp-sapphire); background: color-mix(in srgb, var(--ctp-sapphire) 15%, transparent); }
+.tag-platform-steam     { color: var(--cgt-steam-ink, var(--ctp-steam));     background: color-mix(in srgb, var(--ctp-steam) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-playstation{ color: var(--cgt-playstation-ink, var(--ctp-playstation));background: color-mix(in srgb, var(--ctp-playstation) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-nintendo  { color: var(--cgt-nintendo-ink, var(--ctp-nintendo));  background: color-mix(in srgb, var(--ctp-nintendo) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-xbox      { color: var(--cgt-xbox-ink, var(--ctp-xbox));      background: color-mix(in srgb, var(--ctp-xbox) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-apple     { color: var(--cgt-apple-ink, var(--ctp-apple));     background: color-mix(in srgb, var(--ctp-apple) var(--cgt-chip-wash, 15%), transparent); }
+.tag-platform-pc        { color: var(--cgt-pc-ink, var(--ctp-pc));        background: color-mix(in srgb, var(--ctp-pc) var(--cgt-chip-wash, 15%), transparent); }
 
 /* Game type tag colors */
 .tag-dlc {
@@ -689,9 +759,7 @@ html[data-bs-theme="light"] .alert-warning { background-color: color-mix(in srgb
    explicit shade darkened along the hue, per palette. Scoped to these source
    chips — the platform TAGS elsewhere are larger and already legible. */
 .cgt-chip-agreed__ps,
-.cgt-card-name > .tag-platform-playstation {
-  color: var(--cgt-ps-ink);
-}
+.cgt-card-name > .tag-platform-playstation{ color: var(--cgt-playstation-ink, var(--ctp-playstation));background: color-mix(in srgb, var(--ctp-playstation) var(--cgt-chip-wash, 15%), transparent); }
 
 /* PSN review, shadow mode (#180). The sync computes what it WOULD have done
    and reports it rather than acting, so the verdict can be watched being right
