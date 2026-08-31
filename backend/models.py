@@ -131,6 +131,17 @@ class User(Base):
     steam_last_dlc_synced_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     steam_session_id: Mapped[str | None] = mapped_column(String, nullable=True)
     steam_login_secure: Mapped[str | None] = mapped_column(String, nullable=True)
+    # The long-lived half of a Steam session. steam_login_secure is a 24-hour
+    # access token -- its own JWT claims say so, and carry an rt_exp naming this
+    # token's expiry, months out. Capturing only the access token is why the
+    # desktop app wanted a sign-in every day (#208).
+    steam_refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    # From the access token's rt_exp claim, so the app knows when the refresh
+    # token genuinely dies rather than discovering it mid-sync.
+    steam_refresh_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    # PSN tracks psn_npsso_captured_at; Steam had no equivalent, so nothing
+    # could say how old the credentials were or warn before a sync failed.
+    steam_cookies_captured_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     # PSN credentials (capture framework — Tauri step 3). The NPSSO token is
     # captured via the desktop WebView (or pasted manually); it's exchanged
     # for access/refresh tokens by the PSN sync when that phase lands. The

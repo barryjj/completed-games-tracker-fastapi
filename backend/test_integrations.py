@@ -2143,3 +2143,58 @@ def test_every_job_service_has_somewhere_to_report(client, db_session):
     emitted = set(re.findall(r'id="sync-indicator-(\w+)"', poller))
     tools = set(re.findall(r'id="sync-indicator-(\w+)"', client.get("/tools").text))
     assert emitted <= tools, f"no landing element for: {sorted(emitted - tools)}"
+
+
+def test_steam_capture_stores_the_refresh_token_and_its_expiry(client, db_session):
+    """steamLoginSecure is a 24-hour access token — its own claims say so, and
+    they carry rt_exp naming the refresh token's expiry months out. Capturing
+    only the access token is why the desktop app wanted a Steam sign-in daily
+    while a browser went 89 days without one (#208).
+
+    The refresh token lives on login.steampowered.com, not on store. or
+    community., which is why capturing the store cookies never picked it up.
+    """
+    import base64
+    import datetime
+    import json
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    rt_exp = int((datetime.datetime.now(datetime.UTC) + datetime.timedelta(days=120)).timestamp())
+    claims = {"aud": ["web:store"], "exp": 1, "iat": 0, "rt_exp": rt_exp}
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    login_secure = f"76561198000000000||header.{payload}.sig"
+
+    resp = client.post(
+        "/integrations/steam/cookies",
+        data={"steam_session_id": "abc123", "steam_login_secure": login_secure, "steam_refresh": "refresh-token-value"},
+    )
+    assert resp.status_code == 200
+
+    db_session.refresh(user)
+    assert user.steam_refresh_token == "refresh-token-value", "the long-lived half must be stored"
+    assert user.steam_cookies_captured_at is not None, "PSN tracks this; Steam had no equivalent"
+    assert user.steam_refresh_expires_at is not None, "rt_exp must be read off the access token"
+    # Read from the token rather than guessed — roughly 120 days out.
+    days = (user.steam_refresh_expires_at.replace(tzinfo=datetime.UTC) - datetime.datetime.now(datetime.UTC)).days
+    assert 118 <= days <= 121, f"expiry should come from rt_exp, got {days} days"
+
+
+def test_steam_capture_survives_a_token_it_cannot_read(client, db_session):
+    """The token's shape is Steam's to change. An unreadable one must still save
+    the session — worst case the app knows less about when it dies, which is
+    exactly where it was before (#208)."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    resp = client.post(
+        "/integrations/steam/cookies",
+        data={"steam_session_id": "abc123", "steam_login_secure": "not-a-jwt-at-all", "steam_refresh": "still-stored"},
+    )
+    assert resp.status_code == 200
+
+    db_session.refresh(user)
+    assert user.steam_login_secure == "not-a-jwt-at-all", "the session still saves"
+    assert user.steam_refresh_token == "still-stored"
+    assert user.steam_refresh_expires_at is None, "unknown expiry, not an error"

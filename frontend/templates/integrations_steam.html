@@ -64,6 +64,10 @@
       hx-target="#steam-flash"
       hx-swap="innerHTML"
     >
+      {# Filled by the desktop capture only. It is the credential that keeps a
+         session alive for months rather than a day, and there is nothing to
+         hand-edit about it, so it is not shown (#208). #}
+      <input type="hidden" name="steam_refresh" value="">
       <div class="mb-3">
         <label class="form-label">Steam API Key</label>
         <input
@@ -82,11 +86,15 @@
       {# Desktop app only — revealed by app.js when window.__TAURI__ exists.
          Opens a WebView sign-in window and captures both cookies, replacing
          the DevTools paste above. #}
+      {# Only before anything is saved. Once it is, the "Re-capture Cookies"
+         button further down does the same job, and showing both put two
+         buttons doing one thing on the same page. #}
+      {% if not (current_user.steam_session_id and current_user.steam_login_secure) %}
       <div class="d-none mb-3" data-tauri-only>
         <button type="button" class="btn btn-primary btn-sm" onclick="cgtCaptureSteamCookies(this)">Capture from Steam sign-in</button>
-        <div class="form-text">Opens a Steam sign-in window and captures the session cookies automatically.
-          {% if current_user.steam_session_id and current_user.steam_login_secure %}Cookies are currently saved.{% endif %}</div>
+        <div class="form-text">Opens a Steam sign-in window and captures the session automatically.</div>
       </div>
+      {% endif %}
       <div class="mb-3" data-tauri-hide>
         <label class="form-label"><code>sessionid</code></label>
         <input

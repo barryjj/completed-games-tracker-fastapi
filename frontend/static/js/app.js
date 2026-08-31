@@ -844,6 +844,9 @@ window.cgtPsnReviewDecisions = function () {
         var body = new FormData();
         body.append('steam_session_id', captured.sessionid);
         body.append('steam_login_secure', captured.steam_login_secure);
+        // The long-lived half (#208). Absent if Steam stopped setting it, in
+        // which case the session still works, just only for a day.
+        if (captured.steam_refresh) body.append('steam_refresh', captured.steam_refresh);
         return body;
       },
       okNoun: 'Cookies',
@@ -949,6 +952,10 @@ window.cgtPsnReviewDecisions = function () {
       var form = document.getElementById('steam-credentials-form');
       form.querySelector('[name="steam_session_id"]').value = cookies.sessionid;
       form.querySelector('[name="steam_login_secure"]').value = cookies.steam_login_secure;
+      // Carried in a hidden field rather than shown: it is the credential that
+      // actually matters, and there is nothing to hand-edit about it (#208).
+      var refresh = form.querySelector('[name="steam_refresh"]');
+      if (refresh) refresh.value = cookies.steam_refresh || '';
       htmx.trigger(form, 'submit');
     } catch (err) {
       var flash = document.getElementById('steam-flash');
