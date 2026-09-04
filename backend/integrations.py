@@ -101,11 +101,23 @@ def save_steam_credentials(
     current_user.steam_api_key = steam_api_key.strip() or None
     session_id = steam_session_id.strip()
     login_secure = steam_login_secure.strip()
+    refresh = steam_refresh.strip() or None
     if session_id and login_secure:
-        _record_steam_cookies(current_user, session_id, login_secure, steam_refresh.strip() or None)
+        # Saving just the API key re-posts the session cookies unchanged. Only
+        # re-record when they actually changed, or the "captured" date on the
+        # page would reset itself every time an unrelated field is saved.
+        unchanged = session_id == current_user.steam_session_id and login_secure == current_user.steam_login_secure
+        if not unchanged or refresh:
+            _record_steam_cookies(current_user, session_id, login_secure, refresh)
     else:
         current_user.steam_session_id = session_id or None
         current_user.steam_login_secure = login_secure or None
+        # Clearing the session clears everything derived from it. Leaving the
+        # refresh token behind would keep a live credential for a session the
+        # user just asked to be rid of.
+        current_user.steam_refresh_token = None
+        current_user.steam_refresh_expires_at = None
+        current_user.steam_cookies_captured_at = None
     db.commit()
     # HX-Refresh reloads the page so the sync button appears/disappears correctly
     response = templates.TemplateResponse(

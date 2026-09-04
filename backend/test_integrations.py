@@ -2198,3 +2198,54 @@ def test_steam_capture_survives_a_token_it_cannot_read(client, db_session):
     assert user.steam_login_secure == "not-a-jwt-at-all", "the session still saves"
     assert user.steam_refresh_token == "still-stored"
     assert user.steam_refresh_expires_at is None, "unknown expiry, not an error"
+
+
+def test_clearing_steam_credentials_drops_the_refresh_token_too(client, db_session):
+    """ "Clear credentials" has to mean it. The refresh token is the credential
+    that outlives everything else, so leaving it behind would keep a working
+    Steam session for an account the user just disconnected (#208)."""
+    import datetime
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_api_key = "KEY"
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "login"
+    user.steam_refresh_token = "the-long-lived-one"
+    user.steam_refresh_expires_at = datetime.datetime.now() + datetime.timedelta(days=100)
+    user.steam_cookies_captured_at = datetime.datetime.now()
+    db_session.commit()
+
+    client.post(
+        "/integrations/steam/credentials",
+        data={"steam_api_key": "", "steam_session_id": "", "steam_login_secure": ""},
+    )
+
+    db_session.refresh(user)
+    assert user.steam_refresh_token is None
+    assert user.steam_refresh_expires_at is None
+    assert user.steam_cookies_captured_at is None
+
+
+def test_saving_the_api_key_does_not_restamp_the_capture_date(client, db_session):
+    """The form re-posts the session cookies whenever anything in it is saved.
+    Re-recording them would push "Captured <date>" forward without a capture
+    having happened, making the session look fresher than it is."""
+    import datetime
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    captured = datetime.datetime.now() - datetime.timedelta(days=3)
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "login"
+    user.steam_cookies_captured_at = captured
+    db_session.commit()
+
+    client.post(
+        "/integrations/steam/credentials",
+        data={"steam_api_key": "NEWKEY", "steam_session_id": "sess", "steam_login_secure": "login"},
+    )
+
+    db_session.refresh(user)
+    assert user.steam_api_key == "NEWKEY"
+    assert user.steam_cookies_captured_at == captured, "unchanged cookies must not restamp the date"

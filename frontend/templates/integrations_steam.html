@@ -51,13 +51,22 @@
         <small class="text-secondary font-monospace">{{ current_user.steam_id64 }}</small>
       </div>
     </div>
-    <a href="/integrations/steam/openid/start" class="btn btn-surface btn-sm mb-4">Re-sign in through Steam</a>
+    <div class="d-flex gap-3 flex-wrap align-items-center mb-4">
+      <a href="/integrations/steam/openid/start" class="btn btn-surface btn-sm">Re-sign in through Steam</a>
+      <button
+        type="button"
+        class="btn btn-ghost-danger btn-sm"
+        hx-post="/integrations/steam/openid/forget"
+        hx-target="#steam-flash"
+        hx-swap="innerHTML"
+        hx-confirm="Forget your Steam sign-in? You'll need to Sign in through Steam again to sync."
+      >Forget Steam sign-in</button>
+    </div>
     {% else %}
     <a href="/integrations/steam/openid/start" class="btn btn-primary mb-2">Sign in through Steam</a>
     <p class="text-secondary mb-4"><small>Auto-fills your Steam ID. You'll still need to paste an API key below for the sync to work.</small></p>
     {% endif %}
 
-    <h5 class="cgt-config-section">Credentials</h5>
     <form
       id="steam-credentials-form"
       hx-post="/integrations/steam/credentials"
@@ -68,33 +77,34 @@
          session alive for months rather than a day, and there is nothing to
          hand-edit about it, so it is not shown (#208). #}
       <input type="hidden" name="steam_refresh" value="">
-      <div class="mb-3">
-        <label class="form-label">Steam API Key</label>
-        <input
-          type="password"
-          class="form-control font-monospace"
-          name="steam_api_key"
-          value="{{ current_user.steam_api_key or '' }}"
-          placeholder="Your Steam Web API key"
-          autocomplete="off"
-        >
-        <div class="form-text">Get yours at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a></div>
-      </div>
-      <hr class="my-3">
-      <p class="section-heading">Browser Cookies <span class="fw-normal" style="text-transform: none; letter-spacing: 0;">— optional, enables faster DLC detection</span></p>
+      <h5 class="cgt-config-section">Steam Session</h5>
+      {# What keeps a sync working. steam_login_secure lasts a day; the refresh
+         token captured alongside it lasts months, so the two dates answer
+         different questions and both are worth showing (#208). #}
+      {% if current_user.steam_session_id and current_user.steam_login_secure %}
+      <p class="text-secondary mb-3"><small>
+        {% if current_user.steam_cookies_captured_at %}
+        Captured <span class="local-time" data-utc="{{ current_user.steam_cookies_captured_at.isoformat() }}">{{ current_user.steam_cookies_captured_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>.
+        {% else %}
+        Session saved.
+        {% endif %}
+        {% if current_user.steam_refresh_expires_at %}
+        Sign-in token stored, valid until <span class="local-time" data-utc="{{ current_user.steam_refresh_expires_at.isoformat() }}">{{ current_user.steam_refresh_expires_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>.
+        {% else %}
+        No long-lived sign-in token &mdash; re-capture to store one.
+        {% endif %}
+      </small></p>
+      {% else %}
+      <p class="text-secondary mb-3"><small>No session saved. Syncing still works, but only for games &mdash; DLC needs a session.</small></p>
+      {% endif %}
       <p class="text-secondary mb-3" data-tauri-hide><small>Log in to <a href="https://store.steampowered.com" target="_blank" rel="noopener">store.steampowered.com</a> in your browser, then open DevTools &rarr; Application &rarr; Cookies and copy the values below. These are used to fetch your full owned app list in one request instead of checking each game individually.</small></p>
       {# Desktop app only — revealed by app.js when window.__TAURI__ exists.
          Opens a WebView sign-in window and captures both cookies, replacing
          the DevTools paste above. #}
-      {# Only before anything is saved. Once it is, the "Re-capture Cookies"
-         button further down does the same job, and showing both put two
-         buttons doing one thing on the same page. #}
-      {% if not (current_user.steam_session_id and current_user.steam_login_secure) %}
       <div class="d-none mb-3" data-tauri-only>
-        <button type="button" class="btn btn-primary btn-sm" onclick="cgtCaptureSteamCookies(this)">Capture from Steam sign-in</button>
-        <div class="form-text">Opens a Steam sign-in window and captures the session automatically.</div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="cgtCaptureSteamCookies(this)">{% if current_user.steam_session_id and current_user.steam_login_secure %}Re-capture session{% else %}Capture Steam session{% endif %}</button>
+        <div class="form-text">Opens a Steam sign-in window and captures the session automatically — usually without asking for a password.</div>
       </div>
-      {% endif %}
       <div class="mb-3" data-tauri-hide>
         <label class="form-label"><code>sessionid</code></label>
         <input
@@ -117,8 +127,20 @@
           autocomplete="off"
         >
       </div>
+      <h5 class="cgt-config-section">Steam API Key</h5>
+      <div class="mb-3">
+        <input
+          type="password"
+          class="form-control font-monospace"
+          name="steam_api_key"
+          value="{{ current_user.steam_api_key or '' }}"
+          placeholder="Your Steam Web API key"
+          autocomplete="off"
+        >
+        <div class="form-text">Get yours at <a href="https://steamcommunity.com/dev/apikey" target="_blank" rel="noopener">steamcommunity.com/dev/apikey</a></div>
+      </div>
       <div class="d-flex gap-3 flex-wrap align-items-center">
-        <button type="submit" class="btn btn-primary">Save Credentials</button>
+        <button type="submit" class="btn btn-primary">Save</button>
         {% if current_user.steam_api_key or current_user.steam_session_id or current_user.steam_login_secure %}
         <button
           type="button"
@@ -127,18 +149,8 @@
           hx-vals='{"steam_api_key": "", "steam_session_id": "", "steam_login_secure": ""}'
           hx-target="#steam-flash"
           hx-swap="innerHTML"
-          hx-confirm="Clear your saved Steam API key and cookies? (Steam sign-in is kept — use 'Forget Steam sign-in' to drop that too.)"
+          hx-confirm="Clear your saved Steam API key and session? (Steam sign-in is kept — use 'Forget Steam sign-in' to drop that too.)"
         >Clear credentials</button>
-        {% endif %}
-        {% if current_user.steam_id64 %}
-        <button
-          type="button"
-          class="btn btn-ghost-danger btn-sm"
-          hx-post="/integrations/steam/openid/forget"
-          hx-target="#steam-flash"
-          hx-swap="innerHTML"
-          hx-confirm="Forget your Steam sign-in? You'll need to Sign in through Steam again to sync."
-        >Forget Steam sign-in</button>
         {% endif %}
       </div>
     </form>
@@ -185,7 +197,7 @@
     </div>
     {% else %}
     <div class="alert alert-warning mb-3 py-2">
-      <small>Save browser cookies above to enable full library sync (games + DLC).</small>
+      <small>Capture a Steam session above to enable full library sync (games + DLC).</small>
     </div>
     <div class="mb-3">
       <button
@@ -327,12 +339,6 @@
             hx-swap="innerHTML"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
           >Test Cookies</button>
-        </div>
-        <div class="d-none mt-2" data-tauri-only>
-          <div class="d-flex justify-content-between align-items-center gap-3">
-            <small class="text-secondary">Session expired? Re-capture both cookies in one click &mdash; usually no password needed.</small>
-            <button type="button" class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn" onclick="cgtCaptureSteamCookies(this)">Re-capture Cookies</button>
-          </div>
         </div>
         {% endif %}
       </div>
