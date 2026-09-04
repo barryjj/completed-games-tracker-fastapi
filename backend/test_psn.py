@@ -5394,3 +5394,68 @@ def test_a_review_row_renders_its_new_shape(client, db_session):
     assert "11.5 hours" in body, "playtime uses the shared filter, beside the title where width is free"
     assert "690m" not in body
     assert "24/38" in body and "cgt-trophy-bar" in body
+
+
+def test_the_card_geometry_agrees_between_the_server_and_the_script():
+    """The stack is painted twice: the server renders the first frame so it is
+    right before any script runs, and cgtCardPlace moves it afterwards. They
+    have to produce the same numbers or the stack jumps the moment a server
+    render lands on top of a client one -- which is exactly what a PSN refill
+    does, silently, every few clicks.
+
+    Shared by all three stacks since #195, so drift here would move import
+    review and match review too.
+    """
+    js = open("frontend/static/js/app.js").read()
+    tpl = open("frontend/templates/partials/_psn_review_cards.html").read()
+
+    place = js[js.index("window.cgtCardPlace = function") :][:700]
+
+    # Ahead: parked just off the edge, unscaled, above.
+    assert "ahead ? 60 :" in place, "parked distance"
+    assert "60 if off > 0" in tpl, "parked distance (server)"
+
+    # Behind: 18px for the first card out, 10 more for each one after it.
+    assert "-(18 + (mag - 1) * 10)" in place, "done-pile step"
+    assert "-(18 + (mag - 1) * 10)" in tpl, "done-pile step (server)"
+
+    # The same token scale and dim.
+    for expr in ("1 - mag * 0.012", "1 - mag * 0.06"):
+        assert expr in place, f"{expr} missing from the script"
+    assert "1 - mag * 0.012" in tpl and "1 - mag * 0.06" in tpl, "scale/dim (server)"
+
+    # Coming is above here is above done, so the order never inverts mid-move.
+    assert "el.style.zIndex = 100 + off" in place
+    assert "z-index: {{ 100 + off }}" in tpl
+
+    # A card with no data-pos is skipped rather than read as row 0 -- that
+    # default marked a whole queue active at once and piled twenty box-shadows
+    # into a black halo around the stage.
+    assert "el.dataset.pos === undefined) continue" in place.replace("\n", " ") or "dataset.pos === undefined" in js
+
+
+def test_the_other_stacks_use_the_shared_placer():
+    """Import review showed one card and hid the rest -- no pile at all. Match
+    review had five hand-written classes fanning cards either side, which put
+    the card at +1 UNDER the active one and then required it to become the card
+    ON TOP of it. Both now deal from the shared implementation (#195)."""
+    js = open("frontend/static/js/app.js").read()
+    assert "window.cgtPlaceCards" in js, "the shared placer must live in app.js"
+
+    for page in ("import_review.html", "match_review.html"):
+        html = open(f"frontend/templates/{page}").read()
+        assert "cgtPlaceCards(" in html, f"{page} still has its own stack"
+        assert "dataset.pos" in html, f"{page} must number its cards"
+
+    # The fan classes are gone from the stylesheet, not just unused.
+    css = open("frontend/static/css/theme.css").read()
+    for dead in (".cgt-match-card--far-prev {", ".cgt-match-card--far-next {", ".cgt-match-card--prev {", ".cgt-match-card--next {"):
+        assert dead not in css, f"{dead} survived"
+
+    # And the movement is declared for EVERY card, not only import-sized ones --
+    # match review's are 560px and were left out of it. Checked by looking at
+    # which selector actually owns the transition.
+    moving = css.rindex("transform 260ms cubic-bezier(0.22, 0.61, 0.36, 1)")
+    # The selector is the last line before the "transition:" line above it.
+    head = [ln.strip() for ln in css[:moving].split("\n") if ln.strip()][-2]
+    assert head == ".cgt-match-card {", f"the transition belongs to {head!r}, not to every card"

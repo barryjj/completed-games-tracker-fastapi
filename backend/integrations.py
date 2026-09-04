@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import datetime
+import json
 import logging
 import os
 import re
@@ -50,12 +52,45 @@ def steam_page(
     )
 
 
+def _record_steam_cookies(user: models.User, session_id: str, login_secure: str, refresh: str | None) -> None:
+    """Store a captured Steam session, and note when and for how long.
+
+    steam_login_secure is a 24-hour access token. Its payload also carries
+    rt_exp -- the moment the REFRESH token dies -- so the app can tell "this
+    needs re-capturing" from "this just needs a new access token" without
+    waiting for a sync to fail (#208).
+    """
+    user.steam_session_id = session_id
+    user.steam_login_secure = login_secure
+    user.steam_cookies_captured_at = datetime.datetime.now(datetime.UTC)
+    if refresh:
+        user.steam_refresh_token = refresh
+    expiry = _steam_refresh_expiry(login_secure)
+    if expiry:
+        user.steam_refresh_expires_at = expiry
+
+
+def _steam_refresh_expiry(login_secure: str) -> "datetime.datetime | None":
+    """Read rt_exp out of the access token. Best effort: the token is Steam's
+    to change, so anything unexpected means "unknown expiry", never an error."""
+    try:
+        token = login_secure.split("%7C%7C")[-1].split("||")[-1]
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        rt_exp = claims.get("rt_exp")
+        return datetime.datetime.fromtimestamp(rt_exp, datetime.UTC) if rt_exp else None
+    except Exception:
+        return None
+
+
 @router.post("/steam/credentials")
 def save_steam_credentials(
     request: Request,
     steam_api_key: str = Form(""),
     steam_session_id: str = Form(""),
     steam_login_secure: str = Form(""),
+    steam_refresh: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -64,8 +99,25 @@ def save_steam_credentials(
     # rotate (API key + cookies); to forget your Steam sign-in entirely, use
     # the "Forget Steam sign-in" link.
     current_user.steam_api_key = steam_api_key.strip() or None
-    current_user.steam_session_id = steam_session_id.strip() or None
-    current_user.steam_login_secure = steam_login_secure.strip() or None
+    session_id = steam_session_id.strip()
+    login_secure = steam_login_secure.strip()
+    refresh = steam_refresh.strip() or None
+    if session_id and login_secure:
+        # Saving just the API key re-posts the session cookies unchanged. Only
+        # re-record when they actually changed, or the "captured" date on the
+        # page would reset itself every time an unrelated field is saved.
+        unchanged = session_id == current_user.steam_session_id and login_secure == current_user.steam_login_secure
+        if not unchanged or refresh:
+            _record_steam_cookies(current_user, session_id, login_secure, refresh)
+    else:
+        current_user.steam_session_id = session_id or None
+        current_user.steam_login_secure = login_secure or None
+        # Clearing the session clears everything derived from it. Leaving the
+        # refresh token behind would keep a live credential for a session the
+        # user just asked to be rid of.
+        current_user.steam_refresh_token = None
+        current_user.steam_refresh_expires_at = None
+        current_user.steam_cookies_captured_at = None
     db.commit()
     # HX-Refresh reloads the page so the sync button appears/disappears correctly
     response = templates.TemplateResponse(
@@ -81,6 +133,7 @@ def save_steam_credentials(
 def save_steam_cookies(
     steam_session_id: str = Form(...),
     steam_login_secure: str = Form(...),
+    steam_refresh: str = Form(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
@@ -92,8 +145,7 @@ def save_steam_cookies(
     login_secure = steam_login_secure.strip()
     if not session_id or not login_secure:
         raise HTTPException(status_code=422, detail="Both cookies are required.")
-    current_user.steam_session_id = session_id
-    current_user.steam_login_secure = login_secure
+    _record_steam_cookies(current_user, session_id, login_secure, steam_refresh.strip() or None)
     db.commit()
     return {"ok": True}
 

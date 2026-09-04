@@ -161,22 +161,9 @@ function psnRememberCard(key) {
   try { localStorage.setItem(PSN_CARD_KEY, JSON.stringify(m)); } catch (e) { /* full or blocked */ }
 }
 function psnCards() { return Array.from(document.querySelectorAll('#psn-stack .cgt-match-card')); }
-// GEOMETRY. Must stay identical to _psn_review_cards.html, which paints the
-// first frame server-side; this moves the very same elements afterwards.
-function psnCardPlace(el, off) {
-  var mag = Math.abs(off);
-  // Ahead: parked off to the right, invisible, above everything. Behind: the
-  // done pile, under the active card. See the long note in
-  // _psn_review_cards.html for why nothing waits on the right in view.
-  var ahead = off > 0;
-  var x = ahead ? 60 : (off === 0 ? 0 : -(18 + (mag - 1) * 10));
-  el.style.transform = 'translateX(' + x + 'px) scale(' + (ahead ? 1 : 1 - mag * 0.012) + ')';
-  el.style.filter = 'brightness(' + (ahead ? 1 : 1 - mag * 0.06) + ')';
-  el.style.zIndex = 100 + off;
-  el.classList.toggle('cgt-match-card--active', off === 0);
-  el.classList.toggle('cgt-match-card--peek', off < 0 && mag < 3);
-  el.classList.toggle('cgt-match-card--hidden', ahead || mag >= 3);
-}
+// The geometry lives in app.js as cgtCardPlace/cgtPlaceCards, shared with
+// import review and match review (#195). It still has to stay identical to the
+// server-rendered first frame in _psn_review_cards.html.
 
 // THE MOVE. Every card knows its absolute row, so putting the stack at a
 // position is just re-deriving each offset and writing the transform. The
@@ -188,18 +175,8 @@ window.psnPlaceCards = function(pos) {
   var stackEl = document.getElementById('psn-stack');
   var cards = psnCards();
   if (!cards.length || !stackEl) return;
-  var active = null, at = 0;
-  cards.forEach(function(el, i) {
-    // A card with no data-pos is not part of a stack this function understands.
-    // It used to fall back to 0, which meant EVERY such card read as row 0 and
-    // the whole queue was marked active at once -- twenty cards stacked at the
-    // same spot, their box-shadows compounding into a black halo. Skipping is
-    // the honest answer; the markup is what needs fixing.
-    if (el.dataset.pos === undefined) return;
-    var off = parseInt(el.dataset.pos, 10) - pos;
-    psnCardPlace(el, off);
-    if (off === 0) { active = el; at = i; }
-  });
+  var at = cgtPlaceCards(cards, pos);
+  var active = at > -1 ? cards[at] : null;
   if (active) {
     stackEl.dataset.activeKey = active.id.replace('psn-card-', '');
     psnRememberCard(active.id.replace('psn-card-', ''));

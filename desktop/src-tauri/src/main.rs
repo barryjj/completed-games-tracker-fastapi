@@ -112,6 +112,16 @@ fn terminate(child: &mut Child) {
 struct SteamCookies {
     sessionid: String,
     steam_login_secure: String,
+    /// The long-lived half. steamLoginSecure is a 24-hour access token -- its
+    /// own claims say so, and they carry an rt_exp naming a refresh token good
+    /// for months. That is why a browser stays signed in for months while a
+    /// captured copy of the access token dies overnight (#208).
+    ///
+    /// It lives on login.steampowered.com, not on store. or community., which
+    /// is why capturing the store cookies alone never picked it up. Optional:
+    /// if Steam ever stops setting it, capture still succeeds and the app is no
+    /// worse off than before.
+    steam_refresh: Option<String>,
 }
 
 /// Open a Steam sign-in window and poll the shared cookie store until the
@@ -174,10 +184,34 @@ async fn capture_steam_login(app: AppHandle) -> Result<SteamCookies, String> {
             if let (Some(secure), Some(sessionid)) =
                 (find("steamLoginSecure"), find("sessionid"))
             {
+                // The refresh token rides on the login domain and is
+                // HttpOnly, so only a cookie-store read like this one can see
+                // it -- page JS cannot. Verified present in the WKWebView store
+                // after sign-in (#208).
+                let login_url: tauri::Url = "https://login.steampowered.com"
+                    .parse()
+                    .expect("static URL parses");
+                let steam_refresh = window
+                    .cookies_for_url(login_url)
+                    .ok()
+                    .and_then(|cookies| {
+                        cookies
+                            .iter()
+                            .find(|c| c.name() == "steamRefresh_steam")
+                            .map(|c| c.value().to_string())
+                    });
+                if steam_refresh.is_none() {
+                    eprintln!(
+                        "[games-tracker] no steamRefresh_steam on login.steampowered.com -- \
+                         sign-in still captured, but the session will expire in ~24h"
+                    );
+                }
+
                 let _ = window.close();
                 return Ok(SteamCookies {
                     sessionid,
                     steam_login_secure: secure,
+                    steam_refresh,
                 });
             }
         }

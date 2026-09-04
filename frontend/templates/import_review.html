@@ -307,7 +307,18 @@ function importShowCard(idx) {
   const cards = importCards();
   if (!cards.length) return;
   importCardIdx = Math.max(0, Math.min(idx, cards.length - 1));
-  cards.forEach(function(c, i) { c.classList.toggle('cgt-match-card--hidden', i !== importCardIdx); c.classList.toggle('cgt-match-card--active', i === importCardIdx); });
+  // A real stack, shared with the PSN and match-review queues (#195). This
+  // used to show exactly one card and hide the rest, so paging was a cut with
+  // nothing behind it -- no pile, no depth, no movement. cgtPlaceCards deals
+  // the next card in over the top and leaves the ones you have done to the
+  // left, and because the elements are never replaced the browser can actually
+  // animate them.
+  //
+  // Cards are appended by "load more", so data-pos is assigned here rather than
+  // rendered: a newly appended card has to know its row without the server
+  // re-rendering the ones already on screen.
+  cards.forEach(function(c, i) { c.dataset.pos = i; });
+  cgtPlaceCards(cards, importCardIdx);
   // Same windowing as the PSN stack — this queue renders 253 cards, so it was
   // the worse offender; it only looked fine because Steam art was cached.
   cgtHydrateWhenReady(cards, importCardIdx);
