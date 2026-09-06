@@ -411,15 +411,15 @@ window.psnCheckedSelections = function() {
   var out = {};
   document.querySelectorAll('#psn-review-table .psn-bulk-check:checked').forEach(function(cb) {
     var opts = document.getElementById('psn-opts-' + cb.value);
-    var useProp = document.getElementById('psn-useprop-' + cb.value);
+    // Platforms only. This used to send use_proposed as well, read off a
+    // checkbox that the inline accept/reject had already replaced -- so it
+    // reported false for every row forever and confirms landed under Sony's
+    // name. Whether the IGDB name applies is the row's own state, and the
+    // server reads it there.
     out[cb.value] = {
       platforms: opts
         ? Array.from(opts.querySelectorAll('input[name="platforms"]:checked')).map(function(i) { return i.value; })
-        : [],
-      // Without this a bulk confirm created the entry under Sony's name even
-      // though the row was visibly showing the IGDB one — the per-row Confirm
-      // honoured the suggestion and bulk silently did not (#180).
-      use_proposed: !!(useProp && useProp.checked)
+        : []
     };
   });
   return JSON.stringify(out);

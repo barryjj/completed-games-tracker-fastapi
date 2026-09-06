@@ -4700,9 +4700,7 @@ def test_accepting_the_igdb_name_creates_the_entry_under_it(client, db_session):
     )
     db_session.commit()
 
-    r = client.post(
-        "/tools/psn-review/NPWR03481_00/confirm", data={"platforms": ["PSVITA"], "use_proposed": "true"}, headers={"HX-Request": "true"}
-    )
+    r = client.post("/tools/psn-review/NPWR03481_00/confirm", data={"platforms": ["PSVITA"]}, headers={"HX-Request": "true"})
     assert r.status_code == 200
 
     games = {g.title for g in db_session.query(models.Game).all()}
@@ -4712,8 +4710,97 @@ def test_accepting_the_igdb_name_creates_the_entry_under_it(client, db_session):
     assert game.igdb_id == 11536, "the id is what later unblocks metadata and the match veto"
 
 
-def test_declining_the_name_keeps_sonys(client, db_session):
-    """Unticking the box confirms the platforms under PSN's own name."""
+def test_confirm_applies_the_igdb_name_with_nothing_asked_of_the_page(client, db_session):
+    """The regression: post EXACTLY what the Confirm button posts.
+
+    Both views hx-include only "#psn-opts-<key> input:checked", i.e. the
+    platform ticks -- there is no name field and has not been one since the
+    accept/reject decision moved inline. Confirm read the name off a
+    use_proposed form value anyway, so it was false on every request and every
+    row landed under Sony's name while the card showed IGDB's.
+
+    Sony calls this one "BattleWorldsKronos"; the whole reason to ask IGDB is to
+    get "Battle Worlds: Kronos" out of it.
+    """
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR0KRONOS",
+            title="BattleWorldsKronos",
+            kind="cross_play",
+            status="pending",
+            raw_data={
+                "npCommunicationId": "NPWR0KRONOS",
+                "name": "BattleWorldsKronos",
+                "displayName": "BattleWorldsKronos",
+                "platform": "PS4",
+                "normalizedName": "battleworldskronos",
+            },
+            proposed_title="Battle Worlds: Kronos",
+            proposed_igdb_id=7206,
+            proposed_platforms=[48],
+            proposal_status="pending",
+        )
+    )
+    db_session.commit()
+
+    r = client.post("/tools/psn-review/NPWR0KRONOS/confirm", data={"platforms": ["PS4"]}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    games = {g.title for g in db_session.query(models.Game).all()}
+    assert "Battle Worlds: Kronos" in games, "the corrected name is the point of the lookup"
+    assert "BattleWorldsKronos" not in games, "Sony's run-together name must never be written"
+    assert db_session.query(models.Game).filter_by(title="Battle Worlds: Kronos").one().igdb_id == 7206
+
+
+def test_bulk_confirm_applies_the_igdb_name_too(client, db_session):
+    """Same rule through the bulk path, which posts platforms per row and
+    nothing else. It used to read the name off an element that no longer
+    existed, so it reported "keep Sony's" for every row it ever sent."""
+    import json as _json
+
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="NPWR0KRONOS2",
+            title="BattleWorldsKronos",
+            kind="cross_play",
+            status="pending",
+            raw_data={"platform": "PS4", "normalizedName": "battleworldskronos"},
+            proposed_title="Battle Worlds: Kronos",
+            proposed_igdb_id=7206,
+            proposed_platforms=[48],
+            proposal_status="pending",
+        )
+    )
+    db_session.commit()
+
+    payload = _json.dumps({"NPWR0KRONOS2": {"platforms": ["PS4"]}})
+    r = client.post("/tools/psn-review/bulk-confirm", data={"selections": payload}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    games = {g.title for g in db_session.query(models.Game).all()}
+    assert "Battle Worlds: Kronos" in games
+    assert "BattleWorldsKronos" not in games
+
+
+def test_a_rejected_proposal_keeps_sonys_name(client, db_session):
+    """Sony's name survives exactly one way: the proposal was turned down.
+
+    This test used to assert that confirming with no flag on the request kept
+    Sony's name -- which is exactly what the page posts, so the suite was
+    asserting the bug as the specification. A row carrying a rename you can read
+    off the card must create the entry under it; only a rejection opts out.
+
+    Shape here is the re-refused one: proposed_title still set, status
+    "rejected" (psn.py sets that when a suggestion matches a name already turned
+    down), so both halves of the check are exercised."""
     _seed_platforms(db_session)
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
@@ -4734,7 +4821,7 @@ def test_declining_the_name_keeps_sonys(client, db_session):
             proposed_title="Call of Duty: Modern Warfare 2",
             proposed_igdb_id=559,
             proposed_platforms=[9],
-            proposal_status="pending",
+            proposal_status="rejected",
         )
     )
     db_session.commit()
@@ -4811,7 +4898,7 @@ def test_bulk_confirm_honours_the_igdb_name(client, db_session):
     )
     db_session.commit()
 
-    payload = _json.dumps({"NPWR00791_00": {"platforms": ["PS3"], "use_proposed": True}})
+    payload = _json.dumps({"NPWR00791_00": {"platforms": ["PS3"]}})
     r = client.post("/tools/psn-review/bulk-confirm", data={"selections": payload}, headers={"HX-Request": "true"})
     assert r.status_code == 200
 
@@ -4884,7 +4971,7 @@ def test_a_typed_name_beats_both_sony_and_igdb(client, db_session):
 
     client.post(
         "/tools/psn-review/NPWR0TYPE_00/confirm",
-        data={"platforms": ["PS3"], "use_proposed": "true", "custom_title": "Metal Gear Solid 4: Guns of the Patriots"},
+        data={"platforms": ["PS3"], "custom_title": "Metal Gear Solid 4: Guns of the Patriots"},
         headers={"HX-Request": "true"},
     )
 
@@ -4927,7 +5014,7 @@ def test_leaving_the_prefilled_name_alone_still_takes_the_igdb_id(client, db_ses
 
     client.post(
         "/tools/psn-review/NPWR0KEEP_00/confirm",
-        data={"platforms": ["PS3"], "use_proposed": "true", "custom_title": "Grand Theft Auto IV"},
+        data={"platforms": ["PS3"], "custom_title": "Grand Theft Auto IV"},
         headers={"HX-Request": "true"},
     )
     game = db_session.query(models.Game).filter_by(title="Grand Theft Auto IV").one()
@@ -5017,9 +5104,7 @@ def test_edit_modal_renames_and_confirm_uses_it(client, db_session):
     assert cand.proposed_title == "Metal Gear Solid 4: Guns of the Patriots"
     assert cand.proposed_igdb_id is None, "overruling the match drops its id"
 
-    client.post(
-        "/tools/psn-review/NPWR0EDIT_00/confirm", data={"platforms": ["PS3"], "use_proposed": "true"}, headers={"HX-Request": "true"}
-    )
+    client.post("/tools/psn-review/NPWR0EDIT_00/confirm", data={"platforms": ["PS3"]}, headers={"HX-Request": "true"})
     games = {g.title for g in db_session.query(models.Game).all()}
     assert "Metal Gear Solid 4: Guns of the Patriots" in games
     assert "Metal Gear Solid 4 Database" not in games

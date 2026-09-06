@@ -2169,7 +2169,6 @@ def confirm_entry_decision(
     user: models.User,
     key: str,
     platforms: list[str],
-    use_proposed: bool = False,
     custom_title: str = "",
 ) -> dict:
     """Confirm one review row: create its entries and retire the row.
@@ -2215,7 +2214,17 @@ def confirm_entry_decision(
     #   3. Sony's own trophy-set name
     # Applied AT CREATION in every case, so a bad name is never written.
     typed = (custom_title or "").strip()
-    accepted = bool(use_proposed and cand.proposed_title)
+    # Read off the ROW, not off the request. This used to come from a
+    # use_proposed form field, which stopped being sent the moment accept/reject
+    # became an inline decision stored on the candidate — so every confirm from
+    # either view silently fell back to Sony's name while the card on screen
+    # showed IGDB's. The point of the lookup is to fix the naming; a suggestion
+    # you can see and cannot apply is worse than not asking.
+    #
+    # A proposal stands unless it was turned down. reject_proposal nulls the
+    # title outright, and a re-refused row keeps its title but carries
+    # "rejected" — so both halves of this test are load-bearing.
+    accepted = bool(cand.proposed_title) and cand.proposal_status != "rejected"
     # A "matched" row has no rename to approve — IGDB knows the game and our
     # name is already right — but its id is the payload and must still attach.
     if cand.proposal_status == "matched" and cand.proposed_igdb_id and not typed:

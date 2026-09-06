@@ -370,7 +370,14 @@
 {% endif %}
 
 <script>
-(function () {
+// Deferred, not immediate. app.js carries `defer`, so it does not run until the
+// document has been parsed -- but an inline script in the body runs DURING the
+// parse. This block ends by calling show(0), which reaches cgtPlaceCards in
+// app.js; as an IIFE that threw ReferenceError on every load, leaving every
+// card with the cgt-match-card--hidden it was rendered with (opacity: 0) and
+// the stage blank (#195). DOMContentLoaded fires after deferred scripts, which
+// is why import review is wrapped the same way.
+document.addEventListener('DOMContentLoaded', function () {
 
   // ── Scan state ───────────────────────────────────────────────────
   window.cgtScanStarted = function() {
@@ -603,7 +610,7 @@
     }));
   }
 
-})();
+});
 </script>
 
 {# Match review detail / preview pane — reuses library offcanvas infrastructure #}

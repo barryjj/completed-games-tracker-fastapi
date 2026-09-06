@@ -2462,6 +2462,30 @@ def test_valid_filter_cookie_is_still_honoured(client, db_session):
     assert "Switch Game" not in body
 
 
+def test_review_pages_defer_their_card_stack_init(client, db_session):
+    """A body <script> runs DURING parse; app.js carries `defer` and runs after.
+
+    So an inline block that reaches cgtPlaceCards on its way in throws
+    ReferenceError, and match review's cards are rendered with
+    cgt-match-card--hidden (opacity: 0) waiting to be placed -- the stack came
+    up blank on every load and nothing in the suite noticed, because the failure
+    is browser-side and the HTML is identical either way (#195).
+
+    Mechanical guard: any inline script that calls the shared placer must also
+    wait for DOMContentLoaded, which fires after deferred scripts have run.
+    """
+    import re
+
+    _signup_and_login(client)
+    for path in ("/tools/match-review", "/tools/import/review", "/tools/psn-review"):
+        body = client.get(path).text
+        for block in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", body, re.S):
+            if "cgtPlaceCards" not in block:
+                continue
+            registered = re.search(r"addEventListener\(\s*['\"]DOMContentLoaded", block)
+            assert registered, f"{path}: places cards during parse, before app.js exists"
+
+
 def test_html_is_never_cached_but_static_still_is(client, db_session):
     """The asset version lives in the PAGE, so a cached page pins a stale
     stylesheet and the browser never even asks for the new one — the mechanism

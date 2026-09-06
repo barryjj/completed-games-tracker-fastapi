@@ -282,13 +282,14 @@ async def psn_review_bulk_confirm(
     Not just a list of ids like import review's bulk confirm: the whole value
     here is that most rows arrive pre-ticked correctly from the cross-buy
     reference, so the selection has to travel per row. Payload is JSON,
-    {external_id: {"platforms": [...], "use_proposed": bool}}.
+    {external_id: {"platforms": [...]}}.
 
-    use_proposed travels too, or a bulk confirm would create the entry under
-    Sony's name while the row was visibly showing the IGDB one — the per-row
-    Confirm honoured the suggestion and bulk silently did not (#180). The older
-    {external_id: [platform, ...]} shape is still accepted so a page loaded
-    before this change does not post something that gets misread.
+    The name does NOT travel: whether the IGDB suggestion applies is the row's
+    own state, read at confirm time. It used to ride along as use_proposed,
+    which is how it came to be dropped — the field stopped being rendered and
+    the payload kept claiming false. The older {external_id: [platform, ...]}
+    shape is still accepted so a page loaded before this change does not post
+    something that gets misread.
 
     Rows already decided, or platforms a trophy set doesn't cover, are dropped
     by confirm_entry_decision rather than trusted — a stale page can post
@@ -307,16 +308,15 @@ async def psn_review_bulk_confirm(
     for key, sel in parsed.items():
         # Tolerate the old list-only shape from a stale page.
         if isinstance(sel, list):
-            platforms, use_proposed = sel, False
+            platforms = sel
         elif isinstance(sel, dict):
             platforms = sel.get("platforms")
-            use_proposed = bool(sel.get("use_proposed"))
             if not isinstance(platforms, list):
                 continue
         else:
             continue
         try:
-            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms], use_proposed=use_proposed)
+            result = psn.confirm_entry_decision(db, current_user, str(key), [str(p) for p in platforms])
         except ValueError:
             continue  # already decided, or no longer in the queue
         confirmed += 1
@@ -595,7 +595,6 @@ async def psn_review_confirm(
     key: str,
     request: Request,
     platforms: list[str] = Form(default=[]),
-    use_proposed: bool = Form(default=False),
     custom_title: str = Form(default=""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
@@ -604,15 +603,13 @@ async def psn_review_confirm(
     the row. Mirrors import review's per-candidate confirm — the click IS the
     action, and the response is the row's replacement.
 
-    use_proposed carries the IGDB name suggestion's acceptance, so approving a
-    name and choosing platforms is ONE decision on ONE row (#180) rather than
-    two queues to visit for a single game."""
+    Approving a name and choosing platforms is ONE decision on ONE row (#180),
+    so the name isn't posted: accepting or rejecting the IGDB suggestion already
+    wrote that decision to the candidate, and confirm reads it back."""
     from . import psn
 
     try:
-        result = psn.confirm_entry_decision(
-            db, current_user, key, [p.upper() for p in platforms], use_proposed=use_proposed, custom_title=custom_title
-        )
+        result = psn.confirm_entry_decision(db, current_user, key, [p.upper() for p in platforms], custom_title=custom_title)
     except ValueError:
         # Fixed text, not the exception's: a 404 here only ever means the row
         # isn't in the queue (stale page, already actioned), and echoing an
