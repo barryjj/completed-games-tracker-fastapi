@@ -242,7 +242,9 @@ def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEnt
         _upsert_user_artwork(db, entry, "logo", url)
         db.commit()
         return url
-    except Exception as e:
+    # Narrow, for the same reason as auto_fetch_grid above: a swallowed bug
+    # here is indistinguishable from SGDB simply not having the art.
+    except (httpx.HTTPError, ValueError) as e:
         logger.warning("SGDB auto-fetch logo failed for entry %s: %s", entry.id, e)
         return None
 
@@ -271,7 +273,9 @@ def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEnt
         _upsert_user_artwork(db, entry, "hero", url)
         db.commit()
         return url
-    except Exception as e:
+    # Narrow, for the same reason as auto_fetch_grid above: a swallowed bug
+    # here is indistinguishable from SGDB simply not having the art.
+    except (httpx.HTTPError, ValueError) as e:
         logger.warning("SGDB auto-fetch hero failed for entry %s: %s", entry.id, e)
         return None
 
@@ -280,7 +284,13 @@ def auto_fetch_grid(db: Session, user: models.User, entry: models.UserLibraryEnt
     """Try to fetch a grid cover (h or v) for a single entry from SGDB and
     store it as a UserArtwork row. Returns the URL on success, None if nothing
     found. Called automatically when logging a completion for an entry with no cover."""
-    art_type = "cover_h" if orientation == "h" else "cover_v"
+    # Off the same map the writer uses. Deriving it separately is what broke
+    # this: the derived "cover_h" was then passed BACK to _upsert_user_artwork,
+    # which takes an image_type ("h") and looks it up, so every grid fetch died
+    # on KeyError('cover_h') after successfully retrieving the art. Hero and
+    # logo pass their image_type through unchanged, which is why those two were
+    # the only artwork the detail pane ever managed to save.
+    art_type = _IMAGE_TYPE_TO_ARTWORK_TYPE[orientation]
     if not user.steamgriddb_api_key:
         return None
     existing = next((ua for ua in entry.user_artwork if ua.artwork_type == art_type and ua.url), None)
@@ -296,10 +306,15 @@ def auto_fetch_grid(db: Session, user: models.User, entry: models.UserLibraryEnt
         url = grids[0].get("url")
         if not url:
             return None
-        _upsert_user_artwork(db, entry, art_type, url)
+        _upsert_user_artwork(db, entry, orientation, url)
         db.commit()
         return url
-    except Exception as e:
+    # SGDB being unreachable or unhelpful is normal and not worth an error page.
+    # A bug in our own code is neither: catching everything here turned a
+    # KeyError into a silent 204 that read as "SGDB has no cover for this", and
+    # it stayed that way across thousands of entries because the lie was
+    # indistinguishable from the truth.
+    except (httpx.HTTPError, ValueError) as e:
         logger.warning("SGDB auto-fetch grid (%s) failed for entry %s: %s", orientation, entry.id, e)
         return None
 

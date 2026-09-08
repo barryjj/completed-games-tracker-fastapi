@@ -1266,9 +1266,15 @@ def library_entry_card(
         return Response(status_code=404)
     _attach_parent_fallbacks(db, [entry])
     tmpl = "partials/library_card.html" if view_mode in ("grid_v", "grid_h") else "partials/library_row.html"
+    # Keyword form. Starlette reads a positional first argument as the request,
+    # so passing (name, context) made Jinja look up a dict as a template name and
+    # every refresh of this fragment 500'd with "unhashable type: 'dict'". The
+    # auto-fetch handlers call this to redraw a tile the moment new art lands,
+    # which is why art could be saved and the tile still never change (#206).
     return templates.TemplateResponse(
-        tmpl,
-        {"request": request, "entry": entry, "view_mode": view_mode},
+        request=request,
+        name=tmpl,
+        context={"entry": entry, "view_mode": view_mode},
     )
 
 
@@ -1420,7 +1426,9 @@ def completion_card_fragment(
     if not completion:
         return Response(status_code=404)
     tmpl = "partials/completion_card.html" if view_mode in ("grid_h", "grid_v") else "partials/completion_row.html"
+    # Keyword form, same reason as library_entry_card above.
     return templates.TemplateResponse(
-        tmpl,
-        {"request": request, "completion": completion, "view_mode": view_mode},
+        request=request,
+        name=tmpl,
+        context={"completion": completion, "view_mode": view_mode},
     )

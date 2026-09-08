@@ -1206,6 +1206,68 @@ def test_user_artwork_h_wins_over_game_artwork(db_session):
     assert visuals["header_url"] == "https://sgdb.example.com/custom-header.jpg"
 
 
+def test_auto_fetch_grid_actually_saves_the_cover(client, db_session):
+    """The fetch worked and the write did not.
+
+    auto_fetch_grid derived art_type ("cover_h") itself and then handed that
+    back to _upsert_user_artwork, which takes an image_type ("h") and maps it --
+    so every grid fetch retrieved art from SGDB and then died on
+    KeyError('cover_h'). A blanket `except Exception` turned that into a 204,
+    which is indistinguishable from "SGDB has nothing for this game", so it read
+    as missing art on every entry rather than as a bug. Hero and logo pass their
+    image_type through unchanged and were the only art the pane ever saved.
+    """
+    from unittest.mock import patch
+
+    from backend import steamgriddb as sgdb
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steamgriddb_api_key = "sgdb-key"
+    entry = _add_game(db_session, user, title="Castlevania Requiem")
+    db_session.commit()
+
+    with (
+        patch.object(sgdb, "_find_sgdb_game_for_entry", return_value={"id": 5433157}),
+        patch.object(sgdb, "get_grids_for_game", return_value=[{"url": "https://sgdb.example.com/h.jpg"}]),
+    ):
+        url = sgdb.auto_fetch_grid(db_session, user, entry, orientation="h")
+
+    assert url == "https://sgdb.example.com/h.jpg", "a found cover must be returned, not swallowed"
+    db_session.refresh(entry)
+    saved = {ua.artwork_type: ua.url for ua in entry.user_artwork}
+    assert saved.get("cover_h") == "https://sgdb.example.com/h.jpg", "and it must reach the database"
+
+
+def test_card_fragments_render(client, db_session):
+    """The auto-fetch handlers redraw a tile as soon as new art lands, so these
+    two fragments are the last step of the whole flow. Both called
+    TemplateResponse positionally, which Starlette reads as (request, name) --
+    Jinja then looked up a dict as a template name and every redraw 500'd with
+    "unhashable type: 'dict'" (#206). Nothing covered them, so nothing noticed.
+    """
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    entry = _add_game(db_session, user, title="Tile Redraw Test")
+
+    for view_mode in ("list", "grid_h", "grid_v"):
+        r = client.get(f"/library/entries/{entry.id}/card?view_mode={view_mode}", headers={"HX-Request": "true"})
+        assert r.status_code == 200, f"library card 500s in {view_mode}: {r.status_code}"
+        assert b"Tile Redraw Test" in r.content
+
+    completion = models.Completion(
+        user_id=user.id,
+        library_entry_id=entry.id,
+        completed_at=datetime.date(2026, 1, 1),
+    )
+    db_session.add(completion)
+    db_session.commit()
+
+    for view_mode in ("list", "grid_h", "grid_v"):
+        r = client.get(f"/completions/{completion.id}/card?view_mode={view_mode}", headers={"HX-Request": "true"})
+        assert r.status_code == 200, f"completion card 500s in {view_mode}: {r.status_code}"
+
+
 def test_grid_cover_url_v_user_artwork_wins(client, db_session):
     """In grid_v view, UserArtwork cover_v wins over GameArtwork cover_v."""
     token = _signup_and_login(client)
