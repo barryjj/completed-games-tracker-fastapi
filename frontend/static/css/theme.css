@@ -1908,14 +1908,13 @@ body:has(.cgt-sticky-actions) {
 
 /* ─── Match review — card stack ─────────────────────────────────────────── */
 .cgt-match-stage {
-  /* One width for all three queues. The stack mechanism was shared in #195 but
-     its dimensions were not, leaving match review at 560px while PSN and import
-     review sat at 900 -- the same component in two sizes, and the odd one out
-     truncating titles the others had room for. Centring derives from this
-     rather than restating it, which is what let 560/-280 and 900/-450 drift
-     apart. Height stays per-queue: only the import card needs a fixed one, for
-     its internal scrolling. */
-  --cgt-card-w: 900px;
+  /* Card width, and the one number that sets it -- centring derives from this
+     via calc rather than restating it, which is how the old 560/-280 and
+     900/-450 pairs came to disagree. The VALUE is per-queue on purpose: the
+     import and PSN cards carry a hero and two columns and want 900, while match
+     review is three thin rows, where that much width just makes a wide band.
+     560 was too tight and truncated titles; this fits them. */
+  --cgt-card-w: 680px;
   position: relative;
   height: 480px;
   display: flex;
@@ -1970,6 +1969,7 @@ body:has(.cgt-sticky-actions) {
    there are no neighbors ever visible, so it's disabled here in favor of
    an instant swap. */
 .cgt-match-stage--import {
+  --cgt-card-w: 900px;
   height: 520px;
 }
 .cgt-match-card--import {
