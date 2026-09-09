@@ -2299,6 +2299,30 @@ body:has(.cgt-match-nav--sticky) {
   border-bottom: 1px solid var(--ctp-surface1);
 }
 
+/* Names what a row IS, above the title rather than beside it. Both rows carry
+   one, so "Your entry" stops being the only labelled half of a comparison, and
+   the facts about the row -- where it came from, its score, its playtime -- sit
+   here instead of competing with the game's name. */
+.cgt-match-row__source {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ctp-subtext0, var(--ctp-subtext));
+  margin-bottom: 0.1rem;
+}
+
+/* Footer for the single-candidate card. A deeper surface so it reads as chrome
+   rather than as a third row of content. */
+.cgt-match-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-top: 1px solid var(--ctp-surface1);
+  background: color-mix(in srgb, var(--ctp-surface1) 45%, var(--ctp-surface0));
+}
+
 /* Multi-candidate option rows (pick-one card) */
 .cgt-match-option {
   padding: .75rem .75rem;
