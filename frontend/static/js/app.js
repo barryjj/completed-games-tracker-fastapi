@@ -137,9 +137,20 @@ document.addEventListener('htmx:afterSettle', function(e) {
 // Binary-searches between 8px and the CSS default size in ~8 iterations.
 window.cgtFitPlaceholderTitles = function(root) {
   (root || document).querySelectorAll('.cgt-library-card__placeholder-title').forEach(function(title) {
+    // Fitting is measured per element and never changes afterwards, so doing it
+    // twice is pure cost -- and the cost is forced reflows, ~10 per title. The
+    // scoping below cannot be relied on alone: htmx fires afterSettle on the
+    // PARENT for an outerHTML swap, so "just the swapped node" can still resolve
+    // to the whole container. This makes a full-container pass O(new) instead of
+    // O(everything), whichever element the event hands us.
+    if (title.dataset.cgtFitted) return;
     title.style.fontSize = '';
     var ph = title.closest('.cgt-library-card__placeholder');
+    // Not measurable yet (never laid out, or in a hidden container). Leave it
+    // UNMARKED so a later pass still gets it -- marking here would permanently
+    // skip every card that happened not to be visible on its first pass.
     if (!ph || !ph.clientHeight) return;
+    title.dataset.cgtFitted = '1';
     var cs = getComputedStyle(ph);
     var available = ph.clientHeight
       - parseFloat(cs.paddingTop)
@@ -159,9 +170,20 @@ window.cgtFitPlaceholderTitles = function(root) {
   });
 };
 document.addEventListener('DOMContentLoaded', function() { window.cgtFitPlaceholderTitles(); });
+// Fit ONLY what was swapped. This used to walk up to #library-content and refit
+// the whole container on every swap inside it, which on a 15k-entry library is
+// ~15,000 placeholders x ~10 forced reflows on the main thread -- the loop above
+// interleaves a style write with a scrollHeight read on purpose, so each pass is
+// a synchronous layout. One card redraw froze the UI outright.
+//
+// It stayed hidden because the card-redraw endpoint was returning 500, so htmx
+// never swapped and this never fired on a detail-pane open; infinite scroll hit
+// it on every appended page, which is why scrolling got heavier the further down
+// you went. Newly swapped content is the only content whose titles can need
+// refitting -- everything else was already fitted when it arrived.
 document.addEventListener('htmx:afterSettle', function(e) {
   if (e.target.id === 'library-content' || e.target.closest('#library-content')) {
-    window.cgtFitPlaceholderTitles(e.target.closest('#library-content') || e.target);
+    window.cgtFitPlaceholderTitles(e.target);
   }
 });
 
