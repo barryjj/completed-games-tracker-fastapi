@@ -248,7 +248,7 @@
          titles were rendered differently -- this one wrapped, the candidate's
          truncated -- so one game read as two unrelated things. #}
       <div class="cgt-match-row__source">Your entry{% if manual.completions %} &middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}{% endif %}</div>
-      <div class="fw-semibold small text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
+      <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
     </div>
     <span class="tag-badge {{ manual.release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
   </div>
@@ -271,7 +271,7 @@
           &middot; {{ (c.match_score * 100) | int }}%
           {%- if synced and synced.playtime_minutes %} &middot; {{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs{% endif %}
         </div>
-        <div class="fw-semibold small text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
+        <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
       </div>
       {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
       {% if c.status == 'pending' %}
@@ -309,7 +309,7 @@
          titles were rendered differently -- this one wrapped, the candidate's
          truncated -- so one game read as two unrelated things. #}
       <div class="cgt-match-row__source">Your entry{% if manual.completions %} &middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}{% endif %}</div>
-      <div class="fw-semibold small text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
+      <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
     </div>
     <span class="tag-badge {{ manual.release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
   </div>
@@ -328,7 +328,7 @@
           &middot; {{ (c.match_score * 100) | int }}%
           {%- if synced and synced.playtime_minutes %} &middot; {{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs{% endif %}
         </div>
-        <div class="fw-semibold small text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
+        <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
       </div>
       {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
     </div>

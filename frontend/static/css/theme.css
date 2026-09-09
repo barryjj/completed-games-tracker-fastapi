@@ -1908,6 +1908,14 @@ body:has(.cgt-sticky-actions) {
 
 /* ─── Match review — card stack ─────────────────────────────────────────── */
 .cgt-match-stage {
+  /* One width for all three queues. The stack mechanism was shared in #195 but
+     its dimensions were not, leaving match review at 560px while PSN and import
+     review sat at 900 -- the same component in two sizes, and the odd one out
+     truncating titles the others had room for. Centring derives from this
+     rather than restating it, which is what let 560/-280 and 900/-450 drift
+     apart. Height stays per-queue: only the import card needs a fixed one, for
+     its internal scrolling. */
+  --cgt-card-w: 900px;
   position: relative;
   height: 480px;
   display: flex;
@@ -1918,7 +1926,7 @@ body:has(.cgt-sticky-actions) {
 
 .cgt-match-card {
   position: absolute;
-  width: 560px;
+  width: var(--cgt-card-w);
   background: var(--ctp-surface0);
   border: 1px solid var(--ctp-surface2);
   border-radius: 8px;
@@ -1929,7 +1937,7 @@ body:has(.cgt-sticky-actions) {
   will-change: transform, opacity;
   top: 0;
   left: 50%;
-  margin-left: -280px;
+  margin-left: calc(var(--cgt-card-w) / -2);
 }
 
 .cgt-match-card--active {
@@ -1965,8 +1973,6 @@ body:has(.cgt-sticky-actions) {
   height: 520px;
 }
 .cgt-match-card--import {
-  width: 900px;
-  margin-left: -450px;
   display: flex;
   flex-direction: column;
   /* Fixed height, not max-height — flex children need a definite container
@@ -2303,6 +2309,14 @@ body:has(.cgt-match-nav--sticky) {
    one, so "Your entry" stops being the only labelled half of a comparison, and
    the facts about the row -- where it came from, its score, its playtime -- sit
    here instead of competing with the game's name. */
+.cgt-match-row__title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
+}
+
 .cgt-match-row__source {
   font-size: 0.68rem;
   font-weight: 600;
