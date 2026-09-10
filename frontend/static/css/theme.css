@@ -1989,6 +1989,58 @@ body:has(.cgt-sticky-actions) {
   flex-shrink: 0;
   border-top: 1px solid var(--ctp-surface2);
 }
+/* An import row whose matched library entry has been deleted. The band takes
+   the hero's slot: the hole where artwork should be is what reads as broken, so
+   it carries the explanation rather than a banner stacked above it. Hatched
+   rather than blank so it reads as "nothing here" instead of "still loading".
+
+   The plate is a plain surface with the warning carried on its edge, not a
+   tinted alert -- this is a standing fact about the row, not something that
+   just happened, and a toast-coloured panel sitting permanently inside a card
+   reads as the latter. */
+.cgt-import-missing {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1.25rem;
+  background: repeating-linear-gradient(
+    135deg,
+    var(--ctp-surface1),
+    var(--ctp-surface1) 10px,
+    var(--ctp-surface0) 10px,
+    var(--ctp-surface0) 20px
+  );
+}
+
+.cgt-import-missing__plate {
+  max-width: 430px;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid var(--ctp-surface2);
+  border-left: 4px solid var(--cgt-yellow-ink, var(--ctp-yellow));
+  border-radius: 6px;
+  background: var(--ctp-crust);
+  color: var(--ctp-text);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.cgt-import-missing__heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--cgt-yellow-ink, var(--ctp-yellow));
+  margin-bottom: 0.15rem;
+}
+
+/* List view says the same thing in one line under the title. */
+.cgt-import-missing__note {
+  font-size: 0.8rem;
+  color: var(--cgt-yellow-ink, var(--ctp-yellow));
+  margin-top: 0.1rem;
+}
+
 /* Wider left column for completions, narrower right column for condensed
    library metadata — makes better use of the card's width instead of
    stacking both blocks vertically. */

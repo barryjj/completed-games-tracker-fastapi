@@ -3,6 +3,11 @@
    "load more" can OOB-append new cards here without duplicating either. #}
 {% for c in candidates %}
 {% set v = candidate_visuals.get(c.id) %}
+{# The row says "add to an existing entry" and that entry is gone -- a purge
+   deleted it and nothing re-pointed the candidate. Confirming would write a
+   completion attached to a row that does not exist, which is the one loss
+   purge_psn.py refuses to risk because it cannot be recovered. #}
+{% set _broken = c.library_entry_id and not c.library_entry %}
 <div class="cgt-match-card cgt-match-card--import cgt-match-card--hidden"
      id="import-card-{{ c.id }}">
 
@@ -15,6 +20,17 @@
       {% if (v.logo_url or v.fallback_logo_url) and _lp != 'hidden' %}
       <img class="cgt-detail-hero__logo{% if _lp %} cgt-detail-hero__logo--{{ _lp }}{% endif %}{% if _ls %} cgt-detail-hero__logo--scale-{{ _ls }}{% endif %}" data-src="{{ v.logo_url or v.fallback_logo_url }}" alt="" loading="lazy">
       {% endif %}
+    </div>
+    {% endif %}
+    {% if _broken %}
+    {# Takes the hero's place rather than sitting above it: the hole where the
+       artwork should be is the thing that reads as broken, so it is the thing
+       that carries the explanation. #}
+    <div class="cgt-import-missing">
+      <div class="cgt-import-missing__plate">
+        <div class="cgt-import-missing__heading">Matched entry is missing</div>
+        <div>The library entry this row was matched to no longer exists, so its completions have nowhere to go.</div>
+      </div>
     </div>
     {% endif %}
 
@@ -117,6 +133,17 @@
   </div>
 
   <div class="cgt-match-card__footer d-flex gap-2 justify-content-end p-3">
+    {% if _broken %}
+    {# Re-match rather than Confirm: there is nothing to confirm against. Edit
+       stays, since linking the row by hand is the other real fix. #}
+    <button class="btn btn-primary btn-sm"
+            hx-post="/tools/import/{{ c.id }}/rematch"
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this">
+      Re-match
+    </button>
+    {% else %}
     <button class="btn btn-primary btn-sm"
             hx-post="/tools/import/{{ c.id }}/confirm"
             hx-target="#import-row-{{ c.id }}"
@@ -125,6 +152,7 @@
             hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
       Confirm
     </button>
+    {% endif %}
     <button class="btn btn-surface btn-sm" onclick="openImportEdit({{ c.id }})">Edit</button>
     <button class="btn btn-surface btn-sm"
             hx-post="/tools/import/{{ c.id }}/dismiss"

@@ -17,6 +17,8 @@
      previously it lived inline after a variable-length title (or a second
      wrapped line for diff rows), which is why nothing aligned. #}
   <td class="align-middle">
+    {# Points at an entry that no longer exists -- see _import_cards.html. #}
+    {% set _broken = c.library_entry_id and not c.library_entry %}
     {% set _lib_release = c.library_entry.release if c.library_entry else None %}
     {% set _lib_title = _lib_release.game.display_title if _lib_release else None %}
     {% set _title_diff = _lib_title and c.raw_title and (c.raw_title | titles_differ(_lib_title)) %}
@@ -42,6 +44,9 @@
       <span class="cgt-diff-flag" title="Sheet data differs — click to see details">!</span>
       {% endif %}
     </div>
+    {% if _broken %}
+    <div class="cgt-import-missing__note">Matched entry is missing &mdash; re-match before confirming</div>
+    {% endif %}
   </td>
   <td class="align-middle text-nowrap">
     {% if _lib_release and _lib_release.platform_obj %}
@@ -84,7 +89,12 @@
        overflow clipping instead of being cut off. #}
     {% if c.status == "pending" %}
     <div class="btn-group">
-      {% if c.proposed_action == "add_to_existing" %}
+      {% if c.library_entry_id and not c.library_entry %}
+      <button type="button" class="btn btn-surface btn-sm"
+              hx-post="/tools/import/{{ c.id }}/rematch"
+              hx-target="#import-row-{{ c.id }}"
+              hx-swap="outerHTML">Re-match</button>
+      {% elif c.proposed_action == "add_to_existing" %}
       <button type="button" class="btn btn-primary btn-sm"
               hx-post="/tools/import/{{ c.id }}/confirm"
               hx-target="#import-row-{{ c.id }}"

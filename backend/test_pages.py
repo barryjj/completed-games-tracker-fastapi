@@ -1724,6 +1724,105 @@ def test_set_logo_scale_persists_and_renders(client, db_session):
     assert db_session.get(models.UserLibraryEntry, entry.id).logo_scale is None
 
 
+# --- import candidate whose matched entry was deleted ---
+
+
+def _dangling_candidate(db, user_id):
+    """add_to_existing candidate pointing at a library entry that no longer
+    exists -- the state purge_psn.py left 243 of 244 PlayStation rows in."""
+    # The app runs with PRAGMA foreign_keys=ON (models.py), so this state cannot
+    # be created through it -- which is the point: purge_psn.py opens its own
+    # raw sqlite3 connection, where the pragma defaults OFF, and deleted the
+    # entries out from under these rows without a word. Reproduce it the same
+    # way, or the bug is untestable.
+    from sqlalchemy import text
+
+    db.execute(text("PRAGMA foreign_keys=OFF"))
+    cand = models.ImportCandidate(
+        user_id=user_id,
+        raw_title="Astro Bot",
+        raw_platform="PS5",
+        library_entry_id=999999,
+        status="pending",
+        proposed_action="add_to_existing",
+    )
+    db.add(cand)
+    db.flush()
+    db.add(
+        models.ImportRow(
+            candidate_id=cand.id,
+            raw_title="Astro Bot",
+            raw_platform="PS5",
+            row_number=1,
+            completed_at=datetime.date(2025, 1, 4),
+            completed_at_precision="day",
+        )
+    )
+    db.commit()
+    db.execute(text("PRAGMA foreign_keys=ON"))
+    return cand
+
+
+def test_confirm_refuses_when_the_matched_entry_is_gone(client, db_session):
+    """_confirm_add_to_existing writes a Completion with the candidate's
+    library_entry_id and never checks the entry exists, so confirming one of
+    these produced a completion attached to nothing: invisible in the library
+    and unrecoverable, which is the single loss purge_psn.py refuses to risk.
+
+    The card and row show the state, but a stale page can still post.
+    """
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    cand = _dangling_candidate(db_session, user.id)
+
+    before = db_session.query(models.Completion).count()
+    r = client.post(f"/tools/import/{cand.id}/confirm", headers={"HX-Request": "true"})
+
+    assert r.status_code == 409, "a confirm that cannot land must be refused"
+    assert db_session.query(models.Completion).count() == before, "no orphaned completion"
+    db_session.refresh(cand)
+    assert cand.status == "pending", "the row stays in the queue to be fixed"
+
+
+def test_rematch_relinks_one_candidate_to_the_current_library(client, db_session):
+    """Re-matching a single row, rather than /tools/import/recheck, which
+    re-runs every pending candidate and takes minutes on a real library."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    plat = models.Platform(name="PS5", display_name="PlayStation 5")
+    db_session.add(plat)
+    db_session.flush()
+    entry = _add_game(db_session, user, title="Astro Bot", platform="PS5")
+    entry.release.platform_id = plat.id
+    db_session.commit()
+    cand = _dangling_candidate(db_session, user.id)
+    cand.platform_id = plat.id
+    db_session.commit()
+
+    r = client.post(f"/tools/import/{cand.id}/rematch", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    db_session.refresh(cand)
+    assert cand.library_entry_id == entry.id, "re-pointed at the entry that exists now"
+    assert cand.proposed_action == "add_to_existing"
+
+
+def test_rematch_falls_back_to_create_new_when_nothing_matches(client, db_session):
+    """No entry to attach to is a real answer, and create_new is the tab whose
+    action actually works -- leaving it as add_to_existing offers a Confirm
+    that cannot land."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    cand = _dangling_candidate(db_session, user.id)
+
+    r = client.post(f"/tools/import/{cand.id}/rematch", headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    db_session.refresh(cand)
+    assert cand.library_entry_id is None
+    assert cand.proposed_action == "create_new"
+
+
 # --- import candidate reopen ---
 
 

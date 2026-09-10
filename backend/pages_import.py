@@ -1025,6 +1025,19 @@ def import_confirm(
             headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
         )
 
+    # The link can point at an entry that no longer exists: purge_psn.py deletes
+    # user_library rows and never re-points the candidates aimed at them, which
+    # left 243 of 244 PlayStation candidates dangling. _confirm_add_to_existing
+    # writes a Completion with this id and does not check, so confirming one
+    # produced a completion attached to nothing -- invisible in the library and
+    # exactly the loss the purge script refuses to risk. The card and row show
+    # this state, but a stale page can still post, so refuse here too.
+    if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id and not candidate.library_entry:
+        return Response(
+            "That row's library entry no longer exists. Re-match it before confirming.",
+            status_code=409,
+        )
+
     if candidate.proposed_action == "add_to_existing" and candidate.library_entry_id:
         _confirm_add_to_existing(db, current_user, candidate)
         db.commit()
@@ -1042,6 +1055,45 @@ def import_confirm(
     # add-game modal (POST /library/games with import_candidate_id), not this
     # endpoint — reaching here would be an unexpected call.
     return Response(status_code=400)
+
+
+@router.post("/tools/import/{candidate_id}/rematch")
+def import_rematch_candidate(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Re-run matching for ONE candidate against the current library.
+
+    /tools/import/recheck does this for every pending candidate, which takes
+    minutes against a large library -- too heavy to hang off a button on a
+    single row. The matching itself is the same call.
+    """
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .first()
+    )
+    if not candidate or candidate.status != "pending":
+        return Response(status_code=404)
+
+    collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
+    best_entry = (
+        importer._best_matching_entry(db, current_user.id, candidate.raw_title, candidate.platform_id, collection)
+        if candidate.platform_id
+        else None
+    )
+    if best_entry:
+        candidate.library_entry_id = best_entry.id
+        candidate.proposed_action = "add_to_existing"
+    else:
+        # No match today. "create_new" is the honest answer, and it moves the
+        # row to a tab where the action offered actually works.
+        candidate.library_entry_id = None
+        candidate.proposed_action = "create_new"
+    db.commit()
+    return Response(status_code=200, headers={"HX-Refresh": "true"})
 
 
 @router.post("/tools/import/{candidate_id}/reopen")
