@@ -409,10 +409,34 @@ def fetch_game_details(
         summary      – plain-text description (may be "")
         genres       – list of genre name strings (may be [])
         year         – release year int or None
+        released     – ISO date string or None (the full first_release_date;
+                       `year` is kept for the templates that only want that)
+        developers   – company names with the developer role
+        publishers   – company names with the publisher role
+        themes       – e.g. ["Action", "Fantasy"]: IGDB keeps these separate
+                       from genres, and a store's "Action" is usually one of
+                       these rather than a genre
+        game_modes   – e.g. ["Single player"]
+        perspectives – e.g. ["Side view"]
+        game_type    – IGDB's kind-of-release enum, see GAME_TYPES; 3 = bundle,
+                       which is the collection signal the app otherwise infers
+        franchises   – e.g. ["Castlevania"]
+        websites     – plain URLs; IGDB lists the game's store pages here
         artwork_urls – list of landscape artwork URLs (1080p, may be [])
+
+    This used to request four fields, and the comparison that produced
+    ("2018" against the store's "Oct 26, 2018", no publisher at all) made IGDB
+    look far thinner than it is. The full date, the companies, and the bundle
+    flag were all there for the asking.
     """
     token = get_token(client_id, client_secret)
-    body = f"fields summary, genres.name, first_release_date, artworks.url; where id = {igdb_game_id}; limit 1;"
+    body = (
+        "fields summary, genres.name, first_release_date, artworks.url, "
+        "themes.name, game_modes.name, player_perspectives.name, "
+        "involved_companies.company.name, involved_companies.developer, involved_companies.publisher, "
+        "game_type, franchises.name, websites.url; "
+        f"where id = {igdb_game_id}; limit 1;"
+    )
     resp = httpx.post(
         f"{_IGDB_BASE}/games",
         headers=_igdb_headers(client_id, token),
@@ -437,12 +461,43 @@ def fetch_game_details(
         if art.get("url"):
             artwork_urls.append(_igdb_image_url(art["url"], "t_1080p"))
 
+    released = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC).date().isoformat() if ts else None
+    developers = [c["company"]["name"] for c in g.get("involved_companies") or [] if c.get("developer") and c.get("company")]
+    publishers = [c["company"]["name"] for c in g.get("involved_companies") or [] if c.get("publisher") and c.get("company")]
+
+    def _names(key: str) -> list[str]:
+        return [x["name"] for x in (g.get(key) or []) if x.get("name")]
+
     return {
         "summary": (g.get("summary") or "").strip(),
         "genres": genres,
         "year": year,
+        "released": released,
+        "developers": developers,
+        "publishers": publishers,
+        "themes": _names("themes"),
+        "game_modes": _names("game_modes"),
+        "perspectives": _names("player_perspectives"),
+        "game_type": g.get("game_type"),
+        "franchises": _names("franchises"),
+        "websites": [w["url"] for w in (g.get("websites") or []) if w.get("url")],
         "artwork_urls": artwork_urls,
     }
+
+
+# IGDB's game_type enum. Only the ones that change how the app should treat
+# an entry are named; anything else falls through as None.
+GAME_TYPES = {
+    0: "main game",
+    1: "dlc",
+    2: "expansion",
+    3: "bundle",
+    4: "standalone expansion",
+    8: "remake",
+    9: "remaster",
+    11: "port",
+    13: "pack",
+}
 
 
 def save_igdb_metadata(
@@ -472,15 +527,30 @@ def save_igdb_metadata(
         release.description = details["summary"]
         changed = True
 
-    # Genres + year → release.raw_data['igdb'].
-    if details["genres"] or details["year"]:
+    # Everything descriptive → release.raw_data['igdb']. Written wholesale
+    # rather than field-by-field, so a re-fetch can also REMOVE something IGDB
+    # no longer says; year stays alongside the full date for the readers that
+    # only want that.
+    stored = {
+        k: details[k]
+        for k in (
+            "genres",
+            "year",
+            "released",
+            "developers",
+            "publishers",
+            "themes",
+            "game_modes",
+            "perspectives",
+            "game_type",
+            "franchises",
+            "websites",
+        )
+        if details.get(k) not in (None, [], "")
+    }
+    if stored:
         raw = dict(release.raw_data or {})
-        igdb_block = dict(raw.get("igdb", {}))
-        if details["genres"]:
-            igdb_block["genres"] = details["genres"]
-        if details["year"]:
-            igdb_block["year"] = details["year"]
-        raw["igdb"] = igdb_block
+        raw["igdb"] = {**dict(raw.get("igdb", {})), **stored}
         release.raw_data = raw
         changed = True
 

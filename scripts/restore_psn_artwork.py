@@ -50,6 +50,9 @@ def main():
     print("by type:", dict(collections.Counter(r[1] for r in saved)))
 
     new = sqlite3.connect(DB)
+    # Same as purge_psn.py: the app enforces foreign keys, a raw connection
+    # does not unless told to.
+    new.execute("PRAGMA foreign_keys=ON")
     # external_id is NOT unique on its own — one trophy set can become several
     # releases (cross-buy). Every matching entry gets the art.
     entries = collections.defaultdict(list)

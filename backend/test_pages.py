@@ -3647,3 +3647,54 @@ def test_every_pale_nord_accent_has_an_ink_and_sega_is_blue():
     models_src = open("backend/models.py").read()
     sega = models_src[models_src.index('"dreamcast"') :][:200]
     assert "tag-platform-blue" in sega, "the heuristic still paints Sega yellow"
+
+
+def test_igdb_fetch_keeps_the_whole_record(db_session):
+    """The fetch used to ask IGDB for four fields and then keep the year out of
+    the date. Compared against a store's full record that made IGDB look thin
+    -- "2018" against "Oct 26, 2018", no publisher -- when the full date, the
+    companies, the facets and the bundle flag were all there for the asking.
+    Display is a separate question; this is only that the data lands."""
+    from unittest.mock import MagicMock, patch
+
+    from backend import igdb
+
+    game = models.Game(title="Castlevania Requiem")
+    db_session.add(game)
+    db_session.flush()
+    release = models.GameRelease(game_id=game.id, platform="PS4", source="psn", external_id="CUSA13434_00")
+    db_session.add(release)
+    db_session.commit()
+
+    fake = MagicMock()
+    fake.raise_for_status.return_value = None
+    fake.json.return_value = [
+        {
+            "summary": "Two of the greatest.",
+            "genres": [{"name": "Platform"}],
+            "themes": [{"name": "Action"}, {"name": "Fantasy"}],
+            "game_modes": [{"name": "Single player"}],
+            "player_perspectives": [{"name": "Side view"}],
+            "first_release_date": 1540512000,  # 2018-10-26
+            "involved_companies": [{"company": {"name": "Konami"}, "developer": True, "publisher": True}],
+            "game_type": 3,
+            "franchises": [{"name": "Castlevania"}],
+            "websites": [{"url": "https://store.playstation.com/en-us/concept/232977"}],
+        }
+    ]
+    with (
+        patch("backend.igdb.get_token", return_value="tok"),
+        patch("backend.igdb.httpx.post", return_value=fake),
+    ):
+        igdb.save_igdb_metadata(db_session, release, 109594, "cid", "sec")
+
+    db_session.refresh(release)
+    block = release.raw_data["igdb"]
+    assert block["released"] == "2018-10-26", "the full date, not just the year"
+    assert block["year"] == 2018, "year still there for the readers that only want that"
+    assert block["developers"] == ["Konami"] and block["publishers"] == ["Konami"]
+    assert block["themes"] == ["Action", "Fantasy"], "a store's 'Action' is an IGDB theme, not a genre"
+    assert block["game_type"] == 3 and igdb.GAME_TYPES[3] == "bundle", "the collection signal"
+    assert block["franchises"] == ["Castlevania"]
+    assert block["websites"] == ["https://store.playstation.com/en-us/concept/232977"]
+    assert release.description == "Two of the greatest."

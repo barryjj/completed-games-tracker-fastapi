@@ -54,6 +54,13 @@ def main():
     args = ap.parse_args()
 
     db = sqlite3.connect(DB)
+    # SQLite enforces foreign keys per CONNECTION, off by default. The app turns
+    # them on; this script did not, so its DELETE FROM user_library ran past a
+    # constraint declared ON DELETE SET NULL and left 243 import candidates
+    # pointing at entries that no longer existed -- silently, for months. With
+    # the pragma on, SQLite nulls those links itself, which is what the schema
+    # said should happen all along.
+    db.execute("PRAGMA foreign_keys=ON")
     cur = db.cursor()
 
     print("=== what a purge would remove ===")
