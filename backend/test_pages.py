@@ -2636,15 +2636,37 @@ def test_review_pages_defer_their_card_stack_init(client, db_session):
     wait for DOMContentLoaded, which fires after deferred scripts have run.
     """
     import re
+    from html.parser import HTMLParser
+
+    # A real parser, not a regex. The first version matched <script ...>(.*?)
+    # </script> and CodeQL flagged it as an HTML filter that misses <SCRIPT>,
+    # then </script >, and would keep finding spellings -- because it reads any
+    # tag-shaped regex as a sanitizer. Parsing the page the way a browser does
+    # ends that argument and is the honest way to find the inline blocks anyway.
+    class _InlineScripts(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.blocks: list[str] = []
+            self._open = False
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "script" and not any(k == "src" for k, _ in attrs):
+                self._open = True
+                self.blocks.append("")
+
+        def handle_endtag(self, tag):
+            if tag == "script":
+                self._open = False
+
+        def handle_data(self, data):
+            if self._open:
+                self.blocks[-1] += data
 
     _signup_and_login(client)
     for path in ("/tools/match-review", "/tools/import/review", "/tools/psn-review"):
-        body = client.get(path).text
-        # re.I: CodeQL's py/bad-tag-filter flags a tag regex that would miss
-        # <SCRIPT>. This is a test reading our own rendered page, not a
-        # sanitizer, but case-insensitive is also simply what "find the
-        # inline script blocks" means.
-        for block in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", body, re.S | re.I):
+        parser = _InlineScripts()
+        parser.feed(client.get(path).text)
+        for block in parser.blocks:
             if "cgtPlaceCards" not in block:
                 continue
             registered = re.search(r"addEventListener\(\s*['\"]DOMContentLoaded", block)
