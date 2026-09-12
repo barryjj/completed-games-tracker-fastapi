@@ -3974,23 +3974,27 @@ def test_only_overlapping_sets_are_flagged_as_contested(db_session):
     db_session.commit()
 
     rows = {r["key"]: r for r in psn.import_review_rows(db_session, user.id)}
-    assert rows["NPWR03639_00"]["contested"] is False, "distinct platforms are already determined"
-    assert rows["NPWR03640_00"]["contested"] is False
-    assert rows["NPWR06670_00"]["contested"] is True, "identical claims genuinely compete"
+    # Big Sky's two sets do not compete, so they are ONE row now (#212): one
+    # decision, an entry per platform, each from its own set.
+    assert "NPWR03640_00" not in rows, "folded into its sibling"
+    big_sky = rows["NPWR03639_00"]
+    assert big_sky["contested"] is False, "distinct platforms are already determined"
+    assert sorted(big_sky["members"]) == ["NPWR03639_00", "NPWR03640_00"]
+    # Crimsonland's identical claims genuinely compete, so they stay two rows.
+    assert rows["NPWR06670_00"]["contested"] is True
     assert rows["NPWR06085_00"]["contested"] is True
 
 
-def test_two_trophy_sets_for_one_title_still_say_so(db_session):
+def test_two_trophy_sets_for_one_title_are_one_decision(db_session):
     """Big Sky Infinity has a PS3 set and a Vita set — consecutive npCommIds,
-    same 14 trophies, both 3/14, last played a month apart. Two real progress
-    records wanting two entries, and without the "Set 1 of 2" badge they read as
-    an accidental duplicate.
+    same 14 trophies, both 3/14. Two real progress records wanting two ENTRIES
+    — and that is still what confirm creates. But they were two rows, each
+    asking about its own platform, "set 1 of 2" / "set 2 of 2", and a PS+
+    resubscription turned that into Balatro twice and Nioh 2 three times
+    (#212). One game is one question: PS3 and/or Vita?
 
-    The siblings query was scoped to kind == "cross_play", which was fine while
-    that was the only kind a multi-set title could land in. Once the sync began
-    holding every new title back as title_fix, the badge silently stopped
-    appearing — and so did claimed_by, the guard that stops two sets claiming
-    the same platform and one of them being dropped as a conflict."""
+    Each platform's option comes from the set that OWNS it, so what is
+    pre-ticked and what gets created are the same record's answer."""
     user = _prop_user(db_session, "u-sets")
     db_session.add(models.Platform(name="PS3", display_name="PlayStation 3"))
     for ext, plat in (("NPWR03639_00", "PS3"), ("NPWR03640_00", "PSVITA")):
@@ -3999,9 +4003,15 @@ def test_two_trophy_sets_for_one_title_still_say_so(db_session):
     db_session.commit()
 
     rows = psn.import_review_rows(db_session, user.id)
-    assert len(rows) == 2
-    assert all(r["set_count"] == 2 for r in rows), "title_fix rows must see their siblings too"
-    assert sorted(r["set_index"] for r in rows) == [1, 2]
+    assert len(rows) == 1, "one row for the game, not one per set"
+    row = rows[0]
+    assert row["key"] == "NPWR03639_00", "keyed by the smallest member id, so it is stable"
+    assert sorted(row["members"]) == ["NPWR03639_00", "NPWR03640_00"]
+    opts = {o["platform"]: o for o in row["options"]}
+    assert set(opts) == {"PS3", "PSVITA"}, "the union of both sets' platforms"
+    assert opts["PS3"]["owner"] == "NPWR03639_00" and opts["PSVITA"]["owner"] == "NPWR03640_00"
+    assert all(o["selected"] for o in row["options"]), "each set pre-ticks its own platform"
+    assert row["set_count"] == 1, "no 'set N of M' -- there is nothing left to explain"
 
 
 def test_a_platform_claimed_by_a_decided_set_is_marked_on_its_sibling(db_session):
@@ -5544,3 +5554,160 @@ def test_the_other_stacks_use_the_shared_placer():
     # The selector is the last line before the "transition:" line above it.
     head = [ln.strip() for ln in css[:moving].split("\n") if ln.strip()][-2]
     assert head == ".cgt-match-card {", f"the transition belongs to {head!r}, not to every card"
+
+
+# ─── One row per game (#212) ────────────────────────────────────────────────
+
+
+def _record(db, user, ext, title, *, platform, norm, npwr=None, igdb=None, proposed=None, sources=("purchased",)):
+    """A PSN review record the way the crawl writes one: a store SKU, or a
+    trophy set (npwr) that may also be a SKU."""
+    c = models.PsnReviewCandidate(
+        user_id=user.id,
+        external_id=ext,
+        title=title,
+        kind="title_fix",
+        status="pending",
+        proposed_title=proposed,
+        proposed_igdb_id=igdb,
+        proposal_status="pending" if proposed else ("matched" if igdb else None),
+        raw_data={
+            "name": title,
+            "displayName": title,
+            "platform": platform,
+            "normalizedName": norm,
+            "titleId": ext if not ext.startswith("NPWR") else None,
+            "npCommunicationId": npwr,
+            "sources": list(sources),
+            "trophies": {"bronze": 40, "silver": 8, "gold": 2, "platinum": 1} if npwr else {},
+            "earnedTrophies": {"bronze": 40, "silver": 8, "gold": 2, "platinum": 1} if npwr else {},
+            "trophyProgress": 100 if npwr else 0,
+        },
+    )
+    db.add(c)
+    return c
+
+
+def test_one_trophy_set_under_two_skus_is_one_row_and_one_entry(client, db_session):
+    """Nioh, from the real queue on 2026-09-12: NPWR10261_00 under CUSA05892
+    (the bought copy) and CUSA07113 (the PS+ edition), both PS4, both 47/86.
+    Two rows, "set 1 of 2" / "set 2 of 2", two Confirms — for one trophy set.
+
+    One row. Confirming PS4 creates one entry from the SKU with play evidence;
+    the other SKU is consumed by the same click rather than asked again."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _record(
+        db_session, user, "CUSA05892_00", "Nioh", platform="PS4", norm="nioh", npwr="NPWR10261_00", igdb=12571, sources=("played", "titles")
+    )
+    _record(
+        db_session,
+        user,
+        "CUSA07113_00",
+        "Nioh",
+        platform="PS4",
+        norm="nioh",
+        npwr="NPWR10261_00",
+        igdb=12571,
+        sources=("purchased", "titles"),
+    )
+    db_session.commit()
+
+    rows = psn.import_review_rows(db_session, user.id)
+    assert len(rows) == 1, "one trophy set is one game is one row"
+    row = rows[0]
+    assert sorted(row["members"]) == ["CUSA05892_00", "CUSA07113_00"]
+    assert [o["platform"] for o in row["options"]] == ["PS4"], "two SKUs of one set do not make two platforms"
+    assert row["options"][0]["owner"] == "CUSA05892_00", "the SKU with play evidence owns the platform"
+    assert len(row["sets"]) == 1 and row["sets"][0]["platforms"] == ["PS4"], "one trophy line, not two"
+
+    r = client.post(f"/tools/psn-review/{row['key']}/confirm", data={"platforms": ["PS4"]}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    entries = db_session.query(models.UserLibraryEntry).filter_by(user_id=user.id).all()
+    assert len(entries) == 1, "one entry, not one per SKU"
+    assert entries[0].release.external_id == "CUSA05892_00", "created from the owning record"
+    decided = {c.external_id: (c.status, c.chosen_platforms) for c in db_session.query(models.PsnReviewCandidate).all()}
+    assert decided["CUSA05892_00"] == ("confirmed", ["PS4"])
+    assert decided["CUSA07113_00"][0] == "dismissed", "the other SKU is consumed, not left pending"
+    assert psn.review_pending_count(db_session, user.id) == 0
+
+
+def test_two_platform_skus_are_one_row_with_an_entry_per_platform(client, db_session):
+    """Balatro: a PS4 SKU and a PS5 SKU, no trophy set, same IGDB game. Was two
+    rows each asking about one platform. One row, PS4 and/or PS5, and each
+    ticked platform's entry is created from ITS SKU -- so the PS5 entry carries
+    the PPSA id and the PS4 entry the CUSA id."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _record(db_session, user, "CUSA47498_00", "Balatro", platform="PS4", norm="balatro", igdb=250616)
+    _record(db_session, user, "PPSA21401_00", "Balatro", platform="PS5", norm="balatro", igdb=250616)
+    db_session.commit()
+
+    rows = psn.import_review_rows(db_session, user.id)
+    assert len(rows) == 1
+    row = rows[0]
+    opts = {o["platform"]: o for o in row["options"]}
+    assert set(opts) == {"PS4", "PS5"}
+    assert opts["PS4"]["owner"] == "CUSA47498_00" and opts["PS5"]["owner"] == "PPSA21401_00"
+    assert row["sets"] == [], "no trophy lines when nothing has trophies"
+
+    r = client.post(f"/tools/psn-review/{row['key']}/confirm", data={"platforms": ["PS4", "PS5"]}, headers={"HX-Request": "true"})
+    assert r.status_code == 200
+
+    entries = db_session.query(models.UserLibraryEntry).filter_by(user_id=user.id).all()
+    by_platform = {e.release.platform: e.release.external_id for e in entries}
+    assert by_platform == {"PlayStation 4": "CUSA47498_00", "PlayStation 5": "PPSA21401_00"}, "each entry from its own SKU"
+
+
+def test_a_different_trophy_set_on_another_platform_is_its_own_row(db_session, client):
+    """Nioh 2 (NPWR18604_00, PS4, IGDB 103330) and Nioh 2 Remastered (NPWR21360_00,
+    PS5, IGDB 143350). IGDB says they are different games, and they are two
+    platinums wanting two entries -- so two rows is right. The point of keying
+    on IGDB is that it settles this rather than the name."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    _record(
+        db_session,
+        user,
+        "CUSA16063_00",
+        "Nioh 2",
+        platform="PS4",
+        norm="nioh2",
+        npwr="NPWR18604_00",
+        igdb=103330,
+        sources=("played", "titles"),
+    )
+    _record(
+        db_session,
+        user,
+        "CUSA15532_00",
+        "Nioh 2",
+        platform="PS4",
+        norm="nioh2",
+        npwr="NPWR18604_00",
+        igdb=103330,
+        sources=("purchased", "titles"),
+    )
+    _record(
+        db_session,
+        user,
+        "PPSA02489_00",
+        "Nioh 2",
+        platform="PS5",
+        norm="nioh2",
+        npwr="NPWR21360_00",
+        igdb=143350,
+        proposed="Nioh 2 Remastered: The Complete Edition",
+        sources=("played", "purchased", "titles"),
+    )
+    db_session.commit()
+
+    rows = {(r["proposed_title"] or r["name"]): r for r in psn.import_review_rows(db_session, user.id)}
+    assert set(rows) == {"Nioh 2", "Nioh 2 Remastered: The Complete Edition"}, "two games, two rows -- not three"
+    assert sorted(rows["Nioh 2"]["members"]) == ["CUSA15532_00", "CUSA16063_00"]
+    assert rows["Nioh 2 Remastered: The Complete Edition"]["members"] == ["PPSA02489_00"]
+    assert psn.review_pending_count(db_session, user.id) == 2, "the badge counts decisions, not records"

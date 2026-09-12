@@ -1203,16 +1203,27 @@ def _import_one(db: Session, user: models.User, item: dict, platform_id: int) ->
 
     if release is None:
         cleaned = titles._clean_title(title)
-        existing_game = (
-            db.query(models.Game)
-            .join(models.GameRelease)
-            .join(models.UserLibraryEntry)
-            .filter(
-                models.UserLibraryEntry.user_id == user.id,
-                models.Game.title == title,
+        # By IGDB id first, when the item carries one. games.igdb_id is UNIQUE,
+        # and the title lookup below joins through the user's library entries
+        # -- which the entry created a moment ago for the OTHER platform has not
+        # reached yet. So confirming PS4 and PS5 together with an accepted
+        # proposal made a second Game for the same id and died on the
+        # constraint. Any cross-play confirm with a proposal could hit this;
+        # one row per game (#212) made it the common case.
+        existing_game = None
+        if item.get("igdbId"):
+            existing_game = db.query(models.Game).filter(models.Game.igdb_id == item["igdbId"]).first()
+        if existing_game is None:
+            existing_game = (
+                db.query(models.Game)
+                .join(models.GameRelease)
+                .join(models.UserLibraryEntry)
+                .filter(
+                    models.UserLibraryEntry.user_id == user.id,
+                    models.Game.title == title,
+                )
+                .first()
             )
-            .first()
-        )
         if existing_game is not None:
             game = existing_game
             if not game.display_name_user_set and game.display_name is None and cleaned != title:
@@ -1674,6 +1685,151 @@ def _trophy_hint_is_trustworthy(item: dict, sets_for_title: int) -> bool:
     return item.get("trophyJoin") != "name" and sets_for_title < 2
 
 
+# ─── One row per game (#212) ────────────────────────────────────────────────
+# Sony hands out several records for one game: a trophy set, a store SKU per
+# platform, sometimes two SKUs for one platform (the copy you bought and the
+# PS+ edition both point at NPWR10261 for Nioh). Each became its own review row,
+# so a PS+ resubscription put Balatro in the queue twice -- a PS4 SKU and a PS5
+# SKU, no trophies, "set 1 of 2" -- and Nioh 2 three times.
+#
+# The queue used to say "one row per trophy set, not per game", on the theory
+# that two sets are two progress records wanting two entries. That is still
+# true of the ENTRIES. It was never a reason to ask the same question three
+# times: one game is one decision, "PS4 and/or PS5?", and the entries are
+# created per platform from whichever record owns that platform.
+#
+# Identity is the IGDB id once the row has one, because that is the only thing
+# that knows two SKUs are one game and that Nioh 2 Remastered is not Nioh 2.
+# Rows without one fall back to the normalized-name grouping that already drove
+# "set N of M". The single exception is the Crimsonland shape: two DIFFERENT
+# trophy sets both claiming the same platforms, with nothing saying which
+# covers which. Merging those would guess, and a wrong guess silently drops a
+# set as a (game, platform) conflict -- so they stay separate rows with the
+# contested warning they already had.
+
+
+def _set_id(cand) -> str | None:
+    """The trophy set this record belongs to, or None for a store-only SKU.
+    A row keyed by an NPWR id IS a trophy set even when the crawl block is
+    missing -- the same rule is_trophy_only applies."""
+    raw = cand.raw_data or {}
+    if raw.get("npCommunicationId"):
+        return raw["npCommunicationId"]
+    return cand.external_id if is_trophy_only(cand.external_id) else None
+
+
+def _cand_sources(cand) -> list[str]:
+    return list((cand.raw_data or {}).get("sources") or [])
+
+
+def group_review_candidates(cands: list) -> list[dict]:
+    """Partition pending candidates into one group per game.
+
+    Returns [{key, members, igdb_id, norm, contested}], key being the smallest
+    member external_id so it is stable for a given membership. Callers use the
+    key wherever a row key was used before; the members are what confirm
+    creates entries from.
+    """
+    by_igdb: dict[int, list] = {}
+    by_name: dict[str, list] = {}
+    for c in cands:
+        norm = (c.raw_data or {}).get("normalizedName") or ""
+        if c.proposed_igdb_id and c.proposal_status != "rejected":
+            by_igdb.setdefault(c.proposed_igdb_id, []).append(c)
+        else:
+            by_name.setdefault(norm, []).append(c)
+
+    # A record that has not resolved yet (a purchased-only SKU, say) joins the
+    # resolved group for its name -- but only when exactly one such group
+    # exists. Two IGDB ids sharing a name is IGDB disagreeing, and the
+    # unresolved row cannot be assigned to either without guessing.
+    norm_to_igdb: dict[str, set[int]] = {}
+    for gid, members in by_igdb.items():
+        for m in members:
+            n = (m.raw_data or {}).get("normalizedName") or ""
+            if n:
+                norm_to_igdb.setdefault(n, set()).add(gid)
+    buckets: list[tuple[int | None, str, list]] = []
+    for norm, members in by_name.items():
+        gids = norm_to_igdb.get(norm) or set()
+        if norm and len(gids) == 1:
+            by_igdb[next(iter(gids))].extend(members)
+        elif norm:
+            buckets.append((None, norm, members))
+        else:
+            # No name to group on: every one of these is alone.
+            buckets.extend((None, "", [m]) for m in members)
+    for gid, members in by_igdb.items():
+        norm = next(((m.raw_data or {}).get("normalizedName") or "" for m in members), "")
+        buckets.append((gid, norm, members))
+
+    groups: list[dict] = []
+    for gid, norm, members in buckets:
+        # Split members whose DIFFERENT trophy sets compete for a platform.
+        # Same set id (two SKUs, one set) never competes with itself, and a
+        # record with no set has no progress to attribute wrongly.
+        subs: list[list] = []
+        for m in sorted(members, key=lambda c: c.external_id or ""):
+            m_set = _set_id(m)
+            m_plats = set(platform_candidates(m.raw_data or {}))
+            for sub in subs:
+                clash = any(
+                    _set_id(o) and m_set and _set_id(o) != m_set and (set(platform_candidates(o.raw_data or {})) & m_plats) for o in sub
+                )
+                if not clash:
+                    sub.append(m)
+                    break
+            else:
+                subs.append([m])
+        for sub in subs:
+            groups.append(
+                {
+                    "key": min(c.external_id for c in sub),
+                    "members": sub,
+                    "igdb_id": gid,
+                    "norm": norm,
+                    "contested": len(subs) > 1,
+                }
+            )
+    return groups
+
+
+def _platform_owner(members: list, platform: str):
+    """Which record creates the entry for this platform.
+
+    The trophy set covering it, if any -- with play or purchase evidence
+    breaking a tie between SKUs of the same set. Otherwise the SKU actually
+    bought for it. Otherwise whichever record offers it.
+    """
+    with_set = [m for m in members if _set_id(m) and platform in platform_candidates(m.raw_data or {})]
+    if with_set:
+        with_set.sort(key=lambda m: ("played" not in _cand_sources(m), "purchased" not in _cand_sources(m), m.external_id or ""))
+        return with_set[0]
+    bought = [m for m in members if purchased_platform(m.raw_data or {}) == platform]
+    if bought:
+        return bought[0]
+    offering = [m for m in members if platform in platform_candidates(m.raw_data or {})]
+    return offering[0] if offering else None
+
+
+def _group_for(db: Session, user_id: int, key: str) -> dict | None:
+    """The group containing the candidate with this external_id, over the
+    user's pending queue. None when the key is not pending."""
+    cands = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
+            models.PsnReviewCandidate.user_id == user_id,
+            models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS),
+            models.PsnReviewCandidate.status == "pending",
+        )
+        .all()
+    )
+    for g in group_review_candidates(cands):
+        if any(m.external_id == key for m in g["members"]):
+            return g
+    return None
+
+
 def review_row_index(db: Session, user_id: int) -> list[dict]:
     """Every pending row reduced to what filtering and sorting need — no display
     rows built.
@@ -1697,34 +1853,39 @@ def review_row_index(db: Session, user_id: int) -> list[dict]:
         )
         .all()
     )
-    # Set index needs the same sibling grouping the builder uses, so two rows for
-    # one title keep a stable order rather than shuffling between requests.
-    groups: dict[str, list] = {}
-    for cand in rows:
-        norm = (cand.raw_data or {}).get("normalizedName")
-        if norm:
-            groups.setdefault(norm, []).append(cand)
-    for group in groups.values():
-        group.sort(key=lambda c: c.external_id or "")
-
+    # One light row per GROUP, using the same partition the builder uses, so the
+    # position the card view holds refers to the same row the builder returns
+    # for it (#212). Members with no platform options are dropped, and a group
+    # left with none is skipped -- the builder does the same.
     out = []
-    for cand in rows:
-        raw = cand.raw_data or {}
-        options = platform_candidates(raw)
-        if not options:
-            continue  # the builder skips these, so the index must too
-        norm = raw.get("normalizedName") or ""
-        group = groups.get(norm, [])
+    for g in group_review_candidates(rows):
+        members = [m for m in g["members"] if platform_candidates(m.raw_data or {})]
+        if not members:
+            continue
+        platforms: list[str] = []
+        for m in members:
+            for plat in platform_candidates(m.raw_data or {}):
+                if plat not in platforms:
+                    platforms.append(plat)
         out.append(
             {
-                "key": cand.external_id,
-                "name": cand.title or "",
-                "platforms": options,
-                "progress": raw.get("trophyProgress") or 0,
-                "set_index": next((i + 1 for i, c in enumerate(group) if c.external_id == cand.external_id), 1),
+                "key": g["key"],
+                "name": _group_name(members),
+                "platforms": platforms,
+                "progress": max(((m.raw_data or {}).get("trophyProgress") or 0) for m in members),
+                "set_index": 1,
             }
         )
     return out
+
+
+def _group_name(members: list) -> str:
+    """The name a grouped row shows: a member carrying an IGDB proposal first,
+    since that is the corrected one; otherwise the first member's title."""
+    for m in members:
+        if m.proposed_title and m.proposal_status in ("pending", "accepted"):
+            return m.proposed_title
+    return next((m.title for m in members if m.title), "") or ""
 
 
 def count_pending_review_rows(db: Session, user_id: int) -> int:
@@ -1740,15 +1901,19 @@ def count_pending_review_rows(db: Session, user_id: int) -> int:
     platform_candidates is pure and cheap, so the rule is applied here in
     Python over one query instead.
     """
-    return sum(
-        1
-        for (raw,) in db.query(models.PsnReviewCandidate.raw_data).filter(
+    # One per group now (#212) -- the badge says how many DECISIONS are waiting,
+    # and three records for Nioh 2 are one decision. Needs the candidates rather
+    # than just raw_data, since grouping reads the IGDB proposal off the row.
+    cands = (
+        db.query(models.PsnReviewCandidate)
+        .filter(
             models.PsnReviewCandidate.user_id == user_id,
             models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS),
             models.PsnReviewCandidate.status == "pending",
         )
-        if platform_candidates(raw or {})
+        .all()
     )
+    return sum(1 for g in group_review_candidates(cands) if any(platform_candidates(m.raw_data or {}) for m in g["members"]))
 
 
 def hero_video_for(hero_url: str | None) -> str | None:
@@ -1795,25 +1960,31 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
     Confirming CREATES the entries, so a decided row leaves the list the way a
     merged pair leaves match review.
     """
-    candidates = db.query(models.PsnReviewCandidate).filter(
-        models.PsnReviewCandidate.user_id == user_id,
-        # ONE queue. A trophy set can need its name approved, its
-        # platforms chosen, or BOTH — and a row needing both must be
-        # decided once, in one place. Splitting them would mean a game
-        # required visiting two queues to import, with no ordering
-        # guarantee between them (#180).
-        models.PsnReviewCandidate.kind.in_(("cross_play", "title_fix", "media_app", "igdb_link")),
-        models.PsnReviewCandidate.status == "pending",
+    # ONE queue. A trophy set can need its name approved, its platforms chosen,
+    # or BOTH — and a row needing both must be decided once, in one place.
+    # Splitting them would mean a game required visiting two queues to import,
+    # with no ordering guarantee between them (#180).
+    #
+    # Every status, one query: siblings and claimed_by below need decided rows
+    # too, and the grouping needs the pending ones.
+    all_cands = (
+        db.query(models.PsnReviewCandidate)
+        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS))
+        .all()
     )
+    pending = [c for c in all_cands if c.status == "pending"]
+    groups = group_review_candidates(pending)
+    group_of = {m.external_id: g for g in groups for m in g["members"]}
     # Callers that want a FEW rows: the edit modal wants one, the card view a
-    # window of five. Building all of them and discarding
-    # the rest cost ~5s on a 589-row queue, because every row pays for
-    # platform resolution, a verdict, sibling lookup and trophy tiers.
-    # siblings/claimed_by come from their own query below, so narrowing
-    # here leaves "Set 1 of 2" and the platform-claim logic intact.
+    # window of five. Building all of them and discarding the rest cost ~5s on
+    # a 589-row queue, because every row pays for platform resolution, a
+    # verdict, sibling lookup and trophy tiers. Keys are GROUP keys (#212), so
+    # a wanted key expands to every member of its group.
     if only_keys is not None:
-        candidates = candidates.filter(models.PsnReviewCandidate.external_id.in_(only_keys))
-    candidates = candidates.all()
+        wanted = set(only_keys)
+        candidates = [c for c in pending if group_of[c.external_id]["key"] in wanted]
+    else:
+        candidates = pending
 
     # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
     # INCLUDED. Two things need them:
@@ -1834,11 +2005,7 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
     # Infinity showed as two identical rows with nothing saying why, and the
     # claim guard stopped guarding.
     siblings: dict[str, list] = {}
-    for cand in (
-        db.query(models.PsnReviewCandidate)
-        .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.kind.in_(_QUEUE_KINDS))
-        .all()
-    ):
+    for cand in all_cands:
         # A row with no normalized name cannot be anyone's sibling. Bucketing
         # them all under "" made unrelated titles count as several sets for one
         # title, which suppresses their playtime as unattributable.
@@ -2011,8 +2178,87 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
                 ],
             }
         )
-    rows.sort(key=lambda r: ((r["name"] or "").casefold(), r["set_index"]))
-    return rows
+    # Fold the per-record rows into one per game (#212). Each record's row was
+    # built exactly as before -- platform narrowing, verdict, claims -- and the
+    # fold only decides which record's answer is shown for which platform.
+    by_key = {r["key"]: r for r in rows}
+    merged = []
+    for g in groups:
+        member_rows = [by_key[m.external_id] for m in g["members"] if m.external_id in by_key]
+        if member_rows:
+            merged.append(_fold_group_rows(g, member_rows, by_key))
+    merged.sort(key=lambda r: ((r["name"] or "").casefold(), r["set_index"]))
+    return merged
+
+
+def _fold_group_rows(g: dict, member_rows: list[dict], by_key: dict) -> dict:
+    """One display row for a group, from its members' rows.
+
+    A single-member group is its row, plus the two fields the templates read on
+    every row now: members and sets. A multi-member group takes the primary's
+    row and overrides what the group changes -- name from the member carrying
+    the IGDB proposal, art from whichever has it, and the platform options as
+    the union, each option copied from the record that OWNS that platform so
+    the pre-tick, playtime and claim shown are the ones that will be used.
+    """
+    primary = next((r for r in member_rows if r["key"] == g["key"]), member_rows[0])
+    row = dict(primary)
+    row["key"] = g["key"]
+    row["members"] = [r["key"] for r in member_rows]
+    row["contested"] = bool(row.get("contested")) or g["contested"]
+    if len(member_rows) == 1:
+        # Same shape as a folded row, so nothing downstream branches on size.
+        row["options"] = [{**o, "owner": row["key"]} for o in row["options"]]
+        row["sets"] = []
+        return row
+
+    named = next((r for r in member_rows if r["proposed_title"] and r["proposal_status"] in ("pending", "accepted")), None)
+    if named is not None:
+        for k in ("name", "proposed_title", "proposed_igdb_id", "proposal_status"):
+            row[k] = named[k]
+    for k in ("image", "hero", "hero_video", "logo"):
+        row[k] = next((r[k] for r in member_rows if r.get(k)), None)
+
+    options: dict[str, dict] = {}
+    for r in member_rows:
+        for o in r["options"]:
+            plat = o["platform"]
+            if plat in options:
+                continue
+            owner = _platform_owner(g["members"], plat)
+            owner_key = owner.external_id if owner is not None else r["key"]
+            src = by_key.get(owner_key) or r
+            src_opt = next((x for x in src["options"] if x["platform"] == plat), o)
+            options[plat] = {**src_opt, "owner": owner_key}
+    rank = {p: i for i, p in enumerate(_PS_PLATFORM_RANK)}
+    row["options"] = [options[p] for p in sorted(options, key=lambda p: rank.get(p, len(rank)))]
+
+    # One trophy line per record that owns something and has trophies. Two SKUs
+    # of one set collapse to one line; a cross-gen single set is one line
+    # listing both platforms; Nioh 2's PS4 set and the PS5 Remastered set are
+    # two lines, which is the whole point of showing them.
+    sets = []
+    for owner_key in dict.fromkeys(o["owner"] for o in row["options"]):
+        orow = by_key.get(owner_key)
+        if not orow or not orow["trophy_defined"]:
+            continue
+        sets.append(
+            {
+                "key": owner_key,
+                "platforms": [o["platform"] for o in row["options"] if o["owner"] == owner_key],
+                "earned": orow["trophy_earned"],
+                "defined": orow["trophy_defined"],
+                "progress": orow["trophy_progress"],
+                "tiers": orow["trophy_tiers"],
+            }
+        )
+    row["sets"] = sets
+    row["trophy_progress"] = max((r["trophy_progress"] or 0) for r in member_rows)
+    row["total_minutes"] = sum(o.get("minutes") or 0 for o in row["options"])
+    row["last_played"] = max((r["last_played"] or "" for r in member_rows), default="")
+    row["set_index"], row["set_count"] = 1, 1
+    row["reason"] = f"{len(member_rows)} PSN records for this game — one entry per platform you tick"
+    return row
 
 
 def review_thumbnail_gaps(db: Session, user_id: int) -> list[dict]:
@@ -2077,12 +2323,20 @@ def save_review_thumbnails(db: Session, user_id: int, art: dict[str, dict]) -> i
 
 
 def review_pending_count(db: Session, user_id: int) -> int:
-    """Rows still awaiting a decision, across both queues."""
-    return (
+    """Decisions still waiting, across both queues.
+
+    The review queue counts GROUPS (#212): three records for Nioh 2 are one
+    decision, and a badge saying 3 would be back to the thing being fixed.
+    Played-only rows are not grouped and count one each.
+    """
+    pending = (
         db.query(models.PsnReviewCandidate)
         .filter(models.PsnReviewCandidate.user_id == user_id, models.PsnReviewCandidate.status == "pending")
-        .count()
+        .all()
     )
+    queue = [c for c in pending if c.kind in _QUEUE_KINDS]
+    other = len(pending) - len(queue)
+    return len(group_review_candidates(queue)) + other
 
 
 # The review queue holds two kinds and they act identically: a row can be
@@ -2156,10 +2410,17 @@ def reject_proposal(db: Session, user: models.User, key: str) -> dict:
     cand = _pending_candidate(db, user.id, key)
     if cand is None:
         raise ValueError("That trophy set is not in the PSN review queue.")
-    cand.proposed_title = None
-    cand.proposed_igdb_id = None
-    cand.proposed_platforms = None
-    cand.proposal_status = "rejected"
+    # The row is a group (#212) and the proposal being refused is shown from
+    # whichever member carries it -- not necessarily the key's. Refusing it on
+    # one member while another still held it would leave the row showing the
+    # name that was just turned down. So every member's proposal goes; that is
+    # what "this IGDB match is wrong for this game" means.
+    group = _group_for(db, user.id, key) or {"members": [cand]}
+    for m in group["members"]:
+        m.proposed_title = None
+        m.proposed_igdb_id = None
+        m.proposed_platforms = None
+        m.proposal_status = "rejected"
     db.commit()
     return {"name": cand.title}
 
@@ -2204,7 +2465,15 @@ def confirm_entry_decision(
         db.commit()
         return {"name": cand.title, "created": 0, "platforms": [], "siblings_stale": False}
 
-    item = dict(cand.raw_data or {})
+    # The row is a GROUP (#212): every pending record for this game -- the
+    # trophy set, the store SKU per platform, sometimes two SKUs for one set.
+    # One decision covers them all, and each ticked platform's entry is created
+    # from the record that owns that platform, so the trophy data, ids and store
+    # link on the entry are that record's. A key that is not pending was caught
+    # above; a group is never None here.
+    group = _group_for(db, user.id, key) or {"members": [cand]}
+    members = group["members"]
+
     # Name resolution, most specific first:
     #   1. a name typed in the review row — when Sony's trophy-set name AND the
     #      IGDB suggestion are both wrong, the fix belongs here. Otherwise the
@@ -2213,61 +2482,79 @@ def confirm_entry_decision(
     #   2. the accepted IGDB suggestion
     #   3. Sony's own trophy-set name
     # Applied AT CREATION in every case, so a bad name is never written.
-    typed = (custom_title or "").strip()
-    # Read off the ROW, not off the request. This used to come from a
-    # use_proposed form field, which stopped being sent the moment accept/reject
-    # became an inline decision stored on the candidate — so every confirm from
-    # either view silently fell back to Sony's name while the card on screen
-    # showed IGDB's. The point of the lookup is to fix the naming; a suggestion
-    # you can see and cannot apply is worse than not asking.
     #
-    # A proposal stands unless it was turned down. reject_proposal nulls the
-    # title outright, and a re-refused row keeps its title but carries
-    # "rejected" — so both halves of this test are load-bearing.
-    accepted = bool(cand.proposed_title) and cand.proposal_status != "rejected"
-    # A "matched" row has no rename to approve — IGDB knows the game and our
-    # name is already right — but its id is the payload and must still attach.
-    if cand.proposal_status == "matched" and cand.proposed_igdb_id and not typed:
-        item["igdbId"] = cand.proposed_igdb_id
-    same_as_proposed = accepted and titles.normalize_for_match(typed) == titles.normalize_for_match(cand.proposed_title)
-    if typed:
-        item["displayName"] = typed
-        item["name"] = typed
-        # The id only travels with the name IGDB actually proposed. A typed
-        # name is the user overruling the match, so claiming its id would
-        # attach metadata for a game they just said this isn't.
-        if same_as_proposed:
-            item["igdbId"] = cand.proposed_igdb_id
-    elif accepted:
-        item["displayName"] = cand.proposed_title
-        item["name"] = cand.proposed_title
-        item["igdbId"] = cand.proposed_igdb_id
-    # Only platforms the trophy set actually covers. A stale page can post
+    # The suggestion is read off whichever member carries it -- the row shows
+    # that member's name, so it is the name being confirmed -- and off the ROW,
+    # not off the request. This used to come from a use_proposed form field,
+    # which stopped being sent the moment accept/reject became an inline
+    # decision stored on the candidate, so every confirm silently fell back to
+    # Sony's name while the card showed IGDB's. A proposal stands unless it was
+    # turned down: reject_proposal nulls the title outright, and a re-refused
+    # row keeps its title but carries "rejected", so both halves matter.
+    typed = (custom_title or "").strip()
+    proposer = next((m for m in members if m.proposed_title and m.proposal_status != "rejected"), None)
+    accepted = proposer is not None
+    matched = next((m for m in members if m.proposal_status == "matched" and m.proposed_igdb_id), None)
+    same_as_proposed = accepted and titles.normalize_for_match(typed) == titles.normalize_for_match(proposer.proposed_title)
+
+    def _named(item: dict) -> dict:
+        """The record's own data, under the name and id being confirmed."""
+        item = dict(item)
+        # A "matched" row has no rename to approve — IGDB knows the game and
+        # our name is already right — but its id is the payload and must attach.
+        if matched is not None and not typed:
+            item["igdbId"] = matched.proposed_igdb_id
+        if typed:
+            item["displayName"] = typed
+            item["name"] = typed
+            # The id only travels with the name IGDB actually proposed. A typed
+            # name is the user overruling the match, so claiming its id would
+            # attach metadata for a game they just said this isn't.
+            if same_as_proposed:
+                item["igdbId"] = proposer.proposed_igdb_id
+        elif accepted:
+            item["displayName"] = proposer.proposed_title
+            item["name"] = proposer.proposed_title
+            item["igdbId"] = proposer.proposed_igdb_id
+        return item
+
+    # Only platforms some record actually covers. A stale page can post
     # anything, and an entry on a platform Sony never listed is a wrong row
     # this function has no way to take back.
-    allowed = set(platform_candidates(item))
+    allowed: set[str] = set()
+    for m in members:
+        allowed.update(platform_candidates(m.raw_data or {}))
     chosen = [p for p in platforms if p in allowed]
 
     created = 0
+    owned: dict[str, list[str]] = {m.external_id: [] for m in members}
     for platform in chosen:
         platform_id = models.resolve_platform_id(db, platform)
         if platform_id is None:
             continue
-        if _import_one(db, user, item, platform_id) == "added":
+        owner = _platform_owner(members, platform) or cand
+        if _import_one(db, user, _named(owner.raw_data or {}), platform_id) == "added":
             created += 1
+        owned.setdefault(owner.external_id, []).append(platform)
 
+    # Every member is decided by this one click. A record that created an entry
+    # is confirmed with the platforms it created; one that owned nothing -- the
+    # second SKU of a set, say -- is consumed rather than left asking again.
+    now = datetime.datetime.now(datetime.UTC)
+    for m in members:
+        mine = owned.get(m.external_id, [])
+        m.status = "confirmed" if mine else "dismissed"
+        m.chosen_platforms = mine
+        m.reviewed_at = now
     if accepted:
-        cand.proposal_status = "accepted"
-    cand.status = "confirmed" if chosen else "dismissed"
-    cand.chosen_platforms = chosen
-    cand.reviewed_at = datetime.datetime.now(datetime.UTC)
+        proposer.proposal_status = "accepted"
     db.commit()
 
     # Sibling sets for the same title are already rendered, and their platform
     # options just changed — what this row claimed is no longer free. The caller
     # refreshes the queue rather than leaving stale cards offering platforms
     # that are now spoken for.
-    name = (item.get("normalizedName") or "").strip()
+    name = ((cand.raw_data or {}).get("normalizedName") or "").strip()
     stale = bool(name) and any(
         (c.raw_data or {}).get("normalizedName") == name
         for c in db.query(models.PsnReviewCandidate)
@@ -2278,7 +2565,8 @@ def confirm_entry_decision(
         )
         .all()
     )
-    return {"name": cand.title, "created": created, "platforms": chosen, "siblings_stale": stale}
+    shown = proposer.proposed_title if accepted else cand.title
+    return {"name": typed or shown, "created": created, "platforms": chosen, "siblings_stale": stale}
 
 
 def dismiss_entry_decision(db: Session, user: models.User, key: str) -> dict:

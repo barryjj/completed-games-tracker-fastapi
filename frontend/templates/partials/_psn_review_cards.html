@@ -201,7 +201,27 @@
         <div class="cgt-detail-block mb-0">
           <h6 class="cgt-detail-block__heading">Progress</h6>
           <div class="cgt-progress-label">Trophies</div>
-          {% if r.trophy_defined %}
+          {% if r.sets | length > 1 %}
+          {# Several trophy sets behind one decision (#212): a block per set,
+             headed by the platforms it covers. #}
+          {% for t in r.sets %}
+          <div class="cgt-trophy-set{% if not loop.first %} mt-2{% endif %}">
+            <div class="cgt-trophy-set-plats">{{ t.platforms | join(" · ") }}</div>
+            <div class="d-flex align-items-baseline gap-2 mt-1 mb-1">
+              <span class="cgt-trophy-progress">{{ t.progress }}%</span>
+              <span class="text-secondary small">{{ t.earned }} of {{ t.defined }}</span>
+            </div>
+            <div class="cgt-trophy-tiers">
+              {% for tier in t.tiers %}
+              <span class="cgt-trophy-tier cgt-trophy-tier--{{ tier.tier }}{% if tier.earned == tier.defined %} cgt-trophy-tier--complete{% endif %}"
+                    title="{{ tier.tier | capitalize }} — {{ tier.earned }} of {{ tier.defined }}">
+                {% include "partials/_icon_trophy.svg" %}{{ tier.earned }}/{{ tier.defined }}
+              </span>
+              {% endfor %}
+            </div>
+          </div>
+          {% endfor %}
+          {% elif r.trophy_defined %}
           <div class="d-flex align-items-baseline gap-2 mt-1 mb-2">
             <span class="cgt-trophy-progress">{{ r.trophy_progress }}%</span>
             <span class="text-secondary small">{{ r.trophy_earned }} of {{ r.trophy_defined }}</span>

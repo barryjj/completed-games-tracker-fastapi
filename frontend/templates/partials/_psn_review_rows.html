@@ -62,7 +62,24 @@
      competing across the right half. As a rule under the number it is
      subordinate: the count is the content, the bar annotates it. #}
   <td class="align-middle cgt-psn-progress">
-    {% if r.trophy_defined %}
+    {% if r.sets | length > 1 %}
+    {# One game, several trophy sets (#212): a line per set, each naming the
+       platforms it covers, so Nioh 2's PS4 platinum and PS5 Remastered
+       platinum read as what they are -- two records behind one decision. #}
+    <span class="cgt-trophy-sets">
+      {% for t in r.sets %}
+      <span class="cgt-trophy-stat cgt-trophy-stat--set">
+        <span class="cgt-trophy-set-plats">{{ t.platforms | join(" · ") }}</span>
+        <span class="cgt-trophy-figures">
+          <span class="cgt-trophy-count">{{ t.earned }}/{{ t.defined }}</span>
+          <span class="cgt-trophy-bar" role="img" aria-label="{{ t.earned }} of {{ t.defined }} trophies earned on {{ t.platforms | join(', ') }}">
+            <i style="width: {{ (t.earned / t.defined * 100) | round | int }}%;"></i>
+          </span>
+        </span>
+      </span>
+      {% endfor %}
+    </span>
+    {% elif r.trophy_defined %}
     <span class="cgt-trophy-stat">
       {# The glyph is its own column, centred against the count-over-bar pair,
          so it never has to match the digits' cap height — which is what made

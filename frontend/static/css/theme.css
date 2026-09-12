@@ -1906,6 +1906,27 @@ body:has(.cgt-sticky-actions) {
 .cgt-color-swatch[data-color="blue"]      { background: var(--ctp-blue); }
 .cgt-color-swatch[data-color="lavender"]  { background: var(--ctp-lavender); }
 
+/* One review row, several trophy sets (#212). Each set names the platforms it
+   covers; the figures use the existing stat styling so a single-set row and a
+   multi-set row read as the same thing at different sizes. */
+.cgt-trophy-sets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.cgt-trophy-set-plats {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ctp-subtext0, var(--ctp-subtext));
+}
+.cgt-trophy-stat--set {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
 /* ─── Match review — card stack ─────────────────────────────────────────── */
 .cgt-match-stage {
   /* Card width, and the one number that sets it -- centring derives from this
