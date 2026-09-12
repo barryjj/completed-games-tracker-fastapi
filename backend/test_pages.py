@@ -2640,7 +2640,11 @@ def test_review_pages_defer_their_card_stack_init(client, db_session):
     _signup_and_login(client)
     for path in ("/tools/match-review", "/tools/import/review", "/tools/psn-review"):
         body = client.get(path).text
-        for block in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", body, re.S):
+        # re.I: CodeQL's py/bad-tag-filter flags a tag regex that would miss
+        # <SCRIPT>. This is a test reading our own rendered page, not a
+        # sanitizer, but case-insensitive is also simply what "find the
+        # inline script blocks" means.
+        for block in re.findall(r"<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>", body, re.S | re.I):
             if "cgtPlaceCards" not in block:
                 continue
             registered = re.search(r"addEventListener\(\s*['\"]DOMContentLoaded", block)
