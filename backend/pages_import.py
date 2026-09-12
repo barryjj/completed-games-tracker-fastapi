@@ -54,7 +54,7 @@ def import_page(
     return templates.TemplateResponse(
         request=request,
         name="import.html",
-        context={"current_user": current_user, "pending": pending, **_base_ctx(db, current_user)},
+        context={"current_user": current_user, "pending": pending, **_base_ctx(db, current_user, request)},
     )
 
 
@@ -587,7 +587,7 @@ def import_review_page(
             # for the shared add-game modal's platform datalist (in-place "Add new")
             "platforms": _get_all_platforms(db),
             **filter_ctx,
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
         },
     )
 

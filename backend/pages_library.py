@@ -197,7 +197,7 @@ def library_page(
         name="library.html",
         context={
             "current_user": current_user,
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
             "entries": entries,
             "collections": collections,
             "base_game_options": base_game_options,

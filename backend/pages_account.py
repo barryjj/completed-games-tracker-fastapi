@@ -61,7 +61,7 @@ def settings_page(
             "platforms": platforms,
             "ctp_accents": models.CTP_ACCENTS,
             "has_library_platforms": has_library_platforms,
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
         },
     )
 

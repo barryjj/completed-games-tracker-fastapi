@@ -57,8 +57,13 @@
         <a class="nav-link px-3 {% if _path.startswith('/completions') %}cgt-nav-active{% endif %}" href="/completions">Completions</a>
         <a class="nav-link px-3 d-flex align-items-center gap-2 {% if _path.startswith('/tools') %}cgt-nav-active{% endif %}" href="/tools">
           Tools
-          {% if pending_matches %}
-          <span class="badge rounded-pill cgt-pending-badge" title="{{ pending_matches }} match{{ 'es' if pending_matches != 1 else '' }} pending review">{{ pending_matches }}</span>
+          {# "Something new is waiting" -- not a count. A count of one queue
+             read "1" while two others held over a thousand rows between them,
+             and a sum would sit at four digits for months. Looking at a
+             review page clears it; only new arrivals bring it back. Hover for
+             where. #}
+          {% if tools_attention and tools_attention.new %}
+          <span class="badge rounded-pill cgt-pending-badge" title="New since you last looked:&#10;{% for q in tools_attention.queues %}{{ q.label }}: {{ q.new }} new, {{ q.total }} pending{% if not loop.last %}&#10;{% endif %}{% endfor %}">!</span>
           {% endif %}
         </a>
       </div>

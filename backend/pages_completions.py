@@ -162,7 +162,7 @@ def completions_page(
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
             "sort": sort,
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
         },
     )
 

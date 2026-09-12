@@ -169,6 +169,15 @@ async def _no_store_html(request, call_next):
     response = await call_next(request)
     if response.headers.get("content-type", "").startswith("text/html"):
         response.headers.setdefault("Cache-Control", "no-store")
+        # Rendering one of the review pages IS looking at what needs attention;
+        # stamp it so the nav badge clears until something new arrives. Here
+        # rather than in four route bodies, and only on a real page render --
+        # a redirect to /login is not a look.
+        if request.method == "GET" and response.status_code == 200:
+            from .pages_common import TOOLS_LOOKED_PATHS, stamp_tools_seen
+
+            if request.url.path in TOOLS_LOOKED_PATHS:
+                stamp_tools_seen(response)
     return response
 
 

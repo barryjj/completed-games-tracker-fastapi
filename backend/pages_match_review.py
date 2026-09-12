@@ -223,7 +223,7 @@ def psn_review_page(
 
     ctx = {
         "current_user": current_user,
-        **_base_ctx(db, current_user),
+        **_base_ctx(db, current_user, request),
         "rows": rows,
         "kind": kind,
         "counts": counts,
@@ -717,7 +717,7 @@ def match_review_page(
             "groups": groups,
             "pending": pending,
             "show_skipped": show_skipped,
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
         },
     )
 

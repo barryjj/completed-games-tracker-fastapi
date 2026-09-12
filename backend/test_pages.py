@@ -3698,3 +3698,59 @@ def test_igdb_fetch_keeps_the_whole_record(db_session):
     assert block["franchises"] == ["Castlevania"]
     assert block["websites"] == ["https://store.playstation.com/en-us/concept/232977"]
     assert release.description == "Two of the greatest."
+
+
+def test_tools_badge_means_something_new_since_you_looked(client, db_session):
+    """Not a count. The nav used to show match review's pending number, which
+    read "1" while import review held 580 and PSN review 589. A sum would sit
+    at four digits for months. What the nav can say is "something new is
+    waiting": looking at a review page stamps a last-seen time, and the badge
+    shows only for rows created after it. Processing rows never affects it --
+    a count-based dismiss would have missed the next arrivals after you worked
+    a queue down from its own page. Only arrivals bring it back.
+    """
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+
+    def badge(body: str) -> bool:
+        return "cgt-pending-badge" in body and ">!<" in body
+
+    # Nothing pending, nothing to say.
+    assert not badge(client.get("/library").text)
+
+    # A pending import candidate is something new.
+    db_session.add(
+        models.ImportCandidate(user_id=user.id, raw_title="Astro Bot", raw_platform="PS5", status="pending", proposed_action="create_new")
+    )
+    db_session.commit()
+    body = client.get("/library").text
+    assert badge(body), "a new pending row lights the badge"
+    assert "Import review: 1 new, 1 pending" in body, "hover says where"
+
+    # Looking at the Tools page clears it -- and the Tools page itself renders
+    # without it, so the badge never shows on the page that dismisses it.
+    r = client.get("/tools")
+    assert r.status_code == 200
+    assert "cgt-tools-seen" in r.headers.get("set-cookie", ""), "the look is recorded"
+    assert not badge(r.text)
+    assert not badge(client.get("/library").text), "still clear on the next page"
+
+    # Working the queue does not bring it back. A newer arrival does.
+    import datetime as _dt
+    import time as _time
+
+    _time.sleep(0.01)
+    db_session.add(
+        models.ImportCandidate(
+            user_id=user.id,
+            raw_title="Alan Wake II",
+            raw_platform="PS5",
+            status="pending",
+            proposed_action="create_new",
+            created_at=_dt.datetime.now(_dt.UTC),
+        )
+    )
+    db_session.commit()
+    body = client.get("/library").text
+    assert badge(body), "an arrival after the look brings it back"
+    assert "Import review: 1 new, 2 pending" in body, "one new, two pending -- the old one is not new again"

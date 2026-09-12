@@ -279,7 +279,7 @@ def home_page(
             "import_pending": sum(import_counts.values()),
             "psn_review_pending": _psn_pending(db, current_user),
             "missing_covers": _build_lib_query(db, current_user, "", "", "default", "name", False, True, "grid_v")[0].count(),
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
         },
     )
 
@@ -308,7 +308,7 @@ def tools_page(
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),
-            **_base_ctx(db, current_user),
+            **_base_ctx(db, current_user, request),
         },
     )
 

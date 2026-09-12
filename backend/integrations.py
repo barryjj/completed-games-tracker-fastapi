@@ -48,7 +48,7 @@ def steam_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_steam.html",
-        context={"current_user": current_user, "openid_status": openid, **_base_ctx(db, current_user)},
+        context={"current_user": current_user, "openid_status": openid, **_base_ctx(db, current_user, request)},
     )
 
 
@@ -333,7 +333,7 @@ def psn_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_psn.html",
-        context={"current_user": current_user, **_base_ctx(db, current_user)},
+        context={"current_user": current_user, **_base_ctx(db, current_user, request)},
     )
 
 
@@ -1422,7 +1422,7 @@ def steamgriddb_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_steamgriddb.html",
-        context={"current_user": current_user, **_base_ctx(db, current_user)},
+        context={"current_user": current_user, **_base_ctx(db, current_user, request)},
     )
 
 
@@ -1718,7 +1718,7 @@ def igdb_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_igdb.html",
-        context={"current_user": current_user, **_base_ctx(db, current_user)},
+        context={"current_user": current_user, **_base_ctx(db, current_user, request)},
     )
 
 

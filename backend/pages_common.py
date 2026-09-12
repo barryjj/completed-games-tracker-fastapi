@@ -246,11 +246,89 @@ def _linkify(text: str | None) -> Markup:
 templates.env.filters["linkify"] = _linkify
 
 
-def _base_ctx(db: Session, user: models.User) -> dict:
+# The nav badge. It used to show match review's pending COUNT, which was
+# reasonable when that was the only queue and misleading once it was the
+# smallest of three: "1" in the nav while import review held 580 and PSN review
+# 589. A count answers "how much", and the nav is the wrong place for that --
+# the Tools page has the numbers.
+#
+# What the nav can usefully say is "something new is waiting". That has to be
+# TIME-based, not count-based: if dismissing remembered the counts, working a
+# queue from its own page would drop the total below the remembered one, and
+# the next handful of genuinely new rows would never light it up. So: looking
+# at the Tools page (or any review page) stamps a last-seen time in a cookie,
+# and the badge shows whenever any queue holds a pending row created after
+# that stamp. Processing rows never affects it. Only arrivals do.
+_TOOLS_SEEN_COOKIE = "cgt-tools-seen"
+
+
+def _tools_seen_at(request) -> "datetime.datetime | None":
+    raw = request.cookies.get(_TOOLS_SEEN_COOKIE) if request is not None else None
+    if not raw:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def _tools_attention(db: Session, user: models.User, seen: "datetime.datetime | None") -> dict:
+    """Per-queue pending totals and how many arrived since `seen`.
+
+    None for `seen` means never looked, so everything pending counts as new.
+    """
+
+    def _split(q, created_col):
+        total = q.count()
+        new = q.filter(created_col > seen).count() if seen is not None else total
+        return total, new
+
+    match_q = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(models.UserLibraryEntry.user_id == user.id, models.SyncMatchCandidate.status == "pending")
+    )
+    import_q = db.query(models.ImportCandidate).filter(
+        models.ImportCandidate.user_id == user.id, models.ImportCandidate.status == "pending"
+    )
+    psn_q = db.query(models.PsnReviewCandidate).filter(
+        models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.status == "pending"
+    )
+    queues = []
+    for label, href, q, col in (
+        ("Match review", "/tools/match-review", match_q, models.SyncMatchCandidate.created_at),
+        ("Import review", "/tools/import/review", import_q, models.ImportCandidate.created_at),
+        ("PSN review", "/tools/psn-review", psn_q, models.PsnReviewCandidate.created_at),
+    ):
+        total, new = _split(q, col)
+        queues.append({"label": label, "href": href, "total": total, "new": new})
+    return {"queues": queues, "new": sum(q["new"] for q in queues)}
+
+
+# The pages that count as having looked. Landing on any of these stamps the
+# cookie (middleware in main.py) and renders as though it were already stamped,
+# so the badge never shows on the page that clears it.
+TOOLS_LOOKED_PATHS = frozenset({"/tools", "/tools/match-review", "/tools/import/review", "/tools/psn-review"})
+
+
+def _base_ctx(db: Session, user: models.User, request=None) -> dict:
     """Common context vars injected into every full-page response."""
+    looking = request is not None and request.url.path in TOOLS_LOOKED_PATHS
+    seen = datetime.datetime.now(datetime.UTC) if looking else _tools_seen_at(request)
     return {
         "pending_matches": match_review.pending_count(db, user),
+        "tools_attention": _tools_attention(db, user, seen),
     }
+
+
+def stamp_tools_seen(response) -> None:
+    """Record that the user has looked at what needs attention."""
+    response.set_cookie(
+        _TOOLS_SEEN_COOKIE,
+        datetime.datetime.now(datetime.UTC).isoformat(),
+        max_age=60 * 60 * 24 * 365,
+        samesite="lax",
+    )
 
 
 # How long Steam appdetails can sit before we consider it stale enough to
