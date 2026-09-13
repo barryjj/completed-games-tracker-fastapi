@@ -5711,3 +5711,71 @@ def test_a_different_trophy_set_on_another_platform_is_its_own_row(db_session, c
     assert sorted(rows["Nioh 2"]["members"]) == ["CUSA15532_00", "CUSA16063_00"]
     assert rows["Nioh 2 Remastered: The Complete Edition"]["members"] == ["PPSA02489_00"]
     assert psn.review_pending_count(db_session, user.id) == 2, "the badge counts decisions, not records"
+
+
+def test_a_game_whose_primary_id_changed_is_the_same_row(client, db_session):
+    """external_id_for prefers titleId. With the PS+ sub lapsed, a played game
+    came back from Sony as a trophy set only -- no entitlement, no titleId --
+    and was keyed NPWR. The next crawl with the sub back had the entitlement,
+    keyed the same game CUSA, looked it up under CUSA, found nothing, and made
+    a sibling. Same game, same trophy set, two rows (#212).
+
+    The upsert now looks under every id the item carries before deciding it is
+    new, and re-keys the row to the current primary."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    # August: trophy set only.
+    psn._upsert_review_candidate(
+        db_session,
+        user,
+        {"npCommunicationId": "NPWR10261_00", "name": "Nioh", "platform": "PS4", "normalizedName": "nioh", "sources": ["titles"]},
+        "title_fix",
+    )
+    db_session.commit()
+    assert [c.external_id for c in db_session.query(models.PsnReviewCandidate).all()] == ["NPWR10261_00"]
+
+    # Today: the entitlement is back, so the same game has a titleId.
+    psn._upsert_review_candidate(
+        db_session,
+        user,
+        {
+            "titleId": "CUSA05892_00",
+            "npCommunicationId": "NPWR10261_00",
+            "name": "Nioh",
+            "platform": "PS4",
+            "normalizedName": "nioh",
+            "sources": ["played", "purchased", "titles"],
+        },
+        "title_fix",
+    )
+    db_session.commit()
+
+    rows = db_session.query(models.PsnReviewCandidate).all()
+    assert len(rows) == 1, "one game, one row -- not a sibling under the new id"
+    assert rows[0].external_id == "CUSA05892_00", "re-keyed to the current primary"
+    assert rows[0].raw_data["aliasIds"] == ["NPWR10261_00"], "and still findable under the old one"
+
+
+def test_a_second_sku_for_the_same_set_joins_the_row(client, db_session):
+    """Nioh on PS4: the bought copy (CUSA05892) and the PS+ edition (CUSA07113)
+    both point at NPWR10261_00. Two SKUs, one trophy set, one platform -- one
+    row. The second SKU joins the first rather than replacing it: the existing
+    key stays, since that is the record the entry is created from, and the
+    sources are the union so play evidence on either counts."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    base = {"npCommunicationId": "NPWR10261_00", "name": "Nioh", "platform": "PS4", "normalizedName": "nioh"}
+    psn._upsert_review_candidate(db_session, user, {**base, "titleId": "CUSA05892_00", "sources": ["played", "titles"]}, "title_fix")
+    db_session.commit()
+    psn._upsert_review_candidate(db_session, user, {**base, "titleId": "CUSA07113_00", "sources": ["purchased", "titles"]}, "title_fix")
+    db_session.commit()
+
+    rows = db_session.query(models.PsnReviewCandidate).all()
+    assert len(rows) == 1, "one set on one platform is one row however many SKUs point at it"
+    row = rows[0]
+    assert row.external_id == "CUSA05892_00", "the first SKU keeps the key"
+    assert row.raw_data["aliasIds"] == ["CUSA07113_00"]
+    assert row.raw_data["sources"] == ["played", "purchased", "titles"], "play evidence from either SKU counts"
+    assert row.raw_data["titleId"] == "CUSA05892_00"

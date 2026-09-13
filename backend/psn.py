@@ -1317,8 +1317,70 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
         .first()
     )
     if row is None:
-        row = models.PsnReviewCandidate(user_id=user.id, external_id=ext_id, kind=kind, status="pending")
-        db.add(row)
+        # Not under its current primary id -- but a game's primary id CHANGES
+        # between crawls. external_id_for prefers titleId, so a game seen as a
+        # trophy set only (PS+ lapsed: no entitlement) was keyed NPWR; the next
+        # crawl with the entitlement back keys the same game CUSA, missed the
+        # NPWR row, and made a sibling. Same game, same trophy set, two rows
+        # (#212). So look under every id the item carries, and under the set
+        # itself for this platform, before deciding it is new. A found row is
+        # re-keyed to the current primary rather than left under a stale one.
+        aliases = {item.get(k) for k in ("titleId", "npCommunicationId", "productId")} - {None, ext_id}
+        found = None
+        if aliases:
+            found = (
+                db.query(models.PsnReviewCandidate)
+                .filter(
+                    models.PsnReviewCandidate.user_id == user.id,
+                    models.PsnReviewCandidate.external_id.in_(list(aliases)),
+                )
+                .first()
+            )
+        same_set = None
+        if found is None and item.get("npCommunicationId"):
+            plat = (item.get("platform") or "").upper()
+            for cand in (
+                db.query(models.PsnReviewCandidate)
+                .filter(models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.status == "pending")
+                .all()
+            ):
+                raw = cand.raw_data or {}
+                if raw.get("npCommunicationId") == item["npCommunicationId"] and (raw.get("platform") or "").upper() == plat:
+                    same_set = cand
+                    break
+        if found is not None:
+            # The same record under a new primary id: re-key it.
+            row = found
+            rekeyed_from = row.external_id
+            row.external_id = ext_id
+        elif same_set is not None:
+            # A SECOND SKU for a set already in the queue on this platform --
+            # the PS+ edition arriving after the bought copy. It joins that row
+            # rather than replacing it: the existing key stays (it is what the
+            # entry will be created from), the new id becomes an alias, and the
+            # sources are the union so play evidence on either SKU counts.
+            row = same_set
+            rekeyed_from = ext_id
+            ext_id = row.external_id
+            old_raw = row.raw_data or {}
+            item = {
+                **old_raw,
+                **item,
+                "titleId": old_raw.get("titleId") or item.get("titleId"),
+                "sources": sorted(set(old_raw.get("sources") or []) | set(item.get("sources") or [])),
+            }
+        else:
+            row = models.PsnReviewCandidate(user_id=user.id, external_id=ext_id, kind=kind, status="pending")
+            db.add(row)
+            rekeyed_from = None
+    else:
+        rekeyed_from = None
+    # Every id this row has been known by, so the next crawl finds it under
+    # any of them and nothing about where an entry came from is lost.
+    alias_ids = set((row.raw_data or {}).get("aliasIds") or [])
+    if rekeyed_from:
+        alias_ids.add(rekeyed_from)
+    alias_ids.discard(ext_id)
     # Cleaned here rather than trusting the merge to have done it: the queue is
     # where a human reads the name, and "God of War II Trophies" is exactly the
     # trophy-set noise this review exists to strip (#180).
@@ -1338,7 +1400,7 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
         for k, v in (row.raw_data or {}).items()
         if k in ("storeTitle", "rejectedTitle", "proposalVersion", "matchedVia", "artForTitle")
     }
-    row.raw_data = {**item, **carried}
+    row.raw_data = {**item, **carried, **({"aliasIds": sorted(alias_ids)} if alias_ids else {})}
     return row if row.status == "pending" else None
 
 
