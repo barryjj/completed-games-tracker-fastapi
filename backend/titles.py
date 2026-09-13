@@ -232,6 +232,76 @@ def _roman_to_arabic(token: str) -> str | None:
     return str(total)
 
 
+# Glyphs a SEARCH engine cannot read, spelled as the word a person would type.
+# A subset of _LOOKALIKES on purpose: "&" stays "&" here, because SGDB and
+# IGDB both index it, and folding it to "and" would make the query worse.
+_SEARCH_GLYPHS = {
+    "Σ": "Sigma",
+    "σ": "Sigma",
+    "Ω": "Omega",
+    "ω": "Omega",
+    "α": "Alpha",
+    "β": "Beta",
+    "×": "x",
+    "＋": "+",
+}
+
+_TRAILING_PLUS_RE = re.compile(r"\s*(?:\bplus|\+)\s*$", re.IGNORECASE)
+
+
+def search_form(title: str | None) -> str:
+    """A title as a search engine can read it -- NOT a comparison key.
+
+    normalize_for_match folds a title down to compare two of them; it lowercases,
+    strips punctuation and drops editions, and none of that is something you
+    would type into a search box. This keeps the case and the punctuation and
+    only fixes what a search index genuinely cannot see: Greek letters spelled
+    out, unicode numerals and accents folded, and a space inserted where a glyph
+    was glued to a digit.
+
+      NINJA GAIDEN Σ PLUS  ->  NINJA GAIDEN Sigma PLUS
+      NINJA GAIDEN Σ2      ->  NINJA GAIDEN Sigma 2
+      STREET FIGHTER Ⅳ     ->  STREET FIGHTER IV
+      ABZÛ                 ->  ABZU
+
+    SteamGridDB was being sent the raw "NINJA GAIDEN Σ PLUS", found nothing it
+    could use, and the auto-fetch settled on the NES Ninja Gaiden's art.
+    """
+    if not title:
+        return ""
+    s = str(title)
+    for glyph, word in _SEARCH_GLYPHS.items():
+        s = s.replace(glyph, f" {word} ")
+    s = _JUNK_RE.sub("", s)
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def search_ladder(title: str | None) -> list[str]:
+    """Search terms to try in order: the title as a search engine reads it,
+    then the same with a trailing "Plus" or "+" dropped. Nothing else.
+
+    SteamGridDB's fuzzy match is not fuzzy enough for a niche port: spelled
+    correctly, "Ninja Gaiden Sigma Plus" IS found but has no covers uploaded,
+    while "Ninja Gaiden Sigma" has six. A trailing Plus is never what
+    distinguishes the game -- the Vita port of X is X.
+
+    Deliberately NOT a subtitle strip. That rung has teeth: "Metal Gear Solid
+    V - The Phantom Pain" with no vertical cover would slide to "Metal Gear
+    Solid V" and come back with Ground Zeroes art, applied silently by the
+    auto-fetch. Wrong art that looks plausible is worse than none.
+    """
+    first = search_form(title)
+    if not first:
+        return []
+    terms = [first]
+    bare = _TRAILING_PLUS_RE.sub("", first).strip()
+    if len(bare) >= 3 and bare != first:
+        terms.append(bare)
+    return terms
+
+
 # Pure and hammered: one pass over the PSN review queue called this 467,858
 # times for 567 rows, because cross_buy_exception re-normalizes both sides
 # of every comparison against a long exception list. Titles repeat heavily,

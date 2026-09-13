@@ -14,7 +14,7 @@ from urllib.parse import quote
 import httpx
 from sqlalchemy.orm import Session, joinedload
 
-from . import models
+from . import models, titles
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,62 @@ def search_games(api_key: str, query: str) -> list[dict]:
     return resp.json().get("data") or []
 
 
+def find_game(api_key: str, title: str) -> dict | None:
+    """The SGDB game for a title, first ladder term that finds one.
+
+    For callers that only need the game. Anyone who needs ART should use
+    find_game_art: SGDB finding the game is not the same as SGDB having the
+    picture, and the retry has to be on the picture.
+    """
+    for term in titles.search_ladder(title):
+        results = search_games(api_key, term)
+        if results:
+            return results[0]
+    return None
+
+
+def find_game_art(api_key: str, title: str, image_type: str, page: int = 0) -> tuple[dict | None, list[dict]]:
+    """(game, images) for a title, trying the search ladder until a rung's
+    game actually HAS images of this type. (None, []) when none does.
+
+    The raw title was being sent as-is, and "NINJA GAIDEN Σ PLUS" is not a
+    string SGDB can read -- the auto-fetch settled on the NES Ninja Gaiden's
+    art. Spelled out, "Ninja Gaiden Sigma Plus" IS found -- it is the top hit
+    -- and has no horizontal covers uploaded, so the picker said "no candidates
+    for this image type" and stopped. One rung down, "Ninja Gaiden Sigma" has
+    six. So a rung only counts when its game has the picture, and the search
+    terms come from titles.search_ladder, most faithful first.
+
+    page > 0 is a "load more" for the game page 0 chose; the rung is picked on
+    page 0 so paging never wanders off to a different game.
+    """
+    for term in titles.search_ladder(title):
+        results = search_games(api_key, term)
+        if not results:
+            continue
+        game = results[0]
+        probe = fetch_images_for_game(api_key, game["id"], image_type, page=0)
+        if not probe:
+            continue
+        images = probe if page == 0 else fetch_images_for_game(api_key, game["id"], image_type, page=page)
+        return game, images
+    return None, []
+
+
+def _find_art_for_entry(api_key: str, entry: models.UserLibraryEntry, image_type: str) -> tuple[dict | None, list[dict]]:
+    """find_game_art for a library entry: a Steam entry tries its appid first
+    (an identity, not a search), falling through to the title ladder only if
+    that game has no art of this type either."""
+    release = entry.release
+    if release.source == "steam" and release.external_id:
+        game = lookup_by_steam_appid(api_key, release.external_id)
+        if game:
+            images = fetch_images_for_game(api_key, game["id"], image_type)
+            if images:
+                return game, images
+    return find_game_art(api_key, release.game.display_title, image_type)
+
+
 def _find_sgdb_game_for_entry(api_key: str, entry: models.UserLibraryEntry) -> dict | None:
     """Resolve a library entry → SGDB game record. Steam entries try the
     appid endpoint first (most reliable); other sources fall back to the
@@ -73,8 +129,7 @@ def _find_sgdb_game_for_entry(api_key: str, entry: models.UserLibraryEntry) -> d
         sgdb_game = lookup_by_steam_appid(api_key, release.external_id)
         if sgdb_game:
             return sgdb_game
-    results = search_games(api_key, game.display_title)
-    return results[0] if results else None
+    return find_game(api_key, game.display_title)
 
 
 _GRID_PAGE_SIZE = 20
@@ -230,10 +285,7 @@ def auto_fetch_logo(db: Session, user: models.User, entry: models.UserLibraryEnt
     if existing:
         return existing.url
     try:
-        sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
-        if not sgdb_game:
-            return None
-        logos = get_logos_for_game(user.steamgriddb_api_key, sgdb_game["id"])
+        _game, logos = _find_art_for_entry(user.steamgriddb_api_key, entry, "logo")
         if not logos:
             return None
         url = logos[0].get("url")
@@ -261,10 +313,7 @@ def auto_fetch_hero(db: Session, user: models.User, entry: models.UserLibraryEnt
     if existing:
         return existing.url
     try:
-        sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
-        if not sgdb_game:
-            return None
-        heroes = get_heroes_for_game(user.steamgriddb_api_key, sgdb_game["id"])
+        _game, heroes = _find_art_for_entry(user.steamgriddb_api_key, entry, "hero")
         if not heroes:
             return None
         url = heroes[0].get("url")
@@ -297,10 +346,7 @@ def auto_fetch_grid(db: Session, user: models.User, entry: models.UserLibraryEnt
     if existing:
         return existing.url
     try:
-        sgdb_game = _find_sgdb_game_for_entry(user.steamgriddb_api_key, entry)
-        if not sgdb_game:
-            return None
-        grids = get_grids_for_game(user.steamgriddb_api_key, sgdb_game["id"], orientation=orientation)
+        _game, grids = _find_art_for_entry(user.steamgriddb_api_key, entry, orientation)
         if not grids:
             return None
         url = grids[0].get("url")
@@ -389,11 +435,7 @@ def bulk_fill_missing(
             skipped += 1
             continue
         try:
-            sgdb_game = _find_sgdb_game_for_entry(api_key, entry)
-            if not sgdb_game:
-                no_candidate += 1
-                continue
-            images = fetch_images_for_game(api_key, sgdb_game["id"], image_type)
+            _game, images = _find_art_for_entry(api_key, entry, image_type)
             if not images:
                 no_candidate += 1
                 continue
@@ -495,6 +537,10 @@ def bulk_fill_all_missing(
         for t in needed:
             try:
                 images = fetch_images_for_game(api_key, sgdb_game["id"], t)
+                if not images:
+                    # This game has no art of this type; a rung down the ladder
+                    # may -- Sigma Plus has no covers, Sigma has six.
+                    _g, images = find_game_art(api_key, entry.release.game.display_title, t)
                 top_url = images[0].get("url") if images else None
                 if not top_url:
                     per_type[t]["no_candidate"] += 1
@@ -524,11 +570,7 @@ def _placeholder_grid_url(api_key: str, title: str) -> str | None:
     library until they're confirmed — so a title guess is the only option, and
     it only has to be good enough to review by, not canonical.
     """
-    results = search_games(api_key, title)
-    sgdb_game = results[0] if results else None
-    if not sgdb_game:
-        return None
-    grids = get_grids_for_game(api_key, sgdb_game["id"], orientation="h")
+    _game, grids = find_game_art(api_key, title, "h")
     return grids[0].get("url") if grids else None
 
 
@@ -543,8 +585,7 @@ def _placeholder_art(api_key: str, title: str) -> dict:
     The SGDB game is resolved ONCE and reused across all three, the same way
     bulk_fill_all_missing does it, rather than searching per art type.
     """
-    results = search_games(api_key, title)
-    sgdb_game = results[0] if results else None
+    sgdb_game, _grids = find_game_art(api_key, title, "h")
     if not sgdb_game:
         return {}
     art: dict = {}

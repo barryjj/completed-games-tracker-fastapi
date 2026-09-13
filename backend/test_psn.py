@@ -5859,3 +5859,95 @@ def test_a_store_concept_id_identifies_the_game_outright(db_session, monkeypatch
     assert psn._proposal_by_concept(user, {"name": "God of War", "npCommunicationId": "NPWR00950_00"}, [9]) is None, (
         "a trophy-only row has no concept id and is not this path's problem"
     )
+
+
+# ─── Search form: what a search ENGINE can read ─────────────────────────────
+
+
+def test_search_form_spells_glyphs_and_keeps_the_rest():
+    """normalize_for_match folds a title down to COMPARE it -- lowercase, no
+    punctuation, editions gone -- and none of that is what you type into a
+    search box. search_form fixes only what an index cannot see. SteamGridDB
+    was sent "NINJA GAIDEN Σ PLUS" as-is and the auto-fetch settled on the NES
+    Ninja Gaiden's art."""
+    from backend import titles
+
+    assert titles.search_form("NINJA GAIDEN Σ PLUS") == "NINJA GAIDEN Sigma PLUS"
+    assert titles.search_form("NINJA GAIDEN Σ2") == "NINJA GAIDEN Sigma 2", "a glyph glued to a digit gets a space"
+    assert titles.search_form("STREET FIGHTER Ⅳ") == "STREET FIGHTER IV"
+    assert titles.search_form("ABZÛ") == "ABZU"
+    assert titles.search_form("Castlevania: Symphony of the Night & Rondo of Blood") == (
+        "Castlevania: Symphony of the Night & Rondo of Blood"
+    ), "case, punctuation and & are what the index has -- keep them"
+
+
+def test_search_ladder_drops_a_trailing_plus_and_nothing_else():
+    """Spelled correctly, "Ninja Gaiden Sigma Plus" is found by SGDB and has
+    no covers; "Ninja Gaiden Sigma" has six. A trailing Plus is never what
+    distinguishes the game. Deliberately no subtitle rung: that one can slide
+    to a different game and hand the auto-fetch plausible wrong art."""
+    from backend import titles
+
+    assert titles.search_ladder("NINJA GAIDEN Σ PLUS") == ["NINJA GAIDEN Sigma PLUS", "NINJA GAIDEN Sigma"]
+    assert titles.search_ladder("Persona 4 Golden") == ["Persona 4 Golden"], "nothing to drop, nothing added"
+    assert titles.search_ladder("Metal Gear Solid V - The Phantom Pain") == ["Metal Gear Solid V - The Phantom Pain"], (
+        "a subtitle is never stripped -- the next game over is not this game"
+    )
+    assert titles.search_ladder("") == []
+
+
+def test_sgdb_find_game_walks_the_ladder_until_something_hits(monkeypatch):
+    """Every SGDB title search goes through find_game. The first term is the
+    faithful one; each retry is only made when the previous returned nothing,
+    and the first hit wins -- the NES game must not be reached for a title
+    that resolves one rung earlier."""
+    from backend import steamgriddb as sgdb
+
+    asked: list[str] = []
+
+    def fake_search(api_key, query):
+        asked.append(query)
+        return [{"id": 5433, "name": "Ninja Gaiden Sigma"}] if query == "NINJA GAIDEN Sigma" else []
+
+    monkeypatch.setattr(sgdb, "search_games", fake_search)
+    hit = sgdb.find_game("key", "NINJA GAIDEN Σ PLUS")
+    assert hit == {"id": 5433, "name": "Ninja Gaiden Sigma"}
+    assert asked == ["NINJA GAIDEN Sigma PLUS", "NINJA GAIDEN Sigma"], "faithful term first, one retry, stop"
+
+    asked.clear()
+    assert sgdb.find_game("key", "Nothing Anyone Has Heard Of") is None
+    assert asked == ["Nothing Anyone Has Heard Of"], "no rungs to try, no extra calls"
+
+
+def test_sgdb_art_retry_is_about_the_picture_not_the_game(monkeypatch):
+    """SGDB FINDS "Ninja Gaiden Sigma Plus" -- it is the top hit -- and has no
+    horizontal covers for it. Retrying only when the game search came back
+    empty never fired, and the picker said "no candidates for this image type".
+    A rung counts only when its game has the picture."""
+    from backend import steamgriddb as sgdb
+
+    games = {
+        "NINJA GAIDEN Sigma PLUS": {"id": 1, "name": "Ninja Gaiden Sigma Plus"},
+        "NINJA GAIDEN Sigma": {"id": 2, "name": "Ninja Gaiden Sigma"},
+    }
+    art = {2: [{"url": "https://sgdb.example.com/sigma-h.jpg"}]}  # only Sigma has a horizontal cover
+    probed: list[tuple[int, int]] = []
+
+    monkeypatch.setattr(sgdb, "search_games", lambda key, q: [games[q]] if q in games else [])
+
+    def fake_images(key, game_id, image_type, page=0):
+        probed.append((game_id, page))
+        return art.get(game_id, [])
+
+    monkeypatch.setattr(sgdb, "fetch_images_for_game", fake_images)
+
+    game, images = sgdb.find_game_art("key", "NINJA GAIDEN Σ PLUS", "h")
+    assert game["id"] == 2, "Sigma Plus was found and skipped; Sigma has the cover"
+    assert images == art[2]
+    assert probed == [(1, 0), (2, 0)], "one probe per rung, in order"
+
+    # Paging stays on the game page 0 chose -- it must not re-walk and land on
+    # a different game for page 2.
+    probed.clear()
+    game, _ = sgdb.find_game_art("key", "NINJA GAIDEN Σ PLUS", "h", page=1)
+    assert game["id"] == 2 and probed == [(1, 0), (2, 0), (2, 1)]

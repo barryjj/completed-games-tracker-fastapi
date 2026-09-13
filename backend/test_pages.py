@@ -1227,10 +1227,7 @@ def test_auto_fetch_grid_actually_saves_the_cover(client, db_session):
     entry = _add_game(db_session, user, title="Castlevania Requiem")
     db_session.commit()
 
-    with (
-        patch.object(sgdb, "_find_sgdb_game_for_entry", return_value={"id": 5433157}),
-        patch.object(sgdb, "get_grids_for_game", return_value=[{"url": "https://sgdb.example.com/h.jpg"}]),
-    ):
+    with patch.object(sgdb, "_find_art_for_entry", return_value=({"id": 5433157}, [{"url": "https://sgdb.example.com/h.jpg"}])):
         url = sgdb.auto_fetch_grid(db_session, user, entry, orientation="h")
 
     assert url == "https://sgdb.example.com/h.jpg", "a found cover must be returned, not swallowed"

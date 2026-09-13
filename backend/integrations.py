@@ -1513,13 +1513,14 @@ def steamgriddb_search(
         # query implies the user wants to search by title, not by appid.
         if not query and release.source == "steam" and release.external_id:
             sgdb_game = sgdb.lookup_by_steam_appid(current_user.steamgriddb_api_key, release.external_id)
-        if not sgdb_game:
-            results = sgdb.search_games(current_user.steamgriddb_api_key, search_term)
-            sgdb_game = results[0] if results else None
-        if not sgdb_game:
-            candidates = []
-        else:
+        if sgdb_game:
             candidates = sgdb.fetch_images_for_game(current_user.steamgriddb_api_key, sgdb_game["id"], image_type, page=page)
+        else:
+            # The ladder applies to a typed query too. "Ninja Gaiden Sigma
+            # Plus" typed by hand IS found -- and has no horizontal covers, so
+            # this said "no candidates for this image type" and stopped, one
+            # rung above the six that "Ninja Gaiden Sigma" has.
+            sgdb_game, candidates = sgdb.find_game_art(current_user.steamgriddb_api_key, search_term, image_type, page=page)
     except Exception as e:
         _logger.warning("SteamGridDB search failed: %s", e)
         return templates.TemplateResponse(
