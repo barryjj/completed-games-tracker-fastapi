@@ -5779,3 +5779,83 @@ def test_a_second_sku_for_the_same_set_joins_the_row(client, db_session):
     assert row.raw_data["aliasIds"] == ["CUSA07113_00"]
     assert row.raw_data["sources"] == ["played", "purchased", "titles"], "play evidence from either SKU counts"
     assert row.raw_data["titleId"] == "CUSA05892_00"
+
+
+def test_the_search_window_is_wide_enough_to_reach_the_right_game():
+    """The real "God of War" on PS3, in IGDB's order: Ascension first, God of
+    War II, Ghost of Sparta, Saga, Origins Collection, God of War III -- and the
+    2009 HD remaster, the one the 2010 trophy set belongs to, SEVENTH. The
+    adapter asked for five hits, so the exact match was never seen and the
+    near-miss on Ascension won. Ten hits, and it wins on name alone (#212)."""
+    real_order = [
+        {"id": 1291, "name": "God of War: Ascension", "platform_ids": [9], "game_type": 0, "released": "2013-03-12"},
+        {"id": 117882, "name": "God of War II", "platform_ids": [9, 46], "game_type": 9, "released": "2009-11-17"},
+        {"id": 224438, "name": "God of War: Ghost of Sparta", "platform_ids": [9], "game_type": 9, "released": "2011-09-13"},
+        {"id": 23827, "name": "God of War Saga", "platform_ids": [9], "game_type": 3, "released": "2012-08-27"},
+        {"id": 20579, "name": "God of War: Origins Collection", "platform_ids": [9], "game_type": 3, "released": "2011-09-13"},
+        {"id": 499, "name": "God of War III", "platform_ids": [9], "game_type": 0, "released": "2010-03-16"},
+        {"id": 117883, "name": "God of War", "platform_ids": [9, 46], "game_type": 9, "released": "2009-11-17"},
+        {"id": 44653, "name": "God of War Trilogy", "platform_ids": [9], "game_type": 3, "released": "2010-03-25"},
+    ]
+
+    def five(term, platform_ids):
+        return real_order[:5]
+
+    def ten(term, platform_ids):
+        return real_order[:10]
+
+    assert psn.build_proposal("God of War", ["PS3"], [9], five)["proposed_igdb_id"] == 1291, "the old window: Ascension"
+    assert psn.build_proposal("God of War", ["PS3"], [9], ten)["proposed_igdb_id"] == 117883, "wide enough: the remaster"
+
+
+def test_a_game_released_after_the_trophies_were_earned_is_not_proposed():
+    """Where the window cannot help: a same-name reboot. Two exact matches for
+    "Tomb Raider" on PS3 -- 2013's and the 1996 original's PS3 port -- and
+    nothing in the names says which set this is. The trophies' last-updated
+    date does: a set completed in 2010 cannot be the 2013 game. A vetoed hit
+    falls through, so the other exact match wins (#212)."""
+
+    def search(term, platform_ids):
+        return [
+            {"id": 1164, "name": "Tomb Raider", "platform_ids": [9], "game_type": 0, "released": "2013-03-05"},
+            {"id": 912, "name": "Tomb Raider", "platform_ids": [9], "game_type": 11, "released": "1996-10-25"},
+        ]
+
+    without = psn.build_proposal("Tomb Raider", ["PS3"], [9], search)
+    assert without["proposed_igdb_id"] == 1164, "on names alone the main game outranks the port -- and is wrong here"
+
+    with_date = psn.build_proposal("Tomb Raider", ["PS3"], [9], search, earned_before="2010-06-01")
+    assert with_date["proposed_igdb_id"] == 912, "the 2013 game did not exist when these trophies were earned"
+
+    # And a set completed after both exist keeps the normal ranking.
+    later = psn.build_proposal("Tomb Raider", ["PS3"], [9], search, earned_before="2014-01-01")
+    assert later["proposed_igdb_id"] == 1164
+
+
+def test_a_store_concept_id_identifies_the_game_outright(db_session, monkeypatch):
+    """IGDB records Sony's store concept id as an external id, so a
+    store-backed row is identified, not searched for -- no title fuzz. Only
+    entitlement rows carry one; trophy-only sets never do (#212)."""
+    from backend import igdb
+
+    user = _prop_user(db_session, "u-concept")
+    db_session.add(models.Platform(name="PS5", display_name="PlayStation 5", igdb_id=167))
+    db_session.commit()
+
+    calls = []
+
+    def fake_lookup(cid, sec, concept):
+        calls.append(concept)
+        return {"id": 251833, "name": "Balatro", "platform_ids": [167], "year": 2024, "released": "2024-02-20", "game_type": 0}
+
+    monkeypatch.setattr(igdb, "lookup_by_ps_concept", fake_lookup)
+
+    item = {"name": "Balatro", "displayName": "Balatro", "conceptId": "10008993", "platform": "PS5"}
+    p = psn._proposal_by_concept(user, item, [167])
+    assert calls == ["10008993"], "looked up by concept id, nothing searched"
+    assert p["proposed_igdb_id"] == 251833 and p["exact"] is True
+    assert p["proposed_title"] is None, "name already matches -- id is the payload"
+
+    assert psn._proposal_by_concept(user, {"name": "God of War", "npCommunicationId": "NPWR00950_00"}, [9]) is None, (
+        "a trophy-only row has no concept id and is not this path's problem"
+    )

@@ -134,6 +134,48 @@ def search_games(
     return results
 
 
+# IGDB's name for the source whose uid is Sony's store concept id -- the
+# number in store.playstation.com/concept/232977. Verified 2026-09-13: the
+# Castlevania Requiem record carries exactly that uid under this source, and a
+# reverse lookup on a concept id from the live queue returned the right game.
+_PS_STORE_SOURCE = "Playstation Store US"
+
+
+def lookup_by_ps_concept(client_id: str, client_secret: str, concept_id: str | int) -> dict | None:
+    """The IGDB game for a PlayStation Store concept id, or None.
+
+    An identity link, not a search: no title fuzz, no relevance ranking. Only
+    store-backed rows carry a concept id -- trophy-only sets never do, and IGDB
+    has never seen an NPWR id -- so this covers entitlements exactly and PS3-era
+    trophy sets not at all.
+
+    Returns the same shape as a search hit so the proposer can use it in place
+    of one.
+    """
+    token = get_token(client_id, client_secret)
+    body = (
+        f"fields game.id, game.name, game.platforms, game.first_release_date, game.game_type, external_game_source.name; "
+        f'where uid = "{int(concept_id)}" & external_game_source.name = "{_PS_STORE_SOURCE}"; limit 1;'
+    )
+    resp = httpx.post(f"{_IGDB_BASE}/external_games", headers=_igdb_headers(client_id, token), content=body, timeout=15)
+    resp.raise_for_status()
+    rows = resp.json()
+    if not rows or not rows[0].get("game"):
+        return None
+    g = rows[0]["game"]
+    released = None
+    if g.get("first_release_date"):
+        released = datetime.datetime.fromtimestamp(g["first_release_date"], datetime.UTC).date().isoformat()
+    return {
+        "id": g.get("id"),
+        "name": g.get("name"),
+        "platform_ids": g.get("platforms") or [],
+        "year": int(released[:4]) if released else None,
+        "released": released,
+        "game_type": g.get("game_type"),
+    }
+
+
 def search_games_on_platforms(
     client_id: str,
     client_secret: str,
@@ -176,14 +218,20 @@ def search_games_on_platforms(
     out = []
     for g in resp.json():
         year = None
+        released = None
         if g.get("first_release_date"):
-            year = datetime.datetime.fromtimestamp(g["first_release_date"], datetime.UTC).year
+            dt = datetime.datetime.fromtimestamp(g["first_release_date"], datetime.UTC)
+            year, released = dt.year, dt.date().isoformat()
         out.append(
             {
                 "id": g.get("id"),
                 "name": g.get("name"),
                 "platform_ids": g.get("platforms") or [],
                 "year": year,
+                # ISO date. A trophy set completed in January 2010 cannot be a
+                # game released in March 2013, and the year alone cannot see a
+                # release in December against trophies from that January.
+                "released": released,
                 # IGDB's own classification — 0 main game, 1 dlc/addon, 3 bundle,
                 # 9 remaster, 10 expanded, 11 port. Authoritative where guessing
                 # from the title is not (#180).

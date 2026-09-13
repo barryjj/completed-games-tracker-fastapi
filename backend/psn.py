@@ -2940,7 +2940,14 @@ def _collapse_edition(hit: dict) -> dict:
     return hit
 
 
-def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int], search_fn, store_title: str = "") -> dict | None:
+def build_proposal(
+    title: str,
+    trophy_platforms: list[str],
+    igdb_ids: list[int],
+    search_fn,
+    store_title: str = "",
+    earned_before: str | None = None,
+) -> dict | None:
     """Ask IGDB what this trophy set really is. Returns None when unsure.
 
     search_fn(term, platform_ids) -> [{id, name, platform_ids}], so the network
@@ -2959,9 +2966,21 @@ def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int],
 
     No confident answer means no proposal. A row left raw is recoverable; a
     confident wrong rename looks authoritative and is not.
+
+    earned_before: ISO date the trophies were last updated. A hit released
+    after it is not this game, whatever its name looks like -- Sony's "God of
+    War" set, completed January 2010, was proposed as God of War: Ascension,
+    which came out in March 2013. Title search cannot see that; the date can.
+    Vetoed hits fall through, so the right game further down the results still
+    wins (#212).
     """
     if not igdb_ids:
         return None
+
+    def _impossible(hit: dict) -> bool:
+        rel = hit.get("released")
+        return bool(earned_before and rel and rel > earned_before)
+
     # We may hold TWO names for the same game and neither is reliably better.
     # Sony's feed name can be uselessly sparse ("Batman") where the store page
     # names it properly ("Batman: The Telltale Series"); the store SKU can be
@@ -2977,6 +2996,8 @@ def build_proposal(title: str, trophy_platforms: list[str], igdb_ids: list[int],
     exact_best = None
     for term in search_terms(title) + (search_terms(store_title) if store_title.strip() else []):
         for hit in search_fn(term, igdb_ids) or []:
+            if _impossible(hit):
+                continue
             hit = _collapse_edition(hit)
             name = (hit.get("name") or "").strip()
             hit_ids = [p for p in (hit.get("platform_ids") or []) if p in igdb_ids]
@@ -3074,7 +3095,14 @@ def _igdb_search_adapter(client_id: str, client_secret: str):
     from . import igdb
 
     def search(term: str, platform_ids: list[int]) -> list[dict]:
-        rows = igdb.search_games_on_platforms(client_id, client_secret, term, platform_ids, limit=5)
+        # Ten, not five. build_proposal scans every hit and picks the closest,
+        # so a wider window costs nothing in precision -- but a narrow one
+        # costs the answer outright: "God of War" on PS3 returns Ascension
+        # first and the 2009 HD remaster SEVENTH, and at five the right game
+        # was never seen. The trophy-date veto then cleared the top five and
+        # correctly proposed nothing, which is worse than useless when the
+        # answer is two rows further down (#212).
+        rows = igdb.search_games_on_platforms(client_id, client_secret, term, platform_ids, limit=10)
         return [
             {
                 "id": r["id"],
@@ -3088,11 +3116,52 @@ def _igdb_search_adapter(client_id: str, client_secret: str):
                 # and an episode never resolved to its series.
                 "version_parent": r.get("version_parent"),
                 "parent_game": r.get("parent_game"),
+                # Same lesson: the trophy-date veto reads this, and a reshape
+                # that dropped it would disable the veto with every test green.
+                "released": r.get("released"),
             }
             for r in rows
         ]
 
     return search
+
+
+def _proposal_by_concept(user: models.User, item: dict, igdb_ids: list[int]) -> dict | None:
+    """An exact proposal from the store concept id, when the row has one.
+
+    IGDB records Sony's concept id -- the number in the store URL -- as an
+    external id, so a store-backed row can be identified outright instead of
+    searched for. No title fuzz, and none of the misses it produces. Only
+    entitlement rows carry a concept id; trophy-only sets never do, so this is
+    a first step, not a replacement for the search (#212).
+
+    Same shape as build_proposal's result so everything downstream is shared.
+    """
+    from . import igdb
+
+    concept = item.get("conceptId")
+    if not concept or not igdb_ids:
+        return None
+    try:
+        hit = igdb.lookup_by_ps_concept(user.twitch_client_id, user.twitch_client_secret, concept)
+    except Exception:
+        _logger.exception("IGDB concept lookup failed for concept %s", concept)
+        return None
+    if not hit or not hit.get("name"):
+        return None
+    hit_ids = [p for p in (hit.get("platform_ids") or []) if p in igdb_ids]
+    if not hit_ids:
+        return None
+    ours = titles.normalize_for_match(item.get("displayName") or item.get("name") or "")
+    name = hit["name"].strip()
+    return {
+        "proposed_title": None if titles.normalize_for_match(name) == ours else name,
+        "proposed_igdb_id": hit["id"],
+        "proposed_platforms": hit_ids,
+        "matched_term": f"concept:{concept}",
+        "exact": True,
+        "matched_via": None,
+    }
 
 
 def _can_do_better_now(cand, item: dict) -> bool:
@@ -3248,7 +3317,16 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
         igdb_ids = igdb_platform_ids(db, tokens)
         out["checked"] += 1
         try:
-            proposal = build_proposal(cand.title, tokens, igdb_ids, search, store_title=_store_title_for(cand, store_sleep))
+            proposal = _proposal_by_concept(user, item, igdb_ids)
+            if proposal is None:
+                proposal = build_proposal(
+                    cand.title,
+                    tokens,
+                    igdb_ids,
+                    search,
+                    store_title=_store_title_for(cand, store_sleep),
+                    earned_before=(item.get("trophyLastUpdated") or "")[:10] or None,
+                )
         except Exception:
             _logger.exception("IGDB proposal lookup failed for %s", cand.external_id)
             out["errored"] += 1
