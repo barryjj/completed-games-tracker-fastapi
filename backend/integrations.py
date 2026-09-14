@@ -422,6 +422,15 @@ async def psn_sync_library(request: Request, current_user: models.User = Depends
     return _kick_off_sync(request, current_user, "psn_sync")
 
 
+@router.post("/psn/trophies")
+async def psn_fetch_trophies(request: Request, current_user: models.User = Depends(get_web_user)):
+    """Background job: trophy definitions per release and this account's
+    earned list per entry, for every PSN entry with a trophy set (#136). The
+    sync chains this itself; the button exists for the library that predates
+    it, and for a re-run without a full crawl."""
+    return _kick_off_sync(request, current_user, "psn_trophies")
+
+
 @router.post("/psn/refresh-store-metadata")
 async def psn_refresh_store_metadata(request: Request, current_user: models.User = Depends(get_web_user)):
     """Background job: fetch PS Store product-page metadata for PSN entries that
@@ -610,6 +619,16 @@ _STEAM_KINDS: dict[str, dict] = {
         "label": "Title check",
         "job_label": "PSN title check",
     },
+    "psn_trophies": {
+        "fn": "sync_trophies",
+        "module": "psn",
+        "service": "psn",
+        "progress": True,
+        "started": "Fetching your PlayStation trophies in the background — you'll see a toast when it finishes.",
+        "label": "Trophies",
+        "job_label": "PSN trophies",
+        "retry_path": "/integrations/psn/trophies",
+    },
     "psn_store_refresh": {
         "fn": "refresh_all_store_metadata",
         "module": "psn_store",
@@ -666,6 +685,18 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         return "\n".join(lines)
     if kind == "psn_review_art":
         return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
+    if kind == "psn_trophies":
+        if result.get("skipped_no_credentials"):
+            return "PSN trophies skipped\nSave an NPSSO token and Online ID on the PSN configure page."
+        lines = [
+            "PSN trophies complete",
+            f"{result['fetched']:,} sets fetched · {result['earned']:,} trophies earned · {result['skipped']:,} already current",
+        ]
+        if result.get("stopped"):
+            lines.append(f"Stopped early (HTTP {result['stopped']}) — run it again later to finish")
+        elif result.get("errored"):
+            lines.append(f"{result['errored']:,} errored")
+        return "\n".join(lines)
 
     if kind == "psn_sync":
         parts = [f"+{result['added']:,} entries" if result["added"] else "No new entries"]
@@ -758,6 +789,10 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
         # id — Sony repurposes listings, and the base Ghost of Tsushima SKU
         # serves a page titled "Legends" (#180).
         steps.append(("psn_igdb_link", "IGDB match"))
+    # Unconditional: progress moves without anything being added, and the
+    # pass self-gates on Sony's last-earned stamp so a quiet sync costs no
+    # calls. After the entry-writing steps so a just-added game is covered.
+    steps.append(("psn_trophies", "Trophies"))
     if has_sgdb_key:
         # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
         # the covers actually being waited on.
@@ -803,6 +838,13 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
         fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
+        elif spec.get("progress"):
+            # Long per-row passes report live progress the way the artwork
+            # fill does; the callback signature is (done, total, title).
+            def on_progress(done: int, total: int, title: str) -> None:
+                jobs.update(job_id, progress={"done": done, "total": total, "title": title})
+
+            result = await asyncio.to_thread(fn, db, user, on_progress)
         else:
             result = await asyncio.to_thread(fn, db, user)
 

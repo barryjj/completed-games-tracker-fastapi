@@ -50,6 +50,11 @@ _GRAPHQL_URL = "https://web.np.playstation.com/api/graphql/v1/op"
 # Persisted-query hash for getPurchasedGameList (from psn-api dist source).
 _PURCHASED_QUERY_HASH = "827a423f6a8ddca4107ac01395af2ec0eafd8396fc7fa204aaf9b7ed2eefa168"
 _TROPHY_TITLES_URL = "https://m.np.playstation.com/api/trophy/v1/users/{account_id}/trophyTitles"
+# Per trophy set: what the game defines, its DLC groups, and what this account
+# has earned. All three take npServiceName=trophy|trophy2 (#136).
+_TROPHY_SET_URL = "https://m.np.playstation.com/api/trophy/v1/npCommunicationIds/{npwr}/trophyGroups/all/trophies"
+_TROPHY_GROUPS_URL = "https://m.np.playstation.com/api/trophy/v1/npCommunicationIds/{npwr}/trophyGroups"
+_USER_TROPHIES_URL = "https://m.np.playstation.com/api/trophy/v1/users/{account_id}/npCommunicationIds/{npwr}/trophyGroups/all/trophies"
 _PLAYED_URL = "https://m.np.playstation.com/api/gamelist/v2/users/{account_id}/titles"
 _PROFILE_URL = "https://us-prof.np.community.playstation.net/userProfile/v1/users/{online_id}/profile2"
 
@@ -607,6 +612,11 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
             "trophyProgress": t.get("progress", (existing or {}).get("trophyProgress")),
             "trophyLastUpdated": t.get("lastUpdatedDateTime") or (existing or {}).get("trophyLastUpdated"),
             "trophyIconUrl": t.get("trophyTitleIconUrl") or (existing or {}).get("trophyIconUrl"),
+            # The per-set endpoints need these: "trophy" (PS3/PS4/Vita) vs
+            # "trophy2" (PS5) picks the API, and the set version says whether
+            # the definitions on file are still the ones Sony serves (#136).
+            "npServiceName": t.get("npServiceName") or (existing or {}).get("npServiceName"),
+            "trophySetVersion": t.get("trophySetVersion") or (existing or {}).get("trophySetVersion"),
             "sources": sorted(set((existing or {}).get("sources", []) + ["titles"])),
             "platform": ((t.get("trophyTitlePlatform") or (existing or {}).get("platform") or "").upper() or None),
             "trophyJoin": join,
@@ -1624,6 +1634,242 @@ def sync_library(db: Session, user: models.User) -> dict:
     db.commit()
     _write_debug_dump(user.id, report, merged, raw)
     return {**result, "report": report}
+
+
+# ─── Trophies (#136) ───────────────────────────────────────────────────────
+
+_TROPHY_SLEEP_S = 0.25
+
+
+def _trophy_service(item: dict) -> str:
+    """Which trophy API a set lives on. Carried by the crawl since #136; a
+    release imported before that derives it -- every PS5 set is trophy2 and
+    nothing else is (434 sets in the live feed, no exceptions)."""
+    return item.get("npServiceName") or ("trophy2" if "ps5" in _platforms_of(item) else "trophy")
+
+
+def _fetch_trophy_set(token: str, npwr: str, service: str) -> tuple[dict, dict[str, str]]:
+    """The set as the game defines it: (payload, {group_id: group_name}).
+    Group names cost a second call, spent only when the set has groups."""
+    payload = _bearer_get(token, _TROPHY_SET_URL.format(npwr=npwr), params={"npServiceName": service})
+    groups: dict[str, str] = {}
+    if payload.get("hasTrophyGroups"):
+        time.sleep(_TROPHY_SLEEP_S)
+        data = _bearer_get(token, _TROPHY_GROUPS_URL.format(npwr=npwr), params={"npServiceName": service})
+        for g in data.get("trophyGroups") or []:
+            if g.get("trophyGroupId"):
+                groups[str(g["trophyGroupId"])] = g.get("trophyGroupName") or ""
+    return payload, groups
+
+
+def _fetch_earned_trophies(token: str, account_id: str, npwr: str, service: str) -> list[dict]:
+    data = _bearer_get(token, _USER_TROPHIES_URL.format(account_id=account_id, npwr=npwr), params={"npServiceName": service})
+    return data.get("trophies") or []
+
+
+def _int_or_none(value) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_iso(value: str | None) -> datetime.datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _store_trophy_definitions(
+    db: Session, release: models.GameRelease, npwr: str, payload: dict, groups: dict[str, str]
+) -> dict[str, models.AchievementDefinition]:
+    """Upsert the set's definitions on the release; returns them by trophyId.
+    Rows Sony no longer lists are left alone -- a set version bump adds
+    trophies, it does not retract them."""
+    existing = {d.external_id: d for d in db.query(models.AchievementDefinition).filter_by(release_id=release.id, source="psn").all()}
+    now = datetime.datetime.now(datetime.UTC)
+    for i, t in enumerate(payload.get("trophies") or []):
+        ext = str(t.get("trophyId"))
+        group_id = str(t.get("trophyGroupId") or "default")
+        fields = {
+            "set_id": npwr,
+            "name": t.get("trophyName") or f"Trophy {ext}",
+            "description": t.get("trophyDetail"),
+            "hidden": bool(t.get("trophyHidden")),
+            "tier": t.get("trophyType"),
+            "group_id": group_id,
+            "group_name": groups.get(group_id),
+            "icon_url": t.get("trophyIconUrl"),
+            "sort_order": i,
+            "raw_data": t,
+            "updated_at": now,
+        }
+        row = existing.get(ext)
+        if row is None:
+            row = models.AchievementDefinition(release_id=release.id, source="psn", external_id=ext, **fields)
+            db.add(row)
+            existing[ext] = row
+        else:
+            for k, v in fields.items():
+                setattr(row, k, v)
+    db.flush()
+    return existing
+
+
+def _store_earned_trophies(
+    db: Session, entry: models.UserLibraryEntry, defs: dict[str, models.AchievementDefinition], earned: list[dict]
+) -> int:
+    """Upsert this entry's progress against the set; returns how many are
+    earned. Rarity lives on the definition but only the per-user call reports
+    it, so it is written here."""
+    existing = {a.definition_id: a for a in db.query(models.UserAchievement).filter_by(library_entry_id=entry.id).all()}
+    now = datetime.datetime.now(datetime.UTC)
+    count = 0
+    for t in earned:
+        d = defs.get(str(t.get("trophyId")))
+        if d is None:
+            continue
+        rate = t.get("trophyEarnedRate")
+        if rate not in (None, ""):
+            try:
+                d.rarity_pct = float(rate)
+            except (TypeError, ValueError):
+                pass
+        is_earned = bool(t.get("earned"))
+        count += is_earned
+        fields = {
+            "earned": is_earned,
+            "earned_at": _parse_iso(t.get("earnedDateTime")) if is_earned else None,
+            "progress_value": _int_or_none(t.get("progress")),
+            "progress_target": _int_or_none((d.raw_data or {}).get("trophyProgressTargetValue")),
+            "raw_data": t,
+            "updated_at": now,
+        }
+        row = existing.get(d.id)
+        if row is None:
+            db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, **fields))
+        else:
+            for k, v in fields.items():
+                setattr(row, k, v)
+    return count
+
+
+def _trophy_entries(db: Session, user_id: int) -> list[models.UserLibraryEntry]:
+    """PSN entries whose release carries a trophy set."""
+    rows = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease)
+        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
+        .all()
+    )
+    return [e for e in rows if (e.release.raw_data or {}).get("npCommunicationId")]
+
+
+def _definitions_current(db: Session, release: models.GameRelease, item: dict) -> bool:
+    """Definitions on file match the set version the crawl last saw. A release
+    imported before the version was carried has no baseline; whatever is on
+    file counts until the next sync brings one."""
+    d = db.query(models.AchievementDefinition).filter_by(release_id=release.id, source="psn").first()
+    if d is None:
+        return False
+    want = item.get("trophySetVersion")
+    return not want or (d.raw_data or {}).get("_setVersion") == want
+
+
+def _earned_current(db: Session, entry: models.UserLibraryEntry, item: dict) -> bool:
+    """This entry's progress was fetched after Sony's last-earned stamp. The
+    crawl refreshes trophyLastUpdated every sync, so a new platinum shows up
+    as a newer stamp than the rows on file."""
+    stamp = _parse_iso(item.get("trophyLastUpdated"))
+    latest = (
+        db.query(models.UserAchievement.updated_at)
+        .filter_by(library_entry_id=entry.id)
+        .order_by(models.UserAchievement.updated_at.desc())
+        .first()
+    )
+    if latest is None or latest[0] is None:
+        return False
+    fetched = latest[0]
+    if fetched.tzinfo is None:
+        fetched = fetched.replace(tzinfo=datetime.UTC)
+    return stamp is None or fetched >= stamp
+
+
+def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep: float = _TROPHY_SLEEP_S) -> dict:
+    """Fetch every trophy set behind the user's PSN library: what the game
+    defines, once per release, and what this account has earned, per entry.
+
+    Self-gating on both halves. Definitions are re-fetched only when the set
+    version the crawl reported has moved; earned lists only when Sony's
+    last-earned stamp is newer than the rows on file. A re-run after a sync
+    that changed nothing spends no calls. Runs as a follow-up to the sync and
+    from its own button; either way it is background and rate-limited, since
+    a library this size is several hundred calls the first time (#136).
+    """
+    if not user.psn_npsso or not user.psn_online_id:
+        return {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "skipped_no_credentials": True}
+    entries = _trophy_entries(db, user.id)
+    out = {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "earned": 0}
+    token: str | None = None
+    account_id: str | None = None
+    # One release per set is the common case, but cross-buy puts one NPWR on
+    # two releases; the payload is reused rather than fetched twice.
+    set_cache: dict[tuple[str, str], tuple[dict, dict[str, str]]] = {}
+    for i, entry in enumerate(entries):
+        release = entry.release
+        item = release.raw_data or {}
+        npwr = item["npCommunicationId"]
+        service = _trophy_service(item)
+        out["checked"] += 1
+        if progress_callback:
+            progress_callback(i, len(entries), entry.title)
+        need_defs = not _definitions_current(db, release, item)
+        need_earned = need_defs or not _earned_current(db, entry, item)
+        if not need_earned:
+            out["skipped"] += 1
+            continue
+        if token is None:
+            token = _exchange_npsso(user.psn_npsso)
+            account_id = _resolve_account_id(token, user.psn_online_id)
+        try:
+            if need_defs:
+                if (npwr, service) not in set_cache:
+                    set_cache[(npwr, service)] = _fetch_trophy_set(token, npwr, service)
+                    time.sleep(sleep)
+                payload, groups = set_cache[(npwr, service)]
+                # The version rides on each row's raw_data so the gate above
+                # can read it without another column.
+                for t in payload.get("trophies") or []:
+                    t["_setVersion"] = payload.get("trophySetVersion") or item.get("trophySetVersion")
+                defs = _store_trophy_definitions(db, release, npwr, payload, groups)
+            else:
+                defs = {
+                    d.external_id: d for d in db.query(models.AchievementDefinition).filter_by(release_id=release.id, source="psn").all()
+                }
+            earned = _fetch_earned_trophies(token, account_id, npwr, service)
+            time.sleep(sleep)
+            out["earned"] += _store_earned_trophies(db, entry, defs, earned)
+            db.commit()
+            out["fetched"] += 1
+        except PsnNpssoExpiredError:
+            raise
+        except httpx.HTTPStatusError as e:
+            db.rollback()
+            out["errored"] += 1
+            _logger.warning("Trophy fetch failed for %s (%s): HTTP %s", npwr, entry.title, e.response.status_code)
+            # Auth gone or rate-limited: every remaining set would fail the
+            # same way. Stop and let the next run pick up where this left off.
+            if e.response.status_code in (401, 403, 429):
+                out["stopped"] = e.response.status_code
+                break
+        except (httpx.HTTPError, ValueError):
+            db.rollback()
+            out["errored"] += 1
+            _logger.warning("Trophy fetch failed for %s (%s)", npwr, entry.title, exc_info=True)
+    return out
 
 
 # ─── Played-only review actions ────────────────────────────────────────────

@@ -151,6 +151,19 @@
         hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
       >Fetch store metadata</button>
     </div>
+
+    <h5 class="cgt-config-section">Trophies</h5>
+    <p class="text-secondary mb-2"><small>Fetch every trophy set behind your PSN library &mdash; what each game defines and which ones you have earned. Runs in the background; a sync does this on its own, and a re-run only fetches sets that changed since.</small></p>
+    <div class="mb-3">
+      <button
+        class="btn btn-primary"
+        hx-post="/integrations/psn/trophies"
+        hx-target="#psn-flash"
+        hx-swap="innerHTML"
+        hx-disabled-elt="this"
+        hx-on::before-request="document.getElementById('psn-flash').innerHTML=''"
+      >Fetch trophies</button>
+    </div>
   </div>
 
 </div>
