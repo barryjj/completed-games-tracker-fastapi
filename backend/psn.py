@@ -1683,19 +1683,17 @@ def _parse_iso(value: str | None) -> datetime.datetime | None:
         return None
 
 
-def _store_trophy_definitions(
-    db: Session, release: models.GameRelease, npwr: str, payload: dict, groups: dict[str, str]
-) -> dict[str, models.AchievementDefinition]:
-    """Upsert the set's definitions on the release; returns them by trophyId.
-    Rows Sony no longer lists are left alone -- a set version bump adds
-    trophies, it does not retract them."""
-    existing = {d.external_id: d for d in db.query(models.AchievementDefinition).filter_by(release_id=release.id, source="psn").all()}
+def _store_trophy_definitions(db: Session, npwr: str, payload: dict, groups: dict[str, str]) -> dict[str, models.AchievementDefinition]:
+    """Upsert the set's definitions; returns them by trophyId. Rows Sony no
+    longer lists are left alone -- a set version bump adds trophies, it does
+    not retract them."""
+    existing = _definitions_for(db, npwr)
     now = datetime.datetime.now(datetime.UTC)
+    version = payload.get("trophySetVersion")
     for i, t in enumerate(payload.get("trophies") or []):
         ext = str(t.get("trophyId"))
         group_id = str(t.get("trophyGroupId") or "default")
         fields = {
-            "set_id": npwr,
             "name": t.get("trophyName") or f"Trophy {ext}",
             "description": t.get("trophyDetail"),
             "hidden": bool(t.get("trophyHidden")),
@@ -1704,12 +1702,14 @@ def _store_trophy_definitions(
             "group_name": groups.get(group_id),
             "icon_url": t.get("trophyIconUrl"),
             "sort_order": i,
-            "raw_data": t,
+            # The set version rides on each row so the freshness gate can read
+            # it without another column.
+            "raw_data": {**t, "_setVersion": version},
             "updated_at": now,
         }
         row = existing.get(ext)
         if row is None:
-            row = models.AchievementDefinition(release_id=release.id, source="psn", external_id=ext, **fields)
+            row = models.AchievementDefinition(source="psn", set_id=npwr, external_id=ext, **fields)
             db.add(row)
             existing[ext] = row
         else:
@@ -1717,6 +1717,10 @@ def _store_trophy_definitions(
                 setattr(row, k, v)
     db.flush()
     return existing
+
+
+def _definitions_for(db: Session, npwr: str) -> dict[str, models.AchievementDefinition]:
+    return {d.external_id: d for d in db.query(models.AchievementDefinition).filter_by(source="psn", set_id=npwr).all()}
 
 
 def _store_earned_trophies(
@@ -1768,11 +1772,18 @@ def _trophy_entries(db: Session, user_id: int) -> list[models.UserLibraryEntry]:
     return [e for e in rows if (e.release.raw_data or {}).get("npCommunicationId")]
 
 
-def _definitions_current(db: Session, release: models.GameRelease, item: dict) -> bool:
-    """Definitions on file match the set version the crawl last saw. A release
-    imported before the version was carried has no baseline; whatever is on
-    file counts until the next sync brings one."""
-    d = db.query(models.AchievementDefinition).filter_by(release_id=release.id, source="psn").first()
+def _trophy_candidates(db: Session, user_id: int) -> list[models.PsnReviewCandidate]:
+    """Pending review rows that are a trophy set. Most of the library sits
+    here until it is reviewed, and the set is what says which game a row is."""
+    rows = db.query(models.PsnReviewCandidate).filter_by(user_id=user_id, status="pending").all()
+    return [c for c in rows if _set_id(c)]
+
+
+def _definitions_current(db: Session, npwr: str, item: dict) -> bool:
+    """Definitions on file match the set version the crawl last saw. A record
+    from before the version was carried has no baseline; whatever is on file
+    counts until the next sync brings one."""
+    d = db.query(models.AchievementDefinition).filter_by(source="psn", set_id=npwr).first()
     if d is None:
         return False
     want = item.get("trophySetVersion")
@@ -1799,8 +1810,14 @@ def _earned_current(db: Session, entry: models.UserLibraryEntry, item: dict) -> 
 
 
 def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep: float = _TROPHY_SLEEP_S) -> dict:
-    """Fetch every trophy set behind the user's PSN library: what the game
-    defines, once per release, and what this account has earned, per entry.
+    """Fetch every trophy set behind the user's PSN library and review queue:
+    what the game defines, once per set, and what this account has earned,
+    per library entry.
+
+    Review candidates get definitions only. They have no entry to hang
+    progress on, and the row already carries the counts, the percentage and
+    the last-earned date the card shows; the per-trophy list arrives on the
+    entry the next pass after confirm.
 
     Self-gating on both halves. Definitions are re-fetched only when the set
     version the crawl reported has moved; earned lists only when Sony's
@@ -1811,24 +1828,26 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
     """
     if not user.psn_npsso or not user.psn_online_id:
         return {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "skipped_no_credentials": True}
-    entries = _trophy_entries(db, user.id)
-    out = {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "earned": 0}
+    out = {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "earned": 0, "sets": 0}
+    # (label, npwr, item, entry-or-None). Entries first: a set in both places
+    # is fetched once and the candidate finds it current.
+    work: list[tuple[str, str, dict, models.UserLibraryEntry | None]] = []
+    for entry in _trophy_entries(db, user.id):
+        item = entry.release.raw_data or {}
+        work.append((entry.title, item["npCommunicationId"], item, entry))
+    for cand in _trophy_candidates(db, user.id):
+        work.append((cand.title, _set_id(cand), cand.raw_data or {}, None))
+
     token: str | None = None
     account_id: str | None = None
-    # One release per set is the common case, but cross-buy puts one NPWR on
-    # two releases; the payload is reused rather than fetched twice.
-    set_cache: dict[tuple[str, str], tuple[dict, dict[str, str]]] = {}
-    for i, entry in enumerate(entries):
-        release = entry.release
-        item = release.raw_data or {}
-        npwr = item["npCommunicationId"]
+    for i, (label, npwr, item, entry) in enumerate(work):
         service = _trophy_service(item)
         out["checked"] += 1
         if progress_callback:
-            progress_callback(i, len(entries), entry.title)
-        need_defs = not _definitions_current(db, release, item)
-        need_earned = need_defs or not _earned_current(db, entry, item)
-        if not need_earned:
+            progress_callback(i, len(work), label)
+        need_defs = not _definitions_current(db, npwr, item)
+        need_earned = entry is not None and (need_defs or not _earned_current(db, entry, item))
+        if not need_defs and not need_earned:
             out["skipped"] += 1
             continue
         if token is None:
@@ -1836,22 +1855,18 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
             account_id = _resolve_account_id(token, user.psn_online_id)
         try:
             if need_defs:
-                if (npwr, service) not in set_cache:
-                    set_cache[(npwr, service)] = _fetch_trophy_set(token, npwr, service)
-                    time.sleep(sleep)
-                payload, groups = set_cache[(npwr, service)]
-                # The version rides on each row's raw_data so the gate above
-                # can read it without another column.
-                for t in payload.get("trophies") or []:
-                    t["_setVersion"] = payload.get("trophySetVersion") or item.get("trophySetVersion")
-                defs = _store_trophy_definitions(db, release, npwr, payload, groups)
+                payload, groups = _fetch_trophy_set(token, npwr, service)
+                time.sleep(sleep)
+                if not payload.get("trophySetVersion"):
+                    payload["trophySetVersion"] = item.get("trophySetVersion")
+                defs = _store_trophy_definitions(db, npwr, payload, groups)
+                out["sets"] += 1
             else:
-                defs = {
-                    d.external_id: d for d in db.query(models.AchievementDefinition).filter_by(release_id=release.id, source="psn").all()
-                }
-            earned = _fetch_earned_trophies(token, account_id, npwr, service)
-            time.sleep(sleep)
-            out["earned"] += _store_earned_trophies(db, entry, defs, earned)
+                defs = _definitions_for(db, npwr)
+            if need_earned:
+                earned = _fetch_earned_trophies(token, account_id, npwr, service)
+                time.sleep(sleep)
+                out["earned"] += _store_earned_trophies(db, entry, defs, earned)
             db.commit()
             out["fetched"] += 1
         except PsnNpssoExpiredError:
@@ -1859,7 +1874,7 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
         except httpx.HTTPStatusError as e:
             db.rollback()
             out["errored"] += 1
-            _logger.warning("Trophy fetch failed for %s (%s): HTTP %s", npwr, entry.title, e.response.status_code)
+            _logger.warning("Trophy fetch failed for %s (%s): HTTP %s", npwr, label, e.response.status_code)
             # Auth gone or rate-limited: every remaining set would fail the
             # same way. Stop and let the next run pick up where this left off.
             if e.response.status_code in (401, 403, 429):
@@ -1868,7 +1883,7 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
         except (httpx.HTTPError, ValueError):
             db.rollback()
             out["errored"] += 1
-            _logger.warning("Trophy fetch failed for %s (%s)", npwr, entry.title, exc_info=True)
+            _logger.warning("Trophy fetch failed for %s (%s)", npwr, label, exc_info=True)
     return out
 
 

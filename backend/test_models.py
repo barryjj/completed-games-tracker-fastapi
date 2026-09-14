@@ -240,7 +240,8 @@ def test_collection_item_parent_entry(db):
 
 
 def _definition(db, release, external_id, name, **kw):
-    d = models.AchievementDefinition(release_id=release.id, source=release.source, external_id=external_id, name=name, **kw)
+    kw.setdefault("set_id", release.external_id or f"set-{release.id}")
+    d = models.AchievementDefinition(source=release.source, external_id=external_id, name=name, **kw)
     db.add(d)
     db.flush()
     return d
@@ -323,8 +324,8 @@ def test_achievement_unique_per_entry(db):
         db.commit()
 
 
-def test_definition_unique_per_release(db):
-    """A release defines each achievement once; a re-fetch updates, never duplicates."""
+def test_definition_unique_per_set(db):
+    """A set defines each achievement once; a re-fetch updates, never duplicates."""
     game = make_game(db)
     release = make_release(db, game)
     _definition(db, release, "ACH_1", "First")
@@ -391,10 +392,10 @@ def test_playthroughs_string_values(db):
 def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session):
     """Two users own the same release: one set of definitions, each their own
     earned rows. Deleting an entry drops that user's progress and nothing else;
-    deleting the release drops the definitions and everything under them (#136).
+    the definitions belong to the SET and outlive the release (#136).
 
     The schema is multi-user by design -- users, user_library keyed by user --
-    so the definition is stored once per release rather than folded into every
+    so the definition is stored once per set rather than folded into every
     user's row, which is what the original never-written user_achievements did.
     """
     import datetime
@@ -417,7 +418,6 @@ def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session
     db_session.flush()
 
     plat = models.AchievementDefinition(
-        release_id=release.id,
         source="psn",
         set_id="NPWR00950_00",
         external_id="0",
@@ -427,9 +427,7 @@ def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session
         group_id="default",
         rarity_pct=12.4,
     )
-    bronze = models.AchievementDefinition(
-        release_id=release.id, source="psn", set_id="NPWR00950_00", external_id="18", name="1.21 Gigawatts", tier="bronze"
-    )
+    bronze = models.AchievementDefinition(source="psn", set_id="NPWR00950_00", external_id="18", name="1.21 Gigawatts", tier="bronze")
     db_session.add_all([plat, bronze])
     db_session.flush()
 
@@ -444,7 +442,7 @@ def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session
     )
     db_session.commit()
 
-    assert db_session.query(models.AchievementDefinition).filter_by(release_id=release.id).count() == 2, "one set, shared"
+    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 2, "one set, shared"
     assert {ua.definition.name for ua in entry_a.achievements if ua.earned} == {"Trophy of Zeus", "1.21 Gigawatts"}
     assert [ua.earned for ua in entry_b.achievements] == [False], "fetched-not-earned is a row, not an absence"
     assert plat.earned_by and {ua.library_entry_id for ua in plat.earned_by} == {entry_a.id, entry_b.id}
@@ -465,10 +463,11 @@ def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session
     assert db_session.query(models.AchievementDefinition).count() == 2
 
     # The release goes (once no entry holds it -- user_library.release_id does
-    # not cascade, by design): the definitions and everything under them go.
+    # not cascade, by design): a's progress went with the entry, the set stays.
+    # Two SKUs and a review candidate can all point at it; none of them owns it.
     db_session.delete(entry_a)
     db_session.commit()
     db_session.delete(release)
     db_session.commit()
-    assert db_session.query(models.AchievementDefinition).count() == 0
+    assert db_session.query(models.AchievementDefinition).count() == 2
     assert db_session.query(models.UserAchievement).count() == 0

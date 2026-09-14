@@ -635,7 +635,16 @@ class UserLibraryEntry(Base):
 
 
 class AchievementDefinition(Base):
-    """One achievement or trophy as the GAME defines it, on one release (#136).
+    """One achievement or trophy as the GAME defines it, in one set (#136).
+
+    Keyed by the SET, not the release: (source, set_id) -- a PSN NPWR id, a
+    Steam appid. The set is the identity. Nioh's two PS4 SKUs share one
+    trophy list, Shovel Knight PS4 and Vita share one, and a PSN review
+    candidate that has no release yet still has a set worth reading (the
+    platinum's description is what says which God of War it is). A release
+    or a candidate finds its definitions by set id; nothing points the other
+    way. The first cut keyed these by release and could not hold a set for
+    anything in the review queue, which is most of the library.
 
     Shared: two users who own the same PS4 release read the same rows here and
     keep their own progress in UserAchievement. Facts, not meaning -- a row says
@@ -658,16 +667,15 @@ class AchievementDefinition(Base):
       - Completion semantics are not modelled. Platinum is tier == "platinum";
         100% is a count; "finished with it" is whatever rule comes later.
 
-    set_id is the source's own container for the set, kept because a re-fetch
-    needs it and it is not always the release's external_id: a PSN release
-    keyed by its store SKU (CUSA...) has its trophies under NPWR....
+    set_id is the source's own container for the set, which is not always the
+    release's external_id: a PSN release keyed by its store SKU (CUSA...) has
+    its trophies under NPWR....
     """
 
     __tablename__ = "achievement_definitions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id", ondelete="CASCADE"), nullable=False, index=True)
     source: Mapped[str] = mapped_column(String, nullable=False)  # "psn" | "steam"
-    set_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    set_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     # PSN trophyId (as text) or Steam apiname.
     external_id: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
@@ -687,11 +695,10 @@ class AchievementDefinition(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
     updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    release: Mapped["GameRelease"] = relationship("GameRelease")
     earned_by: Mapped[list["UserAchievement"]] = relationship("UserAchievement", back_populates="definition", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint("release_id", "external_id", name="uq_achievement_release_external"),
+        UniqueConstraint("source", "set_id", "external_id", name="uq_achievement_set_external"),
         {"sqlite_autoincrement": True},
     )
 

@@ -6054,10 +6054,10 @@ def test_sync_trophies_writes_definitions_per_release_and_progress_per_entry(db_
 
     out = psn.sync_trophies(db_session, user)
 
-    assert out == {"checked": 1, "fetched": 1, "skipped": 0, "errored": 0, "earned": 1}
+    assert out == {"checked": 1, "fetched": 1, "skipped": 0, "errored": 0, "earned": 1, "sets": 1}
     defs = (
         db_session.query(models.AchievementDefinition)
-        .filter_by(release_id=entry.release_id)
+        .filter_by(set_id="NPWR00950_00")
         .order_by(models.AchievementDefinition.sort_order)
         .all()
     )
@@ -6126,7 +6126,7 @@ def test_sync_trophies_refetches_definitions_when_the_set_version_moves(db_sessi
 
     out = psn.sync_trophies(db_session, user)
     assert out["fetched"] == 1
-    assert db_session.query(models.AchievementDefinition).filter_by(release_id=entry.release_id).count() == 3
+    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 3
     assert len(entry.achievements) == 3
     # And now it is current at the new version.
     assert psn.sync_trophies(db_session, user)["skipped"] == 1
@@ -6152,7 +6152,7 @@ def test_sync_trophies_names_dlc_groups_and_stores_ps5_progress(db_session, monk
 
     psn.sync_trophies(db_session, user)
 
-    d = db_session.query(models.AchievementDefinition).filter_by(release_id=entry.release_id).one()
+    d = db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR20000_00").one()
     assert d.group_id == "001" and d.group_name == "The Lost Legacy"
     a = entry.achievements[0]
     assert (a.progress_value, a.progress_target) == (32, 50)
@@ -6188,11 +6188,11 @@ def test_sync_trophies_shares_one_fetch_across_cross_buy_releases_and_stops_on_a
     calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET}, {"NPWR00950_00": _GOW_EARNED})
 
     out = psn.sync_trophies(db_session, user)
-    assert out["fetched"] == 2
-    # Definitions once, earned twice (per entry): three calls, not four.
+    assert out["fetched"] == 2 and out["sets"] == 1
+    # One set, two entries: definitions once, earned twice. Three calls.
     assert len([c for c in calls if "/users/" not in c]) == 1 and len([c for c in calls if "/users/" in c]) == 2
-    assert db_session.query(models.AchievementDefinition).filter_by(release_id=a.release_id).count() == 2
-    assert db_session.query(models.AchievementDefinition).filter_by(release_id=b.release_id).count() == 2
+    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 2
+    assert len(a.achievements) == 2 and len(b.achievements) == 2
 
     # A 401 mid-run means every remaining set fails the same way: stop.
     import httpx
@@ -6209,3 +6209,38 @@ def test_sync_trophies_shares_one_fetch_across_cross_buy_releases_and_stops_on_a
     out = psn.sync_trophies(db_session, user)
     assert out["skipped"] == 2 and out["errored"] == 1 and out["stopped"] == 401
     assert len(calls) == 1 and c.achievements == []
+
+
+def test_sync_trophies_reads_sets_for_rows_still_in_review(db_session, monkeypatch):
+    """Most of the library sits in the review queue, and the set is what says
+    which game a row is. Candidates get definitions -- no entry, so no earned
+    rows -- and a set shared with an entry is not fetched twice."""
+    user = _trophy_user(db_session)
+    _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3", title="God of War")
+    for ext, name in (("NPWR00950_00", "God of War (dupe SKU)"), ("NPWR00001_00", "GOW2 Trophies"), ("CUSA9999_00", "Store only")):
+        db_session.add(
+            models.PsnReviewCandidate(
+                user_id=user.id,
+                external_id=ext,
+                kind="trophy_only",
+                title=name,
+                status="pending",
+                raw_data={"npCommunicationId": ext if ext.startswith("NPWR") else None, "platform": "PS3", "trophySetVersion": "01.00"},
+            )
+        )
+    db_session.add(
+        models.PsnReviewCandidate(user_id=user.id, external_id="NPWR00002_00", kind="trophy_only", title="Decided", status="confirmed")
+    )
+    db_session.commit()
+    gow2 = {**_GOW_SET, "trophies": [{"trophyId": 0, "trophyType": "platinum", "trophyName": "God of Gods"}]}
+    calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET, "NPWR00001_00": gow2}, {"NPWR00950_00": _GOW_EARNED})
+
+    out = psn.sync_trophies(db_session, user)
+
+    # Entry + dupe-SKU candidate + GOW2 candidate checked; the store-only row
+    # and the decided row are not trophy work.
+    assert out["checked"] == 3 and out["sets"] == 2 and out["skipped"] == 1
+    assert [c for c in calls if "/users/" in c] == [c for c in calls if "NPWR00950_00" in c and "/users/" in c], "earned only for the entry"
+    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00001_00").one().name == "God of Gods"
+    assert db_session.query(models.UserAchievement).count() == 2
+    assert psn.sync_trophies(db_session, user)["skipped"] == 3
