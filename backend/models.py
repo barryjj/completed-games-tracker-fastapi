@@ -615,7 +615,12 @@ class UserLibraryEntry(Base):
         "UserLibraryEntry", remote_side="UserLibraryEntry.id", back_populates="child_entries"
     )
     child_entries: Mapped[list["UserLibraryEntry"]] = relationship("UserLibraryEntry", back_populates="parent_entry")
-    achievements: Mapped[list["UserAchievement"]] = relationship("UserAchievement", back_populates="library_entry")
+    # delete-orphan + passive_deletes: the FK is ON DELETE CASCADE, and without
+    # this the ORM tried to NULL library_entry_id on loaded rows when the entry
+    # was deleted, which the column forbids.
+    achievements: Mapped[list["UserAchievement"]] = relationship(
+        "UserAchievement", back_populates="library_entry", cascade="all, delete-orphan", passive_deletes=True
+    )
     completions: Mapped[list["Completion"]] = relationship("Completion", back_populates="library_entry")
     user_artwork: Mapped[list["UserArtwork"]] = relationship("UserArtwork", back_populates="entry")
 
@@ -629,27 +634,101 @@ class UserLibraryEntry(Base):
         return self.release.game.display_name or self.release.game.title
 
 
-class UserAchievement(Base):
-    """Trophy/achievement progress per user per game release. Platform-agnostic row — the
-    library_entry_id already encodes which platform this belongs to."""
+class AchievementDefinition(Base):
+    """One achievement or trophy as the GAME defines it, on one release (#136).
 
-    __tablename__ = "user_achievements"
+    Shared: two users who own the same PS4 release read the same rows here and
+    keep their own progress in UserAchievement. Facts, not meaning -- a row says
+    what the achievement is (name, tier, icon, rarity) and nothing about what
+    earning it signifies. "Is the platinum a completion" is a rule the app may
+    adopt later, over data that does not care. What varies between sources is
+    nullable rather than modelled separately, because Steam achievements and
+    PSN trophies are far more alike than different:
+
+        tier             PSN bronze/silver/gold/platinum; Steam null
+        group_id/name    PSN trophy group ("default", or a DLC pack -- #191)
+        icon_locked_url  Steam ships a greyed icon; PSN ships one
+        points           Xbox gamerscore, if that day comes
+
+    Not covered yet, on purpose -- named so each is a decision, not a gap:
+      - Xbox gets `points` reserved and nothing else.
+      - Nintendo has no achievements and gets nothing.
+      - Progress-type achievements (PS5 "32/50") get two nullable columns on
+        UserAchievement and no UI. Stored when the source provides it.
+      - Completion semantics are not modelled. Platinum is tier == "platinum";
+        100% is a count; "finished with it" is whatever rule comes later.
+
+    set_id is the source's own container for the set, kept because a re-fetch
+    needs it and it is not always the release's external_id: a PSN release
+    keyed by its store SKU (CUSA...) has its trophies under NPWR....
+    """
+
+    __tablename__ = "achievement_definitions"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=False)
-    # platform-specific identifier: Steam achievement API name or PSN trophy ID
+    release_id: Mapped[int] = mapped_column(Integer, ForeignKey("game_releases.id", ondelete="CASCADE"), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # "psn" | "steam"
+    set_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # PSN trophyId (as text) or Steam apiname.
     external_id: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    hidden: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    tier: Mapped[str | None] = mapped_column(String, nullable=True)
+    points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    group_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    group_name: Mapped[str | None] = mapped_column(String, nullable=True)
     icon_url: Mapped[str | None] = mapped_column(String, nullable=True)
-    unlocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    unlocked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # platform-specific extras: trophy_type (bronze/silver/gold/platinum), rarity %, hidden flag, etc.
-    extra: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    icon_locked_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Share of players who have it, 0-100. PSN trophyEarnedRate; Steam global %.
+    rarity_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Whatever the source sent that has no column, kept whole.
+    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.datetime.now(datetime.UTC))
+    updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="achievements")
+    release: Mapped["GameRelease"] = relationship("GameRelease")
+    earned_by: Mapped[list["UserAchievement"]] = relationship("UserAchievement", back_populates="definition", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint("library_entry_id", "external_id", name="uq_achievement_entry_external"),
+        UniqueConstraint("release_id", "external_id", name="uq_achievement_release_external"),
+        {"sqlite_autoincrement": True},
+    )
+
+
+class UserAchievement(Base):
+    """What one user has done with one achievement (#136).
+
+    Keyed by the library entry rather than the user: an entry already IS
+    (user, release), it cascades when the entry goes, and the relationship
+    from UserLibraryEntry was already in place. Absent means never fetched;
+    present with earned=False means fetched and not earned -- the distinction
+    is what makes "how much of this set have you seen" answerable.
+
+    This table existed from the first migration with the definition folded
+    into each row (name, icon, tier in a JSON blob) and was never written to.
+    Reshaped rather than migrated: there was nothing to carry.
+    """
+
+    __tablename__ = "user_achievements"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=False, index=True)
+    definition_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("achievement_definitions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    earned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    earned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # PS5 trophy progress ("32/50"); Steam does not expose it. Stored, not shown.
+    progress_value: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    progress_target: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="achievements")
+    definition: Mapped["AchievementDefinition"] = relationship("AchievementDefinition", back_populates="earned_by")
+
+    __table_args__ = (
+        UniqueConstraint("library_entry_id", "definition_id", name="uq_user_achievement_entry_definition"),
         {"sqlite_autoincrement": True},
     )
 
