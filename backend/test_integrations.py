@@ -175,7 +175,7 @@ def test_psn_page_loads(client):
     r = client.get("/integrations/psn")
     assert r.status_code == 200
     assert b"PlayStation Network" in r.content
-    assert b"NPSSO" in r.content
+    assert b"Sign in to PlayStation" in r.content, "not signed in: the one action is the desktop sign-in"
 
 
 def test_save_psn_credentials_sets_captured_at_only_on_token_change(client, db_session):
@@ -224,8 +224,7 @@ def test_psn_test_token_paths(client, db_session):
     user.psn_online_id = "dude"
     db_session.commit()
 
-    prof = {"profile": {"accountId": "9", "avatarUrls": [{"size": "xl", "avatarUrl": "a.png"}]}}
-    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._bearer_get", return_value=prof):
+    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._whoami", return_value=("9", "dude", "a.png")):
         r = client.post("/integrations/psn/test-token")
     assert b"valid" in r.content
     assert r.headers.get("HX-Refresh") == "true"

@@ -229,6 +229,14 @@ Title strip is uppercase small-caps with badges inline; actions row pins to the 
 bottom via `margin-top: auto`. Action buttons use `hx-swap="none"` — results arrive as
 OOB toasts. Muted placeholder cards add `.cgt-tool-card--muted`.
 
+The same tiles make up an integration's configure page (PSN: Account / Sync /
+Review in a `.cgt-tool-grid`). Every card there has one anatomy — title strip,
+eyecatcher (identity row or stat row), one `.cgt-tool-card__meta` line, one
+sentence of body copy, one action — so the row reads as a set. The meta line is
+a verb and a date ("Last synced Sep 14, 6:35 PM"), rendered by `.local-time
+.local-time--short`; smaller and lighter than body so it reads as a stamp.
+Diagnostics (the sync report) collapse below the row, never inside a card.
+
 ### Tool-card stat row (big labeled numbers)
 ```html
 <div class="cgt-tool-stats">

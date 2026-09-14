@@ -19,6 +19,7 @@ raises PsnNpssoExpiredError so the job layer can tag the failure for the
 desktop shell's re-capture loop (mirrors steam.SteamCookiesExpiredError).
 """
 
+import base64
 import datetime
 import json
 import logging
@@ -56,7 +57,12 @@ _TROPHY_SET_URL = "https://m.np.playstation.com/api/trophy/v1/npCommunicationIds
 _TROPHY_GROUPS_URL = "https://m.np.playstation.com/api/trophy/v1/npCommunicationIds/{npwr}/trophyGroups"
 _USER_TROPHIES_URL = "https://m.np.playstation.com/api/trophy/v1/users/{account_id}/npCommunicationIds/{npwr}/trophyGroups/all/trophies"
 _PLAYED_URL = "https://m.np.playstation.com/api/gamelist/v2/users/{account_id}/titles"
-_PROFILE_URL = "https://us-prof.np.community.playstation.net/userProfile/v1/users/{online_id}/profile2"
+# Who the bearer token belongs to. The token is a JWT whose payload carries
+# account_id; this endpoint turns that into onlineId and avatars. The old
+# path went the other way -- Online ID typed by the user, profile2 by name
+# for the accountId -- which is why the app never knew who signed in.
+_PROFILE_URL = "https://m.np.playstation.com/api/userProfile/v1/internal/users/{account_id}/profiles"
+_PLAYED_URL = "https://m.np.playstation.com/api/gamelist/v2/users/{account_id}/titles"
 
 _PAGE_SLEEP_S = 0.2
 _MAX_PAGES = 100  # hard stop so an API quirk can never loop forever
@@ -126,51 +132,67 @@ def _bearer_get(token: str, url: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
-# profile2 returns avatarUrls as [{size, avatarUrl}]; sizes seen: s/m/l/xl.
+# avatars come as [{size, url}]; sizes seen: s/m/l/xl.
 _AVATAR_SIZE_RANK = {"xl": 4, "l": 3, "m": 2, "s": 1}
 
 
 def _largest_avatar_url(profile: dict) -> str | None:
     best, best_rank = None, -1
-    for a in profile.get("avatarUrls") or []:
-        url = a.get("avatarUrl")
+    for a in profile.get("avatars") or []:
+        url = a.get("url")
         rank = _AVATAR_SIZE_RANK.get(str(a.get("size", "")).lower(), 0)
         if url and rank > best_rank:
             best, best_rank = url, rank
     return best
 
 
-def _resolve_profile(token: str, online_id: str) -> tuple[str, str | None]:
-    """Online ID → (accountId, avatar_url) via the legacy profile2 endpoint.
-    avatarUrls rides along on the same call — one extra field, no extra request."""
-    data = _bearer_get(
-        token,
-        _PROFILE_URL.format(online_id=online_id),
-        params={"fields": "npId,onlineId,accountId,avatarUrls"},
-    )
-    profile = data.get("profile") or {}
-    account_id = profile.get("accountId")
-    if not account_id:
-        raise ValueError(f"Could not resolve PSN accountId for online id '{online_id}'.")
-    return str(account_id), _largest_avatar_url(profile)
+def _account_id_from_token(token: str) -> str:
+    """The account the token was issued for, read off the JWT payload. No
+    signature check -- Sony issued it to us a moment ago and every call it
+    makes is checked by Sony; this only reads a claim."""
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+        return str(claims["account_id"])
+    except (IndexError, KeyError, ValueError, TypeError) as e:
+        raise ValueError("PSN access token carried no account id.") from e
 
 
-def _resolve_account_id(token: str, online_id: str) -> str:
-    return _resolve_profile(token, online_id)[0]
+def _whoami(token: str) -> tuple[str, str, str | None]:
+    """(account_id, online_id, avatar_url) for the token's owner. One call."""
+    account_id = _account_id_from_token(token)
+    profile = _bearer_get(token, _PROFILE_URL.format(account_id=account_id))
+    online_id = profile.get("onlineId")
+    if not online_id:
+        raise ValueError("PSN did not report an Online ID for this sign-in.")
+    return account_id, str(online_id), _largest_avatar_url(profile)
+
+
+def _sign_in(db: Session, user: models.User) -> tuple[str, str]:
+    """Exchange the NPSSO and record who it belongs to. Returns (token,
+    account_id). Every crawl and refresh starts here, so the stored Online ID
+    and avatar always reflect the token in use."""
+    if not user.psn_npsso:
+        raise ValueError("A PSN NPSSO token is required.")
+    token = _exchange_npsso(user.psn_npsso)
+    account_id, online_id, avatar_url = _whoami(token)
+    if online_id != user.psn_online_id or (avatar_url and avatar_url != user.psn_avatar_url):
+        user.psn_online_id = online_id
+        if avatar_url:
+            user.psn_avatar_url = avatar_url
+        db.commit()
+    return token, account_id
+
+
+def refresh_profile(db: Session, user: models.User) -> tuple[str, str | None]:
+    """Lightweight profile refresh (no library crawl). Returns (online_id,
+    avatar_url). Raises PsnNpssoExpiredError on a dead token."""
+    _sign_in(db, user)
+    return user.psn_online_id, user.psn_avatar_url
 
 
 def refresh_avatar(db: Session, user: models.User) -> str | None:
-    """Lightweight profile refresh (no library crawl): exchange NPSSO, resolve
-    the profile, store the avatar URL. Returns the URL. Raises
-    PsnNpssoExpiredError on a dead token."""
-    if not user.psn_npsso or not user.psn_online_id:
-        raise ValueError("A PSN NPSSO token and Online ID are required.")
-    token = _exchange_npsso(user.psn_npsso)
-    _, avatar_url = _resolve_profile(token, user.psn_online_id)
-    if avatar_url:
-        user.psn_avatar_url = avatar_url
-        db.commit()
-    return avatar_url
+    return refresh_profile(db, user)[1]
 
 
 # ─── Fetchers (all paginated — the prototype's biggest gap) ────────────────
@@ -786,16 +808,7 @@ def crawl(db: Session, user: models.User) -> tuple[list[dict], dict, dict]:
     what lets the sync hold the crawl in memory and put it straight into the
     library, instead of round-tripping through a file (#157).
     """
-    if not user.psn_npsso:
-        raise ValueError("A PSN NPSSO token is required.")
-    if not user.psn_online_id:
-        raise ValueError("Your PSN Online ID is required.")
-
-    token = _exchange_npsso(user.psn_npsso)
-    account_id, avatar_url = _resolve_profile(token, user.psn_online_id)
-    if avatar_url and avatar_url != user.psn_avatar_url:
-        user.psn_avatar_url = avatar_url
-        db.commit()
+    token, account_id = _sign_in(db, user)
 
     purchased = _fetch_purchased(token, account_id)
     titles, titles_total = _fetch_trophy_titles(token, account_id)
@@ -1648,14 +1661,36 @@ def _trophy_service(item: dict) -> str:
     return item.get("npServiceName") or ("trophy2" if "ps5" in _platforms_of(item) else "trophy")
 
 
+_TROPHY_RETRIES = 2
+_TROPHY_RETRY_SLEEP_S = 2.0
+
+
+def _trophy_get(token: str, url: str, service: str) -> dict:
+    """One per-set call, retried on a server error or a dropped connection.
+    Sony's trophy API drops one request in a few hundred (Novastrike, on the
+    first full run); without this, that set waits for the next sync. Client
+    errors are not retried -- a 401 or 429 means stop, and the caller does."""
+    for attempt in range(_TROPHY_RETRIES + 1):
+        try:
+            return _bearer_get(token, url, params={"npServiceName": service})
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code < 500 or attempt == _TROPHY_RETRIES:
+                raise
+        except httpx.TransportError:
+            if attempt == _TROPHY_RETRIES:
+                raise
+        time.sleep(_TROPHY_RETRY_SLEEP_S * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 def _fetch_trophy_set(token: str, npwr: str, service: str) -> tuple[dict, dict[str, str]]:
     """The set as the game defines it: (payload, {group_id: group_name}).
     Group names cost a second call, spent only when the set has groups."""
-    payload = _bearer_get(token, _TROPHY_SET_URL.format(npwr=npwr), params={"npServiceName": service})
+    payload = _trophy_get(token, _TROPHY_SET_URL.format(npwr=npwr), service)
     groups: dict[str, str] = {}
     if payload.get("hasTrophyGroups"):
         time.sleep(_TROPHY_SLEEP_S)
-        data = _bearer_get(token, _TROPHY_GROUPS_URL.format(npwr=npwr), params={"npServiceName": service})
+        data = _trophy_get(token, _TROPHY_GROUPS_URL.format(npwr=npwr), service)
         for g in data.get("trophyGroups") or []:
             if g.get("trophyGroupId"):
                 groups[str(g["trophyGroupId"])] = g.get("trophyGroupName") or ""
@@ -1663,7 +1698,7 @@ def _fetch_trophy_set(token: str, npwr: str, service: str) -> tuple[dict, dict[s
 
 
 def _fetch_earned_trophies(token: str, account_id: str, npwr: str, service: str) -> list[dict]:
-    data = _bearer_get(token, _USER_TROPHIES_URL.format(account_id=account_id, npwr=npwr), params={"npServiceName": service})
+    data = _trophy_get(token, _USER_TROPHIES_URL.format(account_id=account_id, npwr=npwr), service)
     return data.get("trophies") or []
 
 
@@ -1826,7 +1861,7 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
     from its own button; either way it is background and rate-limited, since
     a library this size is several hundred calls the first time (#136).
     """
-    if not user.psn_npsso or not user.psn_online_id:
+    if not user.psn_npsso:
         return {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "skipped_no_credentials": True}
     out = {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "earned": 0, "sets": 0}
     # (label, npwr, item, entry-or-None). Entries first: a set in both places
@@ -1851,8 +1886,7 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
             out["skipped"] += 1
             continue
         if token is None:
-            token = _exchange_npsso(user.psn_npsso)
-            account_id = _resolve_account_id(token, user.psn_online_id)
+            token, account_id = _sign_in(db, user)
         try:
             if need_defs:
                 payload, groups = _fetch_trophy_set(token, npwr, service)

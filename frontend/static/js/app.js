@@ -124,7 +124,11 @@ window.cgtCoverFallback = function(img) {
 function cgtRenderLocalTimes(root) {
   (root || document).querySelectorAll('.local-time[data-utc]').forEach(function(el) {
     var d = new Date(el.dataset.utc + 'Z');
-    el.textContent = d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
+    // .local-time--short: "Sep 14, 6:35 PM" for the card meta lines, where
+    // the year is noise. Still computed in the viewer's zone.
+    el.textContent = el.classList.contains('local-time--short')
+      ? d.toLocaleString(undefined, {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'})
+      : d.toLocaleString(undefined, {month:'long', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'});
   });
 }
 cgtRenderLocalTimes();

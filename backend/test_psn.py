@@ -253,12 +253,12 @@ def test_sync_requires_credentials(client, db_session):
     assert r.status_code == 422
     assert b"NPSSO" in r.content
 
+    # A token alone is enough: the Online ID is resolved from it, not typed.
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso = "x" * 64
     db_session.commit()
     r = client.post("/integrations/psn/sync")
-    assert r.status_code == 422
-    assert b"Online ID" in r.content
+    assert r.status_code == 200
 
 
 def test_snapshot_report_empty_state(client):
@@ -311,47 +311,98 @@ def test_psn_page_shows_fetch_button_when_token_saved(client, db_session):
     user.psn_online_id = "tester"
     db_session.commit()
     r = client.get("/integrations/psn")
-    assert b"Sync PSN library" in r.content
+    assert b"Sync library" in r.content
     assert b"/integrations/psn/sync" in r.content
 
 
-def test_psn_store_metadata_button_present_and_kicks_off_without_credentials(client, db_session):
-    """The store-metadata job scrapes public pages, so it needs no NPSSO — the
-    button works even before PSN credentials are saved."""
-    _signup_and_login(client)
-    page = client.get("/integrations/psn")
-    assert b"/integrations/psn/refresh-store-metadata" in page.content
-    assert b"Store Metadata" in page.content
-    # No credential gate: kicks off a job (or 409s if one is already running) —
-    # never the 422 the credentialed endpoints return.
-    r = client.post("/integrations/psn/refresh-store-metadata")
-    assert r.status_code != 422
+def test_psn_page_has_one_sync_button_and_no_follow_up_buttons(client, db_session):
+    """Store metadata and trophies are chained after every sync and self-gate,
+    so a button for either is a development control. Sync is what "go get my
+    data" means; the page offers that and the token test, nothing else."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "x" * 64, "tester"
+    db_session.commit()
+    page = client.get("/integrations/psn").content
+    assert page.count(b'hx-post="/integrations/psn/sync"') == 1
+    assert b"/integrations/psn/test-token" in page
+    assert b"refresh-store-metadata" not in page and b"/psn/trophies" not in page
+    # No manual token paste: the desktop sign-in is the only way in, and the
+    # token field is hidden plumbing for it.
+    assert b'type="hidden" name="psn_npsso"' in page and b'type="password"' not in page
+    # Signed in: say who, and offer no sign-in -- an expired token is
+    # re-captured by the shell when a sync trips on it. No ID field either;
+    # the token says who it belongs to.
+    assert b'<div class="cgt-tool-card__body fw-semibold">tester</div>' in page
+    # The three cards are the Tools page's tiles, in its grid.
+    assert page.count(b'<div class="cgt-tool-card"') + page.count(b'<div class="cgt-tool-card ') == 3
+    assert b'class="cgt-tool-grid' in page
+    assert b"cgtCapturePsnNpsso" not in page and b'name="psn_online_id"' not in page
+    assert page.count(b"psn_avatar_url") == 0 and page.count(b"<img") <= 1
+    assert client.post("/integrations/psn/refresh-store-metadata").status_code == 404
+    assert client.post("/integrations/psn/trophies").status_code == 404
+
+
+def test_snapshot_report_leads_with_decisions_and_folds_the_telemetry(client, db_session):
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "n" * 64, "dude"
+    user.psn_last_sync_report = _report_fixture()
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR_F_00", "name": "Cross", "displayName": "Cross", "platform": "PS3,PSVITA", "sources": ["titles"]}],
+    )
+    body = client.get("/integrations/psn/snapshot-report").content
+    assert b"Last sync report" in body and b"Merged games" in body
+    assert body.index(b"<details") < body.index(b"Merged games"), "the crawl telemetry is collapsed"
+    # Review is its own block with the same shape as Sync -- stat row, a
+    # line, one button -- swapped out-of-band beside Sync rather than nested
+    # inside the report.
+    assert b'id="psn-review-card" hx-swap-oob="true"' in body
+    assert b'class="btn btn-primary btn-sm">Open review' in body
+    assert b"cgt-tool-stat--yellow" in body and b'<div class="cgt-tool-stat__value">1</div>' in body
 
 
 # ─── avatar (#171) ─────────────────────────────────────────────────────────
 
 
 def test_largest_avatar_url_picks_biggest():
-    urls = {"avatarUrls": [{"size": "m", "avatarUrl": "m.png"}, {"size": "xl", "avatarUrl": "xl.png"}, {"size": "s", "avatarUrl": "s.png"}]}
+    urls = {"avatars": [{"size": "m", "url": "m.png"}, {"size": "xl", "url": "xl.png"}, {"size": "s", "url": "s.png"}]}
     assert psn._largest_avatar_url(urls) == "xl.png"
     assert psn._largest_avatar_url({}) is None
-    assert psn._largest_avatar_url({"avatarUrls": []}) is None
+    assert psn._largest_avatar_url({"avatars": []}) is None
 
 
-def test_resolve_profile_extracts_account_and_avatar():
-    data = {"profile": {"accountId": "123", "avatarUrls": [{"size": "l", "avatarUrl": "l.png"}]}}
-    with patch("backend.psn._bearer_get", return_value=data) as m:
-        acct, avatar = psn._resolve_profile("tok", "dude")
-    assert (acct, avatar) == ("123", "l.png")
-    assert "avatarUrls" in m.call_args.kwargs["params"]["fields"]  # widened field list
+def _jwt(claims: dict) -> str:
+    import base64
+    import json
+
+    seg = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    return f"eyJhbGciOiJub25lIn0.{seg}.sig"
+
+
+def test_whoami_reads_the_account_off_the_token_and_asks_for_the_name():
+    """The access token is a JWT carrying account_id (verified live
+    2026-09-14); the profile endpoint by that id returns onlineId and
+    avatars. "me" is not accepted on that path -- it 400s."""
+    tok = _jwt({"account_id": "2102440000000000000", "iss": "https://auth.account.sony.com/"})
+    prof = {"onlineId": "corrosivefrost", "isMe": True, "avatars": [{"size": "l", "url": "l.png"}, {"size": "xl", "url": "xl.png"}]}
+    with patch("backend.psn._bearer_get", return_value=prof) as m:
+        assert psn._whoami(tok) == ("2102440000000000000", "corrosivefrost", "xl.png")
+    assert m.call_args.args[1].endswith("/users/2102440000000000000/profiles")
+    with pytest.raises(ValueError):
+        psn._account_id_from_token("not-a-jwt")
 
 
 def test_refresh_avatar_stores_url_on_user(db_session):
     user = models.User(name="a", username="a", password_hash="x", api_token="t", psn_npsso="n" * 64, psn_online_id="dude")
     db_session.add(user)
     db_session.commit()
-    prof = {"profile": {"accountId": "123", "avatarUrls": [{"size": "xl", "avatarUrl": "doom.png"}]}}
-    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._bearer_get", return_value=prof):
+    prof = {"onlineId": "dude", "avatars": [{"size": "xl", "url": "doom.png"}]}
+    tok = _jwt({"account_id": "123"})
+    with patch("backend.psn._exchange_npsso", return_value=tok), patch("backend.psn._bearer_get", return_value=prof):
         assert psn.refresh_avatar(db_session, user) == "doom.png"
     assert user.psn_avatar_url == "doom.png"
 
@@ -362,8 +413,9 @@ def test_test_token_refreshes_avatar(client, db_session):
     user.psn_npsso = "n" * 64
     user.psn_online_id = "dude"
     db_session.commit()
-    prof = {"profile": {"accountId": "123", "avatarUrls": [{"size": "xl", "avatarUrl": "doom.png"}]}}
-    with patch("backend.psn._exchange_npsso", return_value="tok"), patch("backend.psn._bearer_get", return_value=prof):
+    prof = {"onlineId": "dude", "avatars": [{"size": "xl", "url": "doom.png"}]}
+    tok = _jwt({"account_id": "123"})
+    with patch("backend.psn._exchange_npsso", return_value=tok), patch("backend.psn._bearer_get", return_value=prof):
         r = client.post("/integrations/psn/test-token")
     assert r.status_code == 200
     assert r.headers.get("HX-Refresh") == "true"
@@ -371,13 +423,49 @@ def test_test_token_refreshes_avatar(client, db_session):
     assert user.psn_avatar_url == "doom.png"
 
 
-def test_test_token_requires_online_id(client, db_session):
+def test_online_id_is_resolved_from_the_token_when_missing(client, db_session, monkeypatch):
+    """The sign-in yields a token and nothing else. Who it belongs to used to
+    come from a text field the user filled by hand; now Sony is asked."""
     token = _signup_and_login(client)
     user = db_session.query(models.User).filter_by(api_token=token).first()
     user.psn_npsso = "n" * 64  # no online id
     db_session.commit()
+    monkeypatch.setattr(psn, "_exchange_npsso", lambda npsso: "tok")
+    monkeypatch.setattr(psn, "_whoami", lambda tok: ("acct-1", "corrosivefrost", "https://a/corrosivefrost.png"))
+
     r = client.post("/integrations/psn/test-token")
-    assert b"Online ID" in r.content
+    assert r.status_code == 200 and b"valid" in r.content
+    db_session.refresh(user)
+    assert user.psn_online_id == "corrosivefrost"
+    assert user.psn_avatar_url == "https://a/corrosivefrost.png"
+
+
+def test_sign_in_resolves_who_the_token_belongs_to(client, db_session, monkeypatch):
+    """The capture posts the token with no Online ID. The save resolves it
+    and says so; a new token forgets the old name rather than assuming the
+    same person signed in."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_online_id = "someone_else"
+    db_session.commit()
+    monkeypatch.setattr(psn, "_exchange_npsso", lambda npsso: "tok")
+    monkeypatch.setattr(psn, "_whoami", lambda tok: ("acct-1", "corrosivefrost", None))
+
+    r = client.post("/integrations/psn/credentials", data={"psn_online_id": "", "psn_npsso": "n" * 64})
+    assert b"Signed in to PlayStation as corrosivefrost" in r.content
+    db_session.refresh(user)
+    assert user.psn_online_id == "corrosivefrost"
+
+    # Sony not answering does not lose the sign-in: the token is kept, the
+    # name is blank, and the sync resolves it on its next run.
+    def boom(tok):
+        raise ValueError("nope")
+
+    monkeypatch.setattr(psn, "_whoami", boom)
+    r = client.post("/integrations/psn/credentials", data={"psn_online_id": "", "psn_npsso": "m" * 64})
+    assert b"did not say who it belongs to" in r.content
+    db_session.refresh(user)
+    assert user.psn_npsso == "m" * 64 and user.psn_online_id is None
 
 
 def test_clearing_npsso_clears_avatar(client, db_session):
@@ -996,7 +1084,7 @@ def test_psn_followups_skip_what_does_not_apply(db_session, monkeypatch):
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=False, needs_review=False, has_sgdb_key=False))
-    assert ran == ["psn_trophies"], "trophies run regardless: progress moves without anything being added (#136)"
+    assert ran == ["psn_store_refresh", "psn_trophies"], "both self-gate, so both run regardless of what the sync added"
 
     ran.clear()
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=False))
@@ -2016,7 +2104,7 @@ def test_fill_psn_review_thumbnails_needs_an_sgdb_key(db_session, monkeypatch, t
 def _stub_crawl(monkeypatch, purchased=None, titles_=None, played=None):
     """Stub the three PSN feeds + auth so a sync can run end to end offline."""
     monkeypatch.setattr(psn, "_exchange_npsso", lambda npsso: "tok")
-    monkeypatch.setattr(psn, "_resolve_profile", lambda tok, oid: ("acct-1", None))
+    monkeypatch.setattr(psn, "_whoami", lambda tok: ("acct-1", "dude", None))
     monkeypatch.setattr(psn, "_fetch_purchased", lambda tok, acct: purchased or [])
     monkeypatch.setattr(psn, "_fetch_trophy_titles", lambda tok, acct: (titles_ or [], len(titles_ or [])))
     monkeypatch.setattr(psn, "_fetch_played", lambda tok, acct: (played or [], len(played or [])))
@@ -2209,12 +2297,16 @@ def test_sync_chains_store_metadata_when_it_added_entries(db_session, monkeypatc
     assert "psn_store_refresh" in kinds
 
 
-def test_sync_skips_store_metadata_when_nothing_was_added(db_session, monkeypatch):
-    """Nothing new means nothing to enrich — don't spend a rate-limited crawl
-    over the store for a no-op sync."""
+def test_sync_chains_store_metadata_and_trophies_even_when_nothing_was_added(db_session, monkeypatch):
+    """Both passes self-gate -- store records by a 30-day staleness window,
+    trophies by Sony's last-earned stamp -- so a no-op sync spends nothing on
+    them, and a stale record or a new platinum is picked up without a button
+    for each (#168, #136)."""
     user = _user(db_session, "nochain")
     kinds = _run_psn_sync_job(db_session, monkeypatch, user, {**_psn_import_result(), "added": 0})
-    assert "psn_store_refresh" not in kinds
+    # The harness sees the chain's first job; the full order is asserted in
+    # test_psn_sync_followups_run_in_sequence_store_metadata_first.
+    assert "psn_store_refresh" in kinds
 
 
 def test_tools_card_counts_both_review_queues(client, db_session):
@@ -5963,7 +6055,7 @@ def _trophy_api(monkeypatch, sets: dict, earned: dict, groups: dict | None = Non
     by NPWR id; the stub records every URL hit so a test can count calls."""
     calls: list[str] = []
     monkeypatch.setattr(psn, "_exchange_npsso", lambda npsso: "tok")
-    monkeypatch.setattr(psn, "_resolve_account_id", lambda tok, oid: "acct-1")
+    monkeypatch.setattr(psn, "_whoami", lambda tok: ("acct-1", "dude", None))
     monkeypatch.setattr(psn.time, "sleep", lambda s: None)
 
     def fake_get(token, url, params=None):
@@ -6244,3 +6336,35 @@ def test_sync_trophies_reads_sets_for_rows_still_in_review(db_session, monkeypat
     assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00001_00").one().name == "God of Gods"
     assert db_session.query(models.UserAchievement).count() == 2
     assert psn.sync_trophies(db_session, user)["skipped"] == 3
+
+
+def test_trophy_calls_retry_a_server_error_but_not_a_client_one(db_session, monkeypatch):
+    import httpx
+
+    user = _trophy_user(db_session)
+    _psn_trophy_entry(db_session, user, "NPWR00346_00", "PS3", title="Novastrike")
+    calls = _trophy_api(monkeypatch, {"NPWR00346_00": _GOW_SET}, {"NPWR00346_00": _GOW_EARNED})
+    stubbed_get = psn._bearer_get
+    flaky = {"left": 1}
+
+    def get(token, url, params=None):
+        if flaky["left"] and "/users/" not in url:
+            flaky["left"] -= 1
+            raise httpx.HTTPStatusError("502", request=httpx.Request("GET", url), response=httpx.Response(502))
+        return stubbed_get(token, url, params)
+
+    monkeypatch.setattr(psn, "_bearer_get", get)
+    out = psn.sync_trophies(db_session, user)
+    assert out["fetched"] == 1 and out["errored"] == 0, "one 502 is retried, not counted"
+    assert len([c for c in calls if "/users/" not in c]) == 1, "the stub saw the definitions call once; the 502 never reached it"
+
+    # A 4xx is not retried: the run stops on it as before.
+    def unauthorized(token, url, params=None):
+        calls.append(url)
+        raise httpx.HTTPStatusError("401", request=httpx.Request("GET", url), response=httpx.Response(401))
+
+    _psn_trophy_entry(db_session, user, "NPWR00001_00", "PS3", title="Other")
+    monkeypatch.setattr(psn, "_bearer_get", unauthorized)
+    calls.clear()
+    out = psn.sync_trophies(db_session, user)
+    assert out["stopped"] == 401 and len(calls) == 1

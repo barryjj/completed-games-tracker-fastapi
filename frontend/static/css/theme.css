@@ -2487,6 +2487,14 @@ body:has(.cgt-match-nav--sticky) {
   margin-top: auto;
   padding-top: 0.4rem;
 }
+/* One quiet line under the eyecatcher -- a date with a verb ("Last synced
+   Sep 14, 6:35 PM"). Smaller and lighter than body copy so it reads as a
+   stamp, not a sentence. */
+.cgt-tool-card__meta {
+  font-size: 0.7rem;
+  color: var(--ctp-overlay1);
+  letter-spacing: 0.02em;
+}
 
 /* ─── Settings area ─────────────────────────────────────────────────────── */
 /* Grouped left nav + content pane. Replaces the old account page's

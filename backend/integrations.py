@@ -11,6 +11,7 @@ import httpx as _httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
@@ -333,8 +334,41 @@ def psn_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_psn.html",
-        context={"current_user": current_user, **_base_ctx(db, current_user, request)},
+        context={"current_user": current_user, **_psn_page_counts(db, current_user), **_base_ctx(db, current_user, request)},
     )
+
+
+def _psn_page_counts(db: Session, user: models.User) -> dict:
+    """The numbers the three cards on the PSN page show. Counts, not rows:
+    the review queue alone is 900 candidates and the page is rebuilt after
+    every job."""
+    games = (
+        db.query(func.count(models.UserLibraryEntry.id))
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user.id, models.GameRelease.source == "psn")
+        .scalar()
+        or 0
+    )
+    trophy_sets = (
+        db.query(func.count(func.distinct(models.AchievementDefinition.set_id)))
+        .filter(models.AchievementDefinition.source == "psn")
+        .scalar()
+        or 0
+    )
+    pending = db.query(models.PsnReviewCandidate).filter(
+        models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.status == "pending"
+    )
+    played_only = pending.filter(models.PsnReviewCandidate.kind == "played_only").count()
+    last_added = pending.with_entities(func.max(models.PsnReviewCandidate.created_at)).scalar()
+    if isinstance(last_added, str):
+        last_added = datetime.datetime.fromisoformat(last_added)
+    return {
+        "psn_games": games,
+        "psn_trophy_sets": trophy_sets,
+        "import_review_count": psn.count_pending_review_rows(db, user.id),
+        "played_only_count": played_only,
+        "review_last_added": last_added,
+    }
 
 
 @router.post("/psn/credentials")
@@ -349,17 +383,34 @@ def save_psn_credentials(
     # captured_at tracks the token, not the form submit — only move it when
     # the token actually changes (NPSSOs live ~2 months; the date is the
     # "how stale is this" signal on the configure page).
-    if npsso != current_user.psn_npsso:
+    token_changed = npsso != current_user.psn_npsso
+    if token_changed:
         current_user.psn_npsso_captured_at = datetime.datetime.now(datetime.UTC) if npsso else None
     current_user.psn_npsso = npsso
-    current_user.psn_online_id = psn_online_id.strip() or None
+    # The Online ID comes from the token now, not a field. An explicit value
+    # still wins (the clear button posts both blank); a new token with no ID
+    # given resolves it from Sony, so the page can say who signed in.
+    if psn_online_id.strip():
+        current_user.psn_online_id = psn_online_id.strip()
+    elif not npsso or token_changed:
+        current_user.psn_online_id = None
     if not npsso:
         current_user.psn_avatar_url = None  # no token → drop the stale avatar
     db.commit()
+    message = "PSN credentials saved."
+    if npsso and not current_user.psn_online_id:
+        try:
+            online_id, _ = psn.refresh_profile(db, current_user)
+            message = f"Signed in to PlayStation as {online_id}."
+        except Exception as e:
+            # The token is saved either way; the sync resolves the ID itself
+            # on its next run, and says so if it cannot.
+            _logger.warning("PSN sign-in could not resolve the Online ID for user %s", current_user.id, exc_info=True)
+            message = f"PSN token saved, but PlayStation did not say who it belongs to ({e}). Sync will try again."
     response = templates.TemplateResponse(
         request=request,
         name="partials/integrations_flash.html",
-        context={"message": "PSN credentials saved."},
+        context={"message": message},
     )
     response.headers["HX-Refresh"] = "true"
     return response
@@ -379,12 +430,6 @@ def test_psn_token(
             request=request,
             name="partials/integrations_flash.html",
             context={"error": "No NPSSO token saved — capture or paste one above and save first."},
-        )
-    if not current_user.psn_online_id:
-        return templates.TemplateResponse(
-            request=request,
-            name="partials/integrations_flash.html",
-            context={"error": "Your PSN Online ID is required to look up your profile — set it above and save first."},
         )
     try:
         avatar_url = psn.refresh_avatar(db, current_user)
@@ -422,22 +467,6 @@ async def psn_sync_library(request: Request, current_user: models.User = Depends
     return _kick_off_sync(request, current_user, "psn_sync")
 
 
-@router.post("/psn/trophies")
-async def psn_fetch_trophies(request: Request, current_user: models.User = Depends(get_web_user)):
-    """Background job: trophy definitions per release and this account's
-    earned list per entry, for every PSN entry with a trophy set (#136). The
-    sync chains this itself; the button exists for the library that predates
-    it, and for a re-run without a full crawl."""
-    return _kick_off_sync(request, current_user, "psn_trophies")
-
-
-@router.post("/psn/refresh-store-metadata")
-async def psn_refresh_store_metadata(request: Request, current_user: models.User = Depends(get_web_user)):
-    """Background job: fetch PS Store product-page metadata for PSN entries that
-    have a productId and are missing/stale (#168). Public pages — no NPSSO."""
-    return _kick_off_sync(request, current_user, "psn_store_refresh")
-
-
 @router.post("/psn/token")
 def save_psn_token(
     psn_npsso: str = Form(...),
@@ -460,16 +489,14 @@ def save_psn_token(
 
 def _psn_report_response(request: Request, db: Session, current_user: models.User, flash: str | None = None, error: str | None = None):
     """Re-render the sync report block for the PSN configure page."""
-    # The template only asks whether there are rows and how many, so build a
-    # count rather than 567 row dicts (4.6s vs 6ms).
-    _review_count = psn.count_pending_review_rows(db, current_user.id)
     response = templates.TemplateResponse(
         request=request,
         name="partials/psn_snapshot_report.html",
         context={
             "report": current_user.psn_last_sync_report,
             "last_synced_at": current_user.psn_last_synced_at,
-            "import_review_count": _review_count,
+            "current_user": current_user,
+            **_psn_page_counts(db, current_user),
             "flash": flash,
             "flash_error": error,
         },
@@ -619,6 +646,8 @@ _STEAM_KINDS: dict[str, dict] = {
         "label": "Title check",
         "job_label": "PSN title check",
     },
+    # Chained after every sync, no button: a sync is what "go get my trophies"
+    # means to anyone who is not debugging it (#136).
     "psn_trophies": {
         "fn": "sync_trophies",
         "module": "psn",
@@ -627,7 +656,6 @@ _STEAM_KINDS: dict[str, dict] = {
         "started": "Fetching your PlayStation trophies in the background — you'll see a toast when it finishes.",
         "label": "Trophies",
         "job_label": "PSN trophies",
-        "retry_path": "/integrations/psn/trophies",
     },
     "psn_store_refresh": {
         "fn": "refresh_all_store_metadata",
@@ -775,9 +803,12 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
     Each step self-gates (store_is_stale, missing-art filters), so a re-run
     costs almost nothing and a skipped step is free.
     """
-    steps: list[tuple[str, str]] = []
-    if added:
-        steps.append(("psn_store_refresh", "Store metadata"))
+    # Store metadata used to chain only when a sync ADDED entries, with a
+    # button for everything else. The pass self-gates on a 30-day staleness
+    # window, so running it every time costs nothing most syncs and refreshes
+    # a stale record on its own once a month -- which is what the button was
+    # for, and what a user pressing Sync would expect anyway (#168).
+    steps: list[tuple[str, str]] = [("psn_store_refresh", "Store metadata")]
     if needs_review:
         # Trophy-only rows are named after their trophy SET, which is often
         # localized or abbreviated. Self-gating: rows already decided or already
@@ -946,9 +977,7 @@ def _credential_error(current_user: models.User, kind: str) -> str | None:
         return None  # e.g. PS Store scraping hits public pages — no login needed
     if spec.get("service") == "psn":
         if not current_user.psn_npsso:
-            return "A PSN NPSSO token is required — capture or paste one on the PSN configure page."
-        if not current_user.psn_online_id:
-            return "Your PSN Online ID is required — set it on the PSN configure page."
+            return "A PSN NPSSO token is required — sign in on the PSN configure page."
         return None
     if not current_user.steam_api_key or not current_user.steam_id64:
         return "Steam API key and Steam ID64 are required."

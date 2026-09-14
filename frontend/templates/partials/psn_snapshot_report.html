@@ -1,10 +1,10 @@
-{# Sync report for the PSN configure page. The review queues themselves live
-   on /tools/psn-review; this only points at them. Also the
-   swap target (#psn-snapshot-report, outerHTML) for the per-row review
-   actions, which re-render it with a flash line. #}
+{# Under the card row on the PSN configure page: the collapsed crawl
+   telemetry, plus the Review card swapped out-of-band into #psn-review-card
+   above it. Also the swap target (#psn-snapshot-report, outerHTML) for the
+   per-row review actions, which re-render it with a flash line. #}
 <div id="psn-snapshot-report">
 {% if not report %}
-  <p class="text-secondary mb-0"><small>No sync yet &mdash; Sync PSN library crawls PSN, adds what it can place, and reports here on what it found.</small></p>
+  <p class="text-secondary mb-0"><small>No sync yet.</small></p>
 {% else %}
   {% if flash %}
   <div class="alert alert-success py-2 mb-3"><small>{{ flash }}</small></div>
@@ -12,11 +12,14 @@
   <div class="alert alert-danger py-2 mb-3"><small>{{ flash_error }}</small></div>
   {% endif %}
 
+  {# Crawl telemetry. It settled the PS3/Vita purchased-platform question
+     (#181) and stays for the next one, but nobody needs it open to sync. #}
+  <details class="cgt-details-subtle">
+    <summary>Last sync report</summary>
+    <div class="mt-3">
   <div class="cgt-detail-block mb-3">
-    <h6 class="cgt-detail-block__heading">Last fetch</h6>
+    <h6 class="cgt-detail-block__heading">Fetched</h6>
     <dl class="cgt-detail-meta small mb-0">
-      <dt>Fetched</dt>
-      <dd>{% if last_synced_at %}<span class="local-time" data-utc="{{ last_synced_at.isoformat() }}">{{ last_synced_at }}</span>{% else %}&mdash;{% endif %}</dd>
       <dt>Merged games</dt>
       <dd>{{ "{:,}".format(report.merged_total) }}</dd>
       <dt>Purchased</dt>
@@ -45,20 +48,6 @@
        their playtime and last-played. Only OTHER sources are untouched. #}
     <p class="small text-secondary mb-0">Every purchased and trophy-backed game whose platform PSN settles (PS Plus included &mdash; provenance is kept on each entry). Re-syncing refreshes playtime and last-played on entries it created before; manual, Steam and spreadsheet entries are never touched, and overlaps with them are queued for match review. Cross-play games PSN can&rsquo;t place, and played-only activity, go to the PSN review queue.</p>
   </div>
-
-  {% if import_review_count %}
-  {# The cross-play decisions live on their own review page, reachable from
-     Tools — creating library entries is not something to bury inside a
-     "what the crawl found" report. #}
-  <div class="cgt-detail-block mb-3">
-    <h6 class="cgt-detail-block__heading">
-      Games needing a decision
-      <span class="text-secondary fw-normal ms-1">({{ import_review_count }})</span>
-    </h6>
-    <p class="text-secondary mb-2"><small>Trophy sets covering several platforms, and games you played with nothing behind them. Both live in the PSN review queue.</small></p>
-    <a href="/tools/psn-review" class="btn btn-sm btn-primary">Open PSN review</a>
-  </div>
-  {% endif %}
 
   <div class="cgt-detail-block mb-3">
     <h6 class="cgt-detail-block__heading">Filtered out</h6>
@@ -100,5 +89,12 @@
       </tbody>
     </table>
   </div>
+    </div>
+  </details>
+
 {% endif %}
 </div>
+
+{# The Review card, out-of-band: a row action re-renders this partial with
+   a flash line, and the card's count has to move with it. #}
+<div id="psn-review-card" hx-swap-oob="true" style="display:contents;">{% include "partials/_psn_review_card.html" %}</div>

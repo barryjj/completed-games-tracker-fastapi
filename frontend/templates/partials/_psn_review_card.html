@@ -1,0 +1,28 @@
+{# Review card on the PSN configure page. Included by the page and swapped
+   out-of-band by the report partial after a row action, so the count moves
+   without a reload. Expects import_review_count, played_only_count,
+   review_last_added. #}
+<div class="cgt-tool-card{% if not import_review_count and not played_only_count %} cgt-tool-card--muted{% endif %}">
+  <div class="cgt-tool-card__title">Review</div>
+  <div class="cgt-tool-stats">
+    <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if import_review_count else 'cgt-tool-stat--muted' }}">
+      <div class="cgt-tool-stat__value">{{ "{:,}".format(import_review_count) }}</div>
+      <div class="cgt-tool-stat__label">Pending</div>
+    </div>
+    <div class="cgt-tool-stat cgt-tool-stat--muted">
+      <div class="cgt-tool-stat__value">{{ "{:,}".format(played_only_count) }}</div>
+      <div class="cgt-tool-stat__label">Played only</div>
+    </div>
+  </div>
+  <div class="cgt-tool-card__meta">
+    {% if review_last_added %}
+    Last added <span class="local-time local-time--short" data-utc="{{ review_last_added.isoformat() }}">{{ review_last_added.strftime("%Y-%m-%d %H:%M") }} UTC</span>
+    {% else %}
+    Nothing waiting
+    {% endif %}
+  </div>
+  <div class="cgt-tool-card__body text-secondary">Games the sync could not place; confirm a platform, a name, or a played-only title.</div>
+  <div class="cgt-tool-card__actions">
+    <a href="/tools/psn-review" class="btn btn-primary btn-sm">Open review</a>
+  </div>
+</div>
