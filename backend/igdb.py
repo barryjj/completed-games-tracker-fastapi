@@ -203,7 +203,7 @@ def search_games_on_platforms(
     ids = ",".join(str(int(p)) for p in platform_ids)
     body = (
         f'search "{query}"; '
-        f"fields id, name, platforms, first_release_date, game_type, "
+        f"fields id, name, slug, platforms, first_release_date, game_type, "
         f"version_parent.name, parent_game.name; "
         f"where platforms=({ids}); "
         f"limit {limit};"
@@ -226,6 +226,10 @@ def search_games_on_platforms(
             {
                 "id": g.get("id"),
                 "name": g.get("name"),
+                # igdb.com/games/<slug> -- the only way to link a match out to
+                # the record it came from, so a proposal can be checked rather
+                # than taken on trust.
+                "slug": g.get("slug"),
                 "platform_ids": g.get("platforms") or [],
                 "year": year,
                 # ISO date. A trophy set completed in January 2010 cannot be a

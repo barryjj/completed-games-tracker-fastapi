@@ -6368,3 +6368,170 @@ def test_trophy_calls_retry_a_server_error_but_not_a_client_one(db_session, monk
     calls.clear()
     out = psn.sync_trophies(db_session, user)
     assert out["stopped"] == 401 and len(calls) == 1
+
+
+# ─── The platinum as a third name (#136) ───────────────────────────────────
+
+
+def test_platinum_game_name_reads_a_title_out_of_the_boilerplate():
+    assert psn.platinum_game_name("Unlock all God of War® Trophies") == "God of War"
+    assert psn.platinum_game_name("Obtained all Kena: Bridge of Spirits trophies.") == "Kena: Bridge of Spirits"
+    assert psn.platinum_game_name("Earn all Trophies in DARIUSBURST Chronicle Saviours. Great work!") == "DARIUSBURST Chronicle Saviours"
+    # Boilerplate that never reaches a name.
+    for empty in (
+        "Collect all trophies",
+        "Earn all trophies in the game.",
+        "Unlock all other trophies. You've gotta believe!",
+        "Congratulations!",
+        "************",
+        None,
+        "",
+    ):
+        assert psn.platinum_game_name(empty) is None, empty
+
+
+def test_the_platinum_name_can_win_a_match_but_never_reject_one(db_session):
+    """Sony's "God of War" on PS3 matches Ascension as readily as the game
+    itself; the platinum says which one it is. Strictly additive -- as a veto
+    the same text would reject four correct renames to catch one wrong one."""
+    hits = [
+        {"id": 1291, "name": "God of War: Ascension", "platform_ids": [9], "released": "2013-03-12", "game_type": 0, "slug": "gow-asc"},
+        {"id": 117883, "name": "God of War", "platform_ids": [9], "released": "2009-11-17", "game_type": 9, "slug": "god-of-war--2"},
+    ]
+    seen = []
+
+    def search(term, ids):
+        seen.append(term)
+        return hits
+
+    # Sony's name alone already finds it here; the platinum agrees.
+    p = psn.build_proposal("God of War", ["PS3"], [9], search, also_known_as="God of War")
+    assert p["proposed_igdb_id"] == 117883
+
+    # A name ONLY the platinum knows still wins its exact match, and is searched
+    # for when the other names do not find the game.
+    seen.clear()
+    p = psn.build_proposal(
+        "Sly 1",
+        ["PS3"],
+        [9],
+        lambda t, i: [
+            {"id": 5, "name": "Sly Cooper and the Thievius Raccoonus", "platform_ids": [9], "game_type": 0, "slug": "sly-1"},
+        ],
+        also_known_as="Sly Cooper and the Thievius Raccoonus",
+    )
+    assert p["proposed_igdb_id"] == 5 and p["proposed_title"] == "Sly Cooper and the Thievius Raccoonus"
+
+    # And a platinum whose words are unrelated cannot take a correct rename
+    # away: Modern Warfare 2's platinum says the short name, the proposal is
+    # IGDB's full one.
+    p = psn.build_proposal(
+        "Modern Warfare 2",
+        ["PS3"],
+        [9],
+        lambda t, i: [
+            {"id": 7, "name": "Call of Duty: Modern Warfare 2", "platform_ids": [9], "game_type": 0, "slug": "cod-mw2"},
+        ],
+        also_known_as="Modern Warfare 2",
+    )
+    assert p["proposed_igdb_id"] == 7 and p["proposed_title"] == "Call of Duty: Modern Warfare 2"
+
+
+def test_the_proposal_keeps_what_igdb_says_for_the_review_card():
+    """Year and kind are how you tell an original from its remaster, and the
+    slug is what makes the claim checkable instead of asserted."""
+    p = psn.build_proposal(
+        "God of War",
+        ["PS3"],
+        [9],
+        lambda t, i: [
+            {"id": 117883, "name": "God of War", "platform_ids": [9], "released": "2009-11-17", "game_type": 9, "slug": "god-of-war--2"}
+        ],
+    )
+    assert p["meta"] == {
+        "year": "2009",
+        "released": "2009-11-17",
+        "game_type": 9,
+        "slug": "god-of-war--2",
+        "platform_ids": [9],
+    }
+
+
+def test_a_collapsed_edition_does_not_carry_the_editions_link(db_session):
+    """An edition folded onto its parent describes the parent now. Keeping the
+    edition's slug would link the card to a record it is not proposing."""
+    hit = {
+        "id": 99,
+        "name": "NieR: Automata - Game of the YoRHa Edition",
+        "platform_ids": [48],
+        "game_type": 0,
+        "slug": "nier-yorha",
+        "released": "2019-02-26",
+        "version_parent": {"id": 2, "name": "NieR: Automata"},
+    }
+    p = psn.build_proposal("Game of the YoRHa Edition", ["PS4"], [48], lambda t, i: [hit])
+    assert p["proposed_igdb_id"] == 2
+    assert p["meta"]["slug"] is None and p["meta"]["year"] is None
+
+
+def test_sync_passes_the_platinum_name_to_the_matcher(db_session, monkeypatch, tmp_path):
+    """The set is on file for rows still in the queue (#136), so the lookup can
+    read the platinum before deciding what this row is."""
+    plats = _seed_platforms(db_session)
+    # The lookup is platform-scoped: PS3 needs its IGDB id to resolve.
+    plats["PS3"].igdb_id = 9
+    db_session.commit()
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = models.User(name="p", username="p", password_hash="x", api_token="ptok", psn_npsso="n" * 64, psn_online_id="dude")
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    db_session.add(user)
+    db_session.commit()
+    db_session.add(
+        models.AchievementDefinition(
+            source="psn",
+            set_id="NPWR00950_00",
+            external_id="0",
+            name="Trophy of Zeus",
+            description="Unlock all God of War® Trophies",
+            tier="platinum",
+        )
+    )
+    db_session.commit()
+    _stub_crawl(
+        monkeypatch,
+        titles_=[
+            {
+                "npCommunicationId": "NPWR00950_00",
+                "trophyTitleName": "God of War® Trophies",
+                "trophyTitlePlatform": "PS3",
+                "progress": 100,
+                "lastUpdatedDateTime": "2010-01-18T18:16:17Z",
+            }
+        ],
+    )
+    seen = {}
+
+    def fake_search(term, platform_ids):
+        seen.setdefault("terms", []).append(term)
+        return [
+            {
+                "id": 117883,
+                "name": "God of War",
+                "platform_ids": platform_ids,
+                "game_type": 9,
+                "released": "2009-11-17",
+                "slug": "god-of-war--2",
+            }
+        ]
+
+    orig = psn._igdb_search_adapter
+    psn._igdb_search_adapter = lambda *a, **k: fake_search
+    try:
+        psn.sync_library(db_session, user)
+    finally:
+        psn._igdb_search_adapter = orig
+
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00950_00").one()
+    assert cand.proposed_igdb_id == 117883
+    assert (cand.raw_data or {}).get("igdbMeta", {}).get("slug") == "god-of-war--2"
+    assert (cand.raw_data or {}).get("proposalVersion") == psn._PROPOSAL_VERSION

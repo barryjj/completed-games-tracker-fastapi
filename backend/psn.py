@@ -3207,6 +3207,12 @@ def _collapse_edition(hit: dict) -> dict:
             "game_type": _IGDB_MAIN_GAME,
             "collapsed_from": hit.get("name"),
             "collapsed_from_id": hit.get("id"),
+            # The edition's slug/date describe the edition, not the parent we
+            # just became. Dropped rather than carried wrongly; the card shows
+            # nothing instead of a link to the wrong record.
+            "slug": None,
+            "released": None,
+            "year": None,
         }
 
     # An EPISODE resolves to the series it belongs to. A concept page names the
@@ -3231,8 +3237,74 @@ def _collapse_edition(hit: dict) -> dict:
                 "game_type": series.get("game_type", _IGDB_MAIN_GAME),
                 "collapsed_from": hit.get("name"),
                 "collapsed_from_id": hit.get("id"),
+                "slug": None,
+                "released": None,
+                "year": None,
             }
     return hit
+
+
+# A platinum's description usually names the game -- "Unlock all God of War®
+# Trophies" -- after some boilerplate about collecting everything. That name is
+# worth having when Sony's own title is ambiguous: "God of War" on PS3 matches
+# Ascension as readily as the game itself.
+_PLAT_VERB = r"(?:unlock|collect|obtain|earn|acquire|gain|complete|finish)(?:ed|s)?"
+_PLAT_LEAD_RE = re.compile(
+    rf"^\W*{_PLAT_VERB}\b(?:\s+(?:all|every|each|the|other|of|them|available|\d+))*"
+    r"\s*(?:trophies|trophy)?\s*(?:\b(?:in|for|from|of)\b\s+)?(?:the\s+)?",
+    re.IGNORECASE,
+)
+_PLAT_TRAIL_RE = re.compile(r"\s*(?:trophies|trophy)\b\W*$", re.IGNORECASE)
+# What follows the boilerplate is a sentence about you, not a title.
+_PLAT_STOP_RE = re.compile(r"^(?:when|to|you|and|it|this|that|so|which|congratulations)\b", re.IGNORECASE)
+_PLAT_GENERIC = {"game", "games", "the game", "this game", "story", "all"}
+
+
+def platinum_game_name(description: str | None) -> str | None:
+    """The game named by a platinum's description, if it names one.
+
+    Strictly additive: the result is offered to IGDB as ANOTHER name the game
+    might be known by, never as grounds to reject a match. Measured over 283
+    platinums, 69 yield a name; as a veto the same text would have rejected
+    four correct renames (Call of Duty: Modern Warfare 2, two Sly titles, a
+    Director's Cut) to catch one wrong one.
+    """
+    if not description:
+        return None
+    # First sentence only: "Earn all Trophies in DARIUSBURST Chronicle
+    # Saviours. Great work!" -- the congratulation is not part of the name.
+    text = re.sub(r"[®™]", "", re.split(r"[.!?\n]", description.strip())[0])
+    m = _PLAT_LEAD_RE.match(text)
+    if not m or m.end() == 0:
+        return None
+    rest = _PLAT_TRAIL_RE.sub("", text[m.end() :]).strip(" .,:-—")
+    if len(rest) < 3 or len(rest.split()) > 7 or _PLAT_STOP_RE.match(rest):
+        return None
+    # Still talking about trophies means it never reached a title.
+    if re.search(r"\btroph", rest, re.IGNORECASE) or rest.casefold() in _PLAT_GENERIC:
+        return None
+    return rest
+
+
+def platinum_name_for_set(db: Session, set_id: str | None) -> str | None:
+    """platinum_game_name for a trophy set's platinum, if we have the set."""
+    if not set_id:
+        return None
+    row = db.query(models.AchievementDefinition).filter_by(source="psn", set_id=set_id, tier="platinum").first()
+    return platinum_game_name(row.description) if row else None
+
+
+def _hit_meta(hit: dict) -> dict:
+    """The parts of an IGDB hit the review card shows. Kept in the proposal
+    payload rather than fetched again at render time -- the queue is ~900 rows
+    and the card is rebuilt on every page."""
+    return {
+        "year": hit.get("year") or ((hit.get("released") or "")[:4] or None),
+        "released": hit.get("released"),
+        "game_type": hit.get("game_type"),
+        "slug": hit.get("slug"),
+        "platform_ids": hit.get("platform_ids") or [],
+    }
 
 
 def build_proposal(
@@ -3242,6 +3314,7 @@ def build_proposal(
     search_fn,
     store_title: str = "",
     earned_before: str | None = None,
+    also_known_as: str | None = None,
 ) -> dict | None:
     """Ask IGDB what this trophy set really is. Returns None when unsure.
 
@@ -3287,9 +3360,19 @@ def build_proposal(
     ours_variants = {ours}
     if store_title and store_title.strip():
         ours_variants.add(titles.normalize_for_match(store_title))
+    # A third name for the same game, from the platinum's description. It joins
+    # the names we hold, so a hit matching it exactly wins the same way a hit
+    # matching Sony's name does -- and is searched for, in case neither of the
+    # other two finds the game at all.
+    if also_known_as and also_known_as.strip():
+        ours_variants.add(titles.normalize_for_match(also_known_as))
     best = None
     exact_best = None
-    for term in search_terms(title) + (search_terms(store_title) if store_title.strip() else []):
+    terms = search_terms(title) + (search_terms(store_title) if store_title.strip() else [])
+    if also_known_as and also_known_as.strip():
+        seen = {t.casefold() for t in terms}
+        terms += [t for t in search_terms(also_known_as) if t.casefold() not in seen]
+    for term in terms:
         for hit in search_fn(term, igdb_ids) or []:
             if _impossible(hit):
                 continue
@@ -3332,7 +3415,16 @@ def build_proposal(
                     continue
                 rank = 0 if hit.get("game_type") == _IGDB_MAIN_GAME else 1
                 if exact_best is None or rank < exact_best[0]:
-                    exact_best = (rank, hit.get("id"), hit_ids, term, name, hit.get("collapsed_from"), hit.get("collapsed_from_id"))
+                    exact_best = (
+                        rank,
+                        hit.get("id"),
+                        hit_ids,
+                        term,
+                        name,
+                        hit.get("collapsed_from"),
+                        hit.get("collapsed_from_id"),
+                        _hit_meta(hit),
+                    )
                 continue
             if not _is_same_game(term, matched_as):
                 continue
@@ -3346,11 +3438,20 @@ def build_proposal(
             # the original "Marvel vs. Capcom 3" over "Ultimate".
             score = (0 if gtype == _IGDB_MAIN_GAME else 1, _added_words(titles.normalize_for_match(term), theirs))
             if best is None or score < best[0]:
-                best = (score, name, hit.get("id"), hit_ids, term, hit.get("collapsed_from"), hit.get("collapsed_from_id"))
+                best = (
+                    score,
+                    name,
+                    hit.get("id"),
+                    hit_ids,
+                    term,
+                    hit.get("collapsed_from"),
+                    hit.get("collapsed_from_id"),
+                    _hit_meta(hit),
+                )
     # An exact match still beats any ranked near-miss — the name we hold is
     # already right and the id is the payload.
     if exact_best is not None:
-        _rank, igdb_id, hit_ids, term, name, folded, folded_id = exact_best
+        _rank, igdb_id, hit_ids, term, name, folded, folded_id, meta = exact_best
         # An exact match on the STORE name is still a rename for us: the row is
         # held under Sony's feed name, and that sparse name is what the library
         # would otherwise show. Matching our own name proposes nothing.
@@ -3361,6 +3462,10 @@ def build_proposal(
             "proposed_platforms": hit_ids,
             "matched_term": term,
             "exact": True,
+            # What IGDB says about the match, for the review card to show: a
+            # year and a game type are how you tell an original from its
+            # remaster, and the slug is the link that makes the claim checkable.
+            "meta": meta,
             # Which IGDB entry was folded to get here, if any. "NieR: Automata"
             # via "Game of the Yorha Edition" is a different fact from matching
             # NieR: Automata outright — the edition is what you actually own,
@@ -3369,13 +3474,14 @@ def build_proposal(
         }
     if best is None:
         return None
-    _score, name, igdb_id, hit_ids, term, folded, folded_id = best
+    _score, name, igdb_id, hit_ids, term, folded, folded_id, meta = best
     return {
         "proposed_title": name,
         "proposed_igdb_id": igdb_id,
         "proposed_platforms": hit_ids,
         "matched_term": term,
         "matched_via": {"name": folded, "igdb_id": folded_id} if folded else None,
+        "meta": meta,
     }
 
 
@@ -3558,7 +3664,13 @@ def _store_title_for(cand, sleep: float = 1.0) -> str:
 # 3: bundles/ports collapse onto their parent too, exact matches are no longer
 #    exempt from the not-a-game filter, punctuation-spaced search terms, and
 #    PSVR games searched on the headset as well as the console.
-_PROPOSAL_VERSION = 3
+# 4: the concept-id path, a ten-result window and the trophy-date veto -- all
+#    of which shipped under #212 WITHOUT a bump, so no pending row had ever
+#    been re-proposed with them (God of War's set, completed 2010, still read
+#    "God of War: Ascension", a 2013 game, because the veto never ran and the
+#    right hit was seventh). Plus the platinum's name as a third name for the
+#    game, and IGDB's year/type/slug kept for the review card.
+_PROPOSAL_VERSION = 4
 
 
 def fill_review_proposals(db: Session, user: models.User, progress_callback=None, store_sleep: float = 1.0) -> dict:
@@ -3621,6 +3733,11 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
                     search,
                     store_title=_store_title_for(cand, store_sleep),
                     earned_before=(item.get("trophyLastUpdated") or "")[:10] or None,
+                    # The platinum's own description, when the set is on file
+                    # and it names a game (#136). Sony's "God of War" on PS3
+                    # matches Ascension as readily as the game itself; the
+                    # platinum says which one it is.
+                    also_known_as=platinum_name_for_set(db, _set_id(cand)),
                 )
         except Exception:
             _logger.exception("IGDB proposal lookup failed for %s", cand.external_id)
@@ -3633,6 +3750,10 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
             # rides raw_data onto the library entry at confirm.
             if proposal.get("matched_via"):
                 cand.raw_data = {**(cand.raw_data or {}), "matchedVia": proposal["matched_via"]}
+            # What IGDB says about the match — year, kind, slug — for the review
+            # card. In raw_data rather than columns: it is display evidence for
+            # one decision, thrown away with the row when it is confirmed.
+            cand.raw_data = {**(cand.raw_data or {}), "igdbMeta": proposal.get("meta") or None}
             cand.proposed_title = proposal["proposed_title"]
             cand.proposed_igdb_id = proposal["proposed_igdb_id"]
             cand.proposed_platforms = proposal["proposed_platforms"]
