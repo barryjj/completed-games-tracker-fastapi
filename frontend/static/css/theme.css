@@ -3258,6 +3258,123 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   color: var(--ctp-overlay0);
 }
 
+/* ── A set's platinum, as evidence for what the game is (#136) ─────────────
+   Its description usually names the game ("Unlock all God of War® Trophies"),
+   which is what separates the 2005 game from Ascension. A rule in the
+   platinum's own tone rather than a box: it belongs to the trophy figures
+   above it, and a second bordered block inside the Progress panel read as a
+   separate subject. */
+.cgt-platinum {
+  margin-top: 0.55rem;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--ctp-sky);
+}
+.cgt-platinum__name {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ctp-text);
+}
+.cgt-platinum__name svg {
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  color: var(--ctp-sky);
+}
+.cgt-platinum__desc {
+  font-size: 0.75rem;
+  color: var(--ctp-subtext0);
+}
+
+/* What IGDB said about the match, under the platform checkboxes it informs. */
+.cgt-igdb-facts {
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--ctp-surface0);
+}
+
+/* ── Review list row ──────────────────────────────────────────────────────
+   Two lines: chips and title, then the evidence. Chips LEAD so they label the
+   name that follows and survive a wrap. */
+.cgt-psn-row-main {
+  min-width: 0;
+}
+.cgt-psn-row-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.cgt-psn-row-meta {
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--ctp-subtext0);
+}
+.cgt-psn-unmatched {
+  color: var(--ctp-yellow);
+}
+.cgt-psn-playtime-cell {
+  white-space: nowrap;
+}
+.cgt-psn-playtime-cell .cgt-psn-playtime {
+  margin-left: 0;
+}
+
+/* The trophy figures reveal the platinum on hover. A popover, not title=: it
+   carries three lines, and the description is the part worth reading. */
+.cgt-trophy-stat--has-plat {
+  position: relative;
+  cursor: help;
+}
+.cgt-trophy-stat--has-plat .cgt-trophy-figures {
+  border-bottom: 1px dotted var(--ctp-overlay0);
+}
+.cgt-plat-pop {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 20;
+  display: none;
+  width: 16rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--ctp-crust);
+  border: 1px solid var(--ctp-surface1);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  text-align: left;
+  white-space: normal;
+}
+.cgt-trophy-stat--has-plat:hover .cgt-plat-pop,
+.cgt-trophy-stat--has-plat:focus-visible .cgt-plat-pop {
+  display: block;
+}
+.cgt-plat-pop__name {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ctp-text);
+}
+.cgt-plat-pop__name svg {
+  width: 0.85em;
+  height: 0.85em;
+  flex-shrink: 0;
+  color: var(--ctp-sky);
+}
+.cgt-plat-pop__desc,
+.cgt-plat-pop__meta {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ctp-subtext0);
+}
+.cgt-plat-pop__meta {
+  margin-top: 0.3rem;
+  color: var(--ctp-overlay0);
+}
+
 /* Review card title. A bare h6 inherits the body colour, which left the game
    name reading fainter than the small-caps block headings under it — the least
    emphatic thing on a card that exists to identify one game. */

@@ -65,8 +65,11 @@
       <tr>
         <th class="psn-bulk-cell"><input class="form-check-input" type="checkbox" onchange="psnSelectAll(this.checked)" title="Select all"></th>
         <th>Title</th>
-        {# No label: the column carries playtime AND trophies, each with its own
-           glyph, so a heading either lies or repeats them. #}
+        {# Playtime and trophies are their own columns now -- they were one
+           cell, and the title had to share its width with the playtime
+           figure. No labels: each carries its own glyph, so a heading either
+           lies or repeats it. #}
+        <th class="text-nowrap"></th>
         <th class="text-nowrap"></th>
         <th>Platforms owned</th>
         <th></th>

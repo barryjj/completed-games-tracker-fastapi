@@ -17,44 +17,48 @@
       {% else %}
       <div class="cgt-list-row-thumb cgt-list-row-thumb--empty"></div>
       {% endif %}
-      <div>
-        {# Layout J. Playtime rides beside the NAME, where there is horizontal
-           room, so the stats column carries one figure and every bar in the
-           list starts at the same x. Sources sit on the line below as coloured
-           chips: PlayStation takes the platform family's lavender (same recipe
-           as the PS4/PSVITA chips), IGDB takes the green DESIGN.md already
-           assigns to "IGDB linked / confirmed".
+      <div class="cgt-psn-row-main">
+        {# Chips LEAD the title, the way the card does: they label the name
+           that follows, and leading survives a wrap that leaves a trailing
+           chip stranded on its own line. Playtime moved to its own column --
+           beside the title it competed with the name for the same space.
 
-           No reasoning line. "Confirming what this is before it lands in your
-           library" was true of every row in the queue and told you nothing;
-           the absence of an IGDB chip is what says a row is unidentified. #}
-        {% if r.proposal_status == "pending" and r.proposed_title %}
-        <span class="cgt-import-title cgt-psn-proposed">{{ r.proposed_title }}</span>
-        {% if r.total_minutes %}<span class="cgt-psn-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</span>{% endif %}
-        <div class="text-secondary small text-decoration-line-through">{{ r.name }}</div>
-        {% else %}
-        <span class="cgt-import-title">{{ r.name }}</span>
-        {% if r.total_minutes %}<span class="cgt-psn-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</span>{% endif %}
-        {% endif %}
-        <div class="mt-1">
+           Line two is the evidence: what IGDB says this is (year, kind) and
+           the name Sony gave it, struck. A row IGDB could not identify says
+           so in as many words; its absence used to be the only signal, and
+           an absence reads as "nothing to see" rather than "unidentified". #}
+        <div class="cgt-psn-row-title">
           <span class="tag-badge tag-platform-playstation">PlayStation</span>
-          {# Present whenever IGDB vouched for the row — whether it renamed it or
-             agreed with Sony. Its ABSENCE is how an unidentified row reads. #}
           {% if r.proposed_igdb_id %}
-          <span class="tag-badge tag-igdb ms-1" title="Matched to IGDB {{ r.proposed_igdb_id }}">IGDB</span>
+          <span class="tag-badge tag-igdb" title="Matched to IGDB {{ r.proposed_igdb_id }}">IGDB</span>
           {% endif %}
           {% if r.set_count > 1 %}
-          <span class="tag-badge tag-source ms-1" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
+          <span class="tag-badge tag-source" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
           {% endif %}
-          {# Shadow-mode scaffolding — the one status nothing else conveys. It
-             retires itself once these rows import unattended. #}
           {% if r.verdict_auto %}
-          <span class="tag-badge tag-verdict-auto ms-1"
+          <span class="tag-badge tag-verdict-auto"
                 title="Platform and identity are both settled — this would import on its own once automation is switched on">Auto-import</span>
+          {% endif %}
+          <span class="cgt-import-title{% if r.proposal_status == "pending" and r.proposed_title %} cgt-psn-proposed{% endif %}">{{ r.proposed_title if r.proposal_status == "pending" and r.proposed_title else r.name }}</span>
+        </div>
+        <div class="cgt-psn-row-meta">
+          {% if r.proposed_igdb_id %}
+          {% if r.igdb and r.igdb.year %}{{ r.igdb.year }}{% endif %}
+          {% if r.igdb and r.igdb.type %}{% if r.igdb.year %} &middot; {% endif %}{{ r.igdb.type }}{% endif %}
+          {% if r.proposal_status == "pending" and r.proposed_title %}
+          {% if r.igdb and (r.igdb.year or r.igdb.type) %} &middot; {% endif %}<span class="text-decoration-line-through">{{ r.name }}</span>
+          {% endif %}
+          {% else %}
+          <span class="cgt-psn-unmatched">No IGDB match</span>
           {% endif %}
         </div>
       </div>
     </div>
+  </td>
+  {# Playtime, its own column: one figure, always at the same x, so the title
+     beside it keeps the full width it needs. #}
+  <td class="align-middle text-end cgt-psn-playtime-cell">
+    {% if r.total_minutes %}<span class="cgt-psn-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</span>{% endif %}
   </td>
   {# Count over a THIN bar. The bar was briefly a 20px pill with the number
      inside it, which put a third solid object in a row that already has
@@ -80,7 +84,10 @@
       {% endfor %}
     </span>
     {% elif r.trophy_defined %}
-    <span class="cgt-trophy-stat">
+    {# Hoverable when the set has a platinum: its description is what says
+       WHICH game this is, and that is three lines of text this row has no
+       room for. A popover rather than title= so it can carry them. #}
+    <span class="cgt-trophy-stat{% if r.platinum %} cgt-trophy-stat--has-plat{% endif %}"{% if r.platinum %} tabindex="0"{% endif %}>
       {# The glyph is its own column, centred against the count-over-bar pair,
          so it never has to match the digits' cap height — which is what made
          every size we tried look either too tall or blobby. As an icon beside
@@ -93,6 +100,13 @@
           <i style="width: {{ (r.trophy_earned / r.trophy_defined * 100) | round | int }}%;"></i>
         </span>
       </span>
+      {% if r.platinum %}
+      <span class="cgt-plat-pop" role="tooltip">
+        <span class="cgt-plat-pop__name">{% include "partials/_icon_trophy.svg" %}{{ r.platinum.name }}</span>
+        {% if r.platinum.description %}<span class="cgt-plat-pop__desc">{{ r.platinum.description }}</span>{% endif %}
+        {% if r.trophy_last_updated %}<span class="cgt-plat-pop__meta">Last trophy {{ r.trophy_last_updated | long_date }}</span>{% endif %}
+      </span>
+      {% endif %}
     </span>
     {% else %}
     <span class="text-secondary small">&mdash;</span>
@@ -150,6 +164,6 @@
    build and a heavy DOM, and you rarely scroll past the first screen. #}
 {% if next_page_url %}
 <tr id="psn-scroll-sentinel" hx-get="{{ next_page_url }}" hx-trigger="revealed" hx-swap="outerHTML">
-  <td colspan="5"></td>
+  <td colspan="6"></td>
 </tr>
 {% endif %}

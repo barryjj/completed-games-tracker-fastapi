@@ -1,0 +1,8 @@
+{# A trophy set's platinum, as evidence for what the game IS. Its description
+   usually names the game -- "Unlock all God of War® Trophies" -- which is the
+   line that separates the 2005 game from Ascension. Expects `p`
+   {name, description}. #}
+<div class="cgt-platinum">
+  <div class="cgt-platinum__name">{% include "partials/_icon_trophy.svg" %}{{ p.name }}</div>
+  {% if p.description %}<div class="cgt-platinum__desc">{{ p.description }}</div>{% endif %}
+</div>

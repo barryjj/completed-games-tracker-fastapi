@@ -6535,3 +6535,58 @@ def test_sync_passes_the_platinum_name_to_the_matcher(db_session, monkeypatch, t
     assert cand.proposed_igdb_id == 117883
     assert (cand.raw_data or {}).get("igdbMeta", {}).get("slug") == "god-of-war--2"
     assert (cand.raw_data or {}).get("proposalVersion") == psn._PROPOSAL_VERSION
+
+
+def test_review_rows_carry_the_platinum_and_what_igdb_said(db_session):
+    """The two pieces of evidence for "which game is this": the platinum's
+    description, and IGDB's year/kind/link for the match (#136)."""
+    _seed_platforms(db_session)
+    user = models.User(name="ev", username="ev", password_hash="x", api_token="evtok", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": "NPWR00950_00",
+                "name": "God of War® Trophies",
+                "displayName": "God of War",
+                "platform": "PS3",
+                "sources": ["titles"],
+                "igdbMeta": {"year": "2009", "game_type": 9, "slug": "god-of-war--2"},
+            }
+        ],
+    )
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00950_00").one()
+    cand.proposed_igdb_id = 117883
+    db_session.add(
+        models.AchievementDefinition(
+            source="psn",
+            set_id="NPWR00950_00",
+            external_id="0",
+            name="Trophy of Zeus",
+            description="Unlock all God of War® Trophies",
+            tier="platinum",
+        )
+    )
+    db_session.commit()
+
+    row = psn.import_review_rows(db_session, user.id)[0]
+    assert row["platinum"]["name"] == "Trophy of Zeus"
+    assert row["platinum"]["description"] == "Unlock all God of War® Trophies"
+    assert row["igdb"] == {"year": "2009", "type": "Remaster", "url": "https://www.igdb.com/games/god-of-war--2"}
+
+
+def test_a_row_without_a_platinum_or_a_match_says_nothing_rather_than_guessing(db_session):
+    _seed_platforms(db_session)
+    user = models.User(name="ev2", username="ev2", password_hash="x", api_token="ev2tok", psn_npsso="n" * 64, psn_online_id="dude")
+    db_session.add(user)
+    db_session.commit()
+    _seed_review(
+        db_session,
+        user,
+        [{"npCommunicationId": "NPWR00001_00", "name": "Mystery", "displayName": "Mystery", "platform": "PS3", "sources": ["titles"]}],
+    )
+    row = psn.import_review_rows(db_session, user.id)[0]
+    assert row["platinum"] is None and row["igdb"] is None

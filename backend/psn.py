@@ -2290,6 +2290,46 @@ def hero_video_for(hero_url: str | None) -> str | None:
     return hero_url.replace("/hero/", "/hero_thumb/").rsplit(".", 1)[0] + ".webm"
 
 
+# IGDB's game_type, as a word for the review card. Only the ones a PSN row
+# actually lands on; anything else shows no type rather than a number.
+_IGDB_TYPE_LABELS = {
+    0: "Main game",
+    2: "Expansion",
+    3: "Bundle",
+    4: "Standalone expansion",
+    6: "Episode",
+    8: "Remake",
+    9: "Remaster",
+    10: "Expanded edition",
+    11: "Port",
+}
+
+
+def _platinum_for(plats: dict, cand) -> dict | None:
+    """The platinum of this row's trophy set, for display: its name and the
+    description that often says which game this is ("Unlock all God of War®
+    Trophies"). None when the set has no platinum -- most small PS3-era sets
+    and every store-only row."""
+    row = plats.get(_set_id(cand))
+    if row is None:
+        return None
+    return {"name": row.name, "description": row.description, "icon_url": row.icon_url}
+
+
+def _igdb_facts(item: dict) -> dict | None:
+    """What IGDB said about the match, for the card: the year and kind that
+    tell an original from its remaster, and the slug that links out so the
+    claim can be checked. Written by fill_review_proposals (#136)."""
+    meta = (item or {}).get("igdbMeta") or {}
+    if not meta:
+        return None
+    return {
+        "year": meta.get("year"),
+        "type": _IGDB_TYPE_LABELS.get(meta.get("game_type")),
+        "url": f"https://www.igdb.com/games/{meta['slug']}" if meta.get("slug") else None,
+    }
+
+
 def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = None) -> list[dict]:
     """Pending review rows — one per trophy set, one checkbox per platform.
 
@@ -2342,6 +2382,25 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
         candidates = [c for c in pending if group_of[c.external_id]["key"] in wanted]
     else:
         candidates = pending
+
+    # Every platinum for the sets in play, in one query. Per-row lookups would
+    # be ~900 of them for the list view, and the card view asks for five rows
+    # at a time -- so this is scoped to the candidates actually being built.
+    set_ids = [sid for sid in (_set_id(c) for c in candidates) if sid]
+    platinums = {
+        d.set_id: d
+        for d in (
+            db.query(models.AchievementDefinition)
+            .filter(
+                models.AchievementDefinition.source == "psn",
+                models.AchievementDefinition.tier == "platinum",
+                models.AchievementDefinition.set_id.in_(set_ids),
+            )
+            .all()
+            if set_ids
+            else []
+        )
+    }
 
     # Siblings = every cross-play set sharing a normalized title, DECIDED ONES
     # INCLUDED. Two things need them:
@@ -2480,6 +2539,7 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
         verdict = review_verdict(cand, item)
         earned = item.get("earnedTrophies") or {}
         defined = item.get("trophies") or {}
+        platinum = _platinum_for(platinums, cand)
         rows.append(
             {
                 "key": cand.external_id,
@@ -2510,6 +2570,10 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
                     if defined.get(tier)
                 ],
                 "trophy_last_updated": (item.get("trophyLastUpdated") or "")[:10],
+                # The set's platinum (#136) and what IGDB said about the match
+                # -- the two pieces of evidence for "which game is this".
+                "platinum": platinum,
+                "igdb": _igdb_facts(item),
                 "set_index": set_index,
                 "set_count": sets_for_title,
                 "contested": contested,
@@ -2571,8 +2635,12 @@ def _fold_group_rows(g: dict, member_rows: list[dict], by_key: dict) -> dict:
 
     named = next((r for r in member_rows if r["proposed_title"] and r["proposal_status"] in ("pending", "accepted")), None)
     if named is not None:
-        for k in ("name", "proposed_title", "proposed_igdb_id", "proposal_status"):
+        for k in ("name", "proposed_title", "proposed_igdb_id", "proposal_status", "igdb"):
             row[k] = named[k]
+    # The row's own IGDB facts come from whichever member has any, so a group
+    # whose primary was never matched still shows the year and the link.
+    if not row.get("igdb"):
+        row["igdb"] = next((r["igdb"] for r in member_rows if r.get("igdb")), None)
     for k in ("image", "hero", "hero_video", "logo"):
         row[k] = next((r[k] for r in member_rows if r.get(k)), None)
 
@@ -2607,6 +2675,7 @@ def _fold_group_rows(g: dict, member_rows: list[dict], by_key: dict) -> dict:
                 "defined": orow["trophy_defined"],
                 "progress": orow["trophy_progress"],
                 "tiers": orow["trophy_tiers"],
+                "platinum": orow.get("platinum"),
             }
         )
     row["sets"] = sets

@@ -189,6 +189,23 @@
             </label>
             {% endfor %}
           </div>
+          {% if r.igdb %}
+          {# What IGDB says about the match, in the box whose question it
+             informs. A year and a kind are how you tell an original from its
+             remaster -- the confusion these rows keep landing in -- and the
+             link is what makes the match checkable instead of asserted. #}
+          <div class="cgt-igdb-facts">
+            <div class="cgt-progress-label">IGDB match</div>
+            <dl class="cgt-detail-meta small mb-0">
+              {% if r.igdb.year %}<dt>Released</dt><dd>{{ r.igdb.year }}</dd>{% endif %}
+              {% if r.igdb.type %}<dt>Type</dt><dd>{{ r.igdb.type }}</dd>{% endif %}
+              {% if r.proposed_igdb_id %}
+              <dt>Record</dt>
+              <dd>{% if r.igdb.url %}<a href="{{ r.igdb.url }}" target="_blank" rel="noopener">{{ r.proposed_igdb_id }}</a>{% else %}{{ r.proposed_igdb_id }}{% endif %}</dd>
+              {% endif %}
+            </dl>
+          </div>
+          {% endif %}
         </div>
 
         </div>
@@ -219,6 +236,7 @@
               </span>
               {% endfor %}
             </div>
+            {% if t.platinum %}{% with p = t.platinum %}{% include "partials/_psn_platinum.html" %}{% endwith %}{% endif %}
           </div>
           {% endfor %}
           {% elif r.trophy_defined %}
@@ -236,6 +254,7 @@
             </span>
             {% endfor %}
           </div>
+          {% if r.platinum %}{% with p = r.platinum %}{% include "partials/_psn_platinum.html" %}{% endwith %}{% endif %}
           {% else %}
           <p class="text-secondary small mb-0 mt-2">No trophy data.</p>
           {% endif %}
