@@ -2918,6 +2918,13 @@ a.cgt-breakdown__row:hover .cgt-breakdown__label {
 [id^="sync-indicator-"] {
   min-height: 1.5rem;
 }
+/* The configure pages' single indicator, same reason. Its line is .875rem
+   text at 1.5 line-height plus the mb-3 under it, so the card row is that
+   tall whether a sync is running or not, and starting one changes nothing
+   but the spinner appearing. */
+#sync-indicator {
+  min-height: 2.3125rem;
+}
 
 /* A stat that is also a link. Undecorated on purpose — it has to keep reading
    as a number, not a link — with the hover doing the whole job of saying it's
