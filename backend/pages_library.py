@@ -118,45 +118,19 @@ def library_page(
     # query to avoid N+1 across large pages).
     _attach_parent_fallbacks(db, entries, current_user=current_user)
 
-    # base_game_options and collections are only needed to populate the add-form
-    # and edit-modal dropdowns, which live outside #library-content and are never
-    # re-rendered by HTMX filter/search requests. Skip them on HTMX calls.
     is_htmx = request.headers.get("HX-Request") == "true"
 
-    if is_htmx:
-        base_game_options = []
-        collections = []
-    else:
-        # Both dropdown lists exclude hidden entries — a hidden entry isn't
-        # something you'd pick as a parent for new DLC or a containing collection.
-        base_game_options = (
-            db.query(models.UserLibraryEntry)
-            .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
-            .join(models.GameRelease)
-            .join(models.Game)
-            .filter(
-                models.UserLibraryEntry.user_id == current_user.id,
-                models.UserLibraryEntry.is_hidden == False,
-                models.Game.is_dlc == False,
-            )
-            .order_by(models.Game.title)
-            .all()
-        )
-        collections = (
-            db.query(models.UserLibraryEntry)
-            .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
-            .join(models.GameRelease)
-            .join(models.Game)
-            .filter(
-                models.UserLibraryEntry.user_id == current_user.id,
-                models.UserLibraryEntry.is_hidden == False,
-                models.Game.is_collection == True,
-            )
-            .order_by(models.Game.title)
-            .all()
-        )
+    # There were two more queries here, base_game_options and collections, for
+    # the add-form's "base game" and "collection" pickers. Those pickers became
+    # search boxes (#add-dlc-search, #add-collection-search, which ask the
+    # server as you type), and nothing has rendered either list since -- they
+    # were built into the template context and dropped. base_game_options
+    # loaded every non-DLC entry in the library as ORM objects with release and
+    # game joined: 10,175 rows and 1.6s of the ~1.7s it took to open the page,
+    # on every full navigation, for output nobody read.
+
     # lib_platforms populates the platform dropdown outside #library-content —
-    # skip it on HTMX requests just like base_game_options/collections.
+    # skip it on HTMX requests, which only re-render the grid.
     if is_htmx:
         lib_platform_list = []
     else:
@@ -199,8 +173,6 @@ def library_page(
             "current_user": current_user,
             **_base_ctx(db, current_user, request),
             "entries": entries,
-            "collections": collections,
-            "base_game_options": base_game_options,
             "platforms": _get_all_platforms(db),
             "total": total,
             "q": q,
