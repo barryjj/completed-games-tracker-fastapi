@@ -32,7 +32,7 @@
           {% if r.proposed_igdb_id %}
           <span class="tag-badge tag-igdb" title="Matched to IGDB {{ r.proposed_igdb_id }}">IGDB</span>
           {% endif %}
-          {% if r.set_count > 1 %}
+          {% if r.set_count > 1 and r.set_index %}
           <span class="tag-badge tag-source" title="PSN returns {{ r.set_count }} trophy sets for this title and doesn't say which platform each covers">Set {{ r.set_index }} of {{ r.set_count }}</span>
           {% endif %}
           {% if r.verdict_auto %}

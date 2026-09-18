@@ -5940,7 +5940,15 @@ def test_a_store_concept_id_identifies_the_game_outright(db_session, monkeypatch
 
     def fake_lookup(cid, sec, concept):
         calls.append(concept)
-        return {"id": 251833, "name": "Balatro", "platform_ids": [167], "year": 2024, "released": "2024-02-20", "game_type": 0}
+        return {
+            "id": 251833,
+            "name": "Balatro",
+            "slug": "balatro",
+            "platform_ids": [167],
+            "year": 2024,
+            "released": "2024-02-20",
+            "game_type": 0,
+        }
 
     monkeypatch.setattr(igdb, "lookup_by_ps_concept", fake_lookup)
 
@@ -5949,6 +5957,9 @@ def test_a_store_concept_id_identifies_the_game_outright(db_session, monkeypatch
     assert calls == ["10008993"], "looked up by concept id, nothing searched"
     assert p["proposed_igdb_id"] == 251833 and p["exact"] is True
     assert p["proposed_title"] is None, "name already matches -- id is the payload"
+    # The same evidence the search path keeps: a store-backed row is the
+    # common case, and it was the one arriving on the card with nothing.
+    assert p["meta"]["slug"] == "balatro" and p["meta"]["year"] == 2024 and p["meta"]["game_type"] == 0
 
     assert psn._proposal_by_concept(user, {"name": "God of War", "npCommunicationId": "NPWR00950_00"}, [9]) is None, (
         "a trophy-only row has no concept id and is not this path's problem"
@@ -6590,3 +6601,193 @@ def test_a_row_without_a_platinum_or_a_match_says_nothing_rather_than_guessing(d
     )
     row = psn.import_review_rows(db_session, user.id)[0]
     assert row["platinum"] is None and row["igdb"] is None
+
+
+def test_the_crawl_refresh_keeps_what_igdb_said(db_session):
+    """A sync after the title check refreshes every candidate's payload. Losing
+    igdbMeta while keeping proposalVersion left rows stamped current with
+    nothing to show, and nothing ever fetched it again."""
+    user = _trophy_user(db_session)
+    item = {"titleId": "CUSA0001_00", "name": "X", "platform": "PS4", "sources": ["purchased"]}
+    cand = psn._upsert_review_candidate(db_session, user, item, "title_fix")
+    cand.proposed_igdb_id = 5
+    cand.raw_data = {**cand.raw_data, "proposalVersion": psn._PROPOSAL_VERSION, "igdbMeta": {"year": "2018", "slug": "x"}}
+    db_session.commit()
+    psn._upsert_review_candidate(db_session, user, {**item, "trophyProgress": 10}, "title_fix")
+    db_session.commit()
+    assert cand.raw_data["igdbMeta"] == {"year": "2018", "slug": "x"}
+    assert cand.raw_data["trophyProgress"] == 10, "the crawl data itself still refreshes"
+
+
+def test_a_match_without_its_facts_is_looked_up_again(db_session, monkeypatch):
+    user = _trophy_user(db_session)
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    _seed_platforms(db_session)
+    db_session.query(models.Platform).filter_by(name="PS4").one().igdb_id = 48
+    cand = psn._upsert_review_candidate(
+        db_session, user, {"titleId": "CUSA0002_00", "name": "Y", "platform": "PS4", "sources": ["purchased"]}, "title_fix"
+    )
+    cand.proposed_igdb_id, cand.proposal_status = 7, "matched"
+    cand.raw_data = {**cand.raw_data, "proposalVersion": psn._PROPOSAL_VERSION}  # current, but no igdbMeta
+    db_session.commit()
+    hit = [{"id": 7, "name": "Y", "platform_ids": [48], "game_type": 0, "released": "2020-01-01", "slug": "y"}]
+    monkeypatch.setattr(psn, "_igdb_search_adapter", lambda *a, **k: lambda t, i: hit)
+    out = psn.fill_review_proposals(db_session, user, store_sleep=0)
+    assert out["checked"] == 1
+    assert cand.raw_data["igdbMeta"]["slug"] == "y"
+
+
+def test_same_name_different_igdb_ids_are_not_siblings(db_session):
+    """ "God of War" (2018) and "God of War" (2009) share a name; IGDB says
+    two games. Set n of m must not pair them -- nor "God of War III" with its
+    Remastered, which the normaliser folds to the same key."""
+    _seed_platforms(db_session)
+    user = _trophy_user(db_session)
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "CUSA07408_00",
+                "name": "God of War",
+                "displayName": "God of War",
+                "normalizedName": psn._normalized_name("God of War"),
+                "platform": "PS4",
+                "sources": ["purchased"],
+            },
+            {
+                "npCommunicationId": "NPWR00950_00",
+                "name": "God of War",
+                "displayName": "God of War",
+                "normalizedName": psn._normalized_name("God of War"),
+                "platform": "PS3",
+                "sources": ["titles"],
+            },
+            {
+                "npCommunicationId": "NPWR00801_00",
+                "name": "God of War III",
+                "displayName": "God of War III",
+                "normalizedName": psn._normalized_name("God of War III"),
+                "platform": "PS3",
+                "sources": ["titles"],
+            },
+            {
+                "titleId": "CUSA01623_00",
+                "name": "God of War III Remastered",
+                "displayName": "God of War III Remastered",
+                "normalizedName": psn._normalized_name("God of War III Remastered"),
+                "platform": "PS4",
+                "sources": ["purchased"],
+            },
+        ],
+    )
+    ids = {"CUSA07408_00": 19560, "NPWR00950_00": 117883, "NPWR00801_00": 499, "CUSA01623_00": 19959}
+    for c in db_session.query(models.PsnReviewCandidate).all():
+        c.proposed_igdb_id = ids[c.external_id]
+    db_session.commit()
+    rows = {r["key"]: r for r in psn.import_review_rows(db_session, user.id)}
+    assert all(r["set_count"] == 1 for r in rows.values()), {k: r["set_count"] for k, r in rows.items()}
+
+    # One of them unidentified: nothing says it is not the other, so it joins
+    # the identified one's group (#212) and the two show as one row.
+    db_session.query(models.PsnReviewCandidate).filter_by(external_id="NPWR00950_00").one().proposed_igdb_id = None
+    db_session.commit()
+    rows = {r["key"]: r for r in psn.import_review_rows(db_session, user.id)}
+    assert "NPWR00950_00" not in rows and set(rows["CUSA07408_00"]["members"]) == {"CUSA07408_00", "NPWR00950_00"}
+
+
+def test_set_n_of_m_counts_distinct_trophy_sets_not_records(db_session):
+    """Alan Wake Remastered: a PS4 purchase (no trophy set) beside its PS5
+    trophy set, already confirmed. The purchase is another RECORD of the game,
+    not another set: no chip on it, and the count only sees sets. Two SKUs
+    sharing one NPWR are likewise one set."""
+    _seed_platforms(db_session)
+    user = _trophy_user(db_session)
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "PPSA01924_00",
+                "npCommunicationId": "NPWR22612_00",
+                "name": "Alan Wake Remastered",
+                "displayName": "Alan Wake Remastered",
+                "normalizedName": psn._normalized_name("Alan Wake Remastered"),
+                "platform": "PS5",
+                "sources": ["titles"],
+            },
+            {
+                "titleId": "CUSA24652_00",
+                "name": "Alan Wake Remastered",
+                "displayName": "Alan Wake Remastered",
+                "normalizedName": psn._normalized_name("Alan Wake Remastered"),
+                "platform": "PS4",
+                "sources": ["purchased"],
+            },
+        ],
+    )
+    for c in db_session.query(models.PsnReviewCandidate).all():
+        c.proposed_igdb_id = 167611
+    ps5 = db_session.query(models.PsnReviewCandidate).filter_by(external_id="PPSA01924_00").one()
+    ps5.status, ps5.chosen_platforms = "confirmed", ["PS5"]
+    db_session.commit()
+    (row,) = psn.import_review_rows(db_session, user.id)
+    assert row["key"] == "CUSA24652_00"
+    assert row["set_index"] == 0, "a store record is not a set and gets no chip"
+    assert row["set_count"] == 1, "only the one trophy set is counted"
+
+    # Nioh: two PS4 SKUs on ONE trophy list. One set, no chip.
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "CUSA05892_00",
+                "npCommunicationId": "NPWR10261_00",
+                "name": "Nioh",
+                "displayName": "Nioh",
+                "normalizedName": psn._normalized_name("Nioh"),
+                "platform": "PS4",
+                "sources": ["purchased", "titles"],
+            },
+            {
+                "titleId": "CUSA07113_00",
+                "npCommunicationId": "NPWR10261_00",
+                "name": "Nioh",
+                "displayName": "Nioh",
+                "normalizedName": psn._normalized_name("Nioh"),
+                "platform": "PS4",
+                "sources": ["purchased"],
+            },
+        ],
+    )
+    rows = {r["key"]: r for r in psn.import_review_rows(db_session, user.id)}
+    nioh = next(r for r in rows.values() if r["name"] == "Nioh")
+    assert nioh["set_count"] == 1
+
+
+def test_sync_retires_pending_rows_the_non_game_rule_now_catches(db_session, monkeypatch, tmp_path):
+    """A rule added later stops new rows of that kind arriving and does
+    nothing about the one already queued. "God of War Digital Comic" sat
+    pending for a month after "digital comic" joined the rule."""
+    _seed_platforms(db_session)
+    monkeypatch.setattr(psn, "DATA_DIR", str(tmp_path))
+    user = _trophy_user(db_session)
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "CUSA09944_00",
+                "name": "God of War Digital Comic - Issue #0",
+                "displayName": "God of War Digital Comic - Issue #0",
+                "platform": "PS4",
+                "sources": ["purchased"],
+            }
+        ],
+    )
+    _stub_crawl(monkeypatch)
+    result = psn.sync_library(db_session, user)
+    assert result["retired_non_game"] == 1
+    cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA09944_00").one()
+    assert cand.status == "dismissed" and cand.reviewed_at is not None

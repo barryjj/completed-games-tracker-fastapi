@@ -1418,13 +1418,37 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
     #                    resync silently re-asks a refused question, which is
     #                    the exact treadmill the refusal memory exists to stop.
     #   proposalVersion  which matcher produced the current proposal.
+    #   igdbMeta         what IGDB said about the match, for the review card.
+    #                    Losing it while keeping proposalVersion left rows
+    #                    stamped current with nothing to show, and nothing
+    #                    ever fetched it again.
     carried = {
         k: v
         for k, v in (row.raw_data or {}).items()
-        if k in ("storeTitle", "rejectedTitle", "proposalVersion", "matchedVia", "artForTitle")
+        if k in ("storeTitle", "rejectedTitle", "proposalVersion", "matchedVia", "artForTitle", "igdbMeta")
     }
     row.raw_data = {**item, **carried, **({"aliasIds": sorted(alias_ids)} if alias_ids else {})}
     return row if row.status == "pending" else None
+
+
+def retire_non_game_candidates(db: Session, user: models.User) -> int:
+    """Dismiss pending review rows the non-game filter now recognises.
+
+    The filter runs on the crawl, so a rule added later stops NEW rows of that
+    kind arriving -- and does nothing about the one already in the queue,
+    which the crawl no longer touches. "God of War Digital Comic - Issue #0"
+    sat pending for a month after "digital comic" joined the rule, and was
+    matched to the game whose store page it shares. Returns how many went.
+    """
+    gone = 0
+    for cand in db.query(models.PsnReviewCandidate).filter_by(user_id=user.id, status="pending").all():
+        if is_non_game(cand.raw_data or {}) or is_non_game({"name": cand.title}):
+            cand.status = "dismissed"
+            cand.reviewed_at = datetime.datetime.now(datetime.UTC)
+            gone += 1
+    if gone:
+        db.commit()
+    return gone
 
 
 def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
@@ -1622,6 +1646,7 @@ def sync_library(db: Session, user: models.User) -> dict:
     """
     merged, report, raw = crawl(db, user)
     result = import_merged(db, user, merged)
+    result["retired_non_game"] = retire_non_game_candidates(db, user)
     # The lookup belongs HERE, not behind a second button. A row that says only
     # "held back for review" is a chore, not a review: the user still has to
     # work out what the game actually is. Arriving with IGDB's answer already
@@ -2330,6 +2355,12 @@ def _igdb_facts(item: dict) -> dict | None:
     }
 
 
+def _could_be_same_game(a, b) -> bool:
+    """Two same-named records are the same game unless IGDB identified both
+    and disagrees."""
+    return not (a.proposed_igdb_id and b.proposed_igdb_id and a.proposed_igdb_id != b.proposed_igdb_id)
+
+
 def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = None) -> list[dict]:
     """Pending review rows — one per trophy set, one checkbox per platform.
 
@@ -2447,10 +2478,28 @@ def import_review_rows(db: Session, user_id: int, only_keys: list[str] | None = 
         if not options:
             continue
         name = item.get("normalizedName") or ""
-        group = siblings.get(name, [])
-        sets_for_title = len(group) or 1
-        set_index = next((i + 1 for i, c in enumerate(group) if c.external_id == cand.external_id), 1)
-        taken = claimed_by.get(name, {})
+        # Same name, but IGDB says two different games: "God of War" (2018)
+        # and "God of War" (2009), "God of War III" and its Remastered -- the
+        # normaliser folds the edition word away, and only the id tells them
+        # apart. A sibling with no id of its own still counts, since nothing
+        # says it is not this game.
+        group = [c for c in siblings.get(name, []) if _could_be_same_game(c, cand)]
+        # "Set n of m" counts DISTINCT TROPHY SETS. A store SKU beside a
+        # trophy set is another record of the game, not another set -- Alan
+        # Wake's PS4 purchase next to its confirmed PS5 set read "Set 1 of 2"
+        # with a dash in the trophy column -- and two SKUs sharing one NPWR
+        # are one set. Only Crimsonland's shape counts: two different lists
+        # both claiming the same platforms. A row that is not a set gets no
+        # chip (set_index 0).
+        set_ids = list(dict.fromkeys(sid for sid in (_set_id(c) for c in group) if sid))
+        sets_for_title = len(set_ids) or 1
+        mine = _set_id(cand)
+        set_index = set_ids.index(mine) + 1 if mine in set_ids else 0
+        taken = {
+            p: label
+            for p, label in claimed_by.get(name, {}).items()
+            if any(c.status != "pending" and p in (c.chosen_platforms or []) for c in group)
+        }
 
         trusted = _trophy_hint_is_trustworthy(item, sets_for_title)
         minutes = played_minutes_by_platform(item) if trusted else {}
@@ -3589,6 +3638,8 @@ def _igdb_search_adapter(client_id: str, client_secret: str):
                 # Same lesson: the trophy-date veto reads this, and a reshape
                 # that dropped it would disable the veto with every test green.
                 "released": r.get("released"),
+                # Same lesson again: the review card links out by slug.
+                "slug": r.get("slug"),
             }
             for r in rows
         ]
@@ -3631,6 +3682,9 @@ def _proposal_by_concept(user: models.User, item: dict, igdb_ids: list[int]) -> 
         "matched_term": f"concept:{concept}",
         "exact": True,
         "matched_via": None,
+        # Same evidence the search path keeps; a store-backed row is the
+        # common case, and it was the one arriving on the card with nothing.
+        "meta": _hit_meta(hit),
     }
 
 
@@ -3774,7 +3828,11 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
             models.PsnReviewCandidate.status == "pending",
         )
         .all()
-        if r.proposal_status is None or (r.raw_data or {}).get("proposalVersion") != _PROPOSAL_VERSION
+        if r.proposal_status is None
+        or (r.raw_data or {}).get("proposalVersion") != _PROPOSAL_VERSION
+        # Matched, but the card has nothing to show for it: the crawl once
+        # dropped igdbMeta while keeping the version stamp. Self-healing.
+        or (r.proposed_igdb_id and not (r.raw_data or {}).get("igdbMeta"))
     ]
     # EVERY pending row is looked up, not just trophy-only ones. This used to
     # filter to `is_trophy_only`, on the theory that a store-backed row "got its

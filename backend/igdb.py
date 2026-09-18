@@ -154,7 +154,8 @@ def lookup_by_ps_concept(client_id: str, client_secret: str, concept_id: str | i
     """
     token = get_token(client_id, client_secret)
     body = (
-        f"fields game.id, game.name, game.platforms, game.first_release_date, game.game_type, external_game_source.name; "
+        f"fields game.id, game.name, game.slug, game.platforms, game.first_release_date, game.game_type, "
+        f"external_game_source.name; "
         f'where uid = "{int(concept_id)}" & external_game_source.name = "{_PS_STORE_SOURCE}"; limit 1;'
     )
     resp = httpx.post(f"{_IGDB_BASE}/external_games", headers=_igdb_headers(client_id, token), content=body, timeout=15)
@@ -169,6 +170,7 @@ def lookup_by_ps_concept(client_id: str, client_secret: str, concept_id: str | i
     return {
         "id": g.get("id"),
         "name": g.get("name"),
+        "slug": g.get("slug"),
         "platform_ids": g.get("platforms") or [],
         "year": int(released[:4]) if released else None,
         "released": released,
