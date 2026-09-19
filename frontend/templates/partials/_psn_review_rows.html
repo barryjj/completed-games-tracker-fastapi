@@ -55,61 +55,40 @@
       </div>
     </div>
   </td>
-  {# Playtime, its own column: one figure, always at the same x, so the title
-     beside it keeps the full width it needs. #}
-  <td class="align-middle text-end cgt-psn-playtime-cell">
-    {% if r.total_minutes %}<span class="cgt-psn-playtime">{% include "partials/_icon_clock.svg" %} {{ r.total_minutes | playtime_human }}</span>{% endif %}
-  </td>
   {# Count over a THIN bar. The bar was briefly a 20px pill with the number
      inside it, which put a third solid object in a row that already has
      checkbox chips and a filled button — three things of similar weight
      competing across the right half. As a rule under the number it is
      subordinate: the count is the content, the bar annotates it. #}
   <td class="align-middle cgt-psn-progress">
+    {# One shape for every trophy set: glyph, count over a thin bar, and a
+       popover on hover with the set's tier breakdown and its platinum. A
+       grouped row (#212) shows one such unit per set, each prefixed by the
+       platforms it covers -- Nioh 2's PS4 platinum and the PS5 Remastered
+       platinum read as what they are, two records behind one decision. A
+       row with no set shows a dash and has nothing to hover. #}
     {% if r.sets | length > 1 %}
-    {# One game, several trophy sets (#212): a line per set, each naming the
-       platforms it covers, so Nioh 2's PS4 platinum and PS5 Remastered
-       platinum read as what they are -- two records behind one decision. #}
     <span class="cgt-trophy-sets">
       {% for t in r.sets %}
-      <span class="cgt-trophy-stat cgt-trophy-stat--set">
-        <span class="cgt-trophy-set-plats">{{ t.platforms | join(" · ") }}</span>
-        <span class="cgt-trophy-figures">
-          <span class="cgt-trophy-count">{{ t.earned }}/{{ t.defined }}</span>
-          <span class="cgt-trophy-bar" role="img" aria-label="{{ t.earned }} of {{ t.defined }} trophies earned on {{ t.platforms | join(', ') }}">
-            <i style="width: {{ (t.earned / t.defined * 100) | round | int }}%;"></i>
-          </span>
-        </span>
-      </span>
+      {% with unit = t, plats = t.platforms %}{% include "partials/_psn_trophy_unit.html" %}{% endwith %}
       {% endfor %}
     </span>
     {% elif r.trophy_defined %}
-    {# Hoverable when the set has a platinum: its description is what says
-       WHICH game this is, and that is three lines of text this row has no
-       room for. A popover rather than title= so it can carry them. #}
-    <span class="cgt-trophy-stat{% if r.platinum %} cgt-trophy-stat--has-plat{% endif %}"{% if r.platinum %} tabindex="0"{% endif %}>
-      {# The glyph is its own column, centred against the count-over-bar pair,
-         so it never has to match the digits' cap height — which is what made
-         every size we tried look either too tall or blobby. As an icon beside
-         a two-line block it can be sized for legibility alone. #}
-      {% include "partials/_icon_trophy.svg" %}
-      <span class="cgt-trophy-figures">
-        <span class="cgt-trophy-count">{{ r.trophy_earned }}/{{ r.trophy_defined }}</span>
-        <span class="cgt-trophy-bar" role="img"
-              aria-label="{{ r.trophy_earned }} of {{ r.trophy_defined }} trophies earned">
-          <i style="width: {{ (r.trophy_earned / r.trophy_defined * 100) | round | int }}%;"></i>
-        </span>
-      </span>
-      {% if r.platinum %}
-      <span class="cgt-plat-pop" role="tooltip">
-        <span class="cgt-plat-pop__name">{% include "partials/_icon_trophy.svg" %}{{ r.platinum.name }}</span>
-        {% if r.platinum.description %}<span class="cgt-plat-pop__desc">{{ r.platinum.description }}</span>{% endif %}
-        {% if r.trophy_last_updated %}<span class="cgt-plat-pop__meta">Last trophy {{ r.trophy_last_updated | long_date }}</span>{% endif %}
-      </span>
-      {% endif %}
-    </span>
-    {% else %}
+    {% with unit = {"earned": r.trophy_earned, "defined": r.trophy_defined, "tiers": r.trophy_tiers, "platinum": r.platinum}, plats = none %}{% include "partials/_psn_trophy_unit.html" %}{% endwith %}
+    {% elif not r.total_minutes %}
     <span class="text-secondary small">&mdash;</span>
+    {% endif %}
+    {# Playtime under the trophies, in the one Progress column -- the same
+       stack the card's Progress panel uses. A column of its own was empty on
+       most rows, so the few figures it held read as strays. #}
+    {% if r.total_minutes %}
+    {# The same unit shape as a trophy set -- glyph in the glyph column, figure
+       beside it -- so the two stack with their figures aligned instead of the
+       time starting under the trophy glyph. #}
+    <span class="cgt-trophy-stat cgt-trophy-stat--time">
+      {% include "partials/_icon_clock.svg" %}
+      <span class="cgt-trophy-figures"><span class="cgt-trophy-count cgt-trophy-count--time">{{ r.total_minutes | playtime_human }}</span></span>
+    </span>
     {% endif %}
   </td>
   {# Right-aligned: with one chip, left-aligning left a wide gap before Confirm
@@ -164,6 +143,6 @@
    build and a heavy DOM, and you rarely scroll past the first screen. #}
 {% if next_page_url %}
 <tr id="psn-scroll-sentinel" hx-get="{{ next_page_url }}" hx-trigger="revealed" hx-swap="outerHTML">
-  <td colspan="6"></td>
+  <td colspan="5"></td>
 </tr>
 {% endif %}

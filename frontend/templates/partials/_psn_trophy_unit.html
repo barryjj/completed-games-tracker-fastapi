@@ -1,0 +1,32 @@
+{# One trophy set in a review list row: glyph, count over a thin bar, and the
+   popover. Expects `unit` {earned, defined, tiers, platinum} and `plats`
+   (list of platform names for a grouped row's set, or none).
+
+   The count is the content and the bar annotates it -- a rule under the
+   number rather than a pill around it, so it does not become a third solid
+   object in a row that already has checkbox chips and a filled button. #}
+<span class="cgt-trophy-stat cgt-trophy-stat--pop" tabindex="0">
+  {% include "partials/_icon_trophy.svg" %}
+  <span class="cgt-trophy-figures">
+    {% if plats %}<span class="cgt-trophy-set-plats">{{ plats | join(" · ") }}</span>{% endif %}
+    <span class="cgt-trophy-count">{{ unit.earned }}/{{ unit.defined }}</span>
+    <span class="cgt-trophy-bar" role="img"
+          aria-label="{{ unit.earned }} of {{ unit.defined }} trophies earned{% if plats %} on {{ plats | join(', ') }}{% endif %}">
+      <i style="width: {{ (unit.earned / unit.defined * 100) | round | int }}%;"></i>
+    </span>
+  </span>
+  <span class="cgt-plat-pop" role="tooltip">
+    <span class="cgt-trophy-tiers cgt-plat-pop__tiers">
+      {% for tier in unit.tiers %}
+      <span class="cgt-trophy-tier cgt-trophy-tier--{{ tier.tier }}{% if tier.earned == tier.defined %} cgt-trophy-tier--complete{% endif %}"
+            title="{{ tier.tier | capitalize }} — {{ tier.earned }} of {{ tier.defined }}">
+        {% include "partials/_icon_trophy.svg" %}{{ tier.earned }}/{{ tier.defined }}
+      </span>
+      {% endfor %}
+    </span>
+    {% if unit.platinum %}
+    <span class="cgt-plat-pop__name">{% include "partials/_icon_trophy.svg" %}{{ unit.platinum.name }}</span>
+    {% if unit.platinum.description %}<span class="cgt-plat-pop__desc">{{ unit.platinum.description }}</span>{% endif %}
+    {% endif %}
+  </span>
+</span>

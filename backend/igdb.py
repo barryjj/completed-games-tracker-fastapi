@@ -206,7 +206,8 @@ def search_games_on_platforms(
     body = (
         f'search "{query}"; '
         f"fields id, name, slug, platforms, first_release_date, game_type, "
-        f"version_parent.name, parent_game.name; "
+        f"version_parent.name, version_parent.slug, version_parent.first_release_date, "
+        f"parent_game.name, parent_game.slug, parent_game.first_release_date, parent_game.game_type; "
         f"where platforms=({ids}); "
         f"limit {limit};"
     )

@@ -1837,7 +1837,9 @@ def test_tools_shows_the_psn_review_card(client, db_session, monkeypatch, tmp_pa
     ]
     _seed_review(db_session, user, merged)
     r = client.get("/tools")
-    assert b"PSN review" in r.content
+    # The same card the PSN configure page shows: title strip "Review", the
+    # Pending stat, one button. Two tiles that could disagree was the point.
+    assert b">Review</div>" in r.content and b"Pending" in r.content
     assert b"/tools/psn-review" in r.content
 
 
@@ -2343,7 +2345,9 @@ def test_tools_card_counts_both_review_queues(client, db_session):
     from backend.pages import _psn_pending
 
     assert _psn_pending(db_session, user) == 2
-    assert b"Need a decision" in client.get("/tools").content
+    body = client.get("/tools").content
+    # Both queues on the card, as the configure page shows them.
+    assert b"Pending" in body and b"Played only" in body
 
 
 def test_review_tabs_carry_the_view_and_reset_the_platform_filter(client, db_session):

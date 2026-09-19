@@ -1921,10 +1921,10 @@ body:has(.cgt-sticky-actions) {
   letter-spacing: 0.07em;
   color: var(--ctp-subtext0, var(--ctp-subtext));
 }
-.cgt-trophy-stat--set {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 0.1rem;
+/* Inside a trophy unit, the platform label sits over the count. */
+.cgt-trophy-figures .cgt-trophy-set-plats {
+  display: block;
+  line-height: 1.1;
 }
 
 /* ─── Match review — card stack ─────────────────────────────────────────── */
@@ -3322,21 +3322,45 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-psn-unmatched {
   color: var(--ctp-yellow);
 }
-.cgt-psn-playtime-cell {
-  white-space: nowrap;
+/* Playtime as a unit of the same shape as a trophy set, stacked under it in
+   the Progress column: the clock sits in the glyph column and the figure
+   lines up with the counts above it. */
+.cgt-trophy-stat--time {
+  display: flex;
+  margin-top: 0.3rem;
 }
-.cgt-psn-playtime-cell .cgt-psn-playtime {
-  margin-left: 0;
+.cgt-trophy-stat--time > svg {
+  width: 1.45rem;
+  height: 1.45rem;
+  padding: 0.2rem;
+  flex: 0 0 auto;
+  opacity: 0.42;
+}
+.cgt-trophy-count--time {
+  font-size: 0.8rem;
+  color: var(--ctp-subtext0);
+}
+.cgt-trophy-sets + .cgt-trophy-stat--time {
+  margin-top: 0.4rem;
 }
 
-/* The trophy figures reveal the platinum on hover. A popover, not title=: it
-   carries three lines, and the description is the part worth reading. */
-.cgt-trophy-stat--has-plat {
+/* Every trophy unit reveals its detail on hover: the tier breakdown the row
+   has no room for, and the platinum when the set has one. A popover, not
+   title=: several lines, and the description is the part worth reading.
+   Uniform across rows on purpose -- an affordance that appears only when
+   there is a platinum looked like two different kinds of row. */
+.cgt-trophy-stat--pop {
   position: relative;
   cursor: help;
 }
-.cgt-trophy-stat--has-plat .cgt-trophy-figures {
+.cgt-trophy-stat--pop .cgt-trophy-figures {
   border-bottom: 1px dotted var(--ctp-overlay0);
+}
+.cgt-plat-pop__tiers {
+  margin-bottom: 0.4rem;
+}
+.cgt-plat-pop__tiers:last-child {
+  margin-bottom: 0;
 }
 .cgt-plat-pop {
   position: absolute;
@@ -3353,8 +3377,8 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   text-align: left;
   white-space: normal;
 }
-.cgt-trophy-stat--has-plat:hover .cgt-plat-pop,
-.cgt-trophy-stat--has-plat:focus-visible .cgt-plat-pop {
+.cgt-trophy-stat--pop:hover .cgt-plat-pop,
+.cgt-trophy-stat--pop:focus-visible .cgt-plat-pop {
   display: block;
 }
 .cgt-plat-pop__name {

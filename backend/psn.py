@@ -30,6 +30,7 @@ from collections import Counter
 from urllib.parse import parse_qsl, urlparse
 
 import httpx
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from . import models, psn_store, titles
@@ -2270,6 +2271,39 @@ def _group_name(members: list) -> str:
     return next((m.title for m in members if m.title), "") or ""
 
 
+def page_counts(db: Session, user: models.User) -> dict:
+    """The numbers the cards on the PSN page show -- and the Tools page's PSN
+    review tile, so the two say the same thing. Counts, not rows: the review
+    queue alone is 900 candidates and the page is rebuilt after every job."""
+    games = (
+        db.query(func.count(models.UserLibraryEntry.id))
+        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user.id, models.GameRelease.source == "psn")
+        .scalar()
+        or 0
+    )
+    trophy_sets = (
+        db.query(func.count(func.distinct(models.AchievementDefinition.set_id)))
+        .filter(models.AchievementDefinition.source == "psn")
+        .scalar()
+        or 0
+    )
+    pending = db.query(models.PsnReviewCandidate).filter(
+        models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.status == "pending"
+    )
+    played_only = pending.filter(models.PsnReviewCandidate.kind == "played_only").count()
+    last_added = pending.with_entities(func.max(models.PsnReviewCandidate.created_at)).scalar()
+    if isinstance(last_added, str):
+        last_added = datetime.datetime.fromisoformat(last_added)
+    return {
+        "psn_games": games,
+        "psn_trophy_sets": trophy_sets,
+        "import_review_count": count_pending_review_rows(db, user.id),
+        "played_only_count": played_only,
+        "review_last_added": last_added,
+    }
+
+
 def count_pending_review_rows(db: Session, user_id: int) -> int:
     """How many rows the queue would show, without building any of them.
 
@@ -3326,11 +3360,8 @@ def _collapse_edition(hit: dict) -> dict:
             "collapsed_from": hit.get("name"),
             "collapsed_from_id": hit.get("id"),
             # The edition's slug/date describe the edition, not the parent we
-            # just became. Dropped rather than carried wrongly; the card shows
-            # nothing instead of a link to the wrong record.
-            "slug": None,
-            "released": None,
-            "year": None,
+            # just became: the parent's own, when the search fetched them.
+            **_parent_facts(parent),
         }
 
     # An EPISODE resolves to the series it belongs to. A concept page names the
@@ -3355,11 +3386,22 @@ def _collapse_edition(hit: dict) -> dict:
                 "game_type": series.get("game_type", _IGDB_MAIN_GAME),
                 "collapsed_from": hit.get("name"),
                 "collapsed_from_id": hit.get("id"),
-                "slug": None,
-                "released": None,
-                "year": None,
+                **_parent_facts(series),
             }
     return hit
+
+
+def _parent_facts(parent: dict) -> dict:
+    """slug/released/year for a hit that now stands for its parent. The
+    search fetches the parent's slug and date alongside its name; absent
+    those (an older stub, a parent with no date), nothing rather than the
+    edition's -- the card shows no link sooner than a link to the wrong
+    record."""
+    released = None
+    ts = parent.get("first_release_date")
+    if ts:
+        released = datetime.datetime.fromtimestamp(ts, datetime.UTC).date().isoformat()
+    return {"slug": parent.get("slug"), "released": released, "year": released[:4] if released else None}
 
 
 # A platinum's description usually names the game -- "Unlock all God of War®

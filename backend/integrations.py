@@ -11,7 +11,6 @@ import httpx as _httpx
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
@@ -334,41 +333,8 @@ def psn_page(
     return templates.TemplateResponse(
         request=request,
         name="integrations_psn.html",
-        context={"current_user": current_user, **_psn_page_counts(db, current_user), **_base_ctx(db, current_user, request)},
+        context={"current_user": current_user, **psn.page_counts(db, current_user), **_base_ctx(db, current_user, request)},
     )
-
-
-def _psn_page_counts(db: Session, user: models.User) -> dict:
-    """The numbers the three cards on the PSN page show. Counts, not rows:
-    the review queue alone is 900 candidates and the page is rebuilt after
-    every job."""
-    games = (
-        db.query(func.count(models.UserLibraryEntry.id))
-        .join(models.GameRelease, models.UserLibraryEntry.release_id == models.GameRelease.id)
-        .filter(models.UserLibraryEntry.user_id == user.id, models.GameRelease.source == "psn")
-        .scalar()
-        or 0
-    )
-    trophy_sets = (
-        db.query(func.count(func.distinct(models.AchievementDefinition.set_id)))
-        .filter(models.AchievementDefinition.source == "psn")
-        .scalar()
-        or 0
-    )
-    pending = db.query(models.PsnReviewCandidate).filter(
-        models.PsnReviewCandidate.user_id == user.id, models.PsnReviewCandidate.status == "pending"
-    )
-    played_only = pending.filter(models.PsnReviewCandidate.kind == "played_only").count()
-    last_added = pending.with_entities(func.max(models.PsnReviewCandidate.created_at)).scalar()
-    if isinstance(last_added, str):
-        last_added = datetime.datetime.fromisoformat(last_added)
-    return {
-        "psn_games": games,
-        "psn_trophy_sets": trophy_sets,
-        "import_review_count": psn.count_pending_review_rows(db, user.id),
-        "played_only_count": played_only,
-        "review_last_added": last_added,
-    }
 
 
 @router.post("/psn/credentials")
@@ -496,7 +462,7 @@ def _psn_report_response(request: Request, db: Session, current_user: models.Use
             "report": current_user.psn_last_sync_report,
             "last_synced_at": current_user.psn_last_synced_at,
             "current_user": current_user,
-            **_psn_page_counts(db, current_user),
+            **psn.page_counts(db, current_user),
             "flash": flash,
             "flash_error": error,
         },

@@ -21,7 +21,7 @@
     Nothing waiting
     {% endif %}
   </div>
-  <div class="cgt-tool-card__body text-secondary">Games the sync could not place; confirm a platform, a name, or a played-only title.</div>
+  <div class="cgt-tool-card__body text-secondary">{% if import_review_count or played_only_count %}Games the sync could not place on its own; confirm a platform, a name, or a played-only title.{% else %}Nothing waiting; the sync placed everything it found.{% endif %}</div>
   <div class="cgt-tool-card__actions">
     <a href="/tools/psn-review" class="btn btn-primary btn-sm">Open review</a>
   </div>

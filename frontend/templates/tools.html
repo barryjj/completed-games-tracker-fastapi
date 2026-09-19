@@ -264,23 +264,14 @@
 
   {% if current_user.psn_npsso %}
   {# ── PSN review ─────────────────────────────────────────────────────── #}
-  <div class="cgt-tool-card">
-    <div class="cgt-tool-card__title">
-      PSN review
-    </div>
-    <div class="cgt-tool-stats">
-      <div class="cgt-tool-stat {{ 'cgt-tool-stat--yellow' if psn_review_pending else 'cgt-tool-stat--muted' }}">
-        <div class="cgt-tool-stat__value">{{ psn_review_pending or 0 }}</div>
-        <div class="cgt-tool-stat__label">Need a decision</div>
-      </div>
-    </div>
-    <div class="cgt-tool-card__body text-secondary">
-      Cross-play trophy sets PSN can't place, and games you played with nothing behind them.{% if not psn_review_pending %} Nothing waiting.{% endif %}
-    </div>
-    <div class="cgt-tool-card__actions">
-      <a href="/tools/psn-review" class="btn btn-primary btn-sm">Open review</a>
-    </div>
-  </div>
+  {# The same card the PSN configure page shows -- same numbers, same copy --
+     so the two never disagree about what is waiting. The copy names the
+     shape of the work rather than the kinds of row: once auto-import is on,
+     what remains here is whatever automation could not settle, and a list
+     of kinds would be wrong the day that flips. #}
+  {% with import_review_count = psn_review.import_review_count, played_only_count = psn_review.played_only_count, review_last_added = psn_review.review_last_added %}
+  {% include "partials/_psn_review_card.html" %}
+  {% endwith %}
   {% endif %}
 </div>
 {% endblock %}

@@ -305,6 +305,9 @@ def tools_page(
             "steam_counts": _steam_counts(db, current_user),
             "psn_counts": _psn_counts(db, current_user),
             "psn_review_pending": _psn_pending(db, current_user),
+            # The same numbers the PSN configure page's Review card shows, so
+            # the two tiles say the same thing.
+            "psn_review": _psn.page_counts(db, current_user) if current_user.psn_npsso else None,
             "import_counts": import_counts,
             "import_pending": sum(import_counts.values()),
             "missing_covers": missing_q.count(),
