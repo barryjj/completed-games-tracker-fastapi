@@ -6813,3 +6813,31 @@ def test_review_art_refetches_when_the_year_was_not_known(db_session):
     psn.save_review_thumbnails(db_session, user.id, {"CUSA07408_00": {"thumbnail_url": "t2.png", "hero_url": "h2.png"}})
     assert cand.raw_data["artForYear"] == 2018
     assert psn.review_thumbnail_gaps(db_session, user.id) == [], "fetched for this year: current"
+
+
+def test_the_concept_path_folds_an_edition_onto_its_game_like_the_search_path(db_session, monkeypatch):
+    """A store SKU found by concept id and its trophy set found by search
+    must agree on the game, or they cannot group. "Gone Home: Console
+    Edition" (a port) stayed 82387 on the concept path while the search path
+    collapsed the same hit to Gone Home, 1906 -- two rows for one PS4 game."""
+    from backend import igdb
+
+    user = models.User(name="c", username="c", password_hash="x", api_token="ctok", twitch_client_id="cid", twitch_client_secret="sec")
+    db_session.add(user)
+    db_session.commit()
+    port = {
+        "id": 82387,
+        "name": "Gone Home: Console Edition",
+        "slug": "gone-home-console-edition",
+        "platform_ids": [48],
+        "year": 2016,
+        "released": "2016-01-13",
+        "game_type": 11,
+        "version_parent": {"id": 1906, "name": "Gone Home", "slug": "gone-home", "first_release_date": 1376870400},
+    }
+    monkeypatch.setattr(igdb, "lookup_by_ps_concept", lambda cid, sec, concept: port)
+    p = psn._proposal_by_concept(user, {"name": "Gone Home: Console Edition", "conceptId": 201835}, [48])
+    assert p["proposed_igdb_id"] == 1906
+    assert p["proposed_title"] == "Gone Home"
+    assert p["matched_via"] == {"name": "Gone Home: Console Edition", "igdb_id": 82387}
+    assert p["meta"]["slug"] == "gone-home" and p["meta"]["year"] == "2013"

@@ -3720,18 +3720,23 @@ def _proposal_by_concept(user: models.User, item: dict, igdb_ids: list[int]) -> 
         return None
     if not hit or not hit.get("name"):
         return None
+    # The same fold the search path applies: an edition or port stands for
+    # the game it repackages, so a store SKU and its trophy set -- found by
+    # concept and by search -- land on the same id and group into one row.
+    hit = _collapse_edition(hit)
     hit_ids = [p for p in (hit.get("platform_ids") or []) if p in igdb_ids]
     if not hit_ids:
         return None
     ours = titles.normalize_for_match(item.get("displayName") or item.get("name") or "")
     name = hit["name"].strip()
+    folded = hit.get("collapsed_from")
     return {
         "proposed_title": None if titles.normalize_for_match(name) == ours else name,
         "proposed_igdb_id": hit["id"],
         "proposed_platforms": hit_ids,
         "matched_term": f"concept:{concept}",
         "exact": True,
-        "matched_via": None,
+        "matched_via": {"name": folded, "igdb_id": hit.get("collapsed_from_id")} if folded else None,
         # Same evidence the search path keeps; a store-backed row is the
         # common case, and it was the one arriving on the card with nothing.
         "meta": _hit_meta(hit),
@@ -3883,6 +3888,20 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
         # Matched, but the card has nothing to show for it: the crawl once
         # dropped igdbMeta while keeping the version stamp. Self-healing.
         or (r.proposed_igdb_id and not (r.raw_data or {}).get("igdbMeta"))
+        # Or the facts are a folded hit's from before the parent lookup: no
+        # year and no slug, which a real record never lacks together.
+        or (
+            r.proposed_igdb_id
+            and (r.raw_data or {}).get("igdbMeta")
+            and not ((r.raw_data or {}).get("igdbMeta") or {}).get("slug")
+            and not ((r.raw_data or {}).get("igdbMeta") or {}).get("year")
+        )
+        # Or a concept-id match that landed on a repackaging -- a bundle or a
+        # port -- from before the concept path folded those onto their parent.
+        or (
+            (r.raw_data or {}).get("conceptId")
+            and (((r.raw_data or {}).get("igdbMeta") or {}).get("game_type") in _IGDB_REPACKAGED - {_IGDB_MAIN_GAME})
+        )
     ]
     # EVERY pending row is looked up, not just trophy-only ones. This used to
     # filter to `is_trophy_only`, on the theory that a store-backed row "got its

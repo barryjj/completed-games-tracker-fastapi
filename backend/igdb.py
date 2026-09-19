@@ -155,6 +155,8 @@ def lookup_by_ps_concept(client_id: str, client_secret: str, concept_id: str | i
     token = get_token(client_id, client_secret)
     body = (
         f"fields game.id, game.name, game.slug, game.platforms, game.first_release_date, game.game_type, "
+        f"game.version_parent.name, game.version_parent.slug, game.version_parent.first_release_date, "
+        f"game.parent_game.name, game.parent_game.slug, game.parent_game.first_release_date, game.parent_game.game_type, "
         f"external_game_source.name; "
         f'where uid = "{int(concept_id)}" & external_game_source.name = "{_PS_STORE_SOURCE}"; limit 1;'
     )
@@ -175,6 +177,13 @@ def lookup_by_ps_concept(client_id: str, client_secret: str, concept_id: str | i
         "year": int(released[:4]) if released else None,
         "released": released,
         "game_type": g.get("game_type"),
+        # The parent links, so the concept path can fold an edition onto the
+        # game it repackages the way the search path does. Without them the
+        # two paths disagreed about the same game: the store SKU "Gone Home:
+        # Console Edition" stayed the port while its trophy set, found by
+        # search, collapsed to Gone Home -- two rows for one PS4 game.
+        "version_parent": g.get("version_parent"),
+        "parent_game": g.get("parent_game"),
     }
 
 
