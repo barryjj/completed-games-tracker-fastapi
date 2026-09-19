@@ -1921,6 +1921,20 @@ body:has(.cgt-sticky-actions) {
   letter-spacing: 0.07em;
   color: var(--ctp-subtext0, var(--ctp-subtext));
 }
+/* Platform checkboxes stacked to match a grouped row's stacked trophy units:
+   the gap equals the units' so each platform lines up with its set. */
+.cgt-psn-plats--stacked {
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem !important;
+}
+/* Each checkbox takes a set unit's height (platform label, count, bar) and
+   centres in it, so the rows of the two stacks coincide. */
+.cgt-psn-plats--stacked .cgt-psn-plat-check {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.2rem;
+}
 /* Inside a trophy unit, the platform label sits over the count. */
 .cgt-trophy-figures .cgt-trophy-set-plats {
   display: block;

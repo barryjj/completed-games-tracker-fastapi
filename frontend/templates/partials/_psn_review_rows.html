@@ -96,7 +96,9 @@
   <td class="align-middle text-end cgt-psn-plats">
     {# Pre-ticked with every platform in the set this account is known to own.
        Unticking them all and confirming is the same as Dismiss. #}
-    <div id="psn-opts-{{ r.key }}" class="d-flex flex-wrap gap-2 justify-content-end">
+    {# Stacked when the row shows one trophy unit per set, so each platform
+       sits beside its own set's figures; in a line otherwise. #}
+    <div id="psn-opts-{{ r.key }}" class="d-flex gap-2 justify-content-end{% if r.sets | length > 1 %} cgt-psn-plats--stacked{% else %} flex-wrap{% endif %}">
       {% for o in r.options %}
       <label class="cgt-psn-plat-check{% if o.claimed_by %} cgt-psn-plat-check--claimed{% endif %}"
              {% if o.claimed_by %}title="Already assigned to {{ o.claimed_by }} — tick to claim it here anyway"{% endif %}>
