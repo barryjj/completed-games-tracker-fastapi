@@ -2248,3 +2248,46 @@ def test_saving_the_api_key_does_not_restamp_the_capture_date(client, db_session
     db_session.refresh(user)
     assert user.steam_api_key == "NEWKEY"
     assert user.steam_cookies_captured_at == captured, "unchanged cookies must not restamp the date"
+
+
+def test_sgdb_prefers_the_result_whose_year_matches_igdb(monkeypatch):
+    """SGDB returns two "God of War" games, 2005 and 2018, both named exactly
+    that. The title cannot choose between them; IGDB's year can (#215)."""
+    import datetime
+
+    from backend import steamgriddb as sgdb
+
+    def ts(y, m, d):
+        return int(datetime.datetime(y, m, d, tzinfo=datetime.UTC).timestamp())
+
+    results = [
+        {"id": 36454, "name": "God of War", "release_date": ts(2005, 3, 22)},
+        {"id": 5254321, "name": "God of War", "release_date": ts(2018, 4, 20)},
+    ]
+    monkeypatch.setattr(sgdb, "search_games", lambda key, term: results)
+    monkeypatch.setattr(sgdb, "fetch_images_for_game", lambda key, gid, t, page=0: [{"url": f"art-{gid}"}])
+
+    game, _ = sgdb.find_game_art("k", "God of War", "h", year=2018)
+    assert game["id"] == 5254321
+    # The 2009 HD remaster is nearer the 2005 original than the 2018 game.
+    game, _ = sgdb.find_game_art("k", "God of War", "h", year=2009)
+    assert game["id"] == 36454
+    # No year known: SGDB's order stands, as before.
+    game, _ = sgdb.find_game_art("k", "God of War", "h")
+    assert game["id"] == 36454
+    # Results without a date cannot compete and do not break the choice.
+    monkeypatch.setattr(sgdb, "search_games", lambda key, term: [{"id": 1, "name": "God of War"}] + results)
+    game, _ = sgdb.find_game_art("k", "God of War", "h", year=2018)
+    assert game["id"] == 5254321
+    # The year decides ONLY among same-named results. A different title with
+    # a nearer year never beats the exact one.
+    monkeypatch.setattr(
+        sgdb,
+        "search_games",
+        lambda key, term: [
+            {"id": 10, "name": "Alan Wake Remastered", "release_date": ts(2021, 10, 5)},
+            {"id": 11, "name": "Alan Wake II", "release_date": ts(2023, 10, 27)},
+        ],
+    )
+    game, _ = sgdb.find_game_art("k", "Alan Wake Remastered", "h", year=2023)
+    assert game["id"] == 10

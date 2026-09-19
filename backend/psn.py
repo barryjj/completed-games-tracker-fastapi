@@ -1426,7 +1426,7 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
     carried = {
         k: v
         for k, v in (row.raw_data or {}).items()
-        if k in ("storeTitle", "rejectedTitle", "proposalVersion", "matchedVia", "artForTitle", "igdbMeta")
+        if k in ("storeTitle", "rejectedTitle", "proposalVersion", "matchedVia", "artForTitle", "artForYear", "igdbMeta")
     }
     row.raw_data = {**item, **carried, **({"aliasIds": sorted(alias_ids)} if alias_ids else {})}
     return row if row.status == "pending" else None
@@ -2795,15 +2795,19 @@ def review_thumbnail_gaps(db: Session, user_id: int) -> list[dict]:
         if not c.title:
             continue
         best = c.proposed_title or c.title
+        year = _int_or_none(((c.raw_data or {}).get("igdbMeta") or {}).get("year"))
         # hero_url too: rows cached before the card used hero art have a
         # thumbnail but no hero, and would otherwise never be topped up.
         missing = c.thumbnail_url is None or c.hero_url is None
         # And art fetched under a name the row no longer has is wrong, not
         # merely stale — "Batman" art on a row that now reads "Batman: The
-        # Telltale Series" is a different game's cover.
-        moved_on = (c.raw_data or {}).get("artForTitle") not in (None, best)
+        # Telltale Series" is a different game's cover. Same for the year:
+        # art picked before IGDB's year was known may be the other "God of
+        # War" (#215).
+        raw = c.raw_data or {}
+        moved_on = raw.get("artForTitle") not in (None, best) or (year and raw.get("artForYear") != year)
         if missing or moved_on:
-            gaps.append({"external_id": c.external_id, "title": best})
+            gaps.append({"external_id": c.external_id, "title": best, "year": year})
     return gaps
 
 
@@ -2825,7 +2829,11 @@ def save_review_thumbnails(db: Session, user_id: int, art: dict[str, dict]) -> i
         # Remember the name it was fetched under. A later lookup can rename the
         # row — "Batman" becomes "Batman: The Telltale Series" — and art found
         # for the old name is then confidently wrong, which is worse than none.
-        cand.raw_data = {**(cand.raw_data or {}), "artForTitle": cand.proposed_title or cand.title}
+        cand.raw_data = {
+            **(cand.raw_data or {}),
+            "artForTitle": cand.proposed_title or cand.title,
+            "artForYear": _int_or_none(((cand.raw_data or {}).get("igdbMeta") or {}).get("year")),
+        }
         written += 1
     db.commit()
     return written

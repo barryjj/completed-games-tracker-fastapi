@@ -6795,3 +6795,21 @@ def test_sync_retires_pending_rows_the_non_game_rule_now_catches(db_session, mon
     assert result["retired_non_game"] == 1
     cand = db_session.query(models.PsnReviewCandidate).filter_by(external_id="CUSA09944_00").one()
     assert cand.status == "dismissed" and cand.reviewed_at is not None
+
+
+def test_review_art_refetches_when_the_year_was_not_known(db_session):
+    """Art picked before IGDB's year was known may be the other "God of War".
+    The gap builder hands the year along and treats a mismatch as moved on."""
+    user = _trophy_user(db_session)
+    cand = psn._upsert_review_candidate(
+        db_session, user, {"titleId": "CUSA07408_00", "name": "God of War", "platform": "PS4", "sources": ["purchased"]}, "title_fix"
+    )
+    cand.thumbnail_url, cand.hero_url = "t.png", "h.png"
+    cand.raw_data = {**cand.raw_data, "artForTitle": "God of War", "igdbMeta": {"year": "2018"}}
+    db_session.commit()
+    gaps = psn.review_thumbnail_gaps(db_session, user.id)
+    assert gaps == [{"external_id": "CUSA07408_00", "title": "God of War", "year": 2018}]
+
+    psn.save_review_thumbnails(db_session, user.id, {"CUSA07408_00": {"thumbnail_url": "t2.png", "hero_url": "h2.png"}})
+    assert cand.raw_data["artForYear"] == 2018
+    assert psn.review_thumbnail_gaps(db_session, user.id) == [], "fetched for this year: current"

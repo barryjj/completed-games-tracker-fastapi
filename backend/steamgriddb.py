@@ -7,6 +7,7 @@ Auth: Bearer token (the user's API key).
 
 from __future__ import annotations
 
+import datetime
 import logging
 import re
 from urllib.parse import quote
@@ -76,7 +77,35 @@ def find_game(api_key: str, title: str) -> dict | None:
     return None
 
 
-def find_game_art(api_key: str, title: str, image_type: str, page: int = 0) -> tuple[dict | None, list[dict]]:
+def _closest_by_year(results: list[dict], year: int | None) -> dict:
+    """The top result -- unless SGDB has several games of exactly that name,
+    in which case the one whose release year is nearest `year`.
+
+    "God of War" returns the 2005 game and the 2018 one, both named exactly
+    that; the title cannot choose and the year can (#215). The year decides
+    ONLY among same-named results: a loosely matching title with a nearer
+    year must never beat the exact one, and a row with no known year keeps
+    SGDB's order. Ties keep SGDB's order too.
+    """
+    top = results[0]
+    if not year:
+        return top
+    name = titles.normalize_for_match(top.get("name") or "")
+    twins = [r for r in results if titles.normalize_for_match(r.get("name") or "") == name]
+    if len(twins) < 2:
+        return top
+    best, best_gap = top, None
+    for r in twins:
+        ts = r.get("release_date")
+        if not ts:
+            continue
+        gap = abs(datetime.datetime.fromtimestamp(ts, datetime.UTC).year - year)
+        if best_gap is None or gap < best_gap:
+            best, best_gap = r, gap
+    return best
+
+
+def find_game_art(api_key: str, title: str, image_type: str, page: int = 0, year: int | None = None) -> tuple[dict | None, list[dict]]:
     """(game, images) for a title, trying the search ladder until a rung's
     game actually HAS images of this type. (None, []) when none does.
 
@@ -95,7 +124,7 @@ def find_game_art(api_key: str, title: str, image_type: str, page: int = 0) -> t
         results = search_games(api_key, term)
         if not results:
             continue
-        game = results[0]
+        game = _closest_by_year(results, year)
         probe = fetch_images_for_game(api_key, game["id"], image_type, page=0)
         if not probe:
             continue
@@ -574,7 +603,7 @@ def _placeholder_grid_url(api_key: str, title: str) -> str | None:
     return grids[0].get("url") if grids else None
 
 
-def _placeholder_art(api_key: str, title: str) -> dict:
+def _placeholder_art(api_key: str, title: str, year: int | None = None) -> dict:
     """Grid + hero + logo for a raw title. {} when the title matches nothing.
 
     Three shapes because the two review views want different things: the list
@@ -585,7 +614,7 @@ def _placeholder_art(api_key: str, title: str) -> dict:
     The SGDB game is resolved ONCE and reused across all three, the same way
     bulk_fill_all_missing does it, rather than searching per art type.
     """
-    sgdb_game, _grids = find_game_art(api_key, title, "h")
+    sgdb_game, _grids = find_game_art(api_key, title, "h", year=year)
     if not sgdb_game:
         return {}
     art: dict = {}
@@ -707,7 +736,7 @@ def fill_psn_review_thumbnails(
         if progress_callback:
             progress_callback(i, total, gap["title"])
         try:
-            art = _placeholder_art(api_key, gap["title"])
+            art = _placeholder_art(api_key, gap["title"], gap.get("year"))
             if not art.get("thumbnail_url"):
                 no_candidate += 1
                 continue
