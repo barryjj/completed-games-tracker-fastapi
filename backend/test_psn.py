@@ -935,6 +935,11 @@ def test_strip_trophy_suffix():
     assert psn._strip_trophy_suffix("Name   Trophies") == "Name"
     assert psn._strip_trophy_suffix("  Padded Trophies  ") == "Padded"
     assert psn._strip_trophy_suffix("Spaced Out Trophy Collection!") == "Spaced Out"
+    # Trailing punctuation is part of the NAME unless a trophy tag follows it.
+    # Trimming it first took the "!" off "Destroy All Humans!", and every
+    # search and art lookup downstream ran on a name that is not the game's.
+    assert psn._strip_trophy_suffix("Destroy All Humans!") == "Destroy All Humans!"
+    assert psn._strip_trophy_suffix("Okami HD.") == "Okami HD."
 
 
 def test_stripping_a_trophy_suffix_does_not_blow_up_on_whitespace():

@@ -381,8 +381,15 @@ _TROPHY_SUFFIX_RE = re.compile(r"\s(?:trophies|trophy(?:\s(?:set|pack|collection
 
 
 def _strip_trophy_suffix(name: str | None) -> str:
-    cleaned = (name or "").strip().rstrip(".!").rstrip()
-    return _TROPHY_SUFFIX_RE.sub("", cleaned).strip()
+    cleaned = (name or "").strip()
+    # The trailing punctuation goes ONLY when a trophy-set tag sits behind
+    # it ("STREET FIGHTER IV Trophy pack."). Trimming it first, from every
+    # name, took the "!" off "Destroy All Humans!" -- and every search and
+    # art lookup downstream then ran on a name that is not the game's.
+    bare = cleaned.rstrip(".!").rstrip()
+    if _TROPHY_SUFFIX_RE.search(bare):
+        return _TROPHY_SUFFIX_RE.sub("", bare).strip()
+    return cleaned
 
 
 def _display_name(name: str | None) -> str:
