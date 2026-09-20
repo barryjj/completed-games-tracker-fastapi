@@ -513,7 +513,6 @@ function psnArmSentinels() {
   if (!psnPrefetch) return;
   document.querySelectorAll('#psn-scroll-sentinel, #psn-scroll-prev').forEach(function(tr) { psnPrefetch.observe(tr); });
 }
-document.addEventListener('DOMContentLoaded', function() { psnArmSentinels(); });
 
 function psnMakeSentinel(id, page, dir, urlTpl) {
   var tr = document.createElement('tr');
@@ -679,6 +678,7 @@ document.addEventListener('DOMContentLoaded', function() {
     psnRebuildNav(false);
   }
   psnApplyDrafts();
+  psnArmSentinels();
 });
 
 // Same pattern as import review / library — a long decision list buries the
