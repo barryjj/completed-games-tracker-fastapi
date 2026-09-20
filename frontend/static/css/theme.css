@@ -1942,9 +1942,17 @@ body:has(.cgt-sticky-actions) {
      items zigzagged the boxes, since PSVITA is wider than PS3. */
   display: inline-flex !important;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: flex-end;
   gap: 0.3rem !important;
-  text-align: left;
+}
+/* Chip, then box: the boxes make one straight column at the right edge and
+   the chips hang off them leftward, ragged where their widths differ. */
+.cgt-psn-plats--stacked .cgt-psn-plat-check {
+  flex-direction: row-reverse;
+}
+.cgt-psn-plats--stacked .cgt-psn-plat-check .form-check-input {
+  margin-right: 0 !important;
+  margin-left: 0.35rem;
 }
 /* Each checkbox takes a set unit's height (platform label, count, bar) and
    centres in it, so the rows of the two stacks coincide. */
