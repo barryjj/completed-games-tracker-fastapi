@@ -539,6 +539,32 @@ function psnWindowRows(landedPage) {
 // is on screen and where; after every DOM change, put scrollTop wherever
 // keeps that row at the same spot. If the browser already anchored, the
 // delta is zero and nothing moves.
+function psnPruneAndHold(landed, anchors) {
+  psnWindowRows(landed);
+  var a = null;
+  for (var i = 0; i < anchors.length; i++) { if (anchors[i].el.isConnected) { a = anchors[i]; break; } }
+  if (a) {
+    var delta = psnDocTop(a.el) - a.docTop;
+    // behavior: 'instant', not scrollTop +=. Bootstrap puts scroll-behavior:
+    // smooth on the root, so a plain assignment ANIMATES there over a few
+    // hundred ms -- the visible glide after every page load -- and a
+    // position read while that animation is in flight is wrong.
+    if (Math.abs(delta) > 1) window.scrollTo({top: document.scrollingElement.scrollTop + delta, behavior: 'instant'});
+  }
+}
+
+var psnIdleTimer = null, psnPendingPrune = null, psnLastScroll = 0;
+window.addEventListener('scroll', function() { psnLastScroll = Date.now(); }, {passive: true});
+function psnPruneWhenIdle(landed) {
+  psnPendingPrune = landed;
+  clearTimeout(psnIdleTimer);
+  (function tick() {
+    if (Date.now() - psnLastScroll < 250) { psnIdleTimer = setTimeout(tick, 120); return; }
+    var page = psnPendingPrune; psnPendingPrune = null;
+    if (page) psnPruneAndHold(page, psnVisibleAnchors());
+  })();
+}
+
 // The anchor's position is taken in DOCUMENT space (top + scrollY), not on
 // screen. During a fast scroll you keep moving while the page is in flight;
 // restoring the row's SCREEN position dragged you back to where you were
@@ -583,18 +609,17 @@ document.addEventListener('htmx:afterSettle', function(e) {
   var landed = parseInt(new URL(path, window.location.origin).searchParams.get('page') || '0', 10);
   if (!landed) return;
   var loadedAbove = path.indexOf('dir=prev') !== -1;
-  var anchors = loadedAbove ? (psnAnchors || []) : psnVisibleAnchors();
-  psnAnchors = null;
-  psnWindowRows(landed);
-  var a = null;
-  for (var i = 0; i < anchors.length; i++) { if (anchors[i].el.isConnected) { a = anchors[i]; break; } }
-  if (a) {
-    var delta = psnDocTop(a.el) - a.docTop;
-    // behavior: 'instant', not scrollTop +=. Bootstrap puts scroll-behavior:
-    // smooth on the root, so a plain assignment ANIMATES there over a few
-    // hundred ms -- the visible glide after every page load -- and a
-    // position read while that animation is in flight is wrong.
-    if (Math.abs(delta) > 1) window.scrollTo({top: document.scrollingElement.scrollTop + delta, behavior: 'instant'});
+  if (loadedAbove) {
+    // The insertion above has already shifted everything; correct now.
+    psnPruneAndHold(landed, psnAnchors || []);
+    psnAnchors = null;
+  } else {
+    // Appended below: nothing has moved, so nothing needs correcting yet.
+    // The prune is what moves things (it drops a page above), and doing it
+    // mid-flick meant an instant scrollTo that killed the trackpad's
+    // momentum -- the stutter at every page boundary. So it waits until
+    // the scrolling has gone quiet, and corrects while nothing is moving.
+    psnPruneWhenIdle(landed);
   }
 });
 
