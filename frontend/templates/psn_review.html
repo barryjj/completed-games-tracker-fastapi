@@ -564,7 +564,11 @@ document.addEventListener('htmx:afterSettle', function(e) {
   psnWindowRows(landed);
   if (psnAnchor && psnAnchor.el.isConnected) {
     var delta = psnAnchor.el.getBoundingClientRect().top - psnAnchor.top;
-    if (Math.abs(delta) > 1) document.scrollingElement.scrollTop += delta;
+    // behavior: 'instant', not scrollTop +=. Bootstrap puts scroll-behavior:
+    // smooth on the root, so a plain assignment ANIMATES there over a few
+    // hundred ms -- the visible glide after every page load -- and a
+    // position read while that animation is in flight is wrong.
+    if (Math.abs(delta) > 1) window.scrollTo({top: document.scrollingElement.scrollTop + delta, behavior: 'instant'});
   }
   psnAnchor = null;
 });
