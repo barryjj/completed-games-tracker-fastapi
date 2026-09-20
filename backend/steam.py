@@ -1,8 +1,10 @@
+import base64
 import datetime
 import json
 import logging
 import os
 import re
+import secrets
 import time
 
 import httpx
@@ -463,6 +465,154 @@ class SteamCookiesExpiredError(ValueError):
     the cookie re-capture + retry loop."""
 
 
+class SteamRefreshTokenExpiredError(SteamCookiesExpiredError):
+    """Steam refused the stored refresh token, so nothing can be minted from
+    it: the user has to sign in again. The one case where the desktop shell's
+    sign-in window is the right answer, which is why it keeps the parent's
+    error_code."""
+
+
+# ─── Session renewal ───────────────────────────────────────────────────────
+# steamLoginSecure is a 24-hour JWT. The refresh token captured beside it
+# lasts months, and a browser quietly trades it for a new steamLoginSecure
+# every day: POST the refresh token to finalizelogin, get back one settoken
+# URL per Steam domain, POST each and read the new cookie off the reply. The
+# app captured the refresh token (#208) but never made that trade, so every
+# sync more than a day after a capture opened the sign-in window instead --
+# and Steam, seeing a fresh WebView, asked for the QR code again.
+
+_FINALIZE_LOGIN_URL = "https://login.steampowered.com/jwt/finalizelogin"
+_STORE_HOST = "store.steampowered.com"
+_RENEWAL_HEADERS = {
+    **_HEADERS,
+    "Accept": "application/json, text/plain, */*",
+    "Origin": "https://steamcommunity.com",
+    "Referer": "https://steamcommunity.com/",
+}
+# Renew when the access token has less than this left. A sync that starts
+# with an hour of validity can outlive it; four hours is well clear of any
+# sync and still leaves twenty hours of use per mint.
+_ACCESS_TOKEN_MARGIN = datetime.timedelta(hours=4)
+
+
+def _jwt_claims(cookie: str | None) -> dict:
+    """Claims of a Steam JWT cookie ("<steamid>%7C%7C<jwt>", "<steamid>||<jwt>"
+    or the bare JWT). Best effort: the token is Steam's to change, so anything
+    unreadable is {} -- "unknown", never an error."""
+    if not cookie:
+        return {}
+    try:
+        token = cookie.split("%7C%7C")[-1].split("||")[-1]
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        return claims if isinstance(claims, dict) else {}
+    except Exception:
+        return {}
+
+
+def access_token_stale(user: models.User, now: datetime.datetime | None = None) -> bool:
+    """Whether steamLoginSecure is expired or about to be. Read off the
+    token's own exp claim; a cookie that does not parse falls back to the
+    capture date (the token lasts 24h), and one with neither is unknown,
+    which is "not stale" -- the empty-result retry in _owned_appids covers
+    that case."""
+    if not user.steam_login_secure:
+        return True
+    now = now or datetime.datetime.now(datetime.UTC)
+    exp = _jwt_claims(user.steam_login_secure).get("exp")
+    if exp:
+        return datetime.datetime.fromtimestamp(exp, datetime.UTC) - now < _ACCESS_TOKEN_MARGIN
+    captured = user.steam_cookies_captured_at
+    if captured:
+        if captured.tzinfo is None:
+            captured = captured.replace(tzinfo=datetime.UTC)
+        return now - captured > datetime.timedelta(hours=24) - _ACCESS_TOKEN_MARGIN
+    return False
+
+
+def renew_session(user: models.User) -> None:
+    """Mint a fresh steamLoginSecure for the store from the stored refresh
+    token, in place on `user` (the caller commits). Raises
+    SteamRefreshTokenExpiredError when Steam refuses the refresh token, and
+    SteamCookiesExpiredError when there is no refresh token to try; any
+    other failure (network, a changed response shape) is left as the
+    exception it is, since a sign-in window would not fix it."""
+    if not user.steam_refresh_token:
+        raise SteamCookiesExpiredError(
+            "Steam session cookies have expired and no sign-in token is stored — re-capture the Steam session, then retry."
+        )
+    expires = user.steam_refresh_expires_at
+    if expires is not None:
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=datetime.UTC)
+        if expires <= datetime.datetime.now(datetime.UTC):
+            raise SteamRefreshTokenExpiredError("The Steam sign-in token has expired — sign in to Steam again, then retry.")
+
+    refresh = user.steam_refresh_token.split("%7C%7C")[-1].split("||")[-1]
+    session_id = user.steam_session_id or secrets.token_hex(12)
+    # Multipart, not urlencoded: that is what the Steam web client sends, and
+    # the shape this was verified against.
+    resp = httpx.post(
+        _FINALIZE_LOGIN_URL,
+        files={
+            "nonce": (None, refresh),
+            "sessionid": (None, session_id),
+            "redir": (None, "https://steamcommunity.com/login/home/?goto="),
+        },
+        headers=_RENEWAL_HEADERS,
+        timeout=30,
+    )
+    body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
+    transfers = body.get("transfer_info") or []
+    if resp.status_code != 200 or body.get("error") or not transfers:
+        # finalizelogin answers a dead or revoked refresh token with an error
+        # code (and no transfer list), which is the one failure that needs a
+        # person: the desktop shell's sign-in window comes from this code.
+        logger.warning("Steam refused the refresh token: HTTP %s, error=%s", resp.status_code, body.get("error"))
+        raise SteamRefreshTokenExpiredError("The Steam sign-in token was refused — sign in to Steam again, then retry.")
+
+    store = next((t for t in transfers if _STORE_HOST in str(t.get("url", ""))), None)
+    if store is None:
+        raise RuntimeError(f"Steam finalizelogin returned no {_STORE_HOST} transfer: {[t.get('url') for t in transfers]}")
+    params = {"steamID": str(user.steam_id64 or ""), **{k: str(v) for k, v in (store.get("params") or {}).items()}}
+    set_resp = httpx.post(store["url"], files={k: (None, v) for k, v in params.items()}, headers=_HEADERS, timeout=30)
+    set_resp.raise_for_status()
+    cookies = [c for c in set_resp.headers.get_list("set-cookie") if c.startswith("steamLoginSecure=")]
+    if not cookies:
+        raise RuntimeError(f"Steam settoken for {_STORE_HOST} answered {set_resp.status_code} without a steamLoginSecure cookie")
+    login_secure = cookies[0].split(";", 1)[0].split("=", 1)[1]
+
+    user.steam_login_secure = login_secure
+    user.steam_session_id = session_id
+    user.steam_cookies_captured_at = datetime.datetime.now(datetime.UTC)
+    rt_exp = _jwt_claims(login_secure).get("rt_exp")
+    if rt_exp:
+        user.steam_refresh_expires_at = datetime.datetime.fromtimestamp(rt_exp, datetime.UTC)
+    logger.info("Renewed the Steam store session from the refresh token for user %s", user.steam_id64)
+
+
+def _owned_appids(db: Session, user: models.User) -> set[int]:
+    """_fetch_owned_appids, with the session kept alive: renew first when
+    the access token is stale, and once more if Steam still answers with an
+    empty library (a token that looked fine but was not). The renewed
+    cookies are committed at once so they survive whatever the sync does
+    next; without a refresh token this is exactly _fetch_owned_appids."""
+    renewed = False
+    if user.steam_refresh_token and access_token_stale(user):
+        renew_session(user)
+        db.commit()
+        renewed = True
+    try:
+        return _fetch_owned_appids(user)
+    except SteamCookiesExpiredError:
+        if renewed or not user.steam_refresh_token:
+            raise
+        renew_session(user)
+        db.commit()
+        return _fetch_owned_appids(user)
+
+
 def _fetch_owned_appids(user: models.User) -> set[int]:
     """Hit dynamicstore/userdata/ with the user's session cookies and return the
     set of every appid they own (games + DLC + tools + everything)."""
@@ -485,9 +635,7 @@ def _fetch_owned_appids(user: models.User) -> set[int]:
     # sync since cookies went stale quietly reported success while finding
     # nothing (missed real, newly-added DLC with no error surfaced anywhere).
     if not owned:
-        raise SteamCookiesExpiredError(
-            "Steam session cookies have expired — log in to Steam again and re-capture sessionid/steamLoginSecure, then retry."
-        )
+        raise SteamCookiesExpiredError("Steam session cookies have expired — sign in to Steam again to re-capture the session, then retry.")
     return owned
 
 
@@ -510,7 +658,7 @@ def sync_full_library(db: Session, user: models.User) -> dict:
 
     # 2. All owned app IDs (games + DLC) via cookies
     logger.info("Fetching rgOwnedApps for user %s", user.steam_id64)
-    all_owned = _fetch_owned_appids(user)
+    all_owned = _owned_appids(db, user)
 
     # DLC = apps owned but not in the games list
     dlc_appids = all_owned - game_appids
@@ -556,7 +704,7 @@ def sync_dlc_only(db: Session, user: models.User) -> dict:
     )
     game_appids = {int(r[0]) for r in rows if r[0] and r[0].isdigit()}
 
-    all_owned = _fetch_owned_appids(user)
+    all_owned = _owned_appids(db, user)
     dlc_appids = all_owned - game_appids
     logger.info("DLC-only sync: %d owned, %d known games, %d DLC", len(all_owned), len(game_appids), len(dlc_appids))
 

@@ -78,20 +78,21 @@
          hand-edit about it, so it is not shown (#208). #}
       <input type="hidden" name="steam_refresh" value="">
       <h5 class="cgt-config-section">Steam Session</h5>
-      {# What keeps a sync working. steam_login_secure lasts a day; the refresh
-         token captured alongside it lasts months, so the two dates answer
-         different questions and both are worth showing (#208). #}
+      {# What keeps a sync working. steam_login_secure lasts a day and is
+         minted afresh from the refresh token before a sync needs it; the
+         refresh token lasts months and is the date that matters. The cookie
+         date is when it was last minted or captured (#208). #}
       {% if current_user.steam_session_id and current_user.steam_login_secure %}
       <p class="text-secondary mb-3"><small>
         {% if current_user.steam_cookies_captured_at %}
-        Captured <span class="local-time" data-utc="{{ current_user.steam_cookies_captured_at.isoformat() }}">{{ current_user.steam_cookies_captured_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>.
+        Session cookie from <span class="local-time" data-utc="{{ current_user.steam_cookies_captured_at.isoformat() }}">{{ current_user.steam_cookies_captured_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>.
         {% else %}
         Session saved.
         {% endif %}
         {% if current_user.steam_refresh_expires_at %}
-        Sign-in token stored, valid until <span class="local-time" data-utc="{{ current_user.steam_refresh_expires_at.isoformat() }}">{{ current_user.steam_refresh_expires_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>.
+        Sign-in token stored, valid until <span class="local-time" data-utc="{{ current_user.steam_refresh_expires_at.isoformat() }}">{{ current_user.steam_refresh_expires_at.strftime("%Y-%m-%d %H:%M") }} UTC</span>; syncs renew the cookie from it, so no sign-in is needed before then.
         {% else %}
-        No long-lived sign-in token &mdash; re-capture to store one.
+        No long-lived sign-in token &mdash; the cookie lasts a day, then a re-capture is needed.
         {% endif %}
       </small></p>
       {% else %}
@@ -331,14 +332,14 @@
         </div>
         {% if current_user.steam_session_id and current_user.steam_login_secure %}
         <div class="d-flex justify-content-between align-items-center gap-3">
-          <small class="text-secondary">Sanity-check your saved cookies by hitting Steam's owned-app endpoint.</small>
+          <small class="text-secondary">Sanity-check the saved session by hitting Steam's owned-app endpoint, renewing the cookie first if it has lapsed.</small>
           <button
             class="btn btn-primary btn-sm flex-shrink-0 cgt-action-btn"
             hx-post="/integrations/steam/test-cookies"
             hx-target="#steam-flash"
             hx-swap="innerHTML"
             hx-on::before-request="document.getElementById('steam-flash').innerHTML=''"
-          >Test Cookies</button>
+          >Test Session</button>
         </div>
         {% endif %}
       </div>

@@ -1,7 +1,5 @@
 import asyncio
-import base64
 import datetime
-import json
 import logging
 import os
 import re
@@ -73,14 +71,10 @@ def _record_steam_cookies(user: models.User, session_id: str, login_secure: str,
 def _steam_refresh_expiry(login_secure: str) -> "datetime.datetime | None":
     """Read rt_exp out of the access token. Best effort: the token is Steam's
     to change, so anything unexpected means "unknown expiry", never an error."""
+    rt_exp = steam._jwt_claims(login_secure).get("rt_exp")
     try:
-        token = login_secure.split("%7C%7C")[-1].split("||")[-1]
-        payload = token.split(".")[1]
-        payload += "=" * (-len(payload) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(payload))
-        rt_exp = claims.get("rt_exp")
         return datetime.datetime.fromtimestamp(rt_exp, datetime.UTC) if rt_exp else None
-    except Exception:
+    except (TypeError, ValueError, OverflowError, OSError):
         return None
 
 
@@ -282,36 +276,32 @@ def steam_openid_forget(
 @router.post("/steam/test-cookies")
 def test_steam_cookies(
     request: Request,
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
+    """The same call a sync makes, including the renewal: a session whose
+    day-old cookie has lapsed is still a valid session when the sign-in
+    token can mint a new one, and this says so rather than "expired"."""
     if not current_user.steam_session_id or not current_user.steam_login_secure:
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
-            context={"error": "No cookies saved — enter both sessionid and steamLoginSecure above and save first."},
+            context={"error": "No session saved — capture the Steam session above first."},
         )
     try:
-        resp = _httpx.get(
-            "https://store.steampowered.com/dynamicstore/userdata/",
-            cookies={
-                "sessionid": current_user.steam_session_id,
-                "steamLoginSecure": current_user.steam_login_secure,
-            },
-            timeout=10,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        owned = data.get("rgOwnedApps", [])
-        if not owned:
-            return templates.TemplateResponse(
-                request=request,
-                name="partials/integrations_flash.html",
-                context={"error": "Cookies appear invalid or expired — rgOwnedApps was empty. Try copying fresh values from your browser."},
-            )
+        before = current_user.steam_login_secure
+        owned = steam._owned_appids(db, current_user)
+        renewed = " (session cookie renewed from the sign-in token)" if current_user.steam_login_secure != before else ""
         return templates.TemplateResponse(
             request=request,
             name="partials/integrations_flash.html",
-            context={"message": f"Cookies valid — {len(owned):,} owned apps visible (games + DLC)."},
+            context={"message": f"Session valid — {len(owned):,} owned apps visible (games + DLC){renewed}."},
+        )
+    except steam.SteamCookiesExpiredError as e:
+        return templates.TemplateResponse(
+            request=request,
+            name="partials/integrations_flash.html",
+            context={"error": str(e)},
         )
     except Exception as e:
         return templates.TemplateResponse(

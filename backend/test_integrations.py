@@ -1734,6 +1734,236 @@ def test_fetch_owned_appids_raises_on_empty_result(db_session, monkeypatch):
         steam._fetch_owned_appids(user)
 
 
+# ─── Steam session renewal ──────────────────────────────────────────────────
+# The refresh token captured in #208 was stored and never used: every sync a
+# day after a capture opened the sign-in window, and Steam asked for the QR
+# code again. These pin the trade a browser makes daily -- refresh token in,
+# fresh steamLoginSecure out -- and where in a sync it happens.
+
+
+def _steam_jwt(steamid: str = "76561198000000000", **claims) -> str:
+    import base64
+    import json
+
+    payload = base64.urlsafe_b64encode(json.dumps(claims).encode()).decode().rstrip("=")
+    return f"{steamid}%7C%7Cheader.{payload}.sig"
+
+
+def _steam_user(**kw) -> "models.User":
+    return models.User(name="t", username="t", password_hash="x", api_token="tok", steam_id64="76561198000000000", **kw)
+
+
+def _in(**delta) -> int:
+    import datetime
+
+    return int((datetime.datetime.now(datetime.UTC) + datetime.timedelta(**delta)).timestamp())
+
+
+def _fake_response(status=200, json_body=None, set_cookies=()):
+    import httpx
+
+    headers = [("set-cookie", c) for c in set_cookies]
+    if json_body is not None:
+        headers.append(("content-type", "application/json; charset=utf-8"))
+    return httpx.Response(status, json=json_body, headers=headers, request=httpx.Request("POST", "https://x"))
+
+
+def test_jwt_claims_reads_prefixed_and_bare_tokens():
+    from backend import steam
+
+    assert steam._jwt_claims(_steam_jwt(exp=5))["exp"] == 5
+    assert steam._jwt_claims(_steam_jwt(exp=5).replace("%7C%7C", "||"))["exp"] == 5
+    assert steam._jwt_claims(_steam_jwt(exp=5).split("%7C%7C")[1])["exp"] == 5
+    assert steam._jwt_claims("not-a-jwt") == {}
+    assert steam._jwt_claims(None) == {}
+
+
+def test_access_token_stale_reads_the_exp_claim_with_a_margin():
+    """A sync that starts with an hour of validity can outlive it, so the
+    token is stale short of its actual expiry; a cookie that does not parse
+    falls back to the capture date, and one with neither is not stale (the
+    empty-result retry covers it)."""
+    import datetime
+
+    from backend import steam
+
+    assert steam.access_token_stale(_steam_user(steam_login_secure=_steam_jwt(exp=_in(hours=1))))
+    assert steam.access_token_stale(_steam_user(steam_login_secure=_steam_jwt(exp=_in(hours=-3))))
+    assert not steam.access_token_stale(_steam_user(steam_login_secure=_steam_jwt(exp=_in(hours=10))))
+    assert steam.access_token_stale(_steam_user(steam_login_secure=None))
+
+    now = datetime.datetime.now(datetime.UTC)
+    hours = datetime.timedelta
+    assert steam.access_token_stale(_steam_user(steam_login_secure="opaque", steam_cookies_captured_at=now - hours(hours=23)))
+    assert not steam.access_token_stale(_steam_user(steam_login_secure="opaque", steam_cookies_captured_at=now - hours(hours=1)))
+    assert not steam.access_token_stale(_steam_user(steam_login_secure="opaque"))
+
+
+def test_renew_session_mints_the_store_cookie_from_the_refresh_token(monkeypatch):
+    """finalizelogin with the refresh token as the nonce answers with one
+    settoken URL per Steam domain; POSTing the store one sets the new
+    steamLoginSecure. The sessionid stays (it is the CSRF cookie the store
+    already knows), the capture date moves, and rt_exp is re-read."""
+    from backend import steam
+
+    user = _steam_user(steam_session_id="sess", steam_login_secure="old", steam_refresh_token="76561198000000000%7C%7Crefresh.jwt.sig")
+    new_secure = _steam_jwt(exp=_in(hours=24), rt_exp=_in(days=150))
+    calls = []
+
+    def fake_post(url, files=None, headers=None, timeout=None):
+        calls.append((url, {k: v[1] for k, v in files.items()}))
+        if url == steam._FINALIZE_LOGIN_URL:
+            return _fake_response(
+                json_body={
+                    "steamID": "76561198000000000",
+                    "transfer_info": [
+                        {"url": "https://steamcommunity.com/login/settoken", "params": {"nonce": "n1", "auth": "a1"}},
+                        {"url": "https://store.steampowered.com/login/settoken", "params": {"nonce": "n2", "auth": "a2"}},
+                    ],
+                }
+            )
+        return _fake_response(json_body={"result": 1}, set_cookies=[f"steamLoginSecure={new_secure}; Path=/; Secure; HttpOnly"])
+
+    monkeypatch.setattr(steam.httpx, "post", fake_post)
+    steam.renew_session(user)
+
+    assert calls[0][1] == {"nonce": "refresh.jwt.sig", "sessionid": "sess", "redir": "https://steamcommunity.com/login/home/?goto="}
+    assert [u for u, _ in calls[1:]] == ["https://store.steampowered.com/login/settoken"], "only the store cookie is used"
+    assert calls[1][1] == {"steamID": "76561198000000000", "nonce": "n2", "auth": "a2"}
+    assert user.steam_login_secure == new_secure
+    assert user.steam_session_id == "sess"
+    assert user.steam_cookies_captured_at is not None
+    assert user.steam_refresh_expires_at is not None
+
+
+def test_renew_session_refused_token_is_the_sign_in_again_case(monkeypatch):
+    """Only a refresh token Steam refuses should open the sign-in window, so
+    that failure keeps the steam_cookies_expired code (via the parent
+    class); a network failure or a changed response is not a sign-in
+    problem and stays the exception it is."""
+    import pytest
+
+    from backend import steam
+
+    user = _steam_user(steam_session_id="sess", steam_login_secure="old", steam_refresh_token="refresh")
+    monkeypatch.setattr(steam.httpx, "post", lambda *a, **k: _fake_response(json_body={"error": 15}))
+    with pytest.raises(steam.SteamRefreshTokenExpiredError) as exc:
+        steam.renew_session(user)
+    assert isinstance(exc.value, steam.SteamCookiesExpiredError)
+    assert user.steam_login_secure == "old", "nothing is overwritten on refusal"
+
+    community_only = {"transfer_info": [{"url": "https://steamcommunity.com/login/settoken", "params": {}}]}
+    monkeypatch.setattr(steam.httpx, "post", lambda *a, **k: _fake_response(json_body=community_only))
+    with pytest.raises(RuntimeError, match="store.steampowered.com"):
+        steam.renew_session(user)
+
+
+def test_renew_session_needs_a_refresh_token_that_is_not_already_expired():
+    import datetime
+
+    import pytest
+
+    from backend import steam
+
+    with pytest.raises(steam.SteamCookiesExpiredError, match="no sign-in token"):
+        steam.renew_session(_steam_user(steam_login_secure="old"))
+    gone = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=1)
+    with pytest.raises(steam.SteamRefreshTokenExpiredError):
+        steam.renew_session(_steam_user(steam_login_secure="old", steam_refresh_token="r", steam_refresh_expires_at=gone))
+
+
+def test_owned_appids_renews_a_stale_token_before_the_fetch(db_session, monkeypatch):
+    from backend import steam
+
+    user = _steam_user(steam_session_id="sess", steam_login_secure=_steam_jwt(exp=_in(hours=1)), steam_refresh_token="r")
+    db_session.add(user)
+    db_session.commit()
+    seen = []
+
+    def fake_renew(u):
+        u.steam_login_secure = "fresh"
+
+    def fake_get(url, cookies=None, headers=None, timeout=None):
+        seen.append(cookies["steamLoginSecure"])
+        return _fake_response(json_body={"rgOwnedApps": [10, 20]})
+
+    monkeypatch.setattr(steam, "renew_session", fake_renew)
+    monkeypatch.setattr(steam.httpx, "get", fake_get)
+    assert steam._owned_appids(db_session, user) == {10, 20}
+    assert seen == ["fresh"], "the fetch used the renewed cookie"
+    db_session.expire(user)
+    assert user.steam_login_secure == "fresh", "committed straight away"
+
+
+def test_owned_appids_retries_once_after_an_empty_library(db_session, monkeypatch):
+    """A token that looks fine but is not gets one renewal and one retry;
+    a second empty answer is the real failure."""
+    import pytest
+
+    from backend import steam
+
+    user = _steam_user(steam_session_id="sess", steam_login_secure=_steam_jwt(exp=_in(hours=10)), steam_refresh_token="r")
+    db_session.add(user)
+    db_session.commit()
+    renewals = []
+    answers = [[], [10]]
+
+    def fake_renew(u):
+        renewals.append(1)
+        u.steam_login_secure = "fresh"
+
+    monkeypatch.setattr(steam, "renew_session", fake_renew)
+    monkeypatch.setattr(steam.httpx, "get", lambda *a, **k: _fake_response(json_body={"rgOwnedApps": answers.pop(0)}))
+    assert steam._owned_appids(db_session, user) == {10}
+    assert renewals == [1]
+
+    answers[:] = [[], []]
+    renewals.clear()
+    with pytest.raises(steam.SteamCookiesExpiredError):
+        steam._owned_appids(db_session, user)
+    assert renewals == [1], "renewed once, not in a loop"
+
+
+def test_owned_appids_without_a_refresh_token_is_the_old_behaviour(db_session, monkeypatch):
+    import pytest
+
+    from backend import steam
+
+    user = _steam_user(steam_session_id="sess", steam_login_secure="opaque")
+    db_session.add(user)
+    db_session.commit()
+    monkeypatch.setattr(steam, "renew_session", lambda u: pytest.fail("no refresh token, nothing to renew with"))
+    monkeypatch.setattr(steam.httpx, "get", lambda *a, **k: _fake_response(json_body={"rgOwnedApps": []}))
+    with pytest.raises(steam.SteamCookiesExpiredError):
+        steam._owned_appids(db_session, user)
+
+
+def test_test_cookies_endpoint_reports_a_renewal(client, db_session, monkeypatch):
+    from backend import steam
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.steam_session_id = "sess"
+    user.steam_login_secure = "old"
+    user.steam_refresh_token = "r"
+    db_session.commit()
+
+    def fake_owned(db, u):
+        u.steam_login_secure = "fresh"
+        return {1, 2, 3}
+
+    monkeypatch.setattr(steam, "_owned_appids", fake_owned)
+    r = client.post("/integrations/steam/test-cookies")
+    assert r.status_code == 200
+    assert "Session valid" in r.text and "3 owned apps" in r.text and "renewed" in r.text
+
+    def refused(db, u):
+        raise steam.SteamRefreshTokenExpiredError("The Steam sign-in token was refused — sign in to Steam again, then retry.")
+
+    monkeypatch.setattr(steam, "_owned_appids", refused)
+    assert "sign in to Steam again" in client.post("/integrations/steam/test-cookies").text
+
+
 def test_fill_import_candidate_thumbnails_applies_top_result(db_session, monkeypatch):
     from backend import steamgriddb
 
