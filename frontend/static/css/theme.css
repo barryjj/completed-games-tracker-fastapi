@@ -1921,6 +1921,18 @@ body:has(.cgt-sticky-actions) {
   letter-spacing: 0.07em;
   color: var(--ctp-subtext0, var(--ctp-subtext));
 }
+/* The scroll sentinels are rows only so they can live in the tbody. No
+   height, no border: an empty 9px row showed as a band at the join while
+   a page loaded, and two of them as a double rule. */
+#psn-scroll-sentinel, #psn-scroll-prev,
+#psn-scroll-sentinel > td, #psn-scroll-prev > td {
+  height: 0;
+  padding: 0;
+  border: 0;
+  line-height: 0;
+  font-size: 0;
+}
+
 /* Platform checkboxes stacked to match a grouped row's stacked trophy units:
    the gap equals the units' so each platform lines up with its set. */
 .cgt-psn-plats--stacked {

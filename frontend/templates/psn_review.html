@@ -518,12 +518,10 @@ function psnWindowRows(landedPage) {
   if (keep.length > PSN_WINDOW_PAGES) {
     keep = landedPage >= pages[pages.length - 1] ? keep.slice(-PSN_WINDOW_PAGES) : keep.slice(0, PSN_WINDOW_PAGES);
   }
-  var droppedAbove = 0;
   pages.forEach(function(p) {
     if (keep.indexOf(p) !== -1) return;
-    byPage[p].forEach(function(tr) { if (p < keep[0]) droppedAbove += tr.offsetHeight; tr.remove(); });
+    byPage[p].forEach(function(tr) { tr.remove(); });
   });
-  if (droppedAbove) document.scrollingElement.scrollTop -= droppedAbove;
   if (keep[0] > 1) psnEnsureSentinel('psn-scroll-prev', keep[0] - 1, 'prev', urlTpl, tbody, true);
   else { var sp = document.getElementById('psn-scroll-prev'); if (sp) sp.remove(); }
   // A bottom sentinel is only re-created if the server said there was more:
@@ -533,28 +531,42 @@ function psnWindowRows(landedPage) {
   }
 }
 
-// Rows loaded ABOVE push everything down; put the viewport back where it was.
-var psnPrevSwapHeightBefore = 0;
+// Keeping the viewport still while rows arrive above it or are dropped
+// above it. NOT by adding and subtracting heights: WebKit anchors scroll on
+// its own when content is inserted above the viewport, and a manual
+// correction on top of that moved you a full page -- the yank when
+// scrolling back up from the end. Instead: before the swap, note which row
+// is on screen and where; after every DOM change, put scrollTop wherever
+// keeps that row at the same spot. If the browser already anchored, the
+// delta is zero and nothing moves.
+var psnAnchor = null;
 document.addEventListener('htmx:beforeSwap', function(e) {
-  if (e.target && e.target.id === 'psn-scroll-prev') {
-    psnPrevSwapHeightBefore = document.scrollingElement.scrollHeight;
+  if (!e.target || (e.target.id !== 'psn-scroll-prev' && e.target.id !== 'psn-scroll-sentinel')) return;
+  var rows = document.querySelectorAll('#psn-review-table tbody tr[data-page]');
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].id.indexOf('psn-scroll') === 0) continue;
+    var r = rows[i].getBoundingClientRect();
+    if (r.bottom > 0) { psnAnchor = {el: rows[i], top: r.top, xhr: e.detail.xhr}; break; }
   }
 });
 document.addEventListener('htmx:afterSettle', function(e) {
-  // An outerHTML swap of a sentinel settles on the PARENT (the tbody), so
-  // the page that landed is read off the request that fetched it.
+  // An outerHTML swap of a sentinel settles once per inserted row, on each
+  // of them, so the page that landed is read off the request -- and the
+  // work is done once per request, not fifty-one times.
   var t = e.target;
   if (!t || !t.closest || !t.closest('#psn-review-table')) return;
   var path = e.detail && e.detail.pathInfo && (e.detail.pathInfo.finalRequestPath || e.detail.pathInfo.requestPath);
   if (!path || path.indexOf('/tools/psn-review/more') === -1) return;
+  if (e.detail.xhr && e.detail.xhr.__psnHandled) return;
+  if (e.detail.xhr) e.detail.xhr.__psnHandled = true;
   var landed = parseInt(new URL(path, window.location.origin).searchParams.get('page') || '0', 10);
   if (!landed) return;
-  if (psnPrevSwapHeightBefore) {
-    var grown = document.scrollingElement.scrollHeight - psnPrevSwapHeightBefore;
-    if (grown > 0) document.scrollingElement.scrollTop += grown;
-    psnPrevSwapHeightBefore = 0;
-  }
   psnWindowRows(landed);
+  if (psnAnchor && psnAnchor.el.isConnected) {
+    var delta = psnAnchor.el.getBoundingClientRect().top - psnAnchor.top;
+    if (Math.abs(delta) > 1) document.scrollingElement.scrollTop += delta;
+  }
+  psnAnchor = null;
 });
 
 // Confirming one set changes what its siblings may claim, and they're already
