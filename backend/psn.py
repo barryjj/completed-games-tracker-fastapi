@@ -3250,7 +3250,18 @@ def search_terms(title: str) -> list[str]:
     spaced = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", title)).strip()
     if spaced and spaced.casefold() not in {t.strip().casefold() for t in terms} and len(spaced) >= 3:
         terms.append(spaced)
+
+    # A number glued to the end of a word. Sony writes "LittleBigPlanet2" and
+    # "Crysis2"; IGDB's search finds neither and finds "LittleBigPlanet 2" at
+    # once. Trailing only -- a digit inside a word is part of the name
+    # (Left4Dead), and a sequel number at the end is not.
+    unglued = _TRAILING_DIGIT_RE.sub(r"\1 \2", title).strip()
+    if unglued.casefold() not in {t.strip().casefold() for t in terms}:
+        terms.append(unglued)
     return terms
+
+
+_TRAILING_DIGIT_RE = re.compile(r"([A-Za-z])(\d+)$")
 
 
 def igdb_platform_ids(db: Session, platform_tokens: list[str]) -> list[int]:
@@ -3928,6 +3939,10 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
             (r.raw_data or {}).get("conceptId")
             and (((r.raw_data or {}).get("igdbMeta") or {}).get("game_type") in _IGDB_REPACKAGED - {_IGDB_MAIN_GAME})
         )
+        # Or unidentified under a title the search ladder has since gained a
+        # rung for ("LittleBigPlanet2"), so the new term reaches it without
+        # re-asking about the other thousand rows.
+        or (r.proposal_status == "none" and _TRAILING_DIGIT_RE.search(r.title or ""))
     ]
     # EVERY pending row is looked up, not just trophy-only ones. This used to
     # filter to `is_trophy_only`, on the theory that a store-backed row "got its

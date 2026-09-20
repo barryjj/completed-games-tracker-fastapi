@@ -6932,3 +6932,44 @@ def test_a_store_copy_no_set_covers_is_its_own_row(db_session):
         by_norm.setdefault(g["norm"], []).append(g)
     assert len(by_norm["balatro"]) == 1 and len(by_norm["balatro"][0]["members"]) == 2
     assert len(by_norm["covered"]) == 1 and len(by_norm["covered"][0]["members"]) == 2
+
+
+def test_search_terms_unglue_a_trailing_number():
+    """Sony writes "LittleBigPlanet2"; IGDB finds "LittleBigPlanet 2". Only a
+    number at the END of a word -- a digit inside one is part of the name."""
+    assert "LittleBigPlanet 2" in psn.search_terms("LittleBigPlanet2")
+    assert "Crysis 2" in psn.search_terms("Crysis2")
+    assert psn.search_terms("Left4Dead") == ["Left4Dead"], "a digit inside a word is not a sequel number"
+    assert psn.search_terms("God of War II") == ["God of War II"], "nothing to unglue, nothing added"
+    # The raw title still goes first: an exact hit beats the guess.
+    assert psn.search_terms("LittleBigPlanet2")[0] == "LittleBigPlanet2"
+
+
+def test_an_unidentified_glued_digit_title_is_looked_up_again(db_session, monkeypatch):
+    user = _trophy_user(db_session)
+    user.twitch_client_id, user.twitch_client_secret = "cid", "sec"
+    _seed_platforms(db_session)
+    db_session.query(models.Platform).filter_by(name="PS3").one().igdb_id = 9
+    cand = psn._upsert_review_candidate(
+        db_session,
+        user,
+        {"npCommunicationId": "NPWR0LBP_00", "name": "LittleBigPlanet2", "platform": "PS3", "sources": ["titles"]},
+        "title_fix",
+    )
+    cand.proposal_status = "none"
+    cand.raw_data = {**cand.raw_data, "proposalVersion": psn._PROPOSAL_VERSION}
+    db_session.commit()
+    seen = []
+
+    def search(term, ids):
+        seen.append(term)
+        return (
+            [{"id": 2, "name": "LittleBigPlanet 2", "platform_ids": [9], "game_type": 0, "slug": "lbp2"}]
+            if term == "LittleBigPlanet 2"
+            else []
+        )
+
+    monkeypatch.setattr(psn, "_igdb_search_adapter", lambda *a, **k: search)
+    psn.fill_review_proposals(db_session, user, store_sleep=0)
+    assert "LittleBigPlanet 2" in seen
+    assert cand.proposed_igdb_id == 2 and cand.proposed_title == "LittleBigPlanet 2"
