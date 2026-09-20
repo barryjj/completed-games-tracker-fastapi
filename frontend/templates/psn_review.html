@@ -539,14 +539,22 @@ function psnWindowRows(landedPage) {
 // is on screen and where; after every DOM change, put scrollTop wherever
 // keeps that row at the same spot. If the browser already anchored, the
 // delta is zero and nothing moves.
+// The anchor's position is taken in DOCUMENT space (top + scrollY), not on
+// screen. During a fast scroll you keep moving while the page is in flight;
+// restoring the row's SCREEN position dragged you back to where you were
+// when the request started -- Destiny 2 at the top, then a snap to a row
+// further on. Rows inserted or dropped above the anchor move its document
+// position; your scrolling does not. Correcting by that delta alone leaves
+// the scroll you did meanwhile untouched.
 var psnAnchor = null;
+function psnDocTop(el) { return el.getBoundingClientRect().top + document.scrollingElement.scrollTop; }
 document.addEventListener('htmx:beforeSwap', function(e) {
   if (!e.target || (e.target.id !== 'psn-scroll-prev' && e.target.id !== 'psn-scroll-sentinel')) return;
   var rows = document.querySelectorAll('#psn-review-table tbody tr[data-page]');
   for (var i = 0; i < rows.length; i++) {
     if (rows[i].id.indexOf('psn-scroll') === 0) continue;
     var r = rows[i].getBoundingClientRect();
-    if (r.bottom > 0) { psnAnchor = {el: rows[i], top: r.top, xhr: e.detail.xhr}; break; }
+    if (r.bottom > 0) { psnAnchor = {el: rows[i], docTop: psnDocTop(rows[i])}; break; }
   }
 });
 document.addEventListener('htmx:afterSettle', function(e) {
@@ -563,7 +571,7 @@ document.addEventListener('htmx:afterSettle', function(e) {
   if (!landed) return;
   psnWindowRows(landed);
   if (psnAnchor && psnAnchor.el.isConnected) {
-    var delta = psnAnchor.el.getBoundingClientRect().top - psnAnchor.top;
+    var delta = psnDocTop(psnAnchor.el) - psnAnchor.docTop;
     // behavior: 'instant', not scrollTop +=. Bootstrap puts scroll-behavior:
     // smooth on the root, so a plain assignment ANIMATES there over a few
     // hundred ms -- the visible glide after every page load -- and a

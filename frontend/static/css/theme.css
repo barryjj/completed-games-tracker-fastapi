@@ -1921,6 +1921,13 @@ body:has(.cgt-sticky-actions) {
   letter-spacing: 0.07em;
   color: var(--ctp-subtext0, var(--ctp-subtext));
 }
+/* The review list corrects its own scroll position when pages are loaded or
+   dropped above the viewport; a browser that also anchors would apply the
+   correction twice. WebKit does not anchor, Chrome and Firefox do. */
+#psn-review-table {
+  overflow-anchor: none;
+}
+
 /* The scroll sentinels are rows only so they can live in the tbody. No
    height, no border: an empty 9px row showed as a band at the join while
    a page loaded, and two of them as a double rule. */
