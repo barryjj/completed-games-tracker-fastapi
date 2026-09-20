@@ -2149,29 +2149,55 @@ def group_review_candidates(cands: list) -> list[dict]:
     groups: list[dict] = []
     for gid, norm, members in buckets:
         # Split members whose DIFFERENT trophy sets compete for a platform.
-        # Same set id (two SKUs, one set) never competes with itself, and a
-        # record with no set has no progress to attribute wrongly.
+        # Same set id (two SKUs, one set) never competes with itself.
+        #
+        # Trophy sets first, so the subs form around them; then the records
+        # with no set. One of those joins a sub only when a set there covers
+        # its platform, or the sub has no sets at all (a PS+ catalog PS4/PS5
+        # pair, which is one game with no progress anywhere). A store copy no
+        # set covers is a copy whose set has not appeared yet -- Crimsonland's
+        # PS5 SKU beside two PS3/Vita/PS4 sets -- and rolling it into a set's
+        # row said that set covered it. It gets its own row; the set attaches
+        # to the same record when the game is launched.
+        def _sub_covers(sub: list, plats: set[str]) -> bool:
+            return any(_set_id(o) and plats <= set(platform_candidates(o.raw_data or {})) for o in sub)
+
+        def _sub_has_set(sub: list) -> bool:
+            return any(_set_id(o) for o in sub)
+
         subs: list[list] = []
-        for m in sorted(members, key=lambda c: c.external_id or ""):
+        ordered = sorted(members, key=lambda c: (not _set_id(c), c.external_id or ""))
+        for m in ordered:
             m_set = _set_id(m)
             m_plats = set(platform_candidates(m.raw_data or {}))
             for sub in subs:
-                clash = any(
-                    _set_id(o) and m_set and _set_id(o) != m_set and (set(platform_candidates(o.raw_data or {})) & m_plats) for o in sub
-                )
-                if not clash:
+                if m_set:
+                    clash = any(_set_id(o) and _set_id(o) != m_set and (set(platform_candidates(o.raw_data or {})) & m_plats) for o in sub)
+                    if not clash:
+                        sub.append(m)
+                        break
+                elif not _sub_has_set(sub) or _sub_covers(sub, m_plats):
                     sub.append(m)
                     break
             else:
                 subs.append([m])
+
+        # Contested means two different SETS claim a platform -- not merely
+        # that the game became several rows. A store copy split off on its
+        # own has nothing to contest.
+        def _set_plats(sub: list) -> set[str]:
+            return {p for o in sub if _set_id(o) for p in platform_candidates(o.raw_data or {})}
+
         for sub in subs:
+            mine = _set_plats(sub)
+            contested = bool(mine) and any(other is not sub and (_set_plats(other) & mine) for other in subs)
             groups.append(
                 {
                     "key": min(c.external_id for c in sub),
                     "members": sub,
                     "igdb_id": gid,
                     "norm": norm,
-                    "contested": len(subs) > 1,
+                    "contested": contested,
                 }
             )
     return groups

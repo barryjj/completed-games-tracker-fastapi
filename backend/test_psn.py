@@ -6653,11 +6653,12 @@ def test_same_name_different_igdb_ids_are_not_siblings(db_session):
         [
             {
                 "titleId": "CUSA07408_00",
+                "npCommunicationId": "NPWR14000_00",
                 "name": "God of War",
                 "displayName": "God of War",
                 "normalizedName": psn._normalized_name("God of War"),
                 "platform": "PS4",
-                "sources": ["purchased"],
+                "sources": ["purchased", "titles"],
             },
             {
                 "npCommunicationId": "NPWR00950_00",
@@ -6841,3 +6842,93 @@ def test_the_concept_path_folds_an_edition_onto_its_game_like_the_search_path(db
     assert p["proposed_title"] == "Gone Home"
     assert p["matched_via"] == {"name": "Gone Home: Console Edition", "igdb_id": 82387}
     assert p["meta"]["slug"] == "gone-home" and p["meta"]["year"] == "2013"
+
+
+def test_a_store_copy_no_set_covers_is_its_own_row(db_session):
+    """Crimsonland: two PS3/Vita/PS4 sets that contest each other, and a PS5
+    purchase with no set. The PS5 copy used to ride Set 1's row as if that set
+    covered it. A store copy no set covers is a copy whose set has not
+    appeared yet: its own row, not contested. Groups with no sets at all (a
+    PS+ PS4/PS5 pair) still merge, and a purchase a set DOES cover still joins
+    that set's row."""
+    _seed_platforms(db_session)
+    user = _trophy_user(db_session)
+    base = {"name": "Crimsonland", "displayName": "Crimsonland", "normalizedName": psn._normalized_name("Crimsonland")}
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                **base,
+                "titleId": "CUSA00426_00",
+                "npCommunicationId": "NPWR06670_00",
+                "platform": "PS3,PSVITA,PS4",
+                "sources": ["purchased", "titles"],
+            },
+            {**base, "npCommunicationId": "NPWR06085_00", "platform": "PS3,PSVITA,PS4", "sources": ["titles"]},
+            {**base, "titleId": "PPSA02752_00", "platform": "PS5", "sources": ["purchased"]},
+        ],
+    )
+    for c in db_session.query(models.PsnReviewCandidate).all():
+        c.proposed_igdb_id = 7587
+    db_session.commit()
+    groups = {g["key"]: g for g in psn.group_review_candidates(db_session.query(models.PsnReviewCandidate).all())}
+    assert set(groups) == {"CUSA00426_00", "NPWR06085_00", "PPSA02752_00"}, "three rows: one per set, one for the PS5 copy"
+    assert groups["CUSA00426_00"]["contested"] and groups["NPWR06085_00"]["contested"]
+    assert not groups["PPSA02752_00"]["contested"], "a lone store copy has nothing to contest"
+    assert [m.external_id for m in groups["PPSA02752_00"]["members"]] == ["PPSA02752_00"]
+
+    # A PS+ catalog pair with no sets anywhere stays one row (#212)...
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "CUSA47498_00",
+                "name": "Balatro",
+                "displayName": "Balatro",
+                "normalizedName": "balatro",
+                "platform": "PS4",
+                "sources": ["purchased"],
+            },
+            {
+                "titleId": "PPSA21401_00",
+                "name": "Balatro",
+                "displayName": "Balatro",
+                "normalizedName": "balatro",
+                "platform": "PS5",
+                "sources": ["purchased"],
+            },
+        ],
+    )
+    # ...and a purchase a set covers joins that set's row.
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": "CUSA0001_00",
+                "npCommunicationId": "NPWR0001_00",
+                "name": "Covered",
+                "displayName": "Covered",
+                "normalizedName": "covered",
+                "platform": "PS4,PS5",
+                "sources": ["titles"],
+            },
+            {
+                "titleId": "PPSA0001_00",
+                "name": "Covered",
+                "displayName": "Covered",
+                "normalizedName": "covered",
+                "platform": "PS5",
+                "sources": ["purchased"],
+            },
+        ],
+    )
+    db_session.commit()
+    groups = psn.group_review_candidates(db_session.query(models.PsnReviewCandidate).all())
+    by_norm = {}
+    for g in groups:
+        by_norm.setdefault(g["norm"], []).append(g)
+    assert len(by_norm["balatro"]) == 1 and len(by_norm["balatro"][0]["members"]) == 2
+    assert len(by_norm["covered"]) == 1 and len(by_norm["covered"][0]["members"]) == 2
