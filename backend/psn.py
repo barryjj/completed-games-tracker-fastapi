@@ -960,9 +960,23 @@ def played_only_suggestion(item: dict) -> tuple[str, str]:
 # token — what the merge used to do — tagged Shinovi Versus as PS3, a game that
 # never had a PS3 release.
 
-# Newest first. PSPC is deliberately absent: it's PSN's PC integration (a Steam
-# copy), never a PlayStation platform.
-_PS_PLATFORM_RANK = ["PS5", "PS4", "PS3", "PSVITA", "PSP"]
+# Consoles oldest first, then handhelds oldest first -- the order the review
+# rows list platforms in, both the progress lines and the checkboxes. (User
+# decision 2026-09-20; it was newest-first with the handhelds tacked on the
+# end, which put a Vita set after the PS3 one for no reason anyone could
+# name.) PSPC is deliberately absent: it's PSN's PC integration (a Steam
+# copy), never a PlayStation platform. No PSP title has ever appeared; the
+# entry is there so one would sort sensibly if it did.
+_PS_PLATFORM_RANK = ["PS3", "PS4", "PS5", "PSP", "PSVITA"]
+# By release date, oldest first -- for the places that reason about age
+# ("the oldest platform a trophy set covers"), which the display order above
+# no longer answers.
+_PS_PLATFORM_AGE = ["PSP", "PS3", "PSVITA", "PS4", "PS5"]
+
+
+def _age(platform: str) -> int:
+    return _PS_PLATFORM_AGE.index(platform) if platform in _PS_PLATFORM_AGE else -1
+
 
 # Played-feed categories -> platform token.
 _CATEGORY_PLATFORM = {"ps5": "PS5", "ps4": "PS4", "ps3": "PS3", "pspc": "PSPC"}
@@ -1079,8 +1093,9 @@ def cross_buy_exception(item: dict) -> dict | None:
 
 
 def platform_candidates(item: dict) -> list[str]:
-    """PlayStation platforms a trophy set covers, newest first. PSPC dropped —
-    that's a PC copy, handled separately by the Steam-duplicate skip."""
+    """PlayStation platforms a trophy set covers, in display order
+    (_PS_PLATFORM_RANK). PSPC dropped — that's a PC copy, handled separately
+    by the Steam-duplicate skip."""
     raw = str(item.get("platform") or "")
     toks = {t.strip().upper() for t in raw.split(",") if t.strip()}
     toks.discard("PSPC")
@@ -1166,7 +1181,7 @@ def resolve_platform_choice(item: dict) -> tuple[str | None, str, bool]:
         platform, minutes = next(iter(substantial.items()))
         return platform, f"Played {minutes // 60}h on {platform}", True
     if len(substantial) > 1:
-        platform = max(substantial, key=lambda p: (substantial[p], -_PS_PLATFORM_RANK.index(p) if p in _PS_PLATFORM_RANK else 0))
+        platform = max(substantial, key=lambda p: (substantial[p], _age(p)))
         others = ", ".join(f"{p} {substantial[p] // 60}h" for p in substantial if p != platform)
         return platform, f"Most played on {platform} ({substantial[platform] // 60}h vs {others})", False
     if played:
@@ -1177,8 +1192,12 @@ def resolve_platform_choice(item: dict) -> tuple[str | None, str, bool]:
     # Trophy-only. The modern purchased feed doesn't cover PS3/Vita-era
     # purchases, so a set spanning that era with no purchase record is almost
     # certainly the handheld/older copy — but it's a guess either way.
-    oldest = candidates[-1]
-    return oldest, f"No play history — trophy set covers {', '.join(candidates)}", False
+    # Handheld first, then oldest console: the PS3/Vita cross-buy era is
+    # where trophy-only sets come from, and the handheld copy is the better
+    # guess. Was the last entry of the display list, which happened to be
+    # the Vita; the display order no longer encodes that.
+    guess = min(candidates, key=lambda p: (p not in ("PSVITA", "PSP"), _age(p)))
+    return guess, f"No play history — trophy set covers {', '.join(candidates)}", False
 
 
 def platform_for_item(db: Session, item: dict) -> int | None:
@@ -2785,9 +2804,10 @@ def _fold_group_rows(g: dict, member_rows: list[dict], by_key: dict) -> dict:
                 "platinum": orow.get("platinum"),
             }
         )
-    # Nothing has trophies anywhere (a PS+ catalog pair): one dash for the
-    # row, not a dash per platform.
-    row["sets"] = sets if any(s["defined"] for s in sets) else []
+    # One line per owner whenever there are several, dashes included: the
+    # checkboxes stack one per platform on every such row, and the progress
+    # column matches them line for line.
+    row["sets"] = sets
     row["trophy_progress"] = max((r["trophy_progress"] or 0) for r in member_rows)
     row["total_minutes"] = sum(o.get("minutes") or 0 for o in row["options"])
     row["last_played"] = max((r["last_played"] or "" for r in member_rows), default="")

@@ -5760,7 +5760,9 @@ def test_two_platform_skus_are_one_row_with_an_entry_per_platform(client, db_ses
     opts = {o["platform"]: o for o in row["options"]}
     assert set(opts) == {"PS4", "PS5"}
     assert opts["PS4"]["owner"] == "CUSA47498_00" and opts["PS5"]["owner"] == "PPSA21401_00"
-    assert row["sets"] == [], "no trophy lines when nothing has trophies"
+    # One line per platform, dashes included, so the progress column matches
+    # the stacked checkboxes line for line.
+    assert [(s["platforms"], s["defined"]) for s in row["sets"]] == [(["PS4"], 0), (["PS5"], 0)]
 
     r = client.post(f"/tools/psn-review/{row['key']}/confirm", data={"platforms": ["PS4", "PS5"]}, headers={"HX-Request": "true"})
     assert r.status_code == 200
