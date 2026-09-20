@@ -7,7 +7,7 @@
    it and the client compensates the scroll position for the rows inserted
    above the viewport. #}
 {% if prev_page_url %}
-<tr id="psn-scroll-prev" hx-get="{{ prev_page_url }}" hx-trigger="revealed" hx-swap="outerHTML" data-page="{{ page - 1 }}">
+<tr id="psn-scroll-prev" hx-get="{{ prev_page_url }}" hx-trigger="psn:load once, revealed" hx-sync="this:drop" hx-swap="outerHTML" data-page="{{ page - 1 }}">
   <td colspan="5"></td>
 </tr>
 {% endif %}
@@ -160,7 +160,9 @@
    next page, which carries its own sentinel. 561 rows in one response is a slow
    build and a heavy DOM, and you rarely scroll past the first screen. #}
 {% if next_page_url %}
-<tr id="psn-scroll-sentinel" hx-get="{{ next_page_url }}" hx-trigger="revealed" hx-swap="outerHTML" data-page="{{ (page or 1) + 1 }}">
+{# psn:load is fired by an intersection observer ~1.5 screens early, so the
+   page is in place before you reach it; revealed is the fallback. #}
+<tr id="psn-scroll-sentinel" hx-get="{{ next_page_url }}" hx-trigger="psn:load once, revealed" hx-sync="this:drop" hx-swap="outerHTML" data-page="{{ (page or 1) + 1 }}">
   <td colspan="5"></td>
 </tr>
 {% endif %}

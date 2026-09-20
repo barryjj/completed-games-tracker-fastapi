@@ -487,6 +487,26 @@ function psnSentinelUrl(tpl, page, dir) {
   return u.pathname + u.search;
 }
 
+// Fetch the next page while it is still ~1.5 screens away, not when its
+// sentinel is reached: the rows are in place before you get there, and the
+// page boundary is just more rows. "revealed" fired at the edge, so every
+// boundary was a blip -- the load, then the rows arriving under you.
+var psnPrefetch = ('IntersectionObserver' in window)
+  ? new IntersectionObserver(function(entries) {
+      entries.forEach(function(en) {
+        if (!en.isIntersecting) return;
+        psnPrefetch.unobserve(en.target);
+        htmx.trigger(en.target, 'psn:load');
+      });
+    }, {root: null, rootMargin: '150% 0px 150% 0px', threshold: 0})
+  : null;
+function psnArmSentinels(root) {
+  if (!psnPrefetch) return;
+  (root || document).querySelectorAll('#psn-scroll-sentinel, #psn-scroll-prev').forEach(function(tr) { psnPrefetch.observe(tr); });
+}
+document.addEventListener('DOMContentLoaded', function() { psnArmSentinels(); });
+document.addEventListener('htmx:afterSettle', function(e) { if (e.target && e.target.closest && e.target.closest('#psn-review-table')) psnArmSentinels(); });
+
 function psnEnsureSentinel(id, page, dir, anyUrl, tbody, atTop) {
   // Recreated rather than re-pointed: htmx caches a node's attributes on
   // first processing, so editing hx-get on a live sentinel may not take.
@@ -496,11 +516,13 @@ function psnEnsureSentinel(id, page, dir, anyUrl, tbody, atTop) {
   tr.id = id;
   tr.dataset.page = page;
   tr.setAttribute('hx-get', psnSentinelUrl(anyUrl, page, dir));
-  tr.setAttribute('hx-trigger', 'revealed');
+  tr.setAttribute('hx-trigger', 'psn:load once, revealed');
+  tr.setAttribute('hx-sync', 'this:drop');
   tr.setAttribute('hx-swap', 'outerHTML');
   tr.innerHTML = '<td colspan="5"></td>';
   if (atTop) tbody.insertBefore(tr, tbody.firstChild); else tbody.appendChild(tr);
   htmx.process(tr);
+  if (psnPrefetch) psnPrefetch.observe(tr);
 }
 
 function psnWindowRows(landedPage) {
@@ -540,7 +562,13 @@ function psnWindowRows(landedPage) {
 // keeps that row at the same spot. If the browser already anchored, the
 // delta is zero and nothing moves.
 function psnPruneAndHold(landed, anchors) {
+  var before = document.scrollingElement.scrollTop;
   psnWindowRows(landed);
+  // If the browser moved the scroll position itself while rows were removed
+  // (WKWebView anchors on its own and ignores overflow-anchor), it has
+  // already kept the view still; correcting again moved it a second time --
+  // the warp back to the row that had been at the bottom.
+  if (Math.abs(document.scrollingElement.scrollTop - before) > 1) return;
   var a = null;
   for (var i = 0; i < anchors.length; i++) { if (anchors[i].el.isConnected) { a = anchors[i]; break; } }
   if (a) {
