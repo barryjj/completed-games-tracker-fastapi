@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from contextlib import asynccontextmanager
 
 from alembic.config import Config
@@ -19,6 +20,20 @@ from .models import SessionLocal, get_db
 
 _worker_logger = logging.getLogger("steam.enrichment")
 _verify_logger = logging.getLogger("steam.artwork_verification")
+_timing_logger = logging.getLogger("cgt.timing")
+
+
+async def _timed_batch(label: str, fn, db) -> int:
+    """Run one worker batch in a thread and log how long it held the process.
+    The workers share the interpreter (and the GIL) with page requests; when
+    a page is slow, these lines beside the SLOW line say whether a batch was
+    running at the time."""
+    started = time.perf_counter()
+    result = await asyncio.to_thread(fn, db)
+    took_ms = (time.perf_counter() - started) * 1000
+    if took_ms >= 500:
+        _timing_logger.warning("WORKER %s batch took %.0f ms", label, took_ms)
+    return result
 
 
 async def _enrichment_worker():
@@ -40,12 +55,12 @@ async def _enrichment_worker():
             try:
                 from . import steam
 
-                pending = await asyncio.to_thread(steam.enrich_next_batch, db)
+                pending = await _timed_batch("enrichment", steam.enrich_next_batch, db)
                 if pending == 0:
                     # NULL queue drained — re-queue a batch of stale entries
                     # (metadata older than _METADATA_STALE_DAYS) so the worker
                     # keeps cycling through the library on a rolling basis.
-                    requeued = await asyncio.to_thread(steam.requeue_stale_metadata, db)
+                    requeued = await _timed_batch("enrichment requeue", steam.requeue_stale_metadata, db)
                     if requeued == 0:
                         await asyncio.sleep(300)  # nothing stale yet, check again in 5 min
                     # if entries were re-queued, loop immediately so the next
@@ -78,7 +93,7 @@ async def _artwork_verification_worker():
             try:
                 from . import steam
 
-                pending = await asyncio.to_thread(steam.verify_artwork_batch, db)
+                pending = await _timed_batch("artwork verification", steam.verify_artwork_batch, db)
                 if pending == 0:
                     await asyncio.sleep(600)  # fully caught up, check again in 10 min
                 else:
@@ -166,7 +181,15 @@ async def _no_store_html(request, call_next):
     HTML only. /static stays hard-cacheable, which is the whole point of
     versioning it — a changed file gets a new URL.
     """
+    started = time.perf_counter()
     response = await call_next(request)
+    # A page that took over a second is worth a line: the review queue showed
+    # 12-15s pages that measured 0.2s in isolation, and the question was what
+    # else the process was doing at the time. Slow ones only, so the log is
+    # readable; the worker lines below say what was running.
+    took_ms = (time.perf_counter() - started) * 1000
+    if took_ms >= 1000:
+        _timing_logger.warning("SLOW %s %s took %.0f ms", request.method, request.url.path, took_ms)
     if response.headers.get("content-type", "").startswith("text/html"):
         response.headers.setdefault("Cache-Control", "no-store")
         # Rendering one of the review pages IS looking at what needs attention;
