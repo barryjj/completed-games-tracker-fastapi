@@ -6888,6 +6888,40 @@ def test_a_store_copy_no_set_covers_is_its_own_row(db_session):
     assert not groups["PPSA02752_00"]["contested"], "a lone store copy has nothing to contest"
     assert [m.external_id for m in groups["PPSA02752_00"]["members"]] == ["PPSA02752_00"]
 
+    # Runner2: ONE set (Vita) and a bare PS4 purchase. Nothing contests, so
+    # the copy joins the game's row and gets its own "--" line beside the
+    # set's figures -- one game, the BlazBlue way.
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "npCommunicationId": "NPWR05099_00",
+                "name": "Runner2",
+                "displayName": "Runner2",
+                "normalizedName": "runner2",
+                "platform": "PSVITA",
+                "sources": ["titles"],
+                "trophies": {"bronze": 12, "silver": 3, "gold": 1},
+                "earnedTrophies": {"bronze": 10, "silver": 2, "gold": 1},
+                "trophyProgress": 61,
+            },
+            {
+                "titleId": "CUSA04816_00",
+                "name": "Runner2",
+                "displayName": "Runner2",
+                "normalizedName": "runner2",
+                "platform": "PS4",
+                "sources": ["purchased"],
+            },
+        ],
+    )
+    db_session.commit()
+    (runner,) = [g for g in psn.group_review_candidates(db_session.query(models.PsnReviewCandidate).all()) if g["norm"] == "runner2"]
+    assert sorted(m.external_id for m in runner["members"]) == ["CUSA04816_00", "NPWR05099_00"] and not runner["contested"]
+    row = next(r for r in psn.import_review_rows(db_session, user.id) if r["key"] == "CUSA04816_00")
+    assert [(s["platforms"], s["earned"], s["defined"]) for s in row["sets"]] == [(["PS4"], 0, 0), (["PSVITA"], 13, 16)]
+
     # A PS+ catalog pair with no sets anywhere stays one row (#212)...
     _seed_review(
         db_session,

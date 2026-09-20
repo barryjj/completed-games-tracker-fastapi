@@ -5,6 +5,18 @@
    The count is the content and the bar annotates it -- a rule under the
    number rather than a pill around it, so it does not become a third solid
    object in a row that already has checkbox chips and a filled button. #}
+{# A platform whose owner has no trophy set yet (a bare purchase beside a
+   set on another platform) is a line of the same shape with a dash where
+   the figures would be, and nothing to hover. #}
+{% if not unit.defined %}
+<span class="cgt-trophy-stat cgt-trophy-stat--bare">
+  {% include "partials/_icon_trophy.svg" %}
+  <span class="cgt-trophy-figures">
+    {% if plats %}<span class="cgt-trophy-set-plats">{{ plats | join(" · ") }}</span>{% endif %}
+    <span class="cgt-trophy-count text-secondary">&mdash;</span>
+  </span>
+</span>
+{% else %}
 <span class="cgt-trophy-stat cgt-trophy-stat--pop" tabindex="0">
   {% include "partials/_icon_trophy.svg" %}
   <span class="cgt-trophy-figures">
@@ -30,3 +42,4 @@
     {% endif %}
   </span>
 </span>
+{% endif %}

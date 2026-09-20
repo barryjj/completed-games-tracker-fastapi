@@ -1936,9 +1936,15 @@ body:has(.cgt-sticky-actions) {
 /* Platform checkboxes stacked to match a grouped row's stacked trophy units:
    the gap equals the units' so each platform lines up with its set. */
 .cgt-psn-plats--stacked {
+  /* inline-flex so the stack shrink-wraps and sits at the cell's right edge
+     (the cell is text-end), while its ITEMS align left: the checkboxes make
+     one straight column and the chips start at one x. Right-aligning the
+     items zigzagged the boxes, since PSVITA is wider than PS3. */
+  display: inline-flex !important;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 0.3rem !important;
+  text-align: left;
 }
 /* Each checkbox takes a set unit's height (platform label, count, bar) and
    centres in it, so the rows of the two stacks coincide. */
@@ -3348,6 +3354,12 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-psn-unmatched {
   color: var(--ctp-yellow);
 }
+/* A grouped row's line for a platform with no trophy set: same shape, the
+   glyph dimmed further, no hover. */
+.cgt-trophy-stat--bare > svg {
+  opacity: 0.18;
+}
+
 /* Playtime as a unit of the same shape as a trophy set, stacked under it in
    the Progress column: the clock sits in the glyph column and the figure
    lines up with the counts above it. */

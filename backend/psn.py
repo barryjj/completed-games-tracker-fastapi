@@ -2152,35 +2152,31 @@ def group_review_candidates(cands: list) -> list[dict]:
         # Same set id (two SKUs, one set) never competes with itself.
         #
         # Trophy sets first, so the subs form around them; then the records
-        # with no set. One of those joins a sub only when a set there covers
-        # its platform, or the sub has no sets at all (a PS+ catalog PS4/PS5
-        # pair, which is one game with no progress anywhere). A store copy no
-        # set covers is a copy whose set has not appeared yet -- Crimsonland's
-        # PS5 SKU beside two PS3/Vita/PS4 sets -- and rolling it into a set's
-        # row said that set covered it. It gets its own row; the set attaches
-        # to the same record when the game is launched.
-        def _sub_covers(sub: list, plats: set[str]) -> bool:
-            return any(_set_id(o) and plats <= set(platform_candidates(o.raw_data or {})) for o in sub)
-
-        def _sub_has_set(sub: list) -> bool:
-            return any(_set_id(o) for o in sub)
-
+        # with no set. A bare copy joins the game's row -- Runner2's PS4
+        # purchase beside its Vita set is one game, shown with a "--" line
+        # for the platform whose set has not appeared yet -- UNLESS the sets
+        # contest each other, in which case the copy cannot be placed with
+        # either and stands alone: Crimsonland's PS5 SKU beside two
+        # PS3/Vita/PS4 lists. Two set-bearing subs means contested.
         subs: list[list] = []
-        ordered = sorted(members, key=lambda c: (not _set_id(c), c.external_id or ""))
-        for m in ordered:
+        with_set = sorted((m for m in members if _set_id(m)), key=lambda c: c.external_id or "")
+        bare = sorted((m for m in members if not _set_id(m)), key=lambda c: c.external_id or "")
+        for m in with_set:
             m_set = _set_id(m)
             m_plats = set(platform_candidates(m.raw_data or {}))
             for sub in subs:
-                if m_set:
-                    clash = any(_set_id(o) and _set_id(o) != m_set and (set(platform_candidates(o.raw_data or {})) & m_plats) for o in sub)
-                    if not clash:
-                        sub.append(m)
-                        break
-                elif not _sub_has_set(sub) or _sub_covers(sub, m_plats):
+                clash = any(_set_id(o) != m_set and (set(platform_candidates(o.raw_data or {})) & m_plats) for o in sub)
+                if not clash:
                     sub.append(m)
                     break
             else:
                 subs.append([m])
+        if len(subs) == 1:
+            subs[0].extend(bare)
+        elif not subs:
+            subs.append(list(bare))
+        else:
+            subs.extend([m] for m in bare)
 
         # Contested means two different SETS claim a platform -- not merely
         # that the game became several rows. A store copy split off on its
@@ -2767,14 +2763,16 @@ def _fold_group_rows(g: dict, member_rows: list[dict], by_key: dict) -> dict:
     rank = {p: i for i, p in enumerate(_PS_PLATFORM_RANK)}
     row["options"] = [options[p] for p in sorted(options, key=lambda p: rank.get(p, len(rank)))]
 
-    # One trophy line per record that owns something and has trophies. Two SKUs
-    # of one set collapse to one line; a cross-gen single set is one line
-    # listing both platforms; Nioh 2's PS4 set and the PS5 Remastered set are
-    # two lines, which is the whole point of showing them.
+    # One line per record that owns a platform. Two SKUs of one set collapse
+    # to one line; a cross-gen single set is one line listing both platforms;
+    # Nioh 2's PS4 set and the PS5 Remastered set are two lines, which is the
+    # whole point of showing them. A bare copy -- Runner2's PS4 purchase
+    # beside its Vita set -- is a line too, showing "--": the row must not
+    # let the neighbour's figures stand for a platform no set covers.
     sets = []
     for owner_key in dict.fromkeys(o["owner"] for o in row["options"]):
         orow = by_key.get(owner_key)
-        if not orow or not orow["trophy_defined"]:
+        if not orow:
             continue
         sets.append(
             {
@@ -2787,7 +2785,9 @@ def _fold_group_rows(g: dict, member_rows: list[dict], by_key: dict) -> dict:
                 "platinum": orow.get("platinum"),
             }
         )
-    row["sets"] = sets
+    # Nothing has trophies anywhere (a PS+ catalog pair): one dash for the
+    # row, not a dash per platform.
+    row["sets"] = sets if any(s["defined"] for s in sets) else []
     row["trophy_progress"] = max((r["trophy_progress"] or 0) for r in member_rows)
     row["total_minutes"] = sum(o.get("minutes") or 0 for o in row["options"])
     row["last_played"] = max((r["last_played"] or "" for r in member_rows), default="")
