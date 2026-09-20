@@ -89,10 +89,10 @@
       {% with unit = {"earned": r.trophy_earned, "defined": r.trophy_defined, "tiers": r.trophy_tiers, "platinum": r.platinum}, plats = [o.platform] %}{% include "partials/_psn_trophy_unit.html" %}{% endwith %}
       {% endfor %}
     </span>
-    {% elif r.trophy_defined %}
+    {% else %}
+    {# One platform: the same unit, with or without a set -- a bare row is
+       the dimmed glyph and a dash, the shape a stacked row's bare line has. #}
     {% with unit = {"earned": r.trophy_earned, "defined": r.trophy_defined, "tiers": r.trophy_tiers, "platinum": r.platinum}, plats = none %}{% include "partials/_psn_trophy_unit.html" %}{% endwith %}
-    {% elif not r.total_minutes %}
-    <span class="text-secondary small">&mdash;</span>
     {% endif %}
     {# Playtime under the trophies, in the one Progress column -- the same
        stack the card's Progress panel uses. A column of its own was empty on
