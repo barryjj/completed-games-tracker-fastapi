@@ -3764,9 +3764,22 @@ def _proposal_by_concept(user: models.User, item: dict, igdb_ids: list[int]) -> 
     hit_ids = [p for p in (hit.get("platform_ids") or []) if p in igdb_ids]
     if not hit_ids:
         return None
-    ours = titles.normalize_for_match(item.get("displayName") or item.get("name") or "")
+    our_name = item.get("displayName") or item.get("name") or ""
+    ours = titles.normalize_for_match(our_name)
     name = hit["name"].strip()
     folded = hit.get("collapsed_from")
+    # A concept id is an identity link, but Sony's identities are not always
+    # one game: "Uncharted: The Lost Legacy" is filed under Uncharted 4's
+    # concept, and IGDB maps that concept to Uncharted 4 -- so the link
+    # renamed a standalone expansion to the game it expands. The same gate
+    # the search path applies: the hit must be a fuller name for OURS (or
+    # for the store's), judged by the name it was found under when it was
+    # folded onto a parent. A different game falls through to the search,
+    # where the platinum's own words can speak.
+    matched_as = folded or name
+    store_name = item.get("storeTitle") or ""
+    if not (_is_same_game(our_name, matched_as) or (store_name and _is_same_game(store_name, matched_as))):
+        return None
     return {
         "proposed_title": None if titles.normalize_for_match(name) == ours else name,
         "proposed_igdb_id": hit["id"],
@@ -3943,6 +3956,15 @@ def fill_review_proposals(db: Session, user: models.User, progress_callback=None
         # rung for ("LittleBigPlanet2"), so the new term reaches it without
         # re-asking about the other thousand rows.
         or (r.proposal_status == "none" and _TRAILING_DIGIT_RE.search(r.title or ""))
+        # Or a concept-id rename to a name that is not a fuller form of ours
+        # -- the Lost Legacy shape -- from before the concept path had the
+        # same-game gate.
+        or (
+            (r.raw_data or {}).get("conceptId")
+            and r.proposed_title
+            and not _is_same_game(r.title or "", r.proposed_title)
+            and not _is_same_game((r.raw_data or {}).get("storeTitle") or "", r.proposed_title)
+        )
     ]
     # EVERY pending row is looked up, not just trophy-only ones. This used to
     # filter to `is_trophy_only`, on the theory that a store-backed row "got its

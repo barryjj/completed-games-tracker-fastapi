@@ -6983,3 +6983,42 @@ def test_an_unidentified_glued_digit_title_is_looked_up_again(db_session, monkey
     psn.fill_review_proposals(db_session, user, store_sleep=0)
     assert "LittleBigPlanet 2" in seen
     assert cand.proposed_igdb_id == 2 and cand.proposed_title == "LittleBigPlanet 2"
+
+
+def test_the_concept_path_refuses_a_different_game(db_session, monkeypatch):
+    """Sony files "Uncharted: The Lost Legacy" under Uncharted 4's store
+    concept, and IGDB maps that concept to Uncharted 4. An identity link is
+    still not licence to rename one game to another: the hit has to be a
+    fuller name for ours, judged by the name it was found under when it was
+    folded onto a parent. Otherwise the row falls through to the search."""
+    from backend import igdb
+
+    user = models.User(name="u", username="u", password_hash="x", api_token="utok", twitch_client_id="cid", twitch_client_secret="sec")
+    db_session.add(user)
+    db_session.commit()
+    uc4 = {
+        "id": 7331,
+        "name": "Uncharted 4: A Thief's End",
+        "slug": "uncharted-4",
+        "platform_ids": [48],
+        "game_type": 0,
+        "released": "2016-05-10",
+    }
+    monkeypatch.setattr(igdb, "lookup_by_ps_concept", lambda cid, sec, concept: uc4)
+    assert psn._proposal_by_concept(user, {"name": "Uncharted: The Lost Legacy", "conceptId": 205354}, [48]) is None
+    # The game itself, under the same concept, still matches outright.
+    assert psn._proposal_by_concept(user, {"name": "Uncharted 4: A Thief's End", "conceptId": 205354}, [48])["proposed_igdb_id"] == 7331
+
+    # A bundle folded onto its parent is judged by the bundle's name: Shovel
+    # Knight: Treasure Trove IS Shovel Knight, and the shorter name stands.
+    trove = {
+        "id": 9,
+        "name": "Shovel Knight: Treasure Trove",
+        "slug": "trove",
+        "platform_ids": [48],
+        "game_type": 3,
+        "version_parent": {"id": 8, "name": "Shovel Knight", "slug": "shovel-knight", "first_release_date": 1403740800},
+    }
+    monkeypatch.setattr(igdb, "lookup_by_ps_concept", lambda cid, sec, concept: trove)
+    p = psn._proposal_by_concept(user, {"name": "Shovel Knight: Treasure Trove", "conceptId": 203974}, [48])
+    assert p["proposed_igdb_id"] == 8 and p["proposed_title"] == "Shovel Knight"
