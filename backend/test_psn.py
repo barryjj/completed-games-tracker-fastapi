@@ -3178,6 +3178,16 @@ def test_the_list_scrolls_a_page_at_a_time(client, db_session):
     filtered = client.get("/tools/psn-review/more?page=2&q=Game%2005", headers={"HX-Request": "true"}).text
     assert "psn-scroll-sentinel" not in filtered
 
+    # The list is windowed on the client, so every row says which page it is
+    # from, and the page ABOVE can be fetched back with a sentinel for the
+    # one before it -- and none when there is nothing above.
+    assert first.count('data-page="1"') >= 50 and second.count('data-page="2"') >= 50
+    up = client.get("/tools/psn-review/more?page=2&dir=prev", headers={"HX-Request": "true"}).text
+    assert 'id="psn-scroll-prev"' in up and "page=1" in up and "dir=prev" in up
+    assert "psn-scroll-sentinel" not in up, "a page fetched upward brings no bottom sentinel"
+    top = client.get("/tools/psn-review/more?page=1&dir=prev", headers={"HX-Request": "true"}).text
+    assert "psn-scroll-prev" not in top and "Game 000" in top
+
 
 def test_the_server_marks_which_card_is_showing(client, db_session):
     """Cards used to render hidden and rely on JS to un-hide one. Any error

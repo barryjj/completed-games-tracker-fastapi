@@ -3,8 +3,16 @@
    two Crimsonland rows is correct data, not a duplicate. The trophy progress
    column is what tells them apart, which is why it's a real column and not a
    detail tucked into the card view. #}
+{# The page above, when the window has dropped it: scrolling back up fetches
+   it and the client compensates the scroll position for the rows inserted
+   above the viewport. #}
+{% if prev_page_url %}
+<tr id="psn-scroll-prev" hx-get="{{ prev_page_url }}" hx-trigger="revealed" hx-swap="outerHTML" data-page="{{ page - 1 }}">
+  <td colspan="5"></td>
+</tr>
+{% endif %}
 {% for r in rows %}
-<tr id="psn-row-{{ r.key }}">
+<tr id="psn-row-{{ r.key }}" data-page="{{ page or 1 }}">
   {# Only visible while the table carries .psn-select-mode, so normal review
      stays checkbox-free. Same mechanic as import review's bulk mode. #}
   <td class="align-middle psn-bulk-cell">
@@ -144,7 +152,7 @@
    next page, which carries its own sentinel. 561 rows in one response is a slow
    build and a heavy DOM, and you rarely scroll past the first screen. #}
 {% if next_page_url %}
-<tr id="psn-scroll-sentinel" hx-get="{{ next_page_url }}" hx-trigger="revealed" hx-swap="outerHTML">
+<tr id="psn-scroll-sentinel" hx-get="{{ next_page_url }}" hx-trigger="revealed" hx-swap="outerHTML" data-page="{{ (page or 1) + 1 }}">
   <td colspan="5"></td>
 </tr>
 {% endif %}

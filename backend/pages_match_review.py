@@ -46,12 +46,13 @@ _PSN_SORTS = {
 }
 
 
-def _psn_more_url(page: int, platform: str, q: str, sort: str) -> str:
-    """Next scroll page for the PSN review list, filters carried along.
+def _psn_more_url(page: int, platform: str, q: str, sort: str, direction: str = "next") -> str:
+    """One scroll page of the PSN review list, filters carried along.
 
-    Same contract as /library/more: the sentinel swaps itself for the next
-    page's rows plus a fresh sentinel, so the filters have to survive or page 2
-    would show a different queue than page 1.
+    Same contract as /library/more: a sentinel swaps itself for a page's rows
+    plus a fresh sentinel, so the filters have to survive or page 2 would
+    show a different queue than page 1. direction="prev" is the sentinel at
+    the TOP of a windowed list, fetching the page above.
     """
     params: dict[str, str] = {"page": str(page)}
     if platform:
@@ -60,6 +61,8 @@ def _psn_more_url(page: int, platform: str, q: str, sort: str) -> str:
         params["q"] = q
     if sort != "name":
         params["sort"] = sort
+    if direction == "prev":
+        params["dir"] = "prev"
     return "/tools/psn-review/more?" + urlencode(params)
 
 
@@ -232,6 +235,7 @@ def psn_review_page(
         "active_key": active_key,
         "active_offset": active_offset,
         "next_page_url": next_page_url,
+        "page": 1,
         "view": view,
         "platform": platform,
         "q": q,
@@ -478,17 +482,23 @@ async def psn_review_reopen(
 @router.get("/tools/psn-review/more")
 def psn_review_more(
     request: Request,
-    page: int = Query(2, ge=2),
+    page: int = Query(2, ge=1),
     platform: str = Query(""),
     q: str = Query(""),
     sort: str = Query("name"),
+    dir: str = Query("next"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """One more page of review rows, plus the sentinel for the page after it.
+    """One more page of review rows, plus the sentinel for the page beyond it.
 
     Same contract as /library/more: the sentinel swaps ITSELF for this response,
-    so it has to carry the next one or scrolling stops silently.
+    so it has to carry the next one or scrolling stops silently. The list is
+    WINDOWED on the client -- rows more than two pages from the one just
+    loaded are dropped -- so dir=prev serves the page above with a sentinel
+    for the one before that, and the DOM stays three pages deep however far
+    you scroll. Nine hundred rows each carrying a hero, a dropdown and a
+    popover was what made the queue crawl toward the end.
     """
     from . import psn
 
@@ -509,8 +519,12 @@ def psn_review_more(
         name="partials/_psn_review_rows.html",
         context={
             "rows": rows,
+            "page": page,
             "current_user": current_user,
-            "next_page_url": _psn_more_url(page + 1, platform, q, sort) if start + _LIST_PAGE_SIZE < len(index_rows) else None,
+            "next_page_url": (
+                _psn_more_url(page + 1, platform, q, sort) if dir != "prev" and start + _LIST_PAGE_SIZE < len(index_rows) else None
+            ),
+            "prev_page_url": _psn_more_url(page - 1, platform, q, sort, "prev") if dir == "prev" and page > 1 else None,
         },
     )
 

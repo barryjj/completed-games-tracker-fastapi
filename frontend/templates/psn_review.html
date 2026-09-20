@@ -458,6 +458,105 @@ document.addEventListener('htmx:afterSwap', function(e) {
   }, 1600);
 });
 
+// ── Windowed infinite scroll ─────────────────────────────────────────────
+// Every page APPENDED, so by the end of a 900-row queue the DOM held all of
+// it — each row with a hero image, a dropdown and a popover — and WKWebView
+// crawled. The server was never the cost: a page is 0.2s wherever it sits.
+// Now the list keeps three pages: after a page lands, rows more than two
+// pages away from it are dropped and a sentinel is left on that side, so
+// scrolling back fetches them again. Loading ABOVE the viewport would shove
+// the page down by the rows inserted, so the scroll position is corrected
+// by exactly that height.
+var PSN_WINDOW_PAGES = 3;
+
+function psnPageRows() {
+  var rows = {};
+  document.querySelectorAll('#psn-review-table tbody tr[data-page]').forEach(function(tr) {
+    if (tr.id === 'psn-scroll-prev' || tr.id === 'psn-scroll-sentinel') return;
+    var p = parseInt(tr.dataset.page, 10);
+    (rows[p] = rows[p] || []).push(tr);
+  });
+  return rows;
+}
+
+function psnSentinelUrl(tpl, page, dir) {
+  // The sentinels carry the filters in their URL; only page/dir change.
+  var u = new URL(tpl, window.location.origin);
+  u.searchParams.set('page', String(page));
+  if (dir === 'prev') u.searchParams.set('dir', 'prev'); else u.searchParams.delete('dir');
+  return u.pathname + u.search;
+}
+
+function psnEnsureSentinel(id, page, dir, anyUrl, tbody, atTop) {
+  // Recreated rather than re-pointed: htmx caches a node's attributes on
+  // first processing, so editing hx-get on a live sentinel may not take.
+  var existing = document.getElementById(id);
+  if (existing) existing.remove();
+  var tr = document.createElement('tr');
+  tr.id = id;
+  tr.dataset.page = page;
+  tr.setAttribute('hx-get', psnSentinelUrl(anyUrl, page, dir));
+  tr.setAttribute('hx-trigger', 'revealed');
+  tr.setAttribute('hx-swap', 'outerHTML');
+  tr.innerHTML = '<td colspan="5"></td>';
+  if (atTop) tbody.insertBefore(tr, tbody.firstChild); else tbody.appendChild(tr);
+  htmx.process(tr);
+}
+
+function psnWindowRows(landedPage) {
+  var tbody = document.querySelector('#psn-review-table tbody');
+  if (!tbody) return;
+  var byPage = psnPageRows();
+  var pages = Object.keys(byPage).map(Number).sort(function(a, b) { return a - b; });
+  if (pages.length <= PSN_WINDOW_PAGES) return;
+  var anySentinel = document.getElementById('psn-scroll-sentinel') || document.getElementById('psn-scroll-prev');
+  var urlTpl = anySentinel ? anySentinel.getAttribute('hx-get') : null;
+  if (!urlTpl) return;
+  var lo = landedPage - (PSN_WINDOW_PAGES - 1), hi = landedPage + (PSN_WINDOW_PAGES - 1);
+  // Keep the window centred on the page that just landed; drop the far side.
+  var keep = pages.filter(function(p) { return p >= lo && p <= hi; });
+  if (keep.length > PSN_WINDOW_PAGES) {
+    keep = landedPage >= pages[pages.length - 1] ? keep.slice(-PSN_WINDOW_PAGES) : keep.slice(0, PSN_WINDOW_PAGES);
+  }
+  var droppedAbove = 0;
+  pages.forEach(function(p) {
+    if (keep.indexOf(p) !== -1) return;
+    byPage[p].forEach(function(tr) { if (p < keep[0]) droppedAbove += tr.offsetHeight; tr.remove(); });
+  });
+  if (droppedAbove) document.scrollingElement.scrollTop -= droppedAbove;
+  if (keep[0] > 1) psnEnsureSentinel('psn-scroll-prev', keep[0] - 1, 'prev', urlTpl, tbody, true);
+  else { var sp = document.getElementById('psn-scroll-prev'); if (sp) sp.remove(); }
+  // A bottom sentinel is only re-created if the server said there was more:
+  // the one it sent survives unless it was in the dropped pages.
+  if (!document.getElementById('psn-scroll-sentinel') && keep[keep.length - 1] < pages[pages.length - 1]) {
+    psnEnsureSentinel('psn-scroll-sentinel', keep[keep.length - 1] + 1, 'next', urlTpl, tbody, false);
+  }
+}
+
+// Rows loaded ABOVE push everything down; put the viewport back where it was.
+var psnPrevSwapHeightBefore = 0;
+document.addEventListener('htmx:beforeSwap', function(e) {
+  if (e.target && e.target.id === 'psn-scroll-prev') {
+    psnPrevSwapHeightBefore = document.scrollingElement.scrollHeight;
+  }
+});
+document.addEventListener('htmx:afterSettle', function(e) {
+  // An outerHTML swap of a sentinel settles on the PARENT (the tbody), so
+  // the page that landed is read off the request that fetched it.
+  var t = e.target;
+  if (!t || !t.closest || !t.closest('#psn-review-table')) return;
+  var path = e.detail && e.detail.pathInfo && (e.detail.pathInfo.finalRequestPath || e.detail.pathInfo.requestPath);
+  if (!path || path.indexOf('/tools/psn-review/more') === -1) return;
+  var landed = parseInt(new URL(path, window.location.origin).searchParams.get('page') || '0', 10);
+  if (!landed) return;
+  if (psnPrevSwapHeightBefore) {
+    var grown = document.scrollingElement.scrollHeight - psnPrevSwapHeightBefore;
+    if (grown > 0) document.scrollingElement.scrollTop += grown;
+    psnPrevSwapHeightBefore = 0;
+  }
+  psnWindowRows(landed);
+});
+
 // Confirming one set changes what its siblings may claim, and they're already
 // rendered — re-render the queue so their options reflect it.
 document.body.addEventListener('cgt:psnSiblingsStale', function() {
