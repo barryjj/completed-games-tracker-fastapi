@@ -546,16 +546,29 @@ function psnWindowRows(landedPage) {
 // further on. Rows inserted or dropped above the anchor move its document
 // position; your scrolling does not. Correcting by that delta alone leaves
 // the scroll you did meanwhile untouched.
-var psnAnchor = null;
+var psnAnchors = null;
 function psnDocTop(el) { return el.getBoundingClientRect().top + document.scrollingElement.scrollTop; }
-document.addEventListener('htmx:beforeSwap', function(e) {
-  if (!e.target || (e.target.id !== 'psn-scroll-prev' && e.target.id !== 'psn-scroll-sentinel')) return;
+// The rows on screen right now, with their document positions.
+function psnVisibleAnchors() {
+  var out = [];
   var rows = document.querySelectorAll('#psn-review-table tbody tr[data-page]');
   for (var i = 0; i < rows.length; i++) {
     if (rows[i].id.indexOf('psn-scroll') === 0) continue;
     var r = rows[i].getBoundingClientRect();
-    if (r.bottom > 0) { psnAnchor = {el: rows[i], docTop: psnDocTop(rows[i])}; break; }
+    if (r.bottom > 0 && r.top < window.innerHeight) out.push({el: rows[i], docTop: r.top + document.scrollingElement.scrollTop});
   }
+  return out;
+}
+// Only a page loading ABOVE moves anything before it lands, so only that
+// case needs an anchor from before the swap -- and several candidates, since
+// a fast scroll can carry the first one out of the window by landing time.
+// A page loading BELOW takes its anchor at landing, before the prune, when
+// nothing has moved yet and nothing can be stale. Anchoring on the row that
+// was on screen when the REQUEST started lost it in the prune during a fast
+// scroll: no correction, the content above shrank, and you dropped two
+// screens.
+document.addEventListener('htmx:beforeSwap', function(e) {
+  if (e.target && e.target.id === 'psn-scroll-prev') psnAnchors = psnVisibleAnchors();
 });
 document.addEventListener('htmx:afterSettle', function(e) {
   // An outerHTML swap of a sentinel settles once per inserted row, on each
@@ -569,16 +582,20 @@ document.addEventListener('htmx:afterSettle', function(e) {
   if (e.detail.xhr) e.detail.xhr.__psnHandled = true;
   var landed = parseInt(new URL(path, window.location.origin).searchParams.get('page') || '0', 10);
   if (!landed) return;
+  var loadedAbove = path.indexOf('dir=prev') !== -1;
+  var anchors = loadedAbove ? (psnAnchors || []) : psnVisibleAnchors();
+  psnAnchors = null;
   psnWindowRows(landed);
-  if (psnAnchor && psnAnchor.el.isConnected) {
-    var delta = psnDocTop(psnAnchor.el) - psnAnchor.docTop;
+  var a = null;
+  for (var i = 0; i < anchors.length; i++) { if (anchors[i].el.isConnected) { a = anchors[i]; break; } }
+  if (a) {
+    var delta = psnDocTop(a.el) - a.docTop;
     // behavior: 'instant', not scrollTop +=. Bootstrap puts scroll-behavior:
     // smooth on the root, so a plain assignment ANIMATES there over a few
     // hundred ms -- the visible glide after every page load -- and a
     // position read while that animation is in flight is wrong.
     if (Math.abs(delta) > 1) window.scrollTo({top: document.scrollingElement.scrollTop + delta, behavior: 'instant'});
   }
-  psnAnchor = null;
 });
 
 // Confirming one set changes what its siblings may claim, and they're already
