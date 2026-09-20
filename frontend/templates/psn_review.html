@@ -460,19 +460,29 @@ document.addEventListener('htmx:afterSwap', function(e) {
 
 // ── Windowed infinite scroll ─────────────────────────────────────────────
 // Every page APPENDED, so by the end of a 900-row queue the DOM held all of
-// it — each row with a hero image, a dropdown and a popover — and WKWebView
+// it -- each row with a hero image, a dropdown and a popover -- and WKWebView
 // crawled. The server was never the cost: a page is 0.2s wherever it sits.
-// Now the list keeps three pages: after a page lands, rows more than two
-// pages away from it are dropped and a sentinel is left on that side, so
-// scrolling back fetches them again. Loading ABOVE the viewport would shove
-// the page down by the rows inserted, so the scroll position is corrected
-// by exactly that height.
+//
+// The list keeps three pages of real rows. Pages that fall out of the window
+// are not removed from the geometry: the ones above are replaced by ONE
+// spacer row of their exact combined height, the ones below simply go. So
+// the document never changes shape under the viewport, and nothing -- not
+// this script, not the browser's own scroll anchoring -- has any reason to
+// move the scroll position. Every earlier version of this corrected
+// scrollTop by hand after a prune, and every one of them fought WKWebView,
+// which anchors on its own a frame later: the view warped whenever you
+// stopped scrolling. Geometry that never changes needs no correction.
+//
+// Scrolling back up: the sentinel below the spacer fetches the page above;
+// its rows arrive and the spacer shrinks by that page's recorded height in
+// the same task, net zero.
 var PSN_WINDOW_PAGES = 3;
+var psnPageHeights = {};
 
 function psnPageRows() {
   var rows = {};
   document.querySelectorAll('#psn-review-table tbody tr[data-page]').forEach(function(tr) {
-    if (tr.id === 'psn-scroll-prev' || tr.id === 'psn-scroll-sentinel') return;
+    if (tr.id === 'psn-scroll-prev' || tr.id === 'psn-scroll-sentinel' || tr.id === 'psn-spacer-top') return;
     var p = parseInt(tr.dataset.page, 10);
     (rows[p] = rows[p] || []).push(tr);
   });
@@ -480,17 +490,16 @@ function psnPageRows() {
 }
 
 function psnSentinelUrl(tpl, page, dir) {
-  // The sentinels carry the filters in their URL; only page/dir change.
   var u = new URL(tpl, window.location.origin);
   u.searchParams.set('page', String(page));
   if (dir === 'prev') u.searchParams.set('dir', 'prev'); else u.searchParams.delete('dir');
   return u.pathname + u.search;
 }
 
-// Fetch the next page while it is still ~1.5 screens away, not when its
-// sentinel is reached: the rows are in place before you get there, and the
-// page boundary is just more rows. "revealed" fired at the edge, so every
-// boundary was a blip -- the load, then the rows arriving under you.
+// Fetch the next page while it is still ~1.5 screens away, so the rows are
+// in place before you reach the boundary and the boundary is just more rows.
+// "revealed" stays as the fallback trigger, with hx-sync drop so the two
+// cannot double-request.
 var psnPrefetch = ('IntersectionObserver' in window)
   ? new IntersectionObserver(function(entries) {
       entries.forEach(function(en) {
@@ -500,130 +509,104 @@ var psnPrefetch = ('IntersectionObserver' in window)
       });
     }, {root: null, rootMargin: '150% 0px 150% 0px', threshold: 0})
   : null;
-function psnArmSentinels(root) {
+function psnArmSentinels() {
   if (!psnPrefetch) return;
-  (root || document).querySelectorAll('#psn-scroll-sentinel, #psn-scroll-prev').forEach(function(tr) { psnPrefetch.observe(tr); });
+  document.querySelectorAll('#psn-scroll-sentinel, #psn-scroll-prev').forEach(function(tr) { psnPrefetch.observe(tr); });
 }
 document.addEventListener('DOMContentLoaded', function() { psnArmSentinels(); });
-document.addEventListener('htmx:afterSettle', function(e) { if (e.target && e.target.closest && e.target.closest('#psn-review-table')) psnArmSentinels(); });
 
-function psnEnsureSentinel(id, page, dir, anyUrl, tbody, atTop) {
-  // Recreated rather than re-pointed: htmx caches a node's attributes on
-  // first processing, so editing hx-get on a live sentinel may not take.
-  var existing = document.getElementById(id);
-  if (existing) existing.remove();
+function psnMakeSentinel(id, page, dir, urlTpl) {
   var tr = document.createElement('tr');
   tr.id = id;
   tr.dataset.page = page;
-  tr.setAttribute('hx-get', psnSentinelUrl(anyUrl, page, dir));
+  tr.setAttribute('hx-get', psnSentinelUrl(urlTpl, page, dir));
   tr.setAttribute('hx-trigger', 'psn:load once, revealed');
   tr.setAttribute('hx-sync', 'this:drop');
   tr.setAttribute('hx-swap', 'outerHTML');
   tr.innerHTML = '<td colspan="5"></td>';
-  if (atTop) tbody.insertBefore(tr, tbody.firstChild); else tbody.appendChild(tr);
-  htmx.process(tr);
-  if (psnPrefetch) psnPrefetch.observe(tr);
+  return tr;
 }
 
-function psnWindowRows(landedPage) {
+function psnSpacer(tbody) {
+  var sp = document.getElementById('psn-spacer-top');
+  if (!sp) {
+    sp = document.createElement('tr');
+    sp.id = 'psn-spacer-top';
+    sp.dataset.height = '0';
+    sp.innerHTML = '<td colspan="5" style="padding:0;border:0;height:0"></td>';
+    tbody.insertBefore(sp, tbody.firstChild);
+  }
+  return sp;
+}
+function psnSetSpacer(tbody, height) {
+  var sp = psnSpacer(tbody);
+  height = Math.max(0, Math.round(height));
+  sp.dataset.height = String(height);
+  sp.firstElementChild.style.height = height + 'px';
+  if (!height) sp.remove();
+}
+
+function psnWindowRows(landedPage, loadedAbove) {
   var tbody = document.querySelector('#psn-review-table tbody');
   if (!tbody) return;
-  var byPage = psnPageRows();
-  var pages = Object.keys(byPage).map(Number).sort(function(a, b) { return a - b; });
-  if (pages.length <= PSN_WINDOW_PAGES) return;
   var anySentinel = document.getElementById('psn-scroll-sentinel') || document.getElementById('psn-scroll-prev');
   var urlTpl = anySentinel ? anySentinel.getAttribute('hx-get') : null;
+  var byPage = psnPageRows();
+  var pages = Object.keys(byPage).map(Number).sort(function(a, b) { return a - b; });
+  var spacerH = parseFloat((document.getElementById('psn-spacer-top') || {dataset: {height: '0'}}).dataset.height) || 0;
+
+  if (loadedAbove) {
+    // The page above just arrived under the spacer: take its height out of
+    // the spacer so the document stays the same length.
+    var h = 0;
+    (byPage[landedPage] || []).forEach(function(tr) { h += tr.offsetHeight; });
+    spacerH -= (psnPageHeights[landedPage] || h);
+    psnSetSpacer(tbody, spacerH);
+  }
+
+  if (pages.length > PSN_WINDOW_PAGES) {
+    var lo = landedPage - (PSN_WINDOW_PAGES - 1), hi = landedPage + (PSN_WINDOW_PAGES - 1);
+    var keep = pages.filter(function(p) { return p >= lo && p <= hi; });
+    if (keep.length > PSN_WINDOW_PAGES) {
+      keep = landedPage >= pages[pages.length - 1] ? keep.slice(-PSN_WINDOW_PAGES) : keep.slice(0, PSN_WINDOW_PAGES);
+    }
+    pages.forEach(function(p) {
+      if (keep.indexOf(p) !== -1) return;
+      var h = 0;
+      byPage[p].forEach(function(tr) { h += tr.offsetHeight; });
+      psnPageHeights[p] = h;
+      if (p < keep[0]) spacerH += h;   // above: keep the geometry
+      byPage[p].forEach(function(tr) { tr.remove(); });
+    });
+    psnSetSpacer(tbody, spacerH);
+    pages = keep;
+  }
+
   if (!urlTpl) return;
-  var lo = landedPage - (PSN_WINDOW_PAGES - 1), hi = landedPage + (PSN_WINDOW_PAGES - 1);
-  // Keep the window centred on the page that just landed; drop the far side.
-  var keep = pages.filter(function(p) { return p >= lo && p <= hi; });
-  if (keep.length > PSN_WINDOW_PAGES) {
-    keep = landedPage >= pages[pages.length - 1] ? keep.slice(-PSN_WINDOW_PAGES) : keep.slice(0, PSN_WINDOW_PAGES);
+  // Sentinels: one below the spacer when there is a page above, one at the
+  // bottom when there is a page below that the server did not already send.
+  var prev = document.getElementById('psn-scroll-prev');
+  if (pages[0] > 1) {
+    if (!prev || parseInt(prev.dataset.page, 10) !== pages[0] - 1) {
+      if (prev) prev.remove();
+      prev = psnMakeSentinel('psn-scroll-prev', pages[0] - 1, 'prev', urlTpl);
+      var sp = document.getElementById('psn-spacer-top');
+      if (sp) sp.after(prev); else tbody.insertBefore(prev, tbody.firstChild);
+      htmx.process(prev);
+    }
+  } else if (prev) {
+    prev.remove();
   }
-  pages.forEach(function(p) {
-    if (keep.indexOf(p) !== -1) return;
-    byPage[p].forEach(function(tr) { tr.remove(); });
-  });
-  if (keep[0] > 1) psnEnsureSentinel('psn-scroll-prev', keep[0] - 1, 'prev', urlTpl, tbody, true);
-  else { var sp = document.getElementById('psn-scroll-prev'); if (sp) sp.remove(); }
-  // A bottom sentinel is only re-created if the server said there was more:
-  // the one it sent survives unless it was in the dropped pages.
-  if (!document.getElementById('psn-scroll-sentinel') && keep[keep.length - 1] < pages[pages.length - 1]) {
-    psnEnsureSentinel('psn-scroll-sentinel', keep[keep.length - 1] + 1, 'next', urlTpl, tbody, false);
+  var next = document.getElementById('psn-scroll-sentinel');
+  var lastPage = pages[pages.length - 1];
+  if (!next && psnPageHeights[lastPage + 1] !== undefined) {
+    next = psnMakeSentinel('psn-scroll-sentinel', lastPage + 1, 'next', urlTpl);
+    tbody.appendChild(next);
+    htmx.process(next);
   }
+  psnArmSentinels();
 }
 
-// Keeping the viewport still while rows arrive above it or are dropped
-// above it. NOT by adding and subtracting heights: WebKit anchors scroll on
-// its own when content is inserted above the viewport, and a manual
-// correction on top of that moved you a full page -- the yank when
-// scrolling back up from the end. Instead: before the swap, note which row
-// is on screen and where; after every DOM change, put scrollTop wherever
-// keeps that row at the same spot. If the browser already anchored, the
-// delta is zero and nothing moves.
-function psnPruneAndHold(landed, anchors) {
-  var before = document.scrollingElement.scrollTop;
-  psnWindowRows(landed);
-  // If the browser moved the scroll position itself while rows were removed
-  // (WKWebView anchors on its own and ignores overflow-anchor), it has
-  // already kept the view still; correcting again moved it a second time --
-  // the warp back to the row that had been at the bottom.
-  if (Math.abs(document.scrollingElement.scrollTop - before) > 1) return;
-  var a = null;
-  for (var i = 0; i < anchors.length; i++) { if (anchors[i].el.isConnected) { a = anchors[i]; break; } }
-  if (a) {
-    var delta = psnDocTop(a.el) - a.docTop;
-    // behavior: 'instant', not scrollTop +=. Bootstrap puts scroll-behavior:
-    // smooth on the root, so a plain assignment ANIMATES there over a few
-    // hundred ms -- the visible glide after every page load -- and a
-    // position read while that animation is in flight is wrong.
-    if (Math.abs(delta) > 1) window.scrollTo({top: document.scrollingElement.scrollTop + delta, behavior: 'instant'});
-  }
-}
-
-var psnIdleTimer = null, psnPendingPrune = null, psnLastScroll = 0;
-window.addEventListener('scroll', function() { psnLastScroll = Date.now(); }, {passive: true});
-function psnPruneWhenIdle(landed) {
-  psnPendingPrune = landed;
-  clearTimeout(psnIdleTimer);
-  (function tick() {
-    if (Date.now() - psnLastScroll < 250) { psnIdleTimer = setTimeout(tick, 120); return; }
-    var page = psnPendingPrune; psnPendingPrune = null;
-    if (page) psnPruneAndHold(page, psnVisibleAnchors());
-  })();
-}
-
-// The anchor's position is taken in DOCUMENT space (top + scrollY), not on
-// screen. During a fast scroll you keep moving while the page is in flight;
-// restoring the row's SCREEN position dragged you back to where you were
-// when the request started -- Destiny 2 at the top, then a snap to a row
-// further on. Rows inserted or dropped above the anchor move its document
-// position; your scrolling does not. Correcting by that delta alone leaves
-// the scroll you did meanwhile untouched.
-var psnAnchors = null;
-function psnDocTop(el) { return el.getBoundingClientRect().top + document.scrollingElement.scrollTop; }
-// The rows on screen right now, with their document positions.
-function psnVisibleAnchors() {
-  var out = [];
-  var rows = document.querySelectorAll('#psn-review-table tbody tr[data-page]');
-  for (var i = 0; i < rows.length; i++) {
-    if (rows[i].id.indexOf('psn-scroll') === 0) continue;
-    var r = rows[i].getBoundingClientRect();
-    if (r.bottom > 0 && r.top < window.innerHeight) out.push({el: rows[i], docTop: r.top + document.scrollingElement.scrollTop});
-  }
-  return out;
-}
-// Only a page loading ABOVE moves anything before it lands, so only that
-// case needs an anchor from before the swap -- and several candidates, since
-// a fast scroll can carry the first one out of the window by landing time.
-// A page loading BELOW takes its anchor at landing, before the prune, when
-// nothing has moved yet and nothing can be stale. Anchoring on the row that
-// was on screen when the REQUEST started lost it in the prune during a fast
-// scroll: no correction, the content above shrank, and you dropped two
-// screens.
-document.addEventListener('htmx:beforeSwap', function(e) {
-  if (e.target && e.target.id === 'psn-scroll-prev') psnAnchors = psnVisibleAnchors();
-});
 document.addEventListener('htmx:afterSettle', function(e) {
   // An outerHTML swap of a sentinel settles once per inserted row, on each
   // of them, so the page that landed is read off the request -- and the
@@ -636,20 +619,9 @@ document.addEventListener('htmx:afterSettle', function(e) {
   if (e.detail.xhr) e.detail.xhr.__psnHandled = true;
   var landed = parseInt(new URL(path, window.location.origin).searchParams.get('page') || '0', 10);
   if (!landed) return;
-  var loadedAbove = path.indexOf('dir=prev') !== -1;
-  if (loadedAbove) {
-    // The insertion above has already shifted everything; correct now.
-    psnPruneAndHold(landed, psnAnchors || []);
-    psnAnchors = null;
-  } else {
-    // Appended below: nothing has moved, so nothing needs correcting yet.
-    // The prune is what moves things (it drops a page above), and doing it
-    // mid-flick meant an instant scrollTo that killed the trackpad's
-    // momentum -- the stutter at every page boundary. So it waits until
-    // the scrolling has gone quiet, and corrects while nothing is moving.
-    psnPruneWhenIdle(landed);
-  }
+  psnWindowRows(landed, path.indexOf('dir=prev') !== -1);
 });
+
 
 // Confirming one set changes what its siblings may claim, and they're already
 // rendered — re-render the queue so their options reflect it.
