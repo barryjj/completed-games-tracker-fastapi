@@ -1945,12 +1945,13 @@ body:has(.cgt-sticky-actions) {
   align-items: flex-end;
   gap: 0.3rem !important;
 }
-/* Chip, then box: the boxes make one straight column at the right edge and
-   the chips hang off them leftward, ragged where their widths differ. */
-.cgt-psn-plats--stacked .cgt-psn-plat-check {
+/* Chip, then box, on EVERY review row: the boxes make one straight column
+   down the right edge of the list and the chips hang off them leftward,
+   ragged where their widths differ. Stacked and single rows read alike. */
+#psn-review-table .cgt-psn-plat-check {
   flex-direction: row-reverse;
 }
-.cgt-psn-plats--stacked .cgt-psn-plat-check .form-check-input {
+#psn-review-table .cgt-psn-plat-check .form-check-input {
   margin-right: 0 !important;
   margin-left: 0.35rem;
 }
