@@ -687,12 +687,16 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
             "Steam achievements complete",
             f"{result['sets']:,} sets fetched · {result['earned']:,} achievements earned · {result['skipped']:,} already current",
         ]
+        if result.get("counts_only"):
+            lines.append(f"{result['counts_only']:,} marked private on Steam — counts only, no per-achievement detail")
+        if result.get("forbidden"):
+            lines.append(f"{result['forbidden']:,} refused by Steam (stats not available for that title)")
         if result.get("stopped") == 403:
             lines.append("Stopped early (HTTP 403) — Steam profile game details may be private")
         elif result.get("stopped"):
             lines.append(f"Stopped early (HTTP {result['stopped']}) — run a sync again later to finish")
-        elif result.get("errored"):
-            lines.append(f"{result['errored']:,} errored")
+        elif result.get("errored") and result["errored"] > result.get("forbidden", 0):
+            lines.append(f"{result['errored'] - result.get('forbidden', 0):,} errored")
         return "\n".join(lines)
     if kind == "psn_trophies":
         if result.get("skipped_no_credentials"):

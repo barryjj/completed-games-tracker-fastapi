@@ -10,6 +10,19 @@ A set here is an appid. Three calls per set the first time:
     GetGlobalAchievementPercentagesForApp  rarity, which Steam keeps apart
     GetPlayerAchievements               what this account has earned
 
+and one batched call per hundred apps ahead of them:
+
+    IPlayerService/GetAchievementsProgress   unlocked/total per app, as YOU
+
+The key-based endpoints see the profile the way a stranger does: a game
+marked private in the library answers "Profile is not public" (Castle in
+the Clouds, first hit). The batch call takes the access token the session
+renewal mints daily and answers as the account, so it sees everything --
+and it is what says which played games have any unlocks at all. Most do
+not, and those get their rows written from the schema with no per-app
+call, which is most of the run. A private game keeps its counts from the
+batch; only its per-achievement rows are out of reach.
+
 Only PLAYED games are fetched. An unplayed game has no progress, and its
 definitions are not worth a call until it is played; on a library with a
 big backlog that is most of it. The played gate is the entry's playtime,
@@ -23,7 +36,7 @@ import time
 import httpx
 from sqlalchemy.orm import Session
 
-from . import models
+from . import models, steam
 from .steam import _HEADERS, STEAM_API_BASE
 
 _logger = logging.getLogger(__name__)
@@ -32,6 +45,13 @@ _SLEEP_S = 0.25
 _SCHEMA_URL = f"{STEAM_API_BASE}/ISteamUserStats/GetSchemaForGame/v2/"
 _GLOBAL_URL = f"{STEAM_API_BASE}/ISteamUserStats/GetGlobalAchievementPercentagesForApp/v2/"
 _PLAYER_URL = f"{STEAM_API_BASE}/ISteamUserStats/GetPlayerAchievements/v1/"
+_PROGRESS_URL = f"{STEAM_API_BASE}/IPlayerService/GetAchievementsProgress/v1/"
+_PROGRESS_BATCH = 100
+
+# Per-user counts from the batch call, on the release beside the schema
+# marker -- the same place the PSN crawl keeps a set's earned counts, so a
+# reader of either source finds them in one shape.
+_PROGRESS_KEY = "achievement_progress"
 
 # Marker written on the release once its schema has been read, so a game
 # with no achievements (most of Steam) is not asked again every sync. The
@@ -44,6 +64,71 @@ def _get(url: str, params: dict) -> httpx.Response:
     """One WebAPI call. Returned raw: GetPlayerAchievements answers a game
     with no stats as HTTP 400 with a message, and the caller reads it."""
     return httpx.get(url, params=params, headers=_HEADERS, timeout=30)
+
+
+def _post(url: str, params: dict, data: dict) -> httpx.Response:
+    return httpx.post(url, params=params, data=data, headers=_HEADERS, timeout=30)
+
+
+def _access_token(db: Session, user: models.User) -> str | None:
+    """The JWT inside steamLoginSecure, renewed first if it is about to
+    lapse -- the same trade a sync makes for the store call. None when
+    there is no session to mint from, in which case the pass runs on the
+    key alone and a private game is simply refused."""
+    if not user.steam_login_secure:
+        return None
+    if user.steam_refresh_token and steam.access_token_stale(user):
+        try:
+            steam.renew_session(user)
+            db.commit()
+        except (steam.SteamCookiesExpiredError, httpx.HTTPError, RuntimeError):
+            _logger.warning("Steam session renewal failed; achievement pass runs on the key alone", exc_info=True)
+            return None
+    return user.steam_login_secure.split("%7C%7C")[-1].split("||")[-1]
+
+
+def _fetch_progress(token: str, steam_id64: str, appids: list[str]) -> dict[str, dict]:
+    """{appid: {unlocked, total, percentage, cache_time}} for up to a batch
+    of apps, as the account. A refused batch (token no good for this) is
+    {} -- the pass falls back to the per-app call, it does not stop."""
+    data = {"steamid": steam_id64, **{f"appids[{i}]": a for i, a in enumerate(appids)}}
+    resp = _post(_PROGRESS_URL, {"access_token": token}, data)
+    if resp.status_code != 200:
+        _logger.warning("GetAchievementsProgress answered HTTP %s; running on the key alone", resp.status_code)
+        return {}
+    rows = ((resp.json() or {}).get("response") or {}).get("achievement_progress") or []
+    out: dict[str, dict] = {}
+    for r in rows:
+        try:
+            out[str(r["appid"])] = {
+                "unlocked": int(r.get("unlocked") or 0),
+                "total": int(r.get("total") or 0),
+                "percentage": float(r.get("percentage") or 0),
+                "cache_time": r.get("cache_time"),
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+    return out
+
+
+def _store_progress(release: models.GameRelease, progress: dict, *, private: bool | None = None) -> None:
+    """The batch counts on the release. `private` True records that the
+    per-app call was refused at this unlocked count (the number the retry
+    gate compares against); None carries the last verdict forward; False
+    clears it -- the call answered."""
+    raw = dict(release.raw_data or {})
+    kept = raw.get(_PROGRESS_KEY) if isinstance(raw.get(_PROGRESS_KEY), dict) else {}
+    entry = {**progress, "fetched_at": datetime.datetime.now(datetime.UTC).isoformat()}
+    if private is None:
+        private = bool(kept.get("private", False))
+        entry["refused_at_unlocked"] = kept.get("refused_at_unlocked")
+    elif private:
+        entry["refused_at_unlocked"] = progress.get("unlocked")
+    entry["private"] = private
+    if not private:
+        entry.pop("refused_at_unlocked", None)
+    raw[_PROGRESS_KEY] = entry
+    release.raw_data = raw
 
 
 def _played_entries(db: Session, user_id: int) -> list[models.UserLibraryEntry]:
@@ -75,6 +160,21 @@ def _appdetails_total(release: models.GameRelease) -> int | None:
     return int((details.get("achievements") or {}).get("total") or 0)
 
 
+# 403s in a row before the pass decides the PROFILE is the problem (game
+# details set to private fail every app) rather than the app.
+_PRIVATE_PROFILE_RUN = 3
+
+
+def _mark_forbidden(db: Session, release: models.GameRelease) -> None:
+    """Remember that Steam refuses this app's stats, so it is skipped rather
+    than asked again every sync. Committed on its own: the rollback that
+    precedes it has already dropped anything else in flight."""
+    raw = dict(release.raw_data or {})
+    raw[_SCHEMA_KEY] = {"total": 0, "forbidden": True, "fetched_at": datetime.datetime.now(datetime.UTC).isoformat()}
+    release.raw_data = raw
+    db.commit()
+
+
 def _schema_total(release: models.GameRelease) -> int | None:
     """How many achievements the schema had when it was last read; None
     when it never was."""
@@ -86,6 +186,9 @@ def _definitions_current(release: models.GameRelease) -> bool:
     """The schema on file is the one the store still describes. No marker
     means never read; a marker whose total differs from the (newer)
     appdetails count means the game added achievements."""
+    marker = (release.raw_data or {}).get(_SCHEMA_KEY)
+    if isinstance(marker, dict) and marker.get("forbidden"):
+        return True
     have = _schema_total(release)
     if have is None:
         return False
@@ -227,20 +330,71 @@ def _store_earned(db: Session, entry: models.UserLibraryEntry, defs: dict[str, m
     return count
 
 
+def _store_none_earned(db: Session, entry: models.UserLibraryEntry, defs: dict[str, models.AchievementDefinition]) -> None:
+    """The batch call said zero unlocked: every definition gets an unearned
+    row, from the schema, with no per-app call. Present-and-unearned is
+    what makes the set count as seen (see UserAchievement)."""
+    existing = {a.definition_id: a for a in db.query(models.UserAchievement).filter_by(library_entry_id=entry.id).all()}
+    now = datetime.datetime.now(datetime.UTC)
+    for d in defs.values():
+        row = existing.get(d.id)
+        if row is None:
+            db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=False, updated_at=now))
+        else:
+            row.earned, row.earned_at, row.updated_at = False, None, now
+
+
+def _private_unchanged(release: models.GameRelease, progress: dict | None) -> bool:
+    """A game whose per-achievement rows were refused last time, and whose
+    unlocked count has not moved since: nothing to retry. When the count
+    moves (or the game was unmarked), the per-app call is tried again."""
+    kept = (release.raw_data or {}).get(_PROGRESS_KEY)
+    if not isinstance(kept, dict) or not kept.get("private") or progress is None:
+        return False
+    return kept.get("refused_at_unlocked") == progress.get("unlocked")
+
+
 def sync_achievements(db: Session, user: models.User, progress_callback=None, sleep: float = _SLEEP_S) -> dict:
     """Fetch every achievement set behind the user's played Steam games:
     what the game defines, once per app, and what this account has earned,
     per library entry. Chained after the Steam games sync; self-gating, so
     a sync that changed nothing costs no calls (#136).
 
-    Stops on the first answer that would repeat for every remaining app --
-    a bad key (401/403), a private profile (403), a rate limit (429) -- and
-    reports it, so the next run picks up where this left off.
+    Stops on an answer that would repeat for every remaining app -- a bad
+    key (401), a rate limit (429), a private profile (403 after 403 after
+    403) -- and reports it, so the next run picks up where this left off.
+    One 403 is an app, not the profile: Steam refuses the stats endpoints
+    for some individual titles (age-restricted ones, seen first on Castle in
+    the Clouds) whatever the key, and that app is marked forbidden and
+    skipped from then on.
     """
     if not user.steam_api_key or not user.steam_id64:
         return {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "skipped_no_credentials": True}
     out = {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "earned": 0, "sets": 0, "no_achievements": 0}
     entries = _played_entries(db, user.id)
+
+    # The batch first: counts for every played game, as the account. Cheap
+    # (a call per hundred), and what makes the per-app loop mostly free.
+    progress: dict[str, dict] = {}
+    token = _access_token(db, user)
+    if token:
+        appids = [e.release.external_id for e in entries]
+        for start in range(0, len(appids), _PROGRESS_BATCH):
+            chunk = appids[start : start + _PROGRESS_BATCH]
+            try:
+                progress.update(_fetch_progress(token, user.steam_id64, chunk))
+            except (httpx.HTTPError, ValueError):
+                _logger.warning("GetAchievementsProgress batch failed; running on the key alone", exc_info=True)
+                progress = {}
+                break
+            time.sleep(sleep)
+        for e in entries:
+            if e.release.external_id in progress:
+                _store_progress(e.release, progress[e.release.external_id])
+        db.commit()
+        out["progress_known"] = len(progress)
+
+    forbidden_run = 0
     for i, entry in enumerate(entries):
         release = entry.release
         appid = release.external_id
@@ -254,6 +408,9 @@ def sync_achievements(db: Session, user: models.User, progress_callback=None, sl
             continue
         need_earned = need_defs or not _earned_current(db, entry)
         if not need_defs and not need_earned:
+            out["skipped"] += 1
+            continue
+        if not need_defs and _private_unchanged(release, progress.get(appid)):
             out["skipped"] += 1
             continue
         try:
@@ -273,20 +430,49 @@ def sync_achievements(db: Session, user: models.User, progress_callback=None, sl
             else:
                 defs = _definitions_for(db, appid)
             if need_earned and defs:
-                try:
-                    earned = _fetch_player(user.steam_api_key, user.steam_id64, appid)
-                except _NoStats:
-                    earned = []
-                time.sleep(sleep)
-                out["earned"] += _store_earned(db, entry, defs, earned)
+                known = progress.get(appid)
+                if known is not None and known["unlocked"] == 0:
+                    # Nothing unlocked: the rows come from the schema, and
+                    # the per-app call is not made.
+                    _store_none_earned(db, entry, defs)
+                    out["from_batch"] = out.get("from_batch", 0) + 1
+                else:
+                    try:
+                        earned = _fetch_player(user.steam_api_key, user.steam_id64, appid)
+                    except _NoStats:
+                        earned = []
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code != 403 or known is None:
+                            raise
+                        # Marked private in the library: the key sees a
+                        # stranger's view. The counts from the batch are
+                        # what this game shows until it is unmarked.
+                        _store_progress(release, known, private=True)
+                        db.commit()
+                        out["counts_only"] = out.get("counts_only", 0) + 1
+                        continue
+                    time.sleep(sleep)
+                    out["earned"] += _store_earned(db, entry, defs, earned)
+                    if known is not None:
+                        _store_progress(release, known, private=False)
             db.commit()
             out["fetched"] += 1
+            forbidden_run = 0
         except httpx.HTTPStatusError as e:
             db.rollback()
             out["errored"] += 1
-            _logger.warning("Achievement fetch failed for appid %s (%s): HTTP %s", appid, entry.title, e.response.status_code)
-            if e.response.status_code in (401, 403, 429):
-                out["stopped"] = e.response.status_code
+            status = e.response.status_code
+            _logger.warning("Achievement fetch failed for appid %s (%s): HTTP %s", appid, entry.title, status)
+            if status == 403:
+                # No batch counts to fall back on (no session): a lone 403
+                # is still one app, a run of them is the profile.
+                forbidden_run += 1
+                if forbidden_run < _PRIVATE_PROFILE_RUN:
+                    _mark_forbidden(db, release)
+                    out["forbidden"] = out.get("forbidden", 0) + 1
+                    continue
+            if status in (401, 403, 429):
+                out["stopped"] = status
                 break
         except (httpx.HTTPError, ValueError):
             db.rollback()
