@@ -12,8 +12,8 @@ import datetime
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import func
-from sqlalchemy.orm import Session, contains_eager
+from sqlalchemy import case, func
+from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from . import models, users
 from . import psn as _psn
@@ -156,6 +156,104 @@ def _psn_pending(db: Session, user: models.User) -> int:
     return cross + played
 
 
+# The tiers PSN defines, in the order the legend reads.
+_TROPHY_TIERS = ("platinum", "gold", "silver", "bronze")
+_ACHIEVEMENT_SOURCES = (("steam", "Steam"), ("psn", "PlayStation"))
+
+
+def _psn_set_totals(db: Session, user_id: int) -> dict | None:
+    """PlayStation figures from Sony's per-set counts, which the crawl puts
+    on every set it sees -- library entries and the review queue alike --
+    rather than from per-trophy rows, which exist only for confirmed
+    entries. Most of a PSN library sits in review, so counting rows read
+    727 earned against a profile that says 11,200. One set can appear on a
+    release and a candidate (or two cross-buy releases); the NPWR id is
+    the identity."""
+    seen: dict[str, dict] = {}
+    releases = (
+        db.query(models.GameRelease.raw_data)
+        .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
+        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
+        .all()
+    )
+    candidates = db.query(models.PsnReviewCandidate.raw_data).filter_by(user_id=user_id, status="pending").all()
+    for (raw,) in [*releases, *candidates]:
+        raw = raw or {}
+        npwr = raw.get("npCommunicationId")
+        if npwr and isinstance(raw.get("earnedTrophies"), dict) and npwr not in seen:
+            seen[npwr] = raw
+    if not seen:
+        return None
+    tiers = {t: {"earned": 0, "total": 0} for t in _TROPHY_TIERS}
+    perfect = 0
+    for raw in seen.values():
+        for t in _TROPHY_TIERS:
+            tiers[t]["earned"] += int((raw.get("earnedTrophies") or {}).get(t) or 0)
+            tiers[t]["total"] += int((raw.get("trophies") or {}).get(t) or 0)
+        perfect += int(raw.get("trophyProgress") or 0) >= 100
+    return {
+        "earned": sum(t["earned"] for t in tiers.values()),
+        "total": sum(t["total"] for t in tiers.values()),
+        "perfect": perfect,
+        "sets": len(seen),
+        "platinums": tiers["platinum"]["earned"],
+        "tiers": [{"tier": t, **tiers[t]} for t in _TROPHY_TIERS if tiers[t]["total"]],
+    }
+
+
+def _achievement_summary(db: Session, user_id: int) -> dict | None:
+    """What the achievement passes have on file, for the Home widget (#136).
+
+    None until something has been fetched -- the widget is absent rather
+    than a card of zeros for a user with no Steam or PSN sync. Steam comes
+    from the per-achievement rows (every played game has them); PlayStation
+    from Sony's per-set counts (see _psn_set_totals). Sets at 100% and
+    platinums are the completion-shaped figures until the detail pane
+    learns to show a set; recent unlocks are rows from either source.
+    """
+    ua, ad, ule = models.UserAchievement, models.AchievementDefinition, models.UserLibraryEntry
+    earned_n = func.sum(case((ua.earned == True, 1), else_=0))  # noqa: E712
+    base = db.query(ua).join(ad, ua.definition_id == ad.id).join(ule, ua.library_entry_id == ule.id).filter(ule.user_id == user_id)
+    steam_rows = base.filter(ad.source == "steam")
+    earned, total = steam_rows.with_entities(earned_n, func.count(ua.id)).one()
+    steam = None
+    if total:
+        per_entry = steam_rows.with_entities(ua.library_entry_id, earned_n, func.count(ua.id)).group_by(ua.library_entry_id).all()
+        steam = {
+            "earned": int(earned or 0),
+            "total": int(total),
+            "perfect": sum(1 for _, e, t in per_entry if t and int(e or 0) == int(t)),
+            "sets": len(per_entry),
+        }
+    psn = _psn_set_totals(db, user_id)
+    if steam is None and psn is None:
+        return None
+    recent = (
+        base.filter(ua.earned == True, ua.earned_at.isnot(None))  # noqa: E712
+        .options(
+            joinedload(ua.definition),
+            joinedload(ua.library_entry).joinedload(ule.release).joinedload(models.GameRelease.game),
+        )
+        .order_by(ua.earned_at.desc(), ua.id.desc())
+        .limit(8)
+        .all()
+    )
+    sources = [(label, side) for (key, label), side in zip(_ACHIEVEMENT_SOURCES, (steam, psn), strict=True) if side]
+    return {
+        "earned": sum(side["earned"] for _, side in sources),
+        "total": sum(side["total"] for _, side in sources),
+        "perfect": sum(side["perfect"] for _, side in sources),
+        "tracked": sum(side["sets"] for _, side in sources),
+        "platinums": psn["platinums"] if psn else 0,
+        "sources": [
+            {"label": label, "css": models._platform_heuristic_css(label), "earned": side["earned"], "total": side["total"]}
+            for label, side in sources
+        ],
+        "tiers": psn["tiers"] if psn else [],
+        "recent": recent,
+    }
+
+
 # TODO(phase 3): user-configurable yearly goal — hardcoded until widget
 # customization lands (see ROADMAP "Home / Tools / Settings restructure").
 _YEARLY_GOAL = 52
@@ -279,6 +377,7 @@ def home_page(
             "import_pending": sum(import_counts.values()),
             "psn_review_pending": _psn_pending(db, current_user),
             "missing_covers": _build_lib_query(db, current_user, "", "", "default", "name", False, True, "grid_v")[0].count(),
+            "achievements": _achievement_summary(db, current_user.id),
             **_base_ctx(db, current_user, request),
         },
     )

@@ -2820,6 +2820,148 @@ def test_home_pairs_the_short_widgets_into_one_column(client, db_session):
     assert "cgt-tool-grid--paired" not in tools
 
 
+def test_home_achievements_widget_is_absent_until_something_is_on_file(client, db_session):
+    """No Steam or PSN sync means no card -- not a card of zeros beside the
+    real ones. Four cards keep their three-column pairing."""
+    _signup_and_login(client)
+    body = client.get("/").text
+    grid = body[body.index('id="home-widgets"') :]
+    assert "Achievements" not in grid
+    assert grid.count("cgt-tool-card--tall") == 2
+
+
+def test_home_achievements_widget_sums_both_sources_and_lists_recent_unlocks(client, db_session):
+    """The one place achievement data shows until the detail pane learns a
+    set (#136). Steam counts its per-achievement rows. PlayStation counts
+    Sony's per-set totals off the crawl -- library AND review queue, one
+    set once -- because rows exist only for confirmed entries and most of a
+    PSN library sits in review (727 earned on file vs 11,200 on the
+    profile). Recent unlocks are rows from either source, newest first,
+    linking to the entry."""
+    import datetime
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    def _entry(source, ext, title, raw=None):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        platform = "Steam" if source == "steam" else "PS4"
+        rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=ext, raw_data=raw)
+        db_session.add(rel)
+        db_session.flush()
+        entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id)
+        db_session.add(entry)
+        db_session.flush()
+        return entry
+
+    def _ach(entry, source, set_id, ext, name, *, earned, when=None, tier=None, icon=None):
+        d = models.AchievementDefinition(source=source, set_id=set_id, external_id=ext, name=name, tier=tier, icon_url=icon)
+        db_session.add(d)
+        db_session.flush()
+        db_session.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=earned, earned_at=when))
+        db_session.flush()
+
+    def _set(npwr, *, defined, earned, progress):
+        tiers = ("platinum", "gold", "silver", "bronze")
+        return {
+            "npCommunicationId": npwr,
+            "trophies": dict(zip(tiers, defined, strict=True)),
+            "earnedTrophies": dict(zip(tiers, earned, strict=True)),
+            "trophyProgress": progress,
+        }
+
+    # Steam: rows. 1 of 2 earned on one entry.
+    hl = _entry("steam", "220", "Half-Life 2")
+    _ach(hl, "steam", "220", "HL2_A", "Defiant", earned=True, when=datetime.datetime(2024, 3, 8, 12, 0), icon="https://x/defiant.jpg")
+    _ach(hl, "steam", "220", "HL2_B", "Lambda Locator", earned=False)
+
+    # PSN: a confirmed entry with rows AND Sony's counts (rows are for the
+    # unlock list; counts are what the figures read).
+    gow_raw = _set("NPWR1", defined=(1, 1, 0, 1), earned=(1, 1, 0, 0), progress=80)
+    gow = _entry("psn", "CUSA1", "God of War", raw=gow_raw)
+    _ach(gow, "psn", "NPWR1", "0", "Father and Son", earned=True, when=datetime.datetime(2024, 5, 1, 9, 0), tier="platinum")
+    _ach(gow, "psn", "NPWR1", "1", "Past Haunts", earned=True, when=datetime.datetime(2024, 4, 2, 9, 0), tier="gold")
+    _ach(gow, "psn", "NPWR1", "2", "Chosen Guest", earned=False, tier="bronze")
+    # The same set again on a cross-buy release: counted once.
+    _entry("psn", "PCSA1", "God of War (Vita)", raw=gow_raw)
+    # A set still in review, no rows at all: counted from its totals.
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="CUSA9",
+            title="Journey",
+            kind="cross_play",
+            status="pending",
+            raw_data=_set("NPWR9", defined=(0, 2, 0, 0), earned=(0, 2, 0, 0), progress=100),
+        )
+    )
+    # A dismissed one is not.
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="CUSA8",
+            title="Not mine",
+            kind="cross_play",
+            status="dismissed",
+            raw_data=_set("NPWR8", defined=(1, 0, 0, 0), earned=(1, 0, 0, 0), progress=100),
+        )
+    )
+    db_session.commit()
+
+    body = client.get("/").text
+    grid = body[body.index('id="home-widgets"') :]
+    card = grid[grid.index("Achievements") :]
+    assert grid.count("cgt-tool-card--tall") == 3
+
+    stats = card[: card.index("Recent unlocks")]
+    # Earned: Steam 1 + PSN (2 + 2) = 5 of Steam 2 + PSN (3 + 2) = 7.
+    assert ">5<" in stats and "Earned" in stats
+    # Sets at 100%: Journey only (God of War is at 80%; Half-Life 2 is 1/2).
+    assert ">1<" in stats and "Sets at 100%" in stats and "cgt-tool-stat--green" in stats
+    # Platinums: God of War's, once.
+    assert "Platinums" in stats
+    assert "tag-platform-teal" in stats and "Steam" in stats and "1 <span" in stats and "/ 2<" in stats
+    assert "tag-platform-lavender" in stats and "PlayStation" in stats and "4 <span" in stats and "/ 5<" in stats
+    # Tier legend from the same totals: platinum 1/1, gold 3/3, bronze 0/1; no silver anywhere.
+    assert "cgt-trophy-tier--platinum" in stats and "cgt-trophy-tier--gold" in stats and "cgt-trophy-tier--bronze" in stats
+    assert "cgt-trophy-tier--silver" not in stats
+    assert "Gold — 3 of 3" in stats and "Bronze — 0 of 1" in stats
+
+    recent = card[card.index("Recent unlocks") :]
+    order = [recent.index(n) for n in ("Father and Son", "Past Haunts", "Defiant")]
+    assert order == sorted(order), "newest unlock first"
+    assert "Lambda Locator" not in recent and "Chosen Guest" not in recent, "unearned rows are not unlocks"
+    assert f'href="/library?detail={hl.id}"' in recent
+    assert 'src="https://x/defiant.jpg"' in recent and "cgt-ach-icon--empty" in recent
+    assert "Half-Life 2" in recent and "Mar 8, 2024" in recent
+
+
+def test_home_achievements_widget_shows_a_psn_only_library_from_its_totals(client, db_session):
+    """No confirmed PSN entries, nothing fetched for Steam -- just a review
+    queue with Sony's counts on it -- is still a library with trophies."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    db_session.add(
+        models.PsnReviewCandidate(
+            user_id=user.id,
+            external_id="CUSA9",
+            title="Journey",
+            kind="cross_play",
+            status="pending",
+            raw_data={"npCommunicationId": "NPWR9", "trophies": {"gold": 2}, "earnedTrophies": {"gold": 1}, "trophyProgress": 50},
+        )
+    )
+    db_session.commit()
+    grid = client.get("/").text.split('id="home-widgets"')[1]
+    assert "Achievements" in grid
+    stats = grid[grid.index("Achievements") :]
+    assert ">1<" in stats and "PlayStation" in stats and "1 <span" in stats and "/ 2<" in stats
+    assert "Steam" not in stats.split("Recent unlocks")[0].split("PlayStation")[0].split("Sets at 100%")[1]
+    assert "Recent unlocks" not in stats, "no rows, no unlock list"
+
+
 def test_home_rows_share_one_hover_treatment():
     """Home had three: a mauve tint on the list rows, an underline with no
     background on the Needs-attention rows, and a flat surface fill on the

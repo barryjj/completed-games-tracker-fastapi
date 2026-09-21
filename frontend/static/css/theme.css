@@ -2698,6 +2698,30 @@ body:has(.cgt-match-nav--sticky) {
   background-color: var(--ctp-crust);
 }
 .cgt-thumb-sm--empty { background-color: var(--ctp-surface0); }
+/* Achievement icon in the Home widget's recent-unlocks rows: Steam and PSN
+   both ship a square, so the chip is square rather than the cover shape. */
+.cgt-ach-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+  background-color: var(--ctp-crust);
+}
+.cgt-ach-icon--empty { background-color: var(--ctp-surface0); }
+.cgt-ach-game {
+  font-size: 0.7rem;
+  color: var(--ctp-overlay1);
+}
+/* A second list in one card needs a heading that is not the card title: same
+   ink as the stat labels, so it reads as a divider rather than a sibling. */
+.cgt-home-subhead {
+  margin-top: 0.5rem;
+  font-size: 0.63rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-overlay1);
+}
 
 /* Month bar strip (This-year Home widget): 12 columns, completions per
    month in the goal accent (blue). One series, one hue; zero months
@@ -3009,6 +3033,21 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 }
 .cgt-tool-grid--paired .cgt-tool-card--tall {
   grid-row: span 2;
+}
+/* Five cards is four columns in column flow, which needs ~1,250px. Below
+   that, and above the single-column fallback, two columns in row flow: the
+   short pair sits side by side and the list cards fill a row each. Scoped to
+   a grid that actually has a fifth card, so four cards keep the three-column
+   pairing they had; without this tier the fourth column ran off the page. */
+@media (max-width: 1250px) {
+  .cgt-tool-grid--paired:has(> :nth-child(5)) {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+  }
+  .cgt-tool-grid--paired:has(> :nth-child(5)) .cgt-tool-card--tall {
+    grid-row: auto;
+  }
 }
 /* Below two columns' worth there's nothing to pair — fall back to a plain
    stack, or column flow would run the cards off the side. */

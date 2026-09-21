@@ -146,6 +146,68 @@
     {% endif %}
   </div>
 
+  {# ── Achievements ───────────────────────────────────────────────────── #}
+  {# Absent, not zeros, until a sync has fetched something. The figures are
+     what the achievement passes have on file (#136); the per-set view is the
+     detail pane's, still to come, so this is the one place the data shows. #}
+  {% if achievements %}
+  <div class="cgt-tool-card cgt-tool-card--tall">
+    <div class="cgt-tool-card__title">Achievements</div>
+    <div class="cgt-tool-stats">
+      <div class="cgt-tool-stat cgt-tool-stat--lavender">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(achievements.earned) }}</div>
+        <div class="cgt-tool-stat__label">Earned</div>
+      </div>
+      <div class="cgt-tool-stat {{ 'cgt-tool-stat--green' if achievements.perfect else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(achievements.perfect) }}</div>
+        <div class="cgt-tool-stat__label">Sets at 100%</div>
+      </div>
+      {% if achievements.tiers %}
+      <div class="cgt-tool-stat {{ '' if achievements.platinums else 'cgt-tool-stat--muted' }}">
+        <div class="cgt-tool-stat__value">{{ "{:,}".format(achievements.platinums) }}</div>
+        <div class="cgt-tool-stat__label">Platinums</div>
+      </div>
+      {% endif %}
+    </div>
+    {# Per source, the Library widget's badge-and-count row; the count is
+       earned over on-file, which is every set behind a played game. #}
+    <div>
+      {% for s in achievements.sources %}
+      <div class="cgt-detail-list-row d-flex align-items-center gap-2">
+        <span class="tag-badge {{ s.css }}">{{ s.label }}</span>
+        <span class="cgt-tool-card__body fw-semibold ms-auto">{{ "{:,}".format(s.earned) }} <span class="text-secondary fw-normal">/ {{ "{:,}".format(s.total) }}</span></span>
+      </div>
+      {% endfor %}
+      {% if achievements.tiers %}
+      {# The review card's tier legend: the glyph is the tier, the number
+         stays neutral. #}
+      <div class="cgt-detail-list-row cgt-trophy-tiers cgt-tool-card__body">
+        {% for t in achievements.tiers %}
+        <span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}" title="{{ t.tier | capitalize }} — {{ t.earned }} of {{ t.total }}">
+          {% include "partials/_icon_trophy.svg" %}{{ "{:,}".format(t.earned) }}
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% if achievements.recent %}
+    <div class="cgt-tool-card__body cgt-home-subhead">Recent unlocks</div>
+    <div>
+      {% for a in achievements.recent %}
+      <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library?detail={{ a.library_entry_id }}">
+        {% if a.definition.icon_url %}<img class="cgt-ach-icon" src="{{ a.definition.icon_url }}" alt="" loading="lazy">
+        {% else %}<div class="cgt-ach-icon cgt-ach-icon--empty"></div>{% endif %}
+        <span class="d-flex flex-column" style="min-width: 0;">
+          <span class="text-truncate small">{{ a.definition.name }}</span>
+          <span class="text-truncate cgt-ach-game">{{ a.library_entry.release.game.display_title }}</span>
+        </span>
+        <span class="cgt-list-row-date flex-shrink-0 ms-auto">{{ a.earned_at.strftime("%b %-d, %Y") }}</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
 
 </div>
 {% endblock %}
