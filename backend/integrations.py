@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, models, psn, psn_store, steam, worker_state
+from . import jobs, models, psn, psn_store, steam, steam_achievements, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
@@ -558,6 +558,17 @@ _STEAM_KINDS: dict[str, dict] = {
         "started": "Refreshing Steam app catalog — this takes a few seconds.",
         "label": "Refresh app catalog",
     },
+    # Chained after every games sync, no button -- the Steam side of the
+    # trophy pass below (#136).
+    "steam_achievements": {
+        "fn": "sync_achievements",
+        "module": "steam_achievements",
+        "needs_cookies": False,
+        "progress": True,
+        "started": "Fetching your Steam achievements in the background — you'll see a toast when it finishes.",
+        "label": "Achievements",
+        "job_label": "Steam achievements",
+    },
     # PSN rides the same job table; "service"/"module" route credential checks
     # and dispatch away from the Steam defaults. Snapshot fetch writes NOTHING
     # to the library — it saves a reviewable report (import is a later step).
@@ -669,6 +680,20 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         return "\n".join(lines)
     if kind == "psn_review_art":
         return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
+    if kind == "steam_achievements":
+        if result.get("skipped_no_credentials"):
+            return "Steam achievements skipped\nSave a Steam API key and sign in on the Steam configure page."
+        lines = [
+            "Steam achievements complete",
+            f"{result['sets']:,} sets fetched · {result['earned']:,} achievements earned · {result['skipped']:,} already current",
+        ]
+        if result.get("stopped") == 403:
+            lines.append("Stopped early (HTTP 403) — Steam profile game details may be private")
+        elif result.get("stopped"):
+            lines.append(f"Stopped early (HTTP {result['stopped']}) — run a sync again later to finish")
+        elif result.get("errored"):
+            lines.append(f"{result['errored']:,} errored")
+        return "\n".join(lines)
     if kind == "psn_trophies":
         if result.get("skipped_no_credentials"):
             return "PSN trophies skipped\nSave an NPSSO token and Online ID on the PSN configure page."
@@ -801,6 +826,20 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
             _logger.exception("PSN follow-up %s failed for user %s", kind, user_id)
 
 
+# Where a job kind's "module" points; anything unlisted is steam.
+_JOB_MODULES = {"psn": psn, "psn_store": psn_store, "steamgriddb": sgdb, "steam_achievements": steam_achievements}
+
+
+async def _run_steam_followups(user_id: int) -> None:
+    """What a Steam games sync chains: the achievement pass (#136). One
+    step today; the same shape as _run_psn_followups so more can join."""
+    job = jobs.create(user_id=user_id, kind="steam_achievements", label="Achievements")
+    try:
+        await _run_sync_job(job.id, user_id, "steam_achievements")
+    except Exception:
+        _logger.exception("Steam follow-up steam_achievements failed for user %s", user_id)
+
+
 async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
     """
     Background runner for a Steam job (any sync or catalog refresh).
@@ -821,7 +860,7 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             jobs.mark_failed(job_id, "User no longer exists.")
             return
 
-        module = {"psn": psn, "psn_store": psn_store, "steamgriddb": sgdb}.get(spec.get("module"), steam)
+        module = _JOB_MODULES.get(spec.get("module"), steam)
         fn = getattr(module, spec["fn"])
         if kind == "steam_refresh_catalog":
             result = await asyncio.to_thread(fn, user.steam_api_key)
@@ -836,6 +875,10 @@ async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:
             result = await asyncio.to_thread(fn, db, user)
 
         jobs.mark_done(job_id, _format_sync_result(db, user, kind, result))
+        # The games sync is what refreshes playtime, the gate the pass reads;
+        # run it right after, as a job of its own so its toast is its own.
+        if kind in ("steam_sync_full", "steam_sync_games"):
+            asyncio.create_task(_run_steam_followups(user.id))
         # One chain, not three tasks. See _run_psn_followups.
         if kind == "psn_sync":
             asyncio.create_task(
@@ -1024,6 +1067,7 @@ _JOB_SERVICE = {
     "steam_sync_games": "steam",
     "steam_sync_dlc": "steam",
     "steam_refresh_catalog": "steam",
+    "steam_achievements": "steam",
     "psn_sync": "psn",
     "psn_store_refresh": "psn",
     "psn_review_art": "psn",
