@@ -701,11 +701,162 @@ def test_import_skips_pc_copies_whether_or_not_steam_is_synced(db_session, monke
     # — which minted a phantom PS5 entry for MARVEL Tokon. With no purchase and
     # no native play there is no PlayStation copy to have an opinion about.
     assert result["skipped_pc_dupe"] == 2
+    # Skipped as an ENTRY, not as a trophy set: the Stellar Blade set is
+    # recorded against the Steam copy it was earned on, the one with no Steam
+    # copy is left for a later sync.
+    assert (result["pc_set_attached"], result["pc_set_unmatched"]) == (1, 1)
+    assert (steam_release.raw_data or {})[psn.PC_SET_KEY]["npCommunicationId"] == "NPWR37356_00"
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR37356_00").count() == 0
     # ...the native PS5 copy imported (it has a titleId)...
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="PPSA03016_00").count() == 1
     # The non-Steam PC game is skipped as a PC copy too — no library entry.
     assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR90001_00").count() == 0
+
+
+def test_a_pc_copys_trophies_attach_to_the_steam_game_and_the_wrong_set_never_does(db_session, monkeypatch, tmp_path):
+    """You earn PSN trophies -- platinum included -- playing the Steam copy of
+    a game with PSN's PC integration, so the set has to be recorded even though
+    no PlayStation entry should exist for it.
+
+    EXACT titles only, and only for PC copies. Both halves matter: Until Dawn
+    ships as a 2015 PS4 game AND a Steam remake with its own set, and a loose
+    match would hang the PS4 trophies on the remake."""
+    _seed_platforms(db_session)
+    user = _user(db_session, "pcset")
+
+    def _steam(title, appid):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        rel = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id=appid)
+        db_session.add(rel)
+        db_session.flush()
+        db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import"))
+        db_session.commit()
+        return rel
+
+    tokon = _steam("MARVEL Tōkon: Fighting Souls", "3787240")
+    until_dawn = _steam("Until Dawn™", "2172010")
+
+    merged = [
+        {  # the PC copy: PSPC, no purchase, no console play
+            "npCommunicationId": "NPWR30000_00",
+            "name": "MARVEL Tōkon: Fighting Souls",
+            "displayName": "MARVEL Tōkon: Fighting Souls",
+            "platform": "PS5,PSPC",
+            "playCategories": ["pspc_game"],
+            "category": "pspc_game",
+            "sources": ["titles", "played"],
+            "npServiceName": "trophy2",
+            "trophies": {"platinum": 1, "gold": 2, "silver": 0, "bronze": 3},
+            "earnedTrophies": {"platinum": 1, "gold": 2, "silver": 0, "bronze": 1},
+            "trophyProgress": 70,
+        },
+        {  # the 2015 PS4 game — same name as the Steam REMAKE, not a PC copy
+            "npCommunicationId": "NPWR07290_00",
+            "titleId": "CUSA00001_00",
+            "name": "Until Dawn",
+            "displayName": "Until Dawn",
+            "platform": "PS4",
+            "playCategories": ["ps4_game"],
+            "category": "ps4_game",
+            "sources": ["purchased", "titles", "played"],
+            "trophies": {"platinum": 1, "gold": 1, "silver": 0, "bronze": 0},
+            "earnedTrophies": {"platinum": 1, "gold": 1, "silver": 0, "bronze": 0},
+            "trophyProgress": 100,
+        },
+    ]
+    _seed_review(db_session, user, merged)
+    result = psn.import_merged(db_session, user, merged)
+
+    assert result["pc_set_attached"] == 1
+    db_session.refresh(tokon)
+    assert tokon.raw_data[psn.PC_SET_KEY]["npCommunicationId"] == "NPWR30000_00"
+    assert psn.trophy_item_of(tokon)["earnedTrophies"]["platinum"] == 1
+    # No PlayStation entry was minted for it.
+    assert db_session.query(models.GameRelease).filter_by(source="psn", external_id="NPWR30000_00").count() == 0
+    # The PS4 game is not a PC copy, so it never reached the matcher -- the
+    # Steam remake is untouched and the PS4 game imported as itself.
+    db_session.refresh(until_dawn)
+    assert psn.trophy_item_of(until_dawn) is None
+    assert db_session.query(models.GameRelease).filter_by(source="psn").count() == 1
+
+
+def test_an_unmatched_pc_set_attaches_on_the_next_sync(db_session, monkeypatch, tmp_path):
+    """No Steam copy yet means nothing is written and nothing is queued: the
+    pass is idempotent, so a Steam library synced later fixes itself."""
+    _seed_platforms(db_session)
+    user = _user(db_session, "later")
+    merged = [
+        {
+            "npCommunicationId": "NPWR37356_00",
+            "name": "Stellar Blade",
+            "displayName": "Stellar Blade",
+            "platform": "PSPC",
+            "playCategories": ["pspc_game"],
+            "category": "pspc_game",
+            "sources": ["titles", "played"],
+            "trophies": {"platinum": 1, "gold": 0, "silver": 0, "bronze": 0},
+            "earnedTrophies": {"platinum": 1, "gold": 0, "silver": 0, "bronze": 0},
+            "trophyProgress": 100,
+        }
+    ]
+    _seed_review(db_session, user, merged)
+    first = psn.import_merged(db_session, user, merged)
+    assert (first["pc_set_attached"], first["pc_set_unmatched"]) == (0, 1)
+    assert db_session.query(models.GameRelease).count() == 0
+
+    game = models.Game(title="Stellar Blade™")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="3489700")
+    db_session.add(rel)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import"))
+    db_session.commit()
+
+    second = psn.import_merged(db_session, user, merged)
+    assert (second["pc_set_attached"], second["pc_set_unmatched"]) == (1, 0)
+    db_session.refresh(rel)
+    assert psn.trophy_item_of(rel)["npCommunicationId"] == "NPWR37356_00"
+
+
+def test_the_trophy_pass_fetches_a_set_attached_to_a_steam_entry(db_session, monkeypatch):
+    """Carrying a set is the test, not the release's source: the trophies of a
+    game played on Steam are fetched and stored against the Steam entry."""
+    user = _trophy_user(db_session)
+    game = models.Game(title="MARVEL Tōkon: Fighting Souls")
+    db_session.add(game)
+    db_session.flush()
+    rel = models.GameRelease(
+        game_id=game.id,
+        platform="Steam",
+        source="steam",
+        external_id="3787240",
+        raw_data={
+            "appid": 3787240,
+            psn.PC_SET_KEY: {
+                "npCommunicationId": "NPWR00950_00",
+                "npServiceName": "trophy2",
+                "platform": "PS5,PSPC",
+                "trophyLastUpdated": "2026-09-21T00:00:00Z",
+            },
+        },
+    )
+    db_session.add(rel)
+    db_session.flush()
+    entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import")
+    db_session.add(entry)
+    db_session.commit()
+    calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET}, {"NPWR00950_00": _GOW_EARNED})
+
+    out = psn.sync_trophies(db_session, user)
+
+    assert out["fetched"] == 1 and out["earned"] == 1
+    assert all(c.endswith("npServiceName=trophy2") for c in calls), "a PC set is a PS5-era set"
+    mine = {a.definition.external_id: a for a in entry.achievements}
+    assert mine["0"].earned is True, "the platinum landed on the Steam entry"
+    assert db_session.query(models.AchievementDefinition).filter_by(source="psn", set_id="NPWR00950_00").count() == 2
 
 
 def test_played_only_actions(client, db_session):

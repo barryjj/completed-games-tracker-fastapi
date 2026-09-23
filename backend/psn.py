@@ -30,7 +30,7 @@ from collections import Counter
 from urllib.parse import parse_qsl, urlparse
 
 import httpx
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from . import models, psn_store, titles
@@ -939,6 +939,76 @@ def is_pc_copy(item: dict) -> bool:
     return not any(minutes for platform, minutes in played_minutes_by_platform(item).items() if platform != "PSPC")
 
 
+# Where a PC copy's trophy set lives: on the STEAM release it belongs to,
+# under this key, shaped exactly like a psn release's own raw_data. The set is
+# the account's, not the copy's -- you earn a PSN platinum for playing on
+# Steam -- so the trophies have to be recorded even though no PlayStation
+# entry should exist. The cross-link has to exist in some form for the
+# trophies to know which game they belong to; this is it.
+PC_SET_KEY = "psn_trophy_set"
+
+
+def trophy_item_in(raw: dict | None) -> dict | None:
+    """The trophy-set item inside a release's raw_data, whichever way it is
+    carried: a PSN release IS its item, a Steam release with a PC copy's set
+    holds it under PC_SET_KEY. None when there is no set."""
+    raw = raw or {}
+    if raw.get("npCommunicationId"):
+        return raw
+    attached = raw.get(PC_SET_KEY)
+    return attached if isinstance(attached, dict) and attached.get("npCommunicationId") else None
+
+
+def trophy_item_of(release: "models.GameRelease") -> dict | None:
+    return trophy_item_in(release.raw_data)
+
+
+def _steam_entries_by_title(db: Session, user_id: int) -> dict[str, models.UserLibraryEntry]:
+    """The user's Steam games, keyed by folded title. Built once per sync --
+    the loop runs over ~1000 items and this side is ~10,000 rows."""
+    rows = (
+        db.query(models.UserLibraryEntry)
+        .join(models.GameRelease)
+        .join(models.Game)
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            models.GameRelease.source == "steam",
+            models.Game.is_dlc == False,  # noqa: E712
+        )
+        .all()
+    )
+    index: dict[str, models.UserLibraryEntry] = {}
+    for entry in rows:
+        for name in (entry.release.game.display_name, entry.release.game.title):
+            key = titles.normalize_for_match(name).replace(" ", "")
+            if key:
+                index.setdefault(key, entry)
+    return index
+
+
+def attach_pc_trophy_set(db: Session, item: dict, steam_by_title: dict[str, models.UserLibraryEntry]) -> bool:
+    """Record a PC copy's trophy set against the Steam game it was earned on.
+
+    EXACT titles only. A looser match would glue the 2015 Until Dawn set onto
+    the Steam remake, which is a different game with a different set -- and the
+    PC-copy gate is the other half of that guard, since the PS4 set never
+    reaches here.
+
+    No Steam copy yet means nothing is written and the next sync tries again:
+    the pass is idempotent, so a Steam library that has not been synced fixes
+    itself rather than needing somewhere to wait.
+    """
+    key = titles.normalize_for_match(_item_name(item)).replace(" ", "")
+    entry = steam_by_title.get(key) if key else None
+    if entry is None:
+        return False
+    release = entry.release
+    raw = dict(release.raw_data or {})
+    raw[PC_SET_KEY] = item
+    release.raw_data = raw
+    return True
+
+
 def played_only_suggestion(item: dict) -> tuple[str, str]:
     """(suggested_action, reason) for a played-only row. Pre-selects the
     review default; the user's click decides. Signals (validated against the
@@ -1501,6 +1571,8 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
     skipped_non_game = 0
     skipped_conflict = 0
     skipped_pc_dupe = 0
+    pc_set_attached = 0
+    pc_set_unmatched = 0
     needs_review = 0
     reopened = 0  # decided rows Sony can now tell us more about (#180)
     played_only = 0
@@ -1527,6 +1599,7 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
     # credentials the queue would ask questions nothing can answer, so the
     # pre-creation review only switches on when a lookup is actually available.
     vetting = bool(user.twitch_client_id and user.twitch_client_secret)
+    steam_by_title = _steam_entries_by_title(db, user.id)
     for item in merged:
         if is_played_only(item):
             if _upsert_review_candidate(db, user, item, "played_only") is not None:
@@ -1537,11 +1610,17 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
         if is_non_game(item):
             skipped_non_game += 1
             continue
-        # A pspc (PC) game already in the Steam library is the same copy showing
-        # up through PSN's PC integration — skip it rather than mint a phantom
-        # PlayStation entry (e.g. Stellar Blade, the Until Dawn remake).
+        # A pspc (PC) game is the Steam copy showing up through PSN's PC
+        # integration (Stellar Blade, MARVEL Tokon, the Until Dawn remake). No
+        # PlayStation entry should be minted for it -- but the trophies are
+        # real and land on the PSN profile, platinum included, so the set is
+        # recorded against the Steam game instead of thrown away with the row.
         if is_pc_copy(item):
             skipped_pc_dupe += 1
+            if attach_pc_trophy_set(db, item, steam_by_title):
+                pc_set_attached += 1
+            else:
+                pc_set_unmatched += 1
             continue
         if not external_id_for(item):
             skipped_no_id += 1
@@ -1651,6 +1730,8 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
         "skipped_non_game": skipped_non_game,
         "skipped_conflict": skipped_conflict,
         "skipped_pc_dupe": skipped_pc_dupe,
+        "pc_set_attached": pc_set_attached,
+        "pc_set_unmatched": pc_set_unmatched,
         "needs_review": needs_review,
         "reopened": reopened,
         "played_only_pending": played_only,
@@ -1848,15 +1929,27 @@ def _store_earned_trophies(
     return count
 
 
-def _trophy_entries(db: Session, user_id: int) -> list[models.UserLibraryEntry]:
-    """PSN entries whose release carries a trophy set."""
+def _trophy_entries(db: Session, user_id: int) -> list[tuple[models.UserLibraryEntry, dict]]:
+    """(entry, trophy item) for every entry whose release carries a set.
+
+    Carrying one is the test, not the source: a Steam release holds the set
+    for a game whose trophies were earned on the PC copy (PC_SET_KEY), and
+    those trophies need fetching exactly like any other entry's.
+    """
     rows = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
-        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            or_(
+                models.GameRelease.source == "psn",
+                func.json_extract(models.GameRelease.raw_data, f"$.{PC_SET_KEY}").isnot(None),
+            ),
+        )
         .all()
     )
-    return [e for e in rows if (e.release.raw_data or {}).get("npCommunicationId")]
+    pairs = [(e, trophy_item_of(e.release)) for e in rows]
+    return [(e, item) for e, item in pairs if item]
 
 
 def _trophy_candidates(db: Session, user_id: int) -> list[models.PsnReviewCandidate]:
@@ -1919,8 +2012,7 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
     # (label, npwr, item, entry-or-None). Entries first: a set in both places
     # is fetched once and the candidate finds it current.
     work: list[tuple[str, str, dict, models.UserLibraryEntry | None]] = []
-    for entry in _trophy_entries(db, user.id):
-        item = entry.release.raw_data or {}
+    for entry, item in _trophy_entries(db, user.id):
         work.append((entry.title, item["npCommunicationId"], item, entry))
     for cand in _trophy_candidates(db, user.id):
         work.append((cand.title, _set_id(cand), cand.raw_data or {}, None))

@@ -12,7 +12,7 @@ import datetime
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse, Response
-from sqlalchemy import case, func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
 from . import models, users
@@ -173,15 +173,23 @@ def _psn_set_totals(db: Session, user_id: int) -> dict | None:
     releases = (
         db.query(models.GameRelease.raw_data)
         .join(models.UserLibraryEntry, models.UserLibraryEntry.release_id == models.GameRelease.id)
-        .filter(models.UserLibraryEntry.user_id == user_id, models.GameRelease.source == "psn")
+        .filter(
+            models.UserLibraryEntry.user_id == user_id,
+            or_(
+                models.GameRelease.source == "psn",
+                # A game played on its Steam copy still earns PSN trophies, and
+                # the set rides on the Steam release (psn.PC_SET_KEY).
+                func.json_extract(models.GameRelease.raw_data, f"$.{_psn.PC_SET_KEY}").isnot(None),
+            ),
+        )
         .all()
     )
     candidates = db.query(models.PsnReviewCandidate.raw_data).filter_by(user_id=user_id, status="pending").all()
     for (raw,) in [*releases, *candidates]:
-        raw = raw or {}
-        npwr = raw.get("npCommunicationId")
-        if npwr and isinstance(raw.get("earnedTrophies"), dict) and npwr not in seen:
-            seen[npwr] = raw
+        item = _psn.trophy_item_in(raw)
+        if item is None or not isinstance(item.get("earnedTrophies"), dict):
+            continue
+        seen.setdefault(item["npCommunicationId"], item)
     if not seen:
         return None
     tiers = {t: {"earned": 0, "total": 0} for t in _TROPHY_TIERS}

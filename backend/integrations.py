@@ -729,8 +729,10 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
             lines.append(f"{result['played_only_pending']} played-only games need a decision — open Tools → PSN review")
         if result.get("match_candidates"):
             lines.append(f"{result['match_candidates']:,} possible duplicates queued — review them under Tools → Match review")
-        if result.get("skipped_pc_dupe"):
-            lines.append(f"{result['skipped_pc_dupe']} PC copies skipped — already in your Steam library")
+        if result.get("pc_set_attached"):
+            lines.append(f"{result['pc_set_attached']} PC copies' trophies recorded against your Steam games")
+        if result.get("pc_set_unmatched"):
+            lines.append(f"{result['pc_set_unmatched']} PC copies not in your Steam library yet — sync Steam and they'll attach")
         return "\n".join(lines)
 
     totals = _steam_counts(db, user) or {"games": 0, "dlc": 0, "total": 0}

@@ -2938,6 +2938,60 @@ def test_home_achievements_widget_sums_both_sources_and_lists_recent_unlocks(cli
     assert "Half-Life 2" in recent and "Mar 8, 2024" in recent
 
 
+def test_home_counts_a_pc_copys_trophies_once_and_beside_its_steam_achievements(client, db_session):
+    """Playing a game on Steam can earn BOTH: Steam achievements and, through
+    PSN's PC integration, real PSN trophies. Both count, on their own rows.
+
+    And if the game is later rebought on PS5, the same set rides a PSN release
+    too -- one trophy list, not two, so the NPWR is what counts, not the copy.
+    """
+    from backend import psn
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    tokon_set = {
+        "npCommunicationId": "NPWR30000_00",
+        "trophies": {"platinum": 1, "gold": 1, "silver": 0, "bronze": 0},
+        "earnedTrophies": {"platinum": 1, "gold": 1, "silver": 0, "bronze": 0},
+        "trophyProgress": 100,
+    }
+
+    def _entry(source, platform, ext, title, raw):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=ext, raw_data=raw)
+        db_session.add(rel)
+        db_session.flush()
+        entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id)
+        db_session.add(entry)
+        db_session.flush()
+        return entry
+
+    steam_entry = _entry("steam", "Steam", "3787240", "MARVEL Tōkon", {psn.PC_SET_KEY: tokon_set})
+    d = models.AchievementDefinition(source="steam", set_id="3787240", external_id="ACH_1", name="Everybody Needs a Hobby")
+    db_session.add(d)
+    db_session.flush()
+    db_session.add(models.UserAchievement(library_entry_id=steam_entry.id, definition_id=d.id, earned=True))
+    db_session.commit()
+
+    stats = client.get("/").text.split('id="home-widgets"')[1]
+    stats = stats[stats.index("Achievements") :]
+    # Steam 1/1 achievements and PlayStation 2/2 trophies, both from one game.
+    assert "tag-platform-teal" in stats and "1 <span" in stats and "/ 1<" in stats
+    assert "tag-platform-lavender" in stats and "2 <span" in stats and "/ 2<" in stats
+    assert ">3<" in stats and "Earned" in stats
+
+    # Rebought on PS5: the same set now rides a PSN release as well. Still one
+    # trophy list -- the figures do not move.
+    _entry("psn", "PS5", "PPSA30000_00", "MARVEL Tōkon (PS5)", tokon_set)
+    db_session.commit()
+    again = client.get("/").text.split('id="home-widgets"')[1]
+    again = again[again.index("Achievements") :]
+    assert "2 <span" in again and "/ 2<" in again, "one NPWR, counted once"
+    assert ">3<" in again
+
+
 def test_home_achievements_widget_shows_a_psn_only_library_from_its_totals(client, db_session):
     """No confirmed PSN entries, nothing fetched for Steam -- just a review
     queue with Sony's counts on it -- is still a library with trophies."""
