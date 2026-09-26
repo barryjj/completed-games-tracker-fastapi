@@ -30,10 +30,11 @@ from collections import Counter
 from urllib.parse import parse_qsl, urlparse
 
 import httpx
-from sqlalchemy import func, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.orm import Session, contains_eager
 
-from . import models, psn_store, titles
+from . import achievements, models, psn_store, titles
+from .achievements import PC_SET_KEY, trophy_item_in, trophy_item_of  # noqa: F401
 
 _logger = logging.getLogger(__name__)
 
@@ -939,33 +940,10 @@ def is_pc_copy(item: dict) -> bool:
     return not any(minutes for platform, minutes in played_minutes_by_platform(item).items() if platform != "PSPC")
 
 
-# Where a PC copy's trophy set lives: on the STEAM release it belongs to,
-# under this key, shaped exactly like a psn release's own raw_data. The set is
-# the account's, not the copy's -- you earn a PSN platinum for playing on
-# Steam -- so the trophies have to be recorded even though no PlayStation
-# entry should exist. The cross-link has to exist in some form for the
-# trophies to know which game they belong to; this is it.
-PC_SET_KEY = "psn_trophy_set"
-
-
-def trophy_item_in(raw: dict | None) -> dict | None:
-    """The trophy-set item inside a release's raw_data, whichever way it is
-    carried: a PSN release IS its item, a Steam release with a PC copy's set
-    holds it under PC_SET_KEY. None when there is no set."""
-    raw = raw or {}
-    if raw.get("npCommunicationId"):
-        return raw
-    attached = raw.get(PC_SET_KEY)
-    return attached if isinstance(attached, dict) and attached.get("npCommunicationId") else None
-
-
-def trophy_item_of(release: "models.GameRelease") -> dict | None:
-    return trophy_item_in(release.raw_data)
-
-
 def _steam_entries_by_title(db: Session, user_id: int) -> dict[str, models.UserLibraryEntry]:
     """The user's Steam games, keyed by folded title. Built once per sync --
-    the loop runs over ~1000 items and this side is ~10,000 rows."""
+    the loop runs over ~1000 items and this side is ~10,000 rows, so the
+    release and game load with the entry rather than one query each."""
     rows = (
         db.query(models.UserLibraryEntry)
         .join(models.GameRelease)
@@ -975,6 +953,7 @@ def _steam_entries_by_title(db: Session, user_id: int) -> dict[str, models.UserL
             models.GameRelease.source == "steam",
             models.Game.is_dlc == False,  # noqa: E712
         )
+        .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
         .all()
     )
     index: dict[str, models.UserLibraryEntry] = {}
@@ -986,18 +965,27 @@ def _steam_entries_by_title(db: Session, user_id: int) -> dict[str, models.UserL
     return index
 
 
+def is_pc_set(item: dict) -> bool:
+    """The set covers PSN's PC integration: its platform names PSPC. Such a
+    set is earned on the Steam copy too, whether or not a PlayStation copy
+    also exists (Spider-Man 2 is played on both)."""
+    return "PSPC" in {p.strip().upper() for p in str(item.get("platform") or "").split(",")}
+
+
 def attach_pc_trophy_set(db: Session, item: dict, steam_by_title: dict[str, models.UserLibraryEntry]) -> bool:
-    """Record a PC copy's trophy set against the Steam game it was earned on.
+    """Link a PC-integrated trophy set to the Steam game it was earned on, so
+    that game's entry shows it (achievements.owners). The unlocks themselves
+    are recorded per account whether or not this finds anything.
 
-    EXACT titles only. A looser match would glue the 2015 Until Dawn set onto
-    the Steam remake, which is a different game with a different set -- and the
-    PC-copy gate is the other half of that guard, since the PS4 set never
-    reaches here.
+    PC sets only, and EXACT titles only. Both halves guard the same hazard:
+    Until Dawn is a 2015 PS4 game and a Steam remake with its own set, and a
+    looser rule would hang the PS4 trophies on the remake. The PS4 set is not
+    a PC set, so it never gets here.
 
-    No Steam copy yet means nothing is written and the next sync tries again:
-    the pass is idempotent, so a Steam library that has not been synced fixes
-    itself rather than needing somewhere to wait.
+    No Steam copy yet: nothing is linked, and the next sync tries again.
     """
+    if not is_pc_set(item):
+        return False
     key = titles.normalize_for_match(_item_name(item)).replace(" ", "")
     entry = steam_by_title.get(key) if key else None
     if entry is None:
@@ -1610,17 +1598,19 @@ def import_merged(db: Session, user: models.User, merged: list[dict]) -> dict:
         if is_non_game(item):
             skipped_non_game += 1
             continue
-        # A pspc (PC) game is the Steam copy showing up through PSN's PC
-        # integration (Stellar Blade, MARVEL Tokon, the Until Dawn remake). No
-        # PlayStation entry should be minted for it -- but the trophies are
-        # real and land on the PSN profile, platinum included, so the set is
-        # recorded against the Steam game instead of thrown away with the row.
-        if is_pc_copy(item):
-            skipped_pc_dupe += 1
+        # A set played through PSN's PC integration is shown on the Steam copy
+        # it was earned on -- PS5 play or not; Spider-Man 2 is played on both.
+        # (The unlocks are recorded per account either way, see sync_library.)
+        if is_pc_set(item):
             if attach_pc_trophy_set(db, item, steam_by_title):
                 pc_set_attached += 1
             else:
                 pc_set_unmatched += 1
+        # A PC copy with no PlayStation evidence (Stellar Blade, MARVEL Tokon,
+        # the Until Dawn remake) gets no PlayStation entry: it would be a
+        # phantom. Its trophies still count; they just belong to the Steam game.
+        if is_pc_copy(item):
+            skipped_pc_dupe += 1
             continue
         if not external_id_for(item):
             skipped_no_id += 1
@@ -1753,6 +1743,9 @@ def sync_library(db: Session, user: models.User) -> dict:
     completion can report the library delta AND every review queue.
     """
     merged, report, raw = crawl(db, user)
+    # Every set on the account, before anything decides what goes in the
+    # library: trophies count whether or not a game shows them (#222).
+    record_trophy_sets(db, user, raw.get("trophy_titles") or [])
     result = import_merged(db, user, merged)
     result["retired_non_game"] = retire_non_game_candidates(db, user)
     # The lookup belongs HERE, not behind a second button. A row that says only
@@ -1891,14 +1884,11 @@ def _definitions_for(db: Session, npwr: str) -> dict[str, models.AchievementDefi
     return {d.external_id: d for d in db.query(models.AchievementDefinition).filter_by(source="psn", set_id=npwr).all()}
 
 
-def _store_earned_trophies(
-    db: Session, entry: models.UserLibraryEntry, defs: dict[str, models.AchievementDefinition], earned: list[dict]
-) -> int:
-    """Upsert this entry's progress against the set; returns how many are
+def _store_earned_trophies(db: Session, user_id: int, defs: dict[str, models.AchievementDefinition], earned: list[dict]) -> int:
+    """Upsert this account's unlocks for the set; returns how many are
     earned. Rarity lives on the definition but only the per-user call reports
     it, so it is written here."""
-    existing = {a.definition_id: a for a in db.query(models.UserAchievement).filter_by(library_entry_id=entry.id).all()}
-    now = datetime.datetime.now(datetime.UTC)
+    rows: dict[int, dict] = {}
     count = 0
     for t in earned:
         d = defs.get(str(t.get("trophyId")))
@@ -1912,51 +1902,70 @@ def _store_earned_trophies(
                 pass
         is_earned = bool(t.get("earned"))
         count += is_earned
-        fields = {
+        rows[d.id] = {
             "earned": is_earned,
             "earned_at": _parse_iso(t.get("earnedDateTime")) if is_earned else None,
             "progress_value": _int_or_none(t.get("progress")),
             "progress_target": _int_or_none((d.raw_data or {}).get("trophyProgressTargetValue")),
             "raw_data": t,
-            "updated_at": now,
         }
-        row = existing.get(d.id)
-        if row is None:
-            db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, **fields))
-        else:
-            for k, v in fields.items():
-                setattr(row, k, v)
+    achievements.upsert_unlocks(db, user_id, rows)
     return count
 
 
-def _trophy_entries(db: Session, user_id: int) -> list[tuple[models.UserLibraryEntry, dict]]:
-    """(entry, trophy item) for every entry whose release carries a set.
+_TROPHY_TIERS = ("platinum", "gold", "silver", "bronze")
 
-    Carrying one is the test, not the source: a Steam release holds the set
-    for a game whose trophies were earned on the PC copy (PC_SET_KEY), and
-    those trophies need fetching exactly like any other entry's.
+
+def _set_item(title: dict) -> dict:
+    """A raw trophy title in the shape the pass reads -- the same keys a
+    merged item carries, so the freshness gates work on either."""
+    return {
+        "npCommunicationId": title.get("npCommunicationId"),
+        "npServiceName": title.get("npServiceName"),
+        "trophySetVersion": title.get("trophySetVersion"),
+        "trophyLastUpdated": title.get("lastUpdatedDateTime"),
+        "platform": (title.get("trophyTitlePlatform") or "").upper() or None,
+        "name": title.get("trophyTitleName"),
+        "trophies": title.get("definedTrophies"),
+        "earnedTrophies": title.get("earnedTrophies"),
+        "trophyProgress": title.get("progress"),
+        "trophyIconUrl": title.get("trophyTitleIconUrl"),
+    }
+
+
+def record_trophy_sets(db: Session, user: models.User, trophy_titles: list[dict]) -> int:
+    """Record every set on the account from Sony's trophy-titles feed (#222).
+
+    The raw feed, before any filtering, because it IS the trophy profile: it
+    adds up to the profile's own totals exactly. A PC copy with no Steam
+    game yet, a game still in review, and a demo filtered out of the library
+    all earned their trophies, and all of them count. Sets Sony stops
+    listing are left alone. Does not commit.
     """
-    rows = (
-        db.query(models.UserLibraryEntry)
-        .join(models.GameRelease)
-        .filter(
-            models.UserLibraryEntry.user_id == user_id,
-            or_(
-                models.GameRelease.source == "psn",
-                func.json_extract(models.GameRelease.raw_data, f"$.{PC_SET_KEY}").isnot(None),
-            ),
+    recorded = 0
+    for t in trophy_titles:
+        npwr = t.get("npCommunicationId")
+        if not npwr:
+            continue
+        item = _set_item(t)
+        defined, got = item["trophies"] or {}, item["earnedTrophies"] or {}
+        tiers = {tier: {"earned": int(got.get(tier) or 0), "total": int(defined.get(tier) or 0)} for tier in _TROPHY_TIERS}
+        achievements.record_set(
+            db,
+            user.id,
+            "psn",
+            npwr,
+            title=item["name"],
+            platform=item["platform"],
+            earned=sum(v["earned"] for v in tiers.values()),
+            total=sum(v["total"] for v in tiers.values()),
+            tiers=tiers,
+            progress=_int_or_none(item["trophyProgress"]),
+            last_earned_at=_parse_iso(item["trophyLastUpdated"]),
+            raw_data=item,
         )
-        .all()
-    )
-    pairs = [(e, trophy_item_of(e.release)) for e in rows]
-    return [(e, item) for e, item in pairs if item]
-
-
-def _trophy_candidates(db: Session, user_id: int) -> list[models.PsnReviewCandidate]:
-    """Pending review rows that are a trophy set. Most of the library sits
-    here until it is reviewed, and the set is what says which game a row is."""
-    rows = db.query(models.PsnReviewCandidate).filter_by(user_id=user_id, status="pending").all()
-    return [c for c in rows if _set_id(c)]
+        recorded += 1
+    return recorded
 
 
 def _definitions_current(db: Session, npwr: str, item: dict) -> bool:
@@ -1970,62 +1979,49 @@ def _definitions_current(db: Session, npwr: str, item: dict) -> bool:
     return not want or (d.raw_data or {}).get("_setVersion") == want
 
 
-def _earned_current(db: Session, entry: models.UserLibraryEntry, item: dict) -> bool:
-    """This entry's progress was fetched after Sony's last-earned stamp. The
-    crawl refreshes trophyLastUpdated every sync, so a new platinum shows up
-    as a newer stamp than the rows on file."""
-    stamp = _parse_iso(item.get("trophyLastUpdated"))
-    latest = (
-        db.query(models.UserAchievement.updated_at)
-        .filter_by(library_entry_id=entry.id)
-        .order_by(models.UserAchievement.updated_at.desc())
-        .first()
-    )
-    if latest is None or latest[0] is None:
+def _earned_current(db: Session, user_id: int, npwr: str, item: dict) -> bool:
+    """This account's unlocks for the set were fetched after Sony's
+    last-earned stamp. The crawl refreshes the stamp every sync, so a new
+    platinum shows up as a newer stamp than the rows on file."""
+    fetched = achievements.unlocks_fetched_at(db, user_id, "psn", npwr)
+    if fetched is None:
         return False
-    fetched = latest[0]
-    if fetched.tzinfo is None:
-        fetched = fetched.replace(tzinfo=datetime.UTC)
+    stamp = _parse_iso(item.get("trophyLastUpdated"))
     return stamp is None or fetched >= stamp
 
 
 def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep: float = _TROPHY_SLEEP_S) -> dict:
-    """Fetch every trophy set behind the user's PSN library and review queue:
-    what the game defines, once per set, and what this account has earned,
-    per library entry.
+    """Fetch every trophy set on the account: what the game defines, once
+    per set, and what this account has earned, once per set (#136, #222).
 
-    Review candidates get definitions only. They have no entry to hang
-    progress on, and the row already carries the counts, the percentage and
-    the last-earned date the card shows; the per-trophy list arrives on the
-    entry the next pass after confirm.
+    The work list is the account's recorded sets (record_trophy_sets), not
+    the library: a game in review and a PC copy with no Steam game yet have
+    trophies too, and they are fetched like any other. Which games SHOW a
+    set is a separate question (achievements.owners).
 
     Self-gating on both halves. Definitions are re-fetched only when the set
-    version the crawl reported has moved; earned lists only when Sony's
+    version the crawl reported has moved; unlocks only when Sony's
     last-earned stamp is newer than the rows on file. A re-run after a sync
-    that changed nothing spends no calls. Runs as a follow-up to the sync and
-    from its own button; either way it is background and rate-limited, since
-    a library this size is several hundred calls the first time (#136).
+    that changed nothing spends no calls. Background and rate-limited, since
+    a library this size is several hundred calls the first time.
     """
     if not user.psn_npsso:
         return {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "skipped_no_credentials": True}
     out = {"checked": 0, "fetched": 0, "skipped": 0, "errored": 0, "earned": 0, "sets": 0}
-    # (label, npwr, item, entry-or-None). Entries first: a set in both places
-    # is fetched once and the candidate finds it current.
-    work: list[tuple[str, str, dict, models.UserLibraryEntry | None]] = []
-    for entry, item in _trophy_entries(db, user.id):
-        work.append((entry.title, item["npCommunicationId"], item, entry))
-    for cand in _trophy_candidates(db, user.id):
-        work.append((cand.title, _set_id(cand), cand.raw_data or {}, None))
+    work = db.query(models.UserAchievementSet).filter_by(user_id=user.id, source="psn").order_by(models.UserAchievementSet.id).all()
 
     token: str | None = None
     account_id: str | None = None
-    for i, (label, npwr, item, entry) in enumerate(work):
+    for i, account_set in enumerate(work):
+        npwr = account_set.set_id
+        item = account_set.raw_data or {}
+        label = account_set.title or npwr
         service = _trophy_service(item)
         out["checked"] += 1
         if progress_callback:
             progress_callback(i, len(work), label)
         need_defs = not _definitions_current(db, npwr, item)
-        need_earned = entry is not None and (need_defs or not _earned_current(db, entry, item))
+        need_earned = need_defs or not _earned_current(db, user.id, npwr, item)
         if not need_defs and not need_earned:
             out["skipped"] += 1
             continue
@@ -2041,10 +2037,9 @@ def sync_trophies(db: Session, user: models.User, progress_callback=None, sleep:
                 out["sets"] += 1
             else:
                 defs = _definitions_for(db, npwr)
-            if need_earned:
-                earned = _fetch_earned_trophies(token, account_id, npwr, service)
-                time.sleep(sleep)
-                out["earned"] += _store_earned_trophies(db, entry, defs, earned)
+            earned = _fetch_earned_trophies(token, account_id, npwr, service)
+            time.sleep(sleep)
+            out["earned"] += _store_earned_trophies(db, user.id, defs, earned)
             db.commit()
             out["fetched"] += 1
         except PsnNpssoExpiredError:

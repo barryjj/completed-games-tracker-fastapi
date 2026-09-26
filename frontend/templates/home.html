@@ -194,15 +194,19 @@
     <div class="cgt-tool-card__body cgt-home-subhead">Recent unlocks</div>
     <div>
       {% for a in achievements.recent %}
-      <a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library?detail={{ a.library_entry_id }}">
-        {% if a.definition.icon_url %}<img class="cgt-ach-icon" src="{{ a.definition.icon_url }}" alt="" loading="lazy">
+      {# A set with no game in the library yet (a PC copy whose Steam game
+         has not synced) still earned the trophy: it lists, it just has
+         nowhere to link to (#222). #}
+      {% if a.entry_id %}<a class="cgt-detail-list-row d-flex align-items-center gap-2" href="/library?detail={{ a.entry_id }}">
+      {% else %}<div class="cgt-detail-list-row d-flex align-items-center gap-2">{% endif %}
+        {% if a.icon_url %}<img class="cgt-ach-icon" src="{{ a.icon_url }}" alt="" loading="lazy">
         {% else %}<div class="cgt-ach-icon cgt-ach-icon--empty"></div>{% endif %}
         <span class="d-flex flex-column" style="min-width: 0;">
-          <span class="text-truncate small">{{ a.definition.name }}</span>
-          <span class="text-truncate cgt-ach-game">{{ a.library_entry.release.game.display_title }}</span>
+          <span class="text-truncate small">{{ a.name }}</span>
+          <span class="text-truncate cgt-ach-game">{{ a.game_title }}</span>
         </span>
         <span class="cgt-list-row-date flex-shrink-0 ms-auto">{{ a.earned_at.strftime("%b %-d, %Y") }}</span>
-      </a>
+      {% if a.entry_id %}</a>{% else %}</div>{% endif %}
       {% endfor %}
     </div>
     {% endif %}

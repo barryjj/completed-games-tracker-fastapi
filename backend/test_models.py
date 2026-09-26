@@ -255,7 +255,7 @@ def test_create_achievement(db):
     d = _definition(db, release, "ACH_BEAT_GAME", "Elden Lord", description="Reached the Elden Throne")
 
     ach = models.UserAchievement(
-        library_entry_id=entry.id,
+        user_id=user.id,
         definition_id=d.id,
         earned=True,
         earned_at=datetime.datetime(2026, 1, 15, tzinfo=datetime.UTC),
@@ -267,7 +267,7 @@ def test_create_achievement(db):
     assert ach.id is not None
     assert ach.earned is True
     assert ach.definition.name == "Elden Lord"
-    assert ach.library_entry.release.platform == "Steam"
+    assert ach.user_id == user.id, "an unlock belongs to the account, not a copy"
 
 
 def test_psn_trophy_tier_and_rarity_are_columns(db):
@@ -276,15 +276,15 @@ def test_psn_trophy_tier_and_rarity_are_columns(db):
     user = make_user(db)
     game = make_game(db)
     release = make_release(db, game, platform="PS5", source="psn")
-    entry = make_library_entry(db, user, release, import_source="psn_import")
+    make_library_entry(db, user, release, import_source="psn_import")
     d = _definition(db, release, "0", "Elden Lord", tier="platinum", rarity_pct=2.4, set_id="NPWR12345_00")
 
-    db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=True))
+    db.add(models.UserAchievement(user_id=user.id, definition_id=d.id, earned=True))
     db.commit()
-    db.refresh(entry)
 
-    assert entry.achievements[0].definition.tier == "platinum"
-    assert entry.achievements[0].definition.rarity_pct == 2.4
+    mine = db.query(models.UserAchievement).filter_by(user_id=user.id).one()
+    assert mine.definition.tier == "platinum"
+    assert mine.definition.rarity_pct == 2.4
     assert db.query(models.AchievementDefinition).filter_by(tier="platinum").count() == 1
 
 
@@ -294,33 +294,34 @@ def test_achievements_platform_separation(db):
     game = make_game(db)
     steam_release = make_release(db, game, platform="Steam", source="steam")
     ps5_release = make_release(db, game, platform="PS5", source="psn")
-    steam_entry = make_library_entry(db, user, steam_release, import_source="steam_import")
-    ps5_entry = make_library_entry(db, user, ps5_release, import_source="psn_import")
+    make_library_entry(db, user, steam_release, import_source="steam_import")
+    make_library_entry(db, user, ps5_release, import_source="psn_import")
     steam_d = _definition(db, steam_release, "ACH_1", "Steam Achievement")
     ps5_d = _definition(db, ps5_release, "1", "PS5 Trophy", tier="gold")
 
-    db.add(models.UserAchievement(library_entry_id=steam_entry.id, definition_id=steam_d.id, earned=True))
-    db.add(models.UserAchievement(library_entry_id=ps5_entry.id, definition_id=ps5_d.id, earned=False))
+    db.add(models.UserAchievement(user_id=user.id, definition_id=steam_d.id, earned=True))
+    db.add(models.UserAchievement(user_id=user.id, definition_id=ps5_d.id, earned=False))
     db.commit()
-    db.refresh(steam_entry)
-    db.refresh(ps5_entry)
 
-    assert steam_entry.achievements[0].definition.name == "Steam Achievement"
-    assert ps5_entry.achievements[0].definition.tier == "gold"
-    assert ps5_entry.achievements[0].earned is False
+    by_source = {a.definition.source: a for a in db.query(models.UserAchievement).filter_by(user_id=user.id)}
+    assert by_source["steam"].definition.name == "Steam Achievement"
+    assert by_source["psn"].definition.tier == "gold"
+    assert by_source["psn"].earned is False
 
 
-def test_achievement_unique_per_entry(db):
+def test_achievement_unique_per_account(db):
+    """One row per achievement per account, however many copies of the game
+    the account owns (#222)."""
     user = make_user(db)
     game = make_game(db)
     release = make_release(db, game)
-    entry = make_library_entry(db, user, release)
+    make_library_entry(db, user, release)
     d = _definition(db, release, "ACH_1", "First")
 
-    db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=False))
+    db.add(models.UserAchievement(user_id=user.id, definition_id=d.id, earned=False))
     db.commit()
     with pytest.raises(IntegrityError):
-        db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=True))
+        db.add(models.UserAchievement(user_id=user.id, definition_id=d.id, earned=True))
         db.commit()
 
 
@@ -389,10 +390,11 @@ def test_playthroughs_string_values(db):
     assert {c.playthroughs for c in db.query(models.Completion).filter_by(user_id=user.id).all()} == {"1", "1+", "2", "3+"}
 
 
-def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session):
+def test_achievement_definitions_are_shared_and_progress_is_per_account(db_session):
     """Two users own the same release: one set of definitions, each their own
-    earned rows. Deleting an entry drops that user's progress and nothing else;
-    the definitions belong to the SET and outlive the release (#136).
+    earned rows. The unlocks belong to the ACCOUNT, not the copy: deleting a
+    library entry leaves them (the trophies are still on the profile).
+    Definitions belong to the SET and outlive the release (#136, #222).
 
     The schema is multi-user by design -- users, user_library keyed by user --
     so the definition is stored once per set rather than folded into every
@@ -434,40 +436,37 @@ def test_achievement_definitions_are_shared_and_progress_is_per_entry(db_session
     when = datetime.datetime(2010, 1, 18, 18, 15, 37, tzinfo=datetime.UTC)
     db_session.add_all(
         [
-            models.UserAchievement(library_entry_id=entry_a.id, definition_id=plat.id, earned=True, earned_at=when),
-            models.UserAchievement(library_entry_id=entry_a.id, definition_id=bronze.id, earned=True, earned_at=when),
+            models.UserAchievement(user_id=a.id, definition_id=plat.id, earned=True, earned_at=when),
+            models.UserAchievement(user_id=a.id, definition_id=bronze.id, earned=True, earned_at=when),
             # fetched, not earned: the row exists and says so
-            models.UserAchievement(library_entry_id=entry_b.id, definition_id=plat.id, earned=False),
+            models.UserAchievement(user_id=b.id, definition_id=plat.id, earned=False),
         ]
     )
     db_session.commit()
 
-    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 2, "one set, shared"
-    assert {ua.definition.name for ua in entry_a.achievements if ua.earned} == {"Trophy of Zeus", "1.21 Gigawatts"}
-    assert [ua.earned for ua in entry_b.achievements] == [False], "fetched-not-earned is a row, not an absence"
-    assert plat.earned_by and {ua.library_entry_id for ua in plat.earned_by} == {entry_a.id, entry_b.id}
+    def rows(user):
+        return db_session.query(models.UserAchievement).filter_by(user_id=user.id).all()
 
-    # The same achievement cannot be recorded twice for one entry.
+    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 2, "one set, shared"
+    assert {ua.definition.name for ua in rows(a) if ua.earned} == {"Trophy of Zeus", "1.21 Gigawatts"}
+    assert [ua.earned for ua in rows(b)] == [False], "fetched-not-earned is a row, not an absence"
+    assert plat.earned_by and {ua.user_id for ua in plat.earned_by} == {a.id, b.id}
+
+    # The same achievement cannot be recorded twice for one account.
     import pytest
     from sqlalchemy.exc import IntegrityError
 
-    db_session.add(models.UserAchievement(library_entry_id=entry_a.id, definition_id=plat.id, earned=True))
+    db_session.add(models.UserAchievement(user_id=a.id, definition_id=plat.id, earned=True))
     with pytest.raises(IntegrityError):
         db_session.flush()
     db_session.rollback()
 
-    # User b leaves: their progress goes, the definitions and a's progress stay.
+    # An entry goes: the trophies were earned by the account, not the copy,
+    # so they stay -- a rebuy or another copy shows them again.
     db_session.delete(entry_b)
-    db_session.commit()
-    assert db_session.query(models.UserAchievement).count() == 2
-    assert db_session.query(models.AchievementDefinition).count() == 2
-
-    # The release goes (once no entry holds it -- user_library.release_id does
-    # not cascade, by design): a's progress went with the entry, the set stays.
-    # Two SKUs and a review candidate can all point at it; none of them owns it.
     db_session.delete(entry_a)
     db_session.commit()
     db_session.delete(release)
     db_session.commit()
+    assert db_session.query(models.UserAchievement).count() == 3
     assert db_session.query(models.AchievementDefinition).count() == 2
-    assert db_session.query(models.UserAchievement).count() == 0

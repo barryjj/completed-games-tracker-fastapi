@@ -821,10 +821,14 @@ def test_an_unmatched_pc_set_attaches_on_the_next_sync(db_session, monkeypatch, 
     assert psn.trophy_item_of(rel)["npCommunicationId"] == "NPWR37356_00"
 
 
-def test_the_trophy_pass_fetches_a_set_attached_to_a_steam_entry(db_session, monkeypatch):
-    """Carrying a set is the test, not the release's source: the trophies of a
-    game played on Steam are fetched and stored against the Steam entry."""
+def test_a_pc_set_is_fetched_for_the_account_and_shown_on_its_steam_game(db_session, monkeypatch):
+    """A game played on Steam earns PSN trophies. They are fetched and kept
+    per account like any set; the PC-copy link on the Steam release is what
+    makes that Steam entry an owner of the set, so its page can show them."""
+    from backend import achievements
+
     user = _trophy_user(db_session)
+    _account_set(db_session, user, "NPWR00950_00", "PS5,PSPC", title="MARVEL Tōkon: Fighting Souls")
     game = models.Game(title="MARVEL Tōkon: Fighting Souls")
     db_session.add(game)
     db_session.flush()
@@ -854,9 +858,98 @@ def test_the_trophy_pass_fetches_a_set_attached_to_a_steam_entry(db_session, mon
 
     assert out["fetched"] == 1 and out["earned"] == 1
     assert all(c.endswith("npServiceName=trophy2") for c in calls), "a PC set is a PS5-era set"
-    mine = {a.definition.external_id: a for a in entry.achievements}
-    assert mine["0"].earned is True, "the platinum landed on the Steam entry"
+    assert _unlocks(db_session, user)["0"].earned is True, "the platinum is on the account"
     assert db_session.query(models.AchievementDefinition).filter_by(source="psn", set_id="NPWR00950_00").count() == 2
+    owners = achievements.owners(db_session, user.id, {("psn", "NPWR00950_00")})
+    assert [e.id for e in owners[("psn", "NPWR00950_00")]] == [entry.id], "shown on the Steam game"
+
+
+def test_a_ps5_set_also_played_on_steam_is_shown_on_both_copies(db_session, monkeypatch, tmp_path):
+    """Spider-Man 2 has native PS5 play AND PC play: a PlayStation entry is
+    imported as usual, and the set is linked to the Steam copy as well. One
+    set on the account, two games showing it -- and the totals count it once,
+    because the set is recorded once."""
+    from backend import achievements
+
+    _seed_platforms(db_session)
+    user = _user(db_session, "both")
+    game = models.Game(title="Marvel's Spider-Man 2")
+    db_session.add(game)
+    db_session.flush()
+    steam_rel = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id="2651280")
+    db_session.add(steam_rel)
+    db_session.flush()
+    steam_entry = models.UserLibraryEntry(user_id=user.id, release_id=steam_rel.id, import_source="steam_import")
+    db_session.add(steam_entry)
+    db_session.commit()
+
+    item = {
+        "npCommunicationId": "NPWR23378_00",
+        "titleId": "PPSA01234_00",
+        "name": "Marvel's Spider-Man 2",
+        "displayName": "Marvel's Spider-Man 2",
+        "platform": "PS5,PSPC",
+        "playCategories": ["ps5_native_game", "pspc_game"],
+        "category": "ps5_native_game",
+        "sources": ["played", "titles", "purchased"],
+        "trophies": {"platinum": 1, "gold": 2, "silver": 0, "bronze": 0},
+        "earnedTrophies": {"platinum": 1, "gold": 2, "silver": 0, "bronze": 0},
+        "trophyProgress": 100,
+    }
+    assert not psn.is_pc_copy(item), "there is PlayStation evidence"
+    _seed_review(db_session, user, [item])
+    result = psn.import_merged(db_session, user, [item])
+
+    assert result["pc_set_attached"] == 1 and result["skipped_pc_dupe"] == 0
+    db_session.refresh(steam_rel)
+    assert achievements.trophy_item_of(steam_rel)["npCommunicationId"] == "NPWR23378_00"
+    owners = achievements.owners(db_session, user.id, {("psn", "NPWR23378_00")})[("psn", "NPWR23378_00")]
+    sources = sorted(e.release.source for e in owners)
+    assert "steam" in sources, "the Steam copy shows the set"
+    assert sources.count("steam") == 1
+
+
+def test_recording_sets_takes_the_whole_trophy_profile(db_session):
+    """Every set Sony lists is recorded, with its own summary -- a demo, a
+    game in review, a PC copy with nothing in the library -- so the totals are
+    the profile's. Re-recording updates in place."""
+    user = _user(db_session, "profile")
+    titles = [
+        {
+            "npCommunicationId": "NPWR1_00",
+            "trophyTitleName": "Stellar Blade",
+            "trophyTitlePlatform": "PS5,PSPC",
+            "npServiceName": "trophy2",
+            "trophySetVersion": "01.00",
+            "lastUpdatedDateTime": "2025-06-01T00:00:00Z",
+            "definedTrophies": {"platinum": 1, "gold": 2, "silver": 3, "bronze": 4},
+            "earnedTrophies": {"platinum": 1, "gold": 2, "silver": 3, "bronze": 4},
+            "progress": 100,
+        },
+        {
+            "npCommunicationId": "NPWR2_00",
+            "trophyTitleName": "Some Demo",
+            "trophyTitlePlatform": "PS4",
+            "definedTrophies": {"bronze": 5},
+            "earnedTrophies": {"bronze": 1},
+            "progress": 20,
+        },
+        {"trophyTitleName": "no id -- skipped"},
+    ]
+    assert psn.record_trophy_sets(db_session, user, titles) == 2
+    db_session.commit()
+    sets = {s.set_id: s for s in db_session.query(models.UserAchievementSet).filter_by(user_id=user.id)}
+    blade = sets["NPWR1_00"]
+    assert (blade.earned, blade.total, blade.progress, blade.platform) == (10, 10, 100, "PS5,PSPC")
+    assert blade.tiers["platinum"] == {"earned": 1, "total": 1}
+    assert blade.raw_data["npServiceName"] == "trophy2" and blade.raw_data["trophyLastUpdated"] == "2025-06-01T00:00:00Z"
+    assert (sets["NPWR2_00"].earned, sets["NPWR2_00"].total) == (1, 5)
+
+    titles[1]["earnedTrophies"] = {"bronze": 5}
+    psn.record_trophy_sets(db_session, user, titles)
+    db_session.commit()
+    assert db_session.query(models.UserAchievementSet).filter_by(user_id=user.id).count() == 2
+    assert db_session.query(models.UserAchievementSet).filter_by(set_id="NPWR2_00").one().earned == 5
 
 
 def test_played_only_actions(client, db_session):
@@ -6254,7 +6347,35 @@ def _trophy_api(monkeypatch, sets: dict, earned: dict, groups: dict | None = Non
     return calls
 
 
+def _account_set(db, user, npwr, platform="PS4", *, version="01.00", last_updated="2020-01-01T00:00:00Z", title="Game"):
+    """Record a set on the account the way a sync does, from a trophy title."""
+    psn.record_trophy_sets(
+        db,
+        user,
+        [
+            {
+                "npCommunicationId": npwr,
+                "trophyTitleName": title,
+                "trophyTitlePlatform": platform,
+                "trophySetVersion": version,
+                "lastUpdatedDateTime": last_updated,
+                "definedTrophies": {"platinum": 1, "gold": 0, "silver": 0, "bronze": 1},
+                "earnedTrophies": {"platinum": 1, "gold": 0, "silver": 0, "bronze": 0},
+                "progress": 50,
+            }
+        ],
+    )
+    db.commit()
+    return db.query(models.UserAchievementSet).filter_by(user_id=user.id, source="psn", set_id=npwr).one()
+
+
+def _unlocks(db, user) -> dict[str, models.UserAchievement]:
+    """This account's unlock rows, by the achievement's external id."""
+    return {a.definition.external_id: a for a in db.query(models.UserAchievement).filter_by(user_id=user.id)}
+
+
 def _psn_trophy_entry(db, user, npwr, platform="PS4", *, version="01.00", last_updated="2020-01-01T00:00:00Z", title="Game"):
+    _account_set(db, user, npwr, platform, version=version, last_updated=last_updated, title=title)
     game = models.Game(title=title)
     db.add(game)
     db.flush()
@@ -6322,9 +6443,9 @@ _GOW_EARNED = [
 ]
 
 
-def test_sync_trophies_writes_definitions_per_release_and_progress_per_entry(db_session, monkeypatch):
+def test_sync_trophies_writes_definitions_per_set_and_unlocks_per_account(db_session, monkeypatch):
     user = _trophy_user(db_session)
-    entry = _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3", title="God of War")
+    _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3", title="God of War")
     calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET}, {"NPWR00950_00": _GOW_EARNED})
 
     out = psn.sync_trophies(db_session, user)
@@ -6343,21 +6464,21 @@ def test_sync_trophies_writes_definitions_per_release_and_progress_per_entry(db_
     assert defs[0].set_id == "NPWR00950_00" and defs[0].group_id == "default"
     # Rarity is reported by the per-user call, stored on the shared definition.
     assert defs[0].rarity_pct == 12.3
-    mine = {a.definition_id: a for a in entry.achievements}
-    assert mine[defs[0].id].earned is True
-    assert mine[defs[0].id].earned_at.isoformat().startswith("2010-01-18T04:11")
-    assert mine[defs[1].id].earned is False and mine[defs[1].id].earned_at is None
+    mine = _unlocks(db_session, user)
+    assert mine["0"].earned is True
+    assert mine["0"].earned_at.isoformat().startswith("2010-01-18T04:11")
+    assert mine["1"].earned is False and mine["1"].earned_at is None
     # No groups on this set: definitions + earned, nothing more.
     assert len(calls) == 2 and not any("/trophyGroups?" in c for c in calls)
     assert all(c.endswith("npServiceName=trophy") for c in calls)
 
 
 def test_sync_trophies_is_current_after_one_pass_and_refetches_on_a_new_earn(db_session, monkeypatch):
-    """The gate is Sony's last-earned stamp on the release vs the rows on
-    file. A quiet re-run spends no calls; a sync that moves the stamp forward
-    makes the earned list (and only that) fetch again."""
+    """The gate is Sony's last-earned stamp on the account's set vs the rows
+    on file. A quiet re-run spends no calls; a sync that moves the stamp
+    forward makes the earned list (and only that) fetch again."""
     user = _trophy_user(db_session)
-    entry = _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3")
+    _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3")
     calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET}, {"NPWR00950_00": _GOW_EARNED})
     psn.sync_trophies(db_session, user)
     calls.clear()
@@ -6366,9 +6487,7 @@ def test_sync_trophies_is_current_after_one_pass_and_refetches_on_a_new_earn(db_
     assert out["skipped"] == 1 and out["fetched"] == 0 and calls == []
 
     # A later sync reports a newer stamp — the user just earned the bronze.
-    release = entry.release
-    release.raw_data = {**release.raw_data, "trophyLastUpdated": "2099-01-01T00:00:00Z"}
-    db_session.commit()
+    _account_set(db_session, user, "NPWR00950_00", "PS3", last_updated="2099-01-01T00:00:00Z")
     _GOW_EARNED[1]["earned"] = True
     _GOW_EARNED[1]["earnedDateTime"] = "2099-01-01T00:00:00Z"
     try:
@@ -6384,14 +6503,12 @@ def test_sync_trophies_is_current_after_one_pass_and_refetches_on_a_new_earn(db_
 
 def test_sync_trophies_refetches_definitions_when_the_set_version_moves(db_session, monkeypatch):
     user = _trophy_user(db_session)
-    entry = _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3")
+    _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3")
     calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET}, {"NPWR00950_00": _GOW_EARNED})
     psn.sync_trophies(db_session, user)
     calls.clear()
 
-    release = entry.release
-    release.raw_data = {**release.raw_data, "trophySetVersion": "01.10"}
-    db_session.commit()
+    _account_set(db_session, user, "NPWR00950_00", "PS3", version="01.10")
     bigger = {
         **_GOW_SET,
         "trophySetVersion": "01.10",
@@ -6402,14 +6519,14 @@ def test_sync_trophies_refetches_definitions_when_the_set_version_moves(db_sessi
     out = psn.sync_trophies(db_session, user)
     assert out["fetched"] == 1
     assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 3
-    assert len(entry.achievements) == 3
+    assert len(_unlocks(db_session, user)) == 3
     # And now it is current at the new version.
     assert psn.sync_trophies(db_session, user)["skipped"] == 1
 
 
 def test_sync_trophies_names_dlc_groups_and_stores_ps5_progress(db_session, monkeypatch):
     user = _trophy_user(db_session)
-    entry = _psn_trophy_entry(db_session, user, "NPWR20000_00", "PS5")
+    _psn_trophy_entry(db_session, user, "NPWR20000_00", "PS5")
     ps5_set = {
         "trophySetVersion": "01.00",
         "hasTrophyGroups": True,
@@ -6429,7 +6546,7 @@ def test_sync_trophies_names_dlc_groups_and_stores_ps5_progress(db_session, monk
 
     d = db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR20000_00").one()
     assert d.group_id == "001" and d.group_name == "The Lost Legacy"
-    a = entry.achievements[0]
+    a = _unlocks(db_session, user)["5"]
     assert (a.progress_value, a.progress_target) == (32, 50)
     # PS5 sets go to the trophy2 service; the groups call was made.
     assert all(c.endswith("npServiceName=trophy2") for c in calls)
@@ -6456,24 +6573,26 @@ def test_trophy_service_is_carried_by_the_crawl_and_derived_for_older_releases()
     assert merged[0]["npServiceName"] == "trophy2" and merged[0]["trophySetVersion"] == "01.02"
 
 
-def test_sync_trophies_shares_one_fetch_across_cross_buy_releases_and_stops_on_auth_loss(db_session, monkeypatch):
+def test_sync_trophies_fetches_a_cross_buy_set_once_and_stops_on_auth_loss(db_session, monkeypatch):
+    """Cross-buy PS4 and Vita releases share one trophy list, and the list is
+    the account's: definitions once, unlocks once, one row per trophy. It used
+    to be fetched and stored once per entry (#222)."""
     user = _trophy_user(db_session)
-    a = _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS4", title="Shovel Knight")
-    b = _psn_trophy_entry(db_session, user, "NPWR00950_00", "PSVITA", title="Shovel Knight")
+    _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS4", title="Shovel Knight")
+    _psn_trophy_entry(db_session, user, "NPWR00950_00", "PSVITA", title="Shovel Knight")
     calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET}, {"NPWR00950_00": _GOW_EARNED})
 
     out = psn.sync_trophies(db_session, user)
-    assert out["fetched"] == 2 and out["sets"] == 1
-    # One set, two entries: definitions once, earned twice. Three calls.
-    assert len([c for c in calls if "/users/" not in c]) == 1 and len([c for c in calls if "/users/" in c]) == 2
+    assert out["fetched"] == 1 and out["sets"] == 1
+    assert len([c for c in calls if "/users/" not in c]) == 1 and len([c for c in calls if "/users/" in c]) == 1
     assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00950_00").count() == 2
-    assert len(a.achievements) == 2 and len(b.achievements) == 2
+    assert len(_unlocks(db_session, user)) == 2, "one row per trophy, not per copy"
 
     # A 401 mid-run means every remaining set fails the same way: stop.
     import httpx
 
-    c = _psn_trophy_entry(db_session, user, "NPWR00001_00", "PS3", title="Third")
-    _psn_trophy_entry(db_session, user, "NPWR00002_00", "PS3", title="Fourth")
+    _account_set(db_session, user, "NPWR00001_00", "PS3", title="Third")
+    _account_set(db_session, user, "NPWR00002_00", "PS3", title="Fourth")
     calls.clear()
 
     def unauthorized(token, url, params=None):
@@ -6482,43 +6601,32 @@ def test_sync_trophies_shares_one_fetch_across_cross_buy_releases_and_stops_on_a
 
     monkeypatch.setattr(psn, "_bearer_get", unauthorized)
     out = psn.sync_trophies(db_session, user)
-    assert out["skipped"] == 2 and out["errored"] == 1 and out["stopped"] == 401
-    assert len(calls) == 1 and c.achievements == []
+    assert out["skipped"] == 1 and out["errored"] == 1 and out["stopped"] == 401
+    assert len(calls) == 1
+    assert not db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00001_00").count()
 
 
-def test_sync_trophies_reads_sets_for_rows_still_in_review(db_session, monkeypatch):
-    """Most of the library sits in the review queue, and the set is what says
-    which game a row is. Candidates get definitions -- no entry, so no earned
-    rows -- and a set shared with an entry is not fetched twice."""
+def test_sync_trophies_fetches_every_set_on_the_account_entry_or_not(db_session, monkeypatch):
+    """The work list is the account's sets, not the library. A game still in
+    review and a PC copy with no Steam game yet earned their trophies too:
+    they get definitions AND unlocks, recorded against the account, and they
+    count whether or not a game shows them (#222)."""
     user = _trophy_user(db_session)
     _psn_trophy_entry(db_session, user, "NPWR00950_00", "PS3", title="God of War")
-    for ext, name in (("NPWR00950_00", "God of War (dupe SKU)"), ("NPWR00001_00", "GOW2 Trophies"), ("CUSA9999_00", "Store only")):
-        db_session.add(
-            models.PsnReviewCandidate(
-                user_id=user.id,
-                external_id=ext,
-                kind="trophy_only",
-                title=name,
-                status="pending",
-                raw_data={"npCommunicationId": ext if ext.startswith("NPWR") else None, "platform": "PS3", "trophySetVersion": "01.00"},
-            )
-        )
-    db_session.add(
-        models.PsnReviewCandidate(user_id=user.id, external_id="NPWR00002_00", kind="trophy_only", title="Decided", status="confirmed")
+    _account_set(db_session, user, "NPWR00001_00", "PS3", title="GOW2 Trophies")  # in review, no entry
+    gow2 = {**_GOW_SET, "trophies": [{"trophyId": 7, "trophyType": "platinum", "trophyName": "God of Gods"}]}
+    calls = _trophy_api(
+        monkeypatch,
+        {"NPWR00950_00": _GOW_SET, "NPWR00001_00": gow2},
+        {"NPWR00950_00": _GOW_EARNED, "NPWR00001_00": [{"trophyId": 7, "earned": True, "earnedDateTime": "2011-03-01T00:00:00Z"}]},
     )
-    db_session.commit()
-    gow2 = {**_GOW_SET, "trophies": [{"trophyId": 0, "trophyType": "platinum", "trophyName": "God of Gods"}]}
-    calls = _trophy_api(monkeypatch, {"NPWR00950_00": _GOW_SET, "NPWR00001_00": gow2}, {"NPWR00950_00": _GOW_EARNED})
 
     out = psn.sync_trophies(db_session, user)
 
-    # Entry + dupe-SKU candidate + GOW2 candidate checked; the store-only row
-    # and the decided row are not trophy work.
-    assert out["checked"] == 3 and out["sets"] == 2 and out["skipped"] == 1
-    assert [c for c in calls if "/users/" in c] == [c for c in calls if "NPWR00950_00" in c and "/users/" in c], "earned only for the entry"
-    assert db_session.query(models.AchievementDefinition).filter_by(set_id="NPWR00001_00").one().name == "God of Gods"
-    assert db_session.query(models.UserAchievement).count() == 2
-    assert psn.sync_trophies(db_session, user)["skipped"] == 3
+    assert out["checked"] == 2 and out["sets"] == 2 and out["fetched"] == 2
+    assert len([c for c in calls if "/users/" in c]) == 2, "unlocks for the set with no entry as well"
+    assert _unlocks(db_session, user)["7"].earned is True
+    assert psn.sync_trophies(db_session, user)["skipped"] == 2
 
 
 def test_trophy_calls_retry_a_server_error_but_not_a_client_one(db_session, monkeypatch):

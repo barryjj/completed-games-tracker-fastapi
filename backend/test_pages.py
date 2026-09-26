@@ -2830,85 +2830,71 @@ def test_home_achievements_widget_is_absent_until_something_is_on_file(client, d
     assert grid.count("cgt-tool-card--tall") == 2
 
 
+def _home_sets(db, user):
+    """Seed the account the way the syncs leave it: per-set summaries for
+    totals, per-account rows for unlocks, and library entries that own some
+    of the sets. Half-Life 2 (Steam) and God of War (PSN) are in the library;
+    Journey is a set with no game yet -- still in review."""
+    import datetime
+
+    def _entry(source, ext, title, raw=None):
+        game = models.Game(title=title)
+        db.add(game)
+        db.flush()
+        platform = "Steam" if source == "steam" else "PS4"
+        rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=ext, raw_data=raw)
+        db.add(rel)
+        db.flush()
+        db.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id))
+        db.flush()
+
+    def _summary(source, set_id, title, earned, total, progress, tiers=None):
+        db.add(
+            models.UserAchievementSet(
+                user_id=user.id, source=source, set_id=set_id, title=title, earned=earned, total=total, progress=progress, tiers=tiers
+            )
+        )
+
+    def _ach(source, set_id, ext, name, *, earned, when=None, tier=None, icon=None):
+        d = models.AchievementDefinition(source=source, set_id=set_id, external_id=ext, name=name, tier=tier, icon_url=icon)
+        db.add(d)
+        db.flush()
+        db.add(models.UserAchievement(user_id=user.id, definition_id=d.id, earned=earned, earned_at=when))
+
+    def _tiers(plat, gold, silver, bronze):
+        return {
+            t: {"earned": e, "total": n}
+            for t, (e, n) in zip(("platinum", "gold", "silver", "bronze"), (plat, gold, silver, bronze), strict=True)
+        }
+
+    _entry("steam", "220", "Half-Life 2")
+    _summary("steam", "220", "Half-Life 2", 1, 2, 50)
+    _ach("steam", "220", "HL2_A", "Defiant", earned=True, when=datetime.datetime(2024, 3, 8, 12, 0), icon="https://x/defiant.jpg")
+    _ach("steam", "220", "HL2_B", "Lambda Locator", earned=False)
+
+    _entry("psn", "CUSA1", "God of War", raw={"npCommunicationId": "NPWR1"})
+    _summary("psn", "NPWR1", "God of War", 2, 3, 80, _tiers((1, 1), (1, 1), (0, 0), (0, 1)))
+    _ach("psn", "NPWR1", "0", "Father and Son", earned=True, when=datetime.datetime(2024, 5, 1, 9, 0), tier="platinum")
+    _ach("psn", "NPWR1", "1", "Past Haunts", earned=True, when=datetime.datetime(2024, 4, 2, 9, 0), tier="gold")
+    _ach("psn", "NPWR1", "2", "Chosen Guest", earned=False, tier="bronze")
+
+    _summary("psn", "NPWR9", "Journey", 2, 2, 100, _tiers((0, 0), (2, 2), (0, 0), (0, 0)))
+    _ach("psn", "NPWR9", "0", "Transcendence", earned=True, when=datetime.datetime(2023, 1, 1), tier="gold")
+    db.commit()
+
+
 def test_home_achievements_widget_sums_both_sources_and_lists_recent_unlocks(client, db_session):
     """The one place achievement data shows until the detail pane learns a
-    set (#136). Steam counts its per-achievement rows. PlayStation counts
-    Sony's per-set totals off the crawl -- library AND review queue, one
-    set once -- because rows exist only for confirmed entries and most of a
-    PSN library sits in review (727 earned on file vs 11,200 on the
-    profile). Recent unlocks are rows from either source, newest first,
-    linking to the entry."""
+    set (#136). Totals read the account's per-set summaries, which a sync
+    records for every set the source reports -- a game in review counts as
+    much as a confirmed one (#222). Recent unlocks are the account's rows,
+    newest first, linking to a game that shows the set, or naming the set
+    when no game does yet."""
     import datetime
 
     _signup_and_login(client)
     user = db_session.query(models.User).first()
-
-    def _entry(source, ext, title, raw=None):
-        game = models.Game(title=title)
-        db_session.add(game)
-        db_session.flush()
-        platform = "Steam" if source == "steam" else "PS4"
-        rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=ext, raw_data=raw)
-        db_session.add(rel)
-        db_session.flush()
-        entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id)
-        db_session.add(entry)
-        db_session.flush()
-        return entry
-
-    def _ach(entry, source, set_id, ext, name, *, earned, when=None, tier=None, icon=None):
-        d = models.AchievementDefinition(source=source, set_id=set_id, external_id=ext, name=name, tier=tier, icon_url=icon)
-        db_session.add(d)
-        db_session.flush()
-        db_session.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=earned, earned_at=when))
-        db_session.flush()
-
-    def _set(npwr, *, defined, earned, progress):
-        tiers = ("platinum", "gold", "silver", "bronze")
-        return {
-            "npCommunicationId": npwr,
-            "trophies": dict(zip(tiers, defined, strict=True)),
-            "earnedTrophies": dict(zip(tiers, earned, strict=True)),
-            "trophyProgress": progress,
-        }
-
-    # Steam: rows. 1 of 2 earned on one entry.
-    hl = _entry("steam", "220", "Half-Life 2")
-    _ach(hl, "steam", "220", "HL2_A", "Defiant", earned=True, when=datetime.datetime(2024, 3, 8, 12, 0), icon="https://x/defiant.jpg")
-    _ach(hl, "steam", "220", "HL2_B", "Lambda Locator", earned=False)
-
-    # PSN: a confirmed entry with rows AND Sony's counts (rows are for the
-    # unlock list; counts are what the figures read).
-    gow_raw = _set("NPWR1", defined=(1, 1, 0, 1), earned=(1, 1, 0, 0), progress=80)
-    gow = _entry("psn", "CUSA1", "God of War", raw=gow_raw)
-    _ach(gow, "psn", "NPWR1", "0", "Father and Son", earned=True, when=datetime.datetime(2024, 5, 1, 9, 0), tier="platinum")
-    _ach(gow, "psn", "NPWR1", "1", "Past Haunts", earned=True, when=datetime.datetime(2024, 4, 2, 9, 0), tier="gold")
-    _ach(gow, "psn", "NPWR1", "2", "Chosen Guest", earned=False, tier="bronze")
-    # The same set again on a cross-buy release: counted once.
-    _entry("psn", "PCSA1", "God of War (Vita)", raw=gow_raw)
-    # A set still in review, no rows at all: counted from its totals.
-    db_session.add(
-        models.PsnReviewCandidate(
-            user_id=user.id,
-            external_id="CUSA9",
-            title="Journey",
-            kind="cross_play",
-            status="pending",
-            raw_data=_set("NPWR9", defined=(0, 2, 0, 0), earned=(0, 2, 0, 0), progress=100),
-        )
-    )
-    # A dismissed one is not.
-    db_session.add(
-        models.PsnReviewCandidate(
-            user_id=user.id,
-            external_id="CUSA8",
-            title="Not mine",
-            kind="cross_play",
-            status="dismissed",
-            raw_data=_set("NPWR8", defined=(1, 0, 0, 0), earned=(1, 0, 0, 0), progress=100),
-        )
-    )
-    db_session.commit()
+    _home_sets(db_session, user)
 
     body = client.get("/").text
     grid = body[body.index('id="home-widgets"') :]
@@ -2920,41 +2906,43 @@ def test_home_achievements_widget_sums_both_sources_and_lists_recent_unlocks(cli
     assert ">5<" in stats and "Earned" in stats
     # Sets at 100%: Journey only (God of War is at 80%; Half-Life 2 is 1/2).
     assert ">1<" in stats and "Sets at 100%" in stats and "cgt-tool-stat--green" in stats
-    # Platinums: God of War's, once.
     assert "Platinums" in stats
     assert "tag-platform-teal" in stats and "Steam" in stats and "1 <span" in stats and "/ 2<" in stats
     assert "tag-platform-lavender" in stats and "PlayStation" in stats and "4 <span" in stats and "/ 5<" in stats
-    # Tier legend from the same totals: platinum 1/1, gold 3/3, bronze 0/1; no silver anywhere.
+    # Tier legend from the same summaries: platinum 1/1, gold 3/3, bronze 0/1; no silver anywhere.
     assert "cgt-trophy-tier--platinum" in stats and "cgt-trophy-tier--gold" in stats and "cgt-trophy-tier--bronze" in stats
     assert "cgt-trophy-tier--silver" not in stats
     assert "Gold — 3 of 3" in stats and "Bronze — 0 of 1" in stats
 
     recent = card[card.index("Recent unlocks") :]
-    order = [recent.index(n) for n in ("Father and Son", "Past Haunts", "Defiant")]
+    order = [recent.index(n) for n in ("Father and Son", "Past Haunts", "Defiant", "Transcendence")]
     assert order == sorted(order), "newest unlock first"
     assert "Lambda Locator" not in recent and "Chosen Guest" not in recent, "unearned rows are not unlocks"
+    hl = db_session.query(models.GameRelease).filter_by(source="steam", external_id="220").one().library_entries[0]
     assert f'href="/library?detail={hl.id}"' in recent
     assert 'src="https://x/defiant.jpg"' in recent and "cgt-ach-icon--empty" in recent
     assert "Half-Life 2" in recent and "Mar 8, 2024" in recent
+    # Journey is still in review: its unlock lists under the set's own name,
+    # with nothing to link to.
+    at = recent.index("Transcendence")
+    row_start = recent.rindex("cgt-detail-list-row", 0, at)
+    journey = recent[row_start - len('<div class="') : at + 200]
+    assert journey.startswith('<div class="cgt-detail-list-row'), "no link: no game shows the set yet"
+    assert "Journey" in journey and datetime.date(2023, 1, 1).strftime("%b %-d, %Y") in journey
 
 
 def test_home_counts_a_pc_copys_trophies_once_and_beside_its_steam_achievements(client, db_session):
     """Playing a game on Steam can earn BOTH: Steam achievements and, through
     PSN's PC integration, real PSN trophies. Both count, on their own rows.
 
-    And if the game is later rebought on PS5, the same set rides a PSN release
-    too -- one trophy list, not two, so the NPWR is what counts, not the copy.
+    And if the game is later rebought on PS5, a second copy shows the same
+    set -- one trophy list on the account, so the figures do not move (#222).
     """
     from backend import psn
 
     _signup_and_login(client)
     user = db_session.query(models.User).first()
-    tokon_set = {
-        "npCommunicationId": "NPWR30000_00",
-        "trophies": {"platinum": 1, "gold": 1, "silver": 0, "bronze": 0},
-        "earnedTrophies": {"platinum": 1, "gold": 1, "silver": 0, "bronze": 0},
-        "trophyProgress": 100,
-    }
+    tokon_set = {"npCommunicationId": "NPWR30000_00"}
 
     def _entry(source, platform, ext, title, raw):
         game = models.Game(title=title)
@@ -2968,11 +2956,21 @@ def test_home_counts_a_pc_copys_trophies_once_and_beside_its_steam_achievements(
         db_session.flush()
         return entry
 
-    steam_entry = _entry("steam", "Steam", "3787240", "MARVEL Tōkon", {psn.PC_SET_KEY: tokon_set})
-    d = models.AchievementDefinition(source="steam", set_id="3787240", external_id="ACH_1", name="Everybody Needs a Hobby")
-    db_session.add(d)
-    db_session.flush()
-    db_session.add(models.UserAchievement(library_entry_id=steam_entry.id, definition_id=d.id, earned=True))
+    _entry("steam", "Steam", "3787240", "MARVEL Tōkon", {psn.PC_SET_KEY: tokon_set})
+    db_session.add_all(
+        [
+            models.UserAchievementSet(user_id=user.id, source="steam", set_id="3787240", title="MARVEL Tōkon", earned=1, total=1),
+            models.UserAchievementSet(
+                user_id=user.id,
+                source="psn",
+                set_id="NPWR30000_00",
+                title="MARVEL Tōkon: Fighting Souls",
+                earned=2,
+                total=2,
+                tiers={"platinum": {"earned": 1, "total": 1}, "gold": {"earned": 1, "total": 1}},
+            ),
+        ]
+    )
     db_session.commit()
 
     stats = client.get("/").text.split('id="home-widgets"')[1]
@@ -2982,8 +2980,8 @@ def test_home_counts_a_pc_copys_trophies_once_and_beside_its_steam_achievements(
     assert "tag-platform-lavender" in stats and "2 <span" in stats and "/ 2<" in stats
     assert ">3<" in stats and "Earned" in stats
 
-    # Rebought on PS5: the same set now rides a PSN release as well. Still one
-    # trophy list -- the figures do not move.
+    # Rebought on PS5: a second copy that shows the same set. Still one trophy
+    # list on the account -- the figures do not move.
     _entry("psn", "PS5", "PPSA30000_00", "MARVEL Tōkon (PS5)", tokon_set)
     db_session.commit()
     again = client.get("/").text.split('id="home-widgets"')[1]
@@ -2993,18 +2991,20 @@ def test_home_counts_a_pc_copys_trophies_once_and_beside_its_steam_achievements(
 
 
 def test_home_achievements_widget_shows_a_psn_only_library_from_its_totals(client, db_session):
-    """No confirmed PSN entries, nothing fetched for Steam -- just a review
-    queue with Sony's counts on it -- is still a library with trophies."""
+    """No PSN entries, nothing for Steam -- just a set the sync recorded for a
+    game still in review -- is still an account with trophies."""
     _signup_and_login(client)
     user = db_session.query(models.User).first()
     db_session.add(
-        models.PsnReviewCandidate(
+        models.UserAchievementSet(
             user_id=user.id,
-            external_id="CUSA9",
+            source="psn",
+            set_id="NPWR9",
             title="Journey",
-            kind="cross_play",
-            status="pending",
-            raw_data={"npCommunicationId": "NPWR9", "trophies": {"gold": 2}, "earnedTrophies": {"gold": 1}, "trophyProgress": 50},
+            earned=1,
+            total=2,
+            progress=50,
+            tiers={"gold": {"earned": 1, "total": 2}},
         )
     )
     db_session.commit()

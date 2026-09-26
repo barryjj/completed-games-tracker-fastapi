@@ -615,12 +615,6 @@ class UserLibraryEntry(Base):
         "UserLibraryEntry", remote_side="UserLibraryEntry.id", back_populates="child_entries"
     )
     child_entries: Mapped[list["UserLibraryEntry"]] = relationship("UserLibraryEntry", back_populates="parent_entry")
-    # delete-orphan + passive_deletes: the FK is ON DELETE CASCADE, and without
-    # this the ORM tried to NULL library_entry_id on loaded rows when the entry
-    # was deleted, which the column forbids.
-    achievements: Mapped[list["UserAchievement"]] = relationship(
-        "UserAchievement", back_populates="library_entry", cascade="all, delete-orphan", passive_deletes=True
-    )
     completions: Mapped[list["Completion"]] = relationship("Completion", back_populates="library_entry")
     user_artwork: Mapped[list["UserArtwork"]] = relationship("UserArtwork", back_populates="entry")
 
@@ -704,22 +698,28 @@ class AchievementDefinition(Base):
 
 
 class UserAchievement(Base):
-    """What one user has done with one achievement (#136).
+    """What one ACCOUNT has done with one achievement (#136, #222).
 
-    Keyed by the library entry rather than the user: an entry already IS
-    (user, release), it cascades when the entry goes, and the relationship
-    from UserLibraryEntry was already in place. Absent means never fetched;
-    present with earned=False means fetched and not earned -- the distinction
-    is what makes "how much of this set have you seen" answerable.
+    Keyed by the user, not by a library entry. Trophies belong to the account:
+    a platinum earned on a game's Steam copy through PSN's PC integration is
+    on the PSN profile whether or not any PlayStation entry exists, and one
+    set is shared by a PS5 copy and a Steam copy, by cross-buy PS4/Vita
+    releases, and by a later rebuy. Keying by entry needed a row per entry
+    for one set of trophies, and recorded nothing at all for a set with no
+    entry yet -- which is most of a PSN library, since it sits in review.
 
-    This table existed from the first migration with the definition folded
-    into each row (name, icon, tier in a JSON blob) and was never written to.
-    Reshaped rather than migrated: there was nothing to carry.
+    Which entries SHOW a set is a lookup (achievements.owners), not a column:
+    a release's own set, plus the PC-copy link on a Steam release. An unowned
+    set still counts; it just displays nowhere.
+
+    Absent means never fetched; present with earned=False means fetched and
+    not earned -- the distinction is what makes "how much of this set have
+    you seen" answerable.
     """
 
     __tablename__ = "user_achievements"
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    library_entry_id: Mapped[int] = mapped_column(Integer, ForeignKey("user_library.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     definition_id: Mapped[int] = mapped_column(
         Integer, ForeignKey("achievement_definitions.id", ondelete="CASCADE"), nullable=False, index=True
     )
@@ -731,11 +731,47 @@ class UserAchievement(Base):
     raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    library_entry: Mapped["UserLibraryEntry"] = relationship("UserLibraryEntry", back_populates="achievements")
     definition: Mapped["AchievementDefinition"] = relationship("AchievementDefinition", back_populates="earned_by")
 
     __table_args__ = (
-        UniqueConstraint("library_entry_id", "definition_id", name="uq_user_achievement_entry_definition"),
+        UniqueConstraint("user_id", "definition_id", name="uq_user_achievement_user_definition"),
+        {"sqlite_autoincrement": True},
+    )
+
+
+class UserAchievementSet(Base):
+    """One achievement set as it stands on one account (#222).
+
+    The source's own summary -- earned, total, per-tier counts, percent --
+    recorded at sync for EVERY set the source reports: library, review
+    queue, a PC copy with no entry. For PSN that is the trophy-titles feed,
+    which adds up to the profile exactly; for Steam, the batch progress call
+    or the rows the pass wrote. Totals read this table, so they are right as
+    soon as a sync has run, not once the per-trophy pass has caught up.
+
+    It is also the PSN trophy pass's work list: a set with no entry and no
+    review row is still here to be fetched.
+    """
+
+    __tablename__ = "user_achievement_sets"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String, nullable=False)  # "psn" | "steam"
+    set_id: Mapped[str] = mapped_column(String, nullable=False)  # NPWR id / appid
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    platform: Mapped[str | None] = mapped_column(String, nullable=True)
+    earned: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # PSN only: {"platinum": {"earned": 1, "total": 1}, "gold": {...}, ...}
+    tiers: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    progress: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_earned_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # What the passes need to fetch the set (service, version, stamps).
+    raw_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "source", "set_id", name="uq_user_achievement_set"),
         {"sqlite_autoincrement": True},
     )
 
