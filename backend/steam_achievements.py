@@ -36,7 +36,7 @@ import time
 import httpx
 from sqlalchemy.orm import Session
 
-from . import models, steam
+from . import achievements, models, steam
 from .steam import _HEADERS, STEAM_API_BASE
 
 _logger = logging.getLogger(__name__)
@@ -196,25 +196,33 @@ def _definitions_current(release: models.GameRelease) -> bool:
     return want is None or have == want
 
 
-def _earned_current(db: Session, entry: models.UserLibraryEntry) -> bool:
-    """This entry's progress was fetched after it was last played. Progress
-    only moves while playing, and the games sync refreshes last_played_at
-    every run, so this is the same gate as PSN's last-earned stamp."""
-    latest = (
-        db.query(models.UserAchievement.updated_at)
-        .filter_by(library_entry_id=entry.id)
-        .order_by(models.UserAchievement.updated_at.desc())
-        .first()
-    )
-    if latest is None or latest[0] is None:
+def _earned_current(db: Session, user_id: int, entry: models.UserLibraryEntry) -> bool:
+    """This account's unlocks for the game were fetched after it was last
+    played. Progress only moves while playing, and the games sync refreshes
+    last_played_at every run, so this is the same gate as PSN's last-earned
+    stamp."""
+    fetched = achievements.unlocks_fetched_at(db, user_id, "steam", entry.release.external_id)
+    if fetched is None:
         return False
-    fetched = latest[0]
-    if fetched.tzinfo is None:
-        fetched = fetched.replace(tzinfo=datetime.UTC)
     played = entry.last_played_at
     if played is not None and played.tzinfo is None:
         played = played.replace(tzinfo=datetime.UTC)
     return played is None or fetched >= played
+
+
+def _record_set(db: Session, user_id: int, entry: models.UserLibraryEntry, *, earned: int, total: int) -> None:
+    """The account's summary of one Steam set, which is what totals read."""
+    achievements.record_set(
+        db,
+        user_id,
+        "steam",
+        entry.release.external_id,
+        title=entry.title,
+        platform="Steam",
+        earned=earned,
+        total=total,
+        progress=round(earned / total * 100) if total else None,
+    )
 
 
 def _fetch_schema(api_key: str, appid: str) -> list[dict]:
@@ -302,11 +310,10 @@ def _store_definitions(
     return existing
 
 
-def _store_earned(db: Session, entry: models.UserLibraryEntry, defs: dict[str, models.AchievementDefinition], earned: list[dict]) -> int:
-    """Upsert this entry's progress against the set; returns how many are
+def _store_earned(db: Session, user_id: int, defs: dict[str, models.AchievementDefinition], earned: list[dict]) -> int:
+    """Upsert this account's unlocks for the set; returns how many are
     earned. unlocktime is 0 for anything not achieved."""
-    existing = {a.definition_id: a for a in db.query(models.UserAchievement).filter_by(library_entry_id=entry.id).all()}
-    now = datetime.datetime.now(datetime.UTC)
+    rows: dict[int, dict] = {}
     count = 0
     for a in earned:
         d = defs.get(str(a.get("apiname") or ""))
@@ -315,33 +322,20 @@ def _store_earned(db: Session, entry: models.UserLibraryEntry, defs: dict[str, m
         is_earned = bool(a.get("achieved"))
         count += is_earned
         unlocked = a.get("unlocktime") or 0
-        fields = {
+        rows[d.id] = {
             "earned": is_earned,
             "earned_at": datetime.datetime.fromtimestamp(unlocked, datetime.UTC) if is_earned and unlocked else None,
             "raw_data": a,
-            "updated_at": now,
         }
-        row = existing.get(d.id)
-        if row is None:
-            db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, **fields))
-        else:
-            for k, v in fields.items():
-                setattr(row, k, v)
+    achievements.upsert_unlocks(db, user_id, rows)
     return count
 
 
-def _store_none_earned(db: Session, entry: models.UserLibraryEntry, defs: dict[str, models.AchievementDefinition]) -> None:
+def _store_none_earned(db: Session, user_id: int, defs: dict[str, models.AchievementDefinition]) -> None:
     """The batch call said zero unlocked: every definition gets an unearned
     row, from the schema, with no per-app call. Present-and-unearned is
     what makes the set count as seen (see UserAchievement)."""
-    existing = {a.definition_id: a for a in db.query(models.UserAchievement).filter_by(library_entry_id=entry.id).all()}
-    now = datetime.datetime.now(datetime.UTC)
-    for d in defs.values():
-        row = existing.get(d.id)
-        if row is None:
-            db.add(models.UserAchievement(library_entry_id=entry.id, definition_id=d.id, earned=False, updated_at=now))
-        else:
-            row.earned, row.earned_at, row.updated_at = False, None, now
+    achievements.upsert_unlocks(db, user_id, {d.id: {"earned": False, "earned_at": None} for d in defs.values()})
 
 
 def _private_unchanged(release: models.GameRelease, progress: dict | None) -> bool:
@@ -357,7 +351,7 @@ def _private_unchanged(release: models.GameRelease, progress: dict | None) -> bo
 def sync_achievements(db: Session, user: models.User, progress_callback=None, sleep: float = _SLEEP_S) -> dict:
     """Fetch every achievement set behind the user's played Steam games:
     what the game defines, once per app, and what this account has earned,
-    per library entry. Chained after the Steam games sync; self-gating, so
+    recorded per account (#222). Chained after the Steam games sync; self-gating, so
     a sync that changed nothing costs no calls (#136).
 
     Stops on an answer that would repeat for every remaining app -- a bad
@@ -389,8 +383,13 @@ def sync_achievements(db: Session, user: models.User, progress_callback=None, sl
                 break
             time.sleep(sleep)
         for e in entries:
-            if e.release.external_id in progress:
-                _store_progress(e.release, progress[e.release.external_id])
+            known = progress.get(e.release.external_id)
+            if known is not None:
+                _store_progress(e.release, known)
+                # As the account, so private games are counted too; this is
+                # every played game's summary, whatever the loop does next.
+                if known["total"]:
+                    _record_set(db, user.id, e, earned=known["unlocked"], total=known["total"])
         db.commit()
         out["progress_known"] = len(progress)
 
@@ -406,7 +405,7 @@ def sync_achievements(db: Session, user: models.User, progress_callback=None, sl
         if not need_defs and not _schema_total(release):
             out["skipped"] += 1
             continue
-        need_earned = need_defs or not _earned_current(db, entry)
+        need_earned = need_defs or not _earned_current(db, user.id, entry)
         if not need_defs and not need_earned:
             out["skipped"] += 1
             continue
@@ -434,7 +433,7 @@ def sync_achievements(db: Session, user: models.User, progress_callback=None, sl
                 if known is not None and known["unlocked"] == 0:
                     # Nothing unlocked: the rows come from the schema, and
                     # the per-app call is not made.
-                    _store_none_earned(db, entry, defs)
+                    _store_none_earned(db, user.id, defs)
                     out["from_batch"] = out.get("from_batch", 0) + 1
                 else:
                     try:
@@ -452,9 +451,14 @@ def sync_achievements(db: Session, user: models.User, progress_callback=None, sl
                         out["counts_only"] = out.get("counts_only", 0) + 1
                         continue
                     time.sleep(sleep)
-                    out["earned"] += _store_earned(db, entry, defs, earned)
+                    got = _store_earned(db, user.id, defs, earned)
+                    out["earned"] += got
                     if known is not None:
                         _store_progress(release, known, private=False)
+                    else:
+                        # No session, so no batch summary: the rows just
+                        # written are the summary.
+                        _record_set(db, user.id, entry, earned=got, total=len(defs))
             db.commit()
             out["fetched"] += 1
             forbidden_run = 0

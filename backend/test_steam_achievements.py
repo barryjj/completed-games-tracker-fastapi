@@ -65,6 +65,25 @@ def _entry(
     return entry
 
 
+def _rows(db, user, appid: str) -> list[models.UserAchievement]:
+    """This account's unlock rows for one app's set."""
+    return (
+        db.query(models.UserAchievement)
+        .join(models.AchievementDefinition)
+        .filter(
+            models.UserAchievement.user_id == user.id,
+            models.AchievementDefinition.source == "steam",
+            models.AchievementDefinition.set_id == appid,
+        )
+        .order_by(models.AchievementDefinition.sort_order)
+        .all()
+    )
+
+
+def _set(db, user, appid: str) -> models.UserAchievementSet | None:
+    return db.query(models.UserAchievementSet).filter_by(user_id=user.id, source="steam", set_id=appid).first()
+
+
 def _api(
     monkeypatch,
     *,
@@ -124,7 +143,7 @@ def _api(
     return calls
 
 
-def test_sync_writes_definitions_per_app_and_progress_per_entry(db_session, monkeypatch):
+def test_sync_writes_definitions_per_app_and_unlocks_per_account(db_session, monkeypatch):
     user = _user(db_session)
     entry = _entry(db_session, user, "440")
     calls = _api(monkeypatch, schema={"440": _SCHEMA}, rates={"440": _RATES}, player={"440": _PLAYER})
@@ -139,7 +158,7 @@ def test_sync_writes_definitions_per_app_and_progress_per_entry(db_session, monk
         ("ACH_SECRET", "Secret", True, None, 3.25),
     ]
     assert defs[0].icon_url == "https://x/win.jpg" and defs[0].icon_locked_url == "https://x/win_g.jpg"
-    mine = {a.definition_id: a for a in entry.achievements}
+    mine = {a.definition_id: a for a in _rows(db_session, user, "440")}
     assert mine[defs[0].id].earned is True
     # SQLite hands naive datetimes back; the instant is what matters.
     assert mine[defs[0].id].earned_at.replace(tzinfo=datetime.UTC).timestamp() == 1700000000
@@ -147,6 +166,9 @@ def test_sync_writes_definitions_per_app_and_progress_per_entry(db_session, monk
     assert calls == [("schema", "440"), ("rates", "440"), ("player", "440")]
     # The release remembers what was read, so the next pass can tell.
     assert entry.release.raw_data[sa._SCHEMA_KEY]["total"] == 2
+    # No session, so no batch summary: the rows written are the summary.
+    summary = _set(db_session, user, "440")
+    assert (summary.earned, summary.total, summary.progress, summary.title) == (1, 2, 50, "Game 440")
 
 
 def test_sync_is_current_after_one_pass_and_refetches_progress_when_played_again(db_session, monkeypatch):
@@ -196,7 +218,7 @@ def test_sync_refetches_definitions_when_the_store_total_grows(db_session, monke
     out = sa.sync_achievements(db_session, user, sleep=0)
     assert out["sets"] == 1 and calls[0] == ("schema", "440")
     assert db_session.query(models.AchievementDefinition).filter_by(set_id="440").count() == 3
-    assert len(entry.achievements) == 3
+    assert len(_rows(db_session, user, "440")) == 3
     assert sa.sync_achievements(db_session, user, sleep=0)["skipped"] == 1
 
 
@@ -234,14 +256,14 @@ def test_no_stats_answer_and_hidden_rates_are_not_failures(db_session, monkeypat
     schema is nonetheless non-empty (it happens); the global-rates call
     answers 403 when a game hides its stats. Neither is worth an error."""
     user = _user(db_session)
-    entry = _entry(db_session, user, "440")
+    _entry(db_session, user, "440")
     _api(monkeypatch, schema={"440": _SCHEMA}, rates_status=403)  # no player entry -> 400 no stats
 
     out = sa.sync_achievements(db_session, user, sleep=0)
     assert out["fetched"] == 1 and out["errored"] == 0 and out["earned"] == 0
     defs = db_session.query(models.AchievementDefinition).filter_by(set_id="440").all()
     assert len(defs) == 2 and all(d.rarity_pct is None for d in defs)
-    assert entry.achievements == []
+    assert _rows(db_session, user, "440") == []
 
 
 def test_one_refused_app_is_skipped_and_remembered(db_session, monkeypatch):
@@ -310,9 +332,12 @@ def test_batch_progress_writes_unearned_rows_without_a_per_app_call(db_session, 
     assert calls[0] == ("progress", "2"), "the batch goes first"
     assert ("player", "1") not in calls and ("player", "2") in calls
     assert out["from_batch"] == 1 and out["fetched"] == 2 and out["progress_known"] == 2
-    assert [a.earned for a in zero.achievements] == [False, False], "unearned rows from the schema"
+    assert [a.earned for a in _rows(db_session, user, "1")] == [False, False], "unearned rows from the schema"
     assert zero.release.raw_data[sa._PROGRESS_KEY]["unlocked"] == 0
     assert some.release.raw_data[sa._PROGRESS_KEY]["unlocked"] == 1
+    # The batch is every played game's summary on the account.
+    assert (_set(db_session, user, "1").earned, _set(db_session, user, "1").total) == (0, 2)
+    assert (_set(db_session, user, "2").earned, _set(db_session, user, "2").total) == (1, 2)
     # Current after one pass, like any other set.
     calls.clear()
     assert sa.sync_achievements(db_session, user, sleep=0)["skipped"] == 2
@@ -340,8 +365,10 @@ def test_private_game_keeps_its_counts_and_is_not_retried_until_they_move(db_ses
     assert out["sets"] == 2 and ("player", "2") in calls, "continued past it"
     kept = private.release.raw_data[sa._PROGRESS_KEY]
     assert kept["unlocked"] == 2 and kept["private"] is True
-    assert private.achievements == [], "no per-achievement rows could be had"
+    assert _rows(db_session, user, "1281160") == [], "no per-achievement rows could be had"
     assert sa._SCHEMA_KEY in private.release.raw_data and "forbidden" not in private.release.raw_data[sa._SCHEMA_KEY]
+    # ...but it counts: the account's summary came from the batch.
+    assert (_set(db_session, user, "1281160").earned, _set(db_session, user, "1281160").total) == (2, 2)
 
     calls.clear()
     out = sa.sync_achievements(db_session, user, sleep=0)
@@ -356,7 +383,7 @@ def test_private_game_keeps_its_counts_and_is_not_retried_until_they_move(db_ses
     )
     out = sa.sync_achievements(db_session, user, sleep=0)
     assert out["fetched"] == 1 and "counts_only" not in out
-    assert len(private.achievements) == 2
+    assert len(_rows(db_session, user, "1281160")) == 2
     assert private.release.raw_data[sa._PROGRESS_KEY]["private"] is False
 
 
