@@ -67,10 +67,6 @@
       <dd>{% for k, v in report.membership.items() %}{{ k }}: {{ v }}{{ " · " if not loop.last }}{% endfor %}</dd>
       <dt>Platforms</dt>
       <dd>{% for k, v in report.platforms.items() %}{{ k }}: {{ v }}{{ " · " if not loop.last }}{% endfor %}</dd>
-      {% if report.unresolvable_platforms %}
-      <dt>Unresolvable</dt>
-      <dd>{{ report.unresolvable_platforms | join(", ") }} — skipped at import unless resolved</dd>
-      {% endif %}
       {% if report.no_external_id %}
       <dt>No usable id</dt>
       <dd>{{ report.no_external_id }} — skipped at import</dd>

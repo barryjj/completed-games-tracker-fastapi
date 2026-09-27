@@ -302,6 +302,13 @@ def test_snapshot_report_renders_counts(client, db_session):
     assert b"PS_PLUS" in r.content
     assert b"Stellar Blade" in r.content
     assert b"147" in r.content
+    # The Unresolvable line is gone: it named a bucket ("unknown") rather than
+    # saying what happened, and read as games being thrown away when they
+    # were played-only rows waiting in their own review tab.
+    user.psn_last_sync_report = {**user.psn_last_sync_report, "unresolvable_platforms": ["unknown"]}
+    db_session.commit()
+    body = client.get("/integrations/psn/snapshot-report").text
+    assert "Unresolvable" not in body and "skipped at import unless resolved" not in body
 
 
 def test_psn_page_shows_fetch_button_when_token_saved(client, db_session):
