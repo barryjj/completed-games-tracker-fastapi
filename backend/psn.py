@@ -503,21 +503,30 @@ _PLATFORM_TOKENS = (
     ("psvita", "psvita"),
     ("vita", "psvita"),
     ("psp", "psp"),
+    # PSN's PC integration: its own platform, never a PlayStation console.
+    ("pspc", "pspc"),
 )
+_PLATFORM_WORDS = dict(_PLATFORM_TOKENS)
 
 
 def _platforms_of(item: dict) -> set[str]:
-    """Every PlayStation platform an item names.
+    """Every platform an item names.
 
     A SET because a trophy set legitimately covers several ("PS3,PSVITA,PS4")
     and collapsing that to one value threw away the only thing that makes a
     cross-buy title distinguishable from a false match.
+
+    Matched word by word, not by substring. A substring test read "PSPC" as
+    PSP -- "PS5,PSPC" was {ps5, psp} and a PC play (pspc_game) was {psp} --
+    so a PSP row could merge into a PC set. PSPC is its own platform: a PC
+    play still overlaps a PS5,PSPC set, and still does not overlap a
+    console-only one (the 2015 PS4 Until Dawn is not the Steam remake).
     """
     p = item.get("platform") or item.get("trophyTitlePlatform") or item.get("category")
     if not p:
         return set()
-    lc = str(p).lower()
-    return {norm for token, norm in _PLATFORM_TOKENS if token in lc}
+    words = re.split(r"[^a-z0-9]+", str(p).lower())
+    return {_PLATFORM_WORDS[w] for w in words if w in _PLATFORM_WORDS}
 
 
 def _platforms_compatible(a: dict, b: dict) -> bool:
@@ -940,7 +949,16 @@ def is_pc_copy(item: dict) -> bool:
     return not any(minutes for platform, minutes in played_minutes_by_platform(item).items() if platform != "PSPC")
 
 
-def _steam_entries_by_title(db: Session, user_id: int) -> dict[str, models.UserLibraryEntry]:
+class _SteamTitles:
+    """The user's Steam games by folded title: an exact index, and every
+    (folded title, entry) pair for the containment fallback."""
+
+    def __init__(self) -> None:
+        self.exact: dict[str, models.UserLibraryEntry] = {}
+        self.all: list[tuple[str, models.UserLibraryEntry]] = []
+
+
+def _steam_entries_by_title(db: Session, user_id: int) -> _SteamTitles:
     """The user's Steam games, keyed by folded title. Built once per sync --
     the loop runs over ~1000 items and this side is ~10,000 rows, so the
     release and game load with the entry rather than one query each."""
@@ -956,13 +974,34 @@ def _steam_entries_by_title(db: Session, user_id: int) -> dict[str, models.UserL
         .options(contains_eager(models.UserLibraryEntry.release).contains_eager(models.GameRelease.game))
         .all()
     )
-    index: dict[str, models.UserLibraryEntry] = {}
+    index = _SteamTitles()
     for entry in rows:
-        for name in (entry.release.game.display_name, entry.release.game.title):
-            key = titles.normalize_for_match(name).replace(" ", "")
-            if key:
-                index.setdefault(key, entry)
+        for name in {entry.release.game.display_name, entry.release.game.title}:
+            folded = titles.normalize_for_match(name)
+            if folded:
+                index.exact.setdefault(folded.replace(" ", ""), entry)
+                index.all.append((folded, entry))
     return index
+
+
+def _contained_steam_match(name: str, steam: _SteamTitles) -> models.UserLibraryEntry | None:
+    """The one PLAYED Steam game whose title contains the set's, or is
+    contained by it. Sony names the set "Ghost of Tsushima"; Steam sells
+    "Ghost of Tsushima DIRECTOR'S CUT". titles_match's containment already
+    refuses a sequel ("Spider-Man" never reaches "Spider-Man 2"). Played,
+    because the trophies were earned playing the copy -- which also rules
+    out the unplayed "Legends (Unlock)" listing beside it. More than one
+    candidate is a guess, so it is none."""
+    folded = titles.normalize_for_match(name)
+    if not folded:
+        return None
+    first = folded.split()[0]
+    hits = {
+        e.id: e
+        for other, e in steam.all
+        if other.split()[0] == first and (e.playtime_minutes or 0) > 0 and titles.titles_match(folded, other) == "contained"
+    }
+    return next(iter(hits.values())) if len(hits) == 1 else None
 
 
 def is_pc_set(item: dict) -> bool:
@@ -972,22 +1011,26 @@ def is_pc_set(item: dict) -> bool:
     return "PSPC" in {p.strip().upper() for p in str(item.get("platform") or "").split(",")}
 
 
-def attach_pc_trophy_set(db: Session, item: dict, steam_by_title: dict[str, models.UserLibraryEntry]) -> bool:
+def attach_pc_trophy_set(db: Session, item: dict, steam_by_title: _SteamTitles) -> bool:
     """Link a PC-integrated trophy set to the Steam game it was earned on, so
     that game's entry shows it (achievements.owners). The unlocks themselves
     are recorded per account whether or not this finds anything.
 
-    PC sets only, and EXACT titles only. Both halves guard the same hazard:
-    Until Dawn is a 2015 PS4 game and a Steam remake with its own set, and a
-    looser rule would hang the PS4 trophies on the remake. The PS4 set is not
-    a PC set, so it never gets here.
+    PC sets only. That gate is what keeps Until Dawn apart -- a 2015 PS4 game
+    and a Steam remake with its own set -- because the PS4 set is not a PC
+    set and never gets here. Exact title first; failing that, one played
+    Steam game whose title contains the set's (Ghost of Tsushima vs its
+    DIRECTOR'S CUT listing).
 
     No Steam copy yet: nothing is linked, and the next sync tries again.
     """
     if not is_pc_set(item):
         return False
-    key = titles.normalize_for_match(_item_name(item)).replace(" ", "")
-    entry = steam_by_title.get(key) if key else None
+    name = _item_name(item)
+    key = titles.normalize_for_match(name).replace(" ", "")
+    entry = steam_by_title.exact.get(key) if key else None
+    if entry is None:
+        entry = _contained_steam_match(name, steam_by_title)
     if entry is None:
         return False
     release = entry.release
@@ -1783,8 +1826,10 @@ _TROPHY_SLEEP_S = 0.25
 def _trophy_service(item: dict) -> str:
     """Which trophy API a set lives on. Carried by the crawl since #136; a
     release imported before that derives it -- every PS5 set is trophy2 and
-    nothing else is (434 sets in the live feed, no exceptions)."""
-    return item.get("npServiceName") or ("trophy2" if "ps5" in _platforms_of(item) else "trophy")
+    nothing else is (434 sets in the live feed, no exceptions). PSN's PC
+    integration is PS5-era: a PSPC-only set (Stellar Blade came back that
+    way once) is trophy2 as well."""
+    return item.get("npServiceName") or ("trophy2" if _platforms_of(item) & {"ps5", "pspc"} else "trophy")
 
 
 _TROPHY_RETRIES = 2

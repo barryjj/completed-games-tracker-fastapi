@@ -959,6 +959,80 @@ def test_recording_sets_takes_the_whole_trophy_profile(db_session):
     assert db_session.query(models.UserAchievementSet).filter_by(set_id="NPWR2_00").one().earned == 5
 
 
+def test_platforms_of_reads_pspc_as_its_own_platform_not_psp():
+    """A substring test read PSPC as PSP: "PS5,PSPC" was {ps5, psp} and a PC
+    play was {psp}. PSPC is its own platform, and what can merge follows."""
+    assert psn._platforms_of({"platform": "PS5,PSPC"}) == {"ps5", "pspc"}
+    assert psn._platforms_of({"category": "pspc_game"}) == {"pspc"}
+    assert psn._platforms_of({"platform": "PSP"}) == {"psp"}
+    assert psn._platforms_of({"platform": "PS3,PSVITA,PS4"}) == {"ps3", "psvita", "ps4"}
+    assert psn._platforms_of({"category": "ps5_native_game"}) == {"ps5"}
+    assert psn._platforms_of({"platform": "PS Vita"}) == {"psvita"}
+
+    assert not psn._platforms_compatible({"platform": "PSP"}, {"platform": "PS5,PSPC"}), "a PSP row is not a PC set"
+    assert psn._platforms_compatible({"category": "pspc_game"}, {"platform": "PS5,PSPC"}), "a PC play still joins its PC set"
+    assert not psn._platforms_compatible({"category": "pspc_game"}, {"platform": "PS4"}), "the 2015 PS4 Until Dawn is not the remake"
+    # PSN's PC integration is PS5-era: a PSPC-only set is on the trophy2 API.
+    assert psn._trophy_service({"platform": "PSPC"}) == "trophy2"
+
+
+def _steam_game(db, user, title, appid, playtime):
+    game = models.Game(title=title)
+    db.add(game)
+    db.flush()
+    rel = models.GameRelease(game_id=game.id, platform="Steam", source="steam", external_id=appid)
+    db.add(rel)
+    db.flush()
+    db.add(models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import", playtime_minutes=playtime))
+    db.commit()
+    return rel
+
+
+def test_ghost_of_tsushima_links_to_its_directors_cut_steam_copy(db_session, monkeypatch, tmp_path):
+    """Sony names the set "Ghost of Tsushima"; Steam sells "Ghost of Tsushima
+    DIRECTOR'S CUT". Exact titles miss it, so a PC set falls back to the one
+    played Steam game whose title contains the set's. The unplayed "Legends
+    (Unlock)" listing beside it contains the name too, and is not a copy the
+    trophies were earned on."""
+    from backend import achievements
+
+    _seed_platforms(db_session)
+    user = _user(db_session, "tsushima")
+    dc = _steam_game(db_session, user, "Ghost of Tsushima DIRECTOR'S CUT", "2215430", 478)
+    legends = _steam_game(db_session, user, "Ghost of Tsushima: Legends (Unlock)", "3929730", None)
+    item = {
+        "npCommunicationId": "NPWR22859_00",
+        "titleId": "PPSA01784_00",
+        "name": "Ghost of Tsushima",
+        "displayName": "Ghost of Tsushima",
+        "platform": "PS5,PSPC",
+        "playCategories": ["ps5_native_game"],
+        "category": "ps5_native_game",
+        "sources": ["played", "purchased", "titles"],
+    }
+    _seed_review(db_session, user, [item])
+
+    result = psn.import_merged(db_session, user, [item])
+
+    assert result["pc_set_attached"] == 1
+    db_session.refresh(dc)
+    db_session.refresh(legends)
+    assert achievements.trophy_item_of(dc)["npCommunicationId"] == "NPWR22859_00"
+    assert achievements.trophy_item_of(legends) is None
+
+
+def test_the_containment_fallback_never_reaches_a_sequel_or_guesses(db_session):
+    user = _user(db_session, "guards")
+    _steam_game(db_session, user, "Marvel's Spider-Man 2", "2651280", 298)
+    steam = psn._steam_entries_by_title(db_session, user.id)
+    assert psn._contained_steam_match("Marvel's Spider-Man", steam) is None, "a sequel is not a subtitle"
+
+    _steam_game(db_session, user, "Ghost of Tsushima DIRECTOR'S CUT", "2215430", 478)
+    _steam_game(db_session, user, "Ghost of Tsushima Legends", "9999999", 30)
+    steam = psn._steam_entries_by_title(db_session, user.id)
+    assert psn._contained_steam_match("Ghost of Tsushima", steam) is None, "two played candidates is a guess"
+
+
 def test_played_only_actions(client, db_session):
     """The played-only queue is a tab of the PSN review page, with the same
     per-row-action contract as the cross-play tab (#157)."""
