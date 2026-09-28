@@ -1033,6 +1033,45 @@ def test_the_containment_fallback_never_reaches_a_sequel_or_guesses(db_session):
     assert psn._contained_steam_match("Ghost of Tsushima", steam) is None, "two played candidates is a guess"
 
 
+def test_a_demos_play_time_is_not_a_played_only_game():
+    """The played feed names a demo's play by its franchise -- "Devil May Cry
+    5 Series" -- so the name filter misses it, and it queued as a played-only
+    game. Its store id is the demo purchase's. A trial that shares its id with
+    a kept full-game purchase is not a demo."""
+    purchased = [{"titleId": "CUSA13451_00", "name": "Devil May Cry 5 Demo", "platform": "PS4"}]
+    played = [
+        {"titleId": "CUSA13451_00", "name": "Devil May Cry 5 Series", "category": "ps4_game", "playDuration": "PT1H35M37S"},
+        {"titleId": "PPSA01442_00", "name": "Devil May Cry 5 Series", "category": "ps5_native_game", "playDuration": "PT30H23M7S"},
+    ]
+    result = psn.merge_library(purchased, [], played)
+    assert [m.get("titleId") for m in result["merged"]] == ["PPSA01442_00"], "the PS5 play is real; the PS4 one was the demo"
+    assert result["filtered"]["non_game_played"] == 1
+
+    assert psn.demo_title_ids(purchased) == {"CUSA13451_00"}
+    trial_unlocked = purchased + [{"titleId": "CUSA13451_00", "name": "Devil May Cry 5", "platform": "PS4"}]
+    assert psn.demo_title_ids(trial_unlocked) == set(), "a kept purchase carries the id too"
+
+
+def test_a_demo_play_row_already_queued_is_retired(db_session):
+    user = _user(db_session, "demo")
+    for ext, cat in (("CUSA13451_00", "ps4_game"), ("PPSA01442_00", "ps5_native_game")):
+        db_session.add(
+            models.PsnReviewCandidate(
+                user_id=user.id,
+                external_id=ext,
+                kind="played_only",
+                title="Devil May Cry 5 Series",
+                status="pending",
+                raw_data={"titleId": ext, "name": "Devil May Cry 5 Series", "category": cat, "sources": ["played"]},
+            )
+        )
+    db_session.commit()
+
+    assert psn.retire_non_game_candidates(db_session, user, {"CUSA13451_00"}) == 1
+    status = {c.external_id: c.status for c in db_session.query(models.PsnReviewCandidate).filter_by(user_id=user.id)}
+    assert status == {"CUSA13451_00": "dismissed", "PPSA01442_00": "pending"}
+
+
 def test_played_only_actions(client, db_session):
     """The played-only queue is a tab of the PSN review page, with the same
     per-row-action contract as the cross-play tab (#157)."""

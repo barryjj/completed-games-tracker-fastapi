@@ -560,6 +560,20 @@ def _find_by_any_id(values: list[dict], ids: list) -> dict | None:
     return None
 
 
+def demo_title_ids(purchased: list[dict]) -> set[str]:
+    """Store ids that belong only to a purchase the non-game filter drops.
+
+    The played feed reports a demo's play time under the franchise's name --
+    "Devil May Cry 5 Series", not "Devil May Cry 5 Demo" -- so the name
+    filter never sees it, and it queued as a played-only game. Its store id
+    is the demo's (CUSA13451_00 is both). An id a kept purchase also carries
+    is not a demo's: a trial that unlocks into the full game shares one.
+    """
+    ids = ("titleId", "productId")
+    kept = {p.get(k) for p in purchased if not is_non_game(p) for k in ids if p.get(k)}
+    return {p.get(k) for p in purchased if is_non_game(p) for k in ids if p.get(k)} - kept
+
+
 def merge_library(purchased: list[dict], titles: list[dict], played: list[dict]) -> dict:
     """Three-stage merge, port of the prototype's mergeLibrary: purchased is
     the foundation, trophy titles merge in by id then name+platform, played
@@ -570,11 +584,12 @@ def merge_library(purchased: list[dict], titles: list[dict], played: list[dict])
     lib: dict[str, dict] = {}
 
     pre = {"purchased": len(purchased), "titles": len(titles), "played": len(played)}
+    demo_ids = demo_title_ids(purchased)
     purchased = [p for p in purchased if not is_non_game(p)]
     titles = [t for t in titles if not is_non_game(t)]
     played_games = [p for p in played if is_game_category(p)]
     media_apps_filtered = len(played) - len(played_games)
-    played = [p for p in played_games if not is_non_game(p)]
+    played = [p for p in played_games if not is_non_game(p) and p.get("titleId") not in demo_ids]
     filtered = {
         "non_game_purchased": pre["purchased"] - len(purchased),
         "non_game_titles": pre["titles"] - len(titles),
@@ -1559,18 +1574,21 @@ def _upsert_review_candidate(db: Session, user: models.User, item: dict, kind: s
     return row if row.status == "pending" else None
 
 
-def retire_non_game_candidates(db: Session, user: models.User) -> int:
+def retire_non_game_candidates(db: Session, user: models.User, demo_ids: set[str] | frozenset[str] = frozenset()) -> int:
     """Dismiss pending review rows the non-game filter now recognises.
 
     The filter runs on the crawl, so a rule added later stops NEW rows of that
     kind arriving -- and does nothing about the one already in the queue,
     which the crawl no longer touches. "God of War Digital Comic - Issue #0"
     sat pending for a month after "digital comic" joined the rule, and was
-    matched to the game whose store page it shares. Returns how many went.
+    matched to the game whose store page it shares. `demo_ids` (from
+    demo_title_ids) catches a demo's play row, which carries the franchise's
+    name and so passes the name test. Returns how many went.
     """
     gone = 0
     for cand in db.query(models.PsnReviewCandidate).filter_by(user_id=user.id, status="pending").all():
-        if is_non_game(cand.raw_data or {}) or is_non_game({"name": cand.title}):
+        is_demo_play = cand.kind == "played_only" and (cand.external_id in demo_ids or (cand.raw_data or {}).get("titleId") in demo_ids)
+        if is_demo_play or is_non_game(cand.raw_data or {}) or is_non_game({"name": cand.title}):
             cand.status = "dismissed"
             cand.reviewed_at = datetime.datetime.now(datetime.UTC)
             gone += 1
@@ -1790,7 +1808,7 @@ def sync_library(db: Session, user: models.User) -> dict:
     # library: trophies count whether or not a game shows them (#222).
     record_trophy_sets(db, user, raw.get("trophy_titles") or [])
     result = import_merged(db, user, merged)
-    result["retired_non_game"] = retire_non_game_candidates(db, user)
+    result["retired_non_game"] = retire_non_game_candidates(db, user, demo_title_ids(raw.get("purchased") or []))
     # The lookup belongs HERE, not behind a second button. A row that says only
     # "held back for review" is a chore, not a review: the user still has to
     # work out what the game actually is. Arriving with IGDB's answer already
