@@ -2471,6 +2471,148 @@ body:has(.cgt-match-nav--sticky) {
   opacity: .55;
 }
 
+/* ── Match review result rows (#221) ──────────────────────────────────────
+   A row is what Confirm produces. Title alone on line one; platform and the
+   facts on line two; the actions stack to the height of those two lines --
+   Confirm over Preview/Not a match -- so nothing floats between them. The
+   two inputs sit under the row, one click away, starting under the thumb. */
+.cgt-result-tier__head {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .2rem .15rem .5rem;
+  font-size: .82rem;
+  cursor: pointer;
+  list-style: none;
+}
+.cgt-result-tier__head::-webkit-details-marker { display: none; }
+.cgt-result-tier__name { font-weight: 600; }
+.cgt-result-tier__count { color: var(--ctp-overlay1); }
+.cgt-result-tier__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+/* A right-pointing chevron drawn in CSS: quarter-turned when its group or
+   row is open. Not .cgt-chevron -- that is the toolbar drawer's glyph. */
+.cgt-disclosure {
+  display: inline-block;
+  width: .4em;
+  height: .4em;
+  margin: 0 .15em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform .15s;
+  flex-shrink: 0;
+}
+.cgt-result-tier[open] > summary .cgt-disclosure,
+.cgt-result-row--open .cgt-result-row__toggle .cgt-disclosure { transform: rotate(45deg); }
+
+.cgt-result-row {
+  background: var(--ctp-base);
+  border-bottom: 1px solid var(--ctp-surface0);
+}
+.cgt-result-row:last-child { border-bottom: none; }
+.cgt-result-row__main {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .75rem;
+}
+.cgt-result-row__thumb {
+  width: 64px;
+  height: 34px;
+  object-fit: cover;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.cgt-result-row__body { flex: 1; min-width: 0; }
+.cgt-result-row__title {
+  font-size: .82rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cgt-result-row__facts {
+  display: flex;
+  align-items: center;
+  gap: .45rem;
+  margin-top: .2rem;
+  min-width: 0;
+  font-size: .7rem;
+  color: var(--ctp-subtext0);
+}
+.cgt-result-row__facts .tag-badge { font-size: .6rem; flex-shrink: 0; }
+.cgt-result-row__factline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cgt-result-row__toggle {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: .7rem;
+  color: var(--ctp-blue);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.cgt-result-row__actions {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  width: 10rem;
+  flex-shrink: 0;
+}
+.cgt-result-row__actions > .btn { width: 100%; padding-block: .1rem; }
+.cgt-result-row__secondary { display: flex; gap: .2rem; }
+.cgt-result-row__secondary .btn {
+  flex: 1;
+  padding: .05rem 0;
+  font-size: .7rem;
+  white-space: nowrap;
+}
+.cgt-result-row__sources {
+  display: none;
+  padding: .35rem .75rem .45rem 2.25rem;
+  border-top: 1px solid var(--ctp-surface0);
+  background: var(--ctp-mantle);
+  font-size: .75rem;
+}
+.cgt-result-row--open .cgt-result-row__sources {
+  display: flex;
+  flex-direction: column;
+  gap: .3rem;
+}
+.cgt-result-source { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.cgt-result-source__label {
+  width: 4.5rem;
+  flex-shrink: 0;
+  font-size: .62rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ctp-overlay1);
+}
+.cgt-result-source__title {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.cgt-result-source__facts { flex-shrink: 0; white-space: nowrap; color: var(--ctp-subtext0); }
+.cgt-result-source .tag-badge { font-size: .6rem; flex-shrink: 0; }
+/* Your title, when it differs: the merge keeps the synced one. */
+.cgt-result-source--replaced .cgt-result-source__title {
+  color: var(--ctp-subtext0);
+  text-decoration: line-through;
+  text-decoration-color: var(--ctp-overlay0);
+}
+
 /* Mass-select toolbar */
 .cgt-match-bulk {
   display: flex;

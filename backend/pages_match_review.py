@@ -670,6 +670,75 @@ async def psn_review_dismiss(
     )
 
 
+_SOURCE_LABEL = {"steam": "Steam sync", "psn": "PSN sync"}
+
+
+def _achievement_set_key(release: "models.GameRelease | None") -> tuple[str, str] | None:
+    """The synced release's OWN achievement set: a Steam game's appid, a PSN
+    game's trophy list. A PC trophy list attached to a Steam game is not
+    this game's own and is not shown on a match row."""
+    if release is None:
+        return None
+    if release.source == "steam" and release.external_id:
+        return ("steam", release.external_id)
+    if release.source == "psn":
+        npwr = (release.raw_data or {}).get("npCommunicationId")
+        return ("psn", npwr) if npwr else None
+    return None
+
+
+def _hours(minutes: int | None) -> str | None:
+    return f"{minutes / 60:.1f} hrs" if minutes else None
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n:,} {word}{'' if n == 1 else 's'}"
+
+
+def _attach_results(db: Session, user_id: int, enriched: list[dict]) -> None:
+    """What Confirm produces, on each row, for the result-first list (#221).
+
+    The merge keeps the SYNCED entry -- its title, art, playtime and
+    achievements -- and moves your completions onto it, then deletes your
+    entry. So the result is the synced game plus both sides' completions, and
+    the two source lines say what each side had, with your title marked as
+    the one that goes when it differs.
+    """
+    keys = {k for row in enriched if (k := _achievement_set_key(row["synced_release"]))}
+    sets: dict[tuple[str, str], models.UserAchievementSet] = {}
+    if keys:
+        for s in db.query(models.UserAchievementSet).filter(
+            models.UserAchievementSet.user_id == user_id,
+            models.UserAchievementSet.set_id.in_({sid for _, sid in keys}),
+        ):
+            sets[(s.source, s.set_id)] = s
+    for row in enriched:
+        release, synced, manual = row["synced_release"], row["synced_entry"], row["manual_entry"]
+        key = _achievement_set_key(release)
+        summary = sets.get(key) if key else None
+        noun = "trophies" if key and key[0] == "psn" else "achievements"
+        progress = f"{summary.earned:,}/{summary.total:,} {noun}" if summary and summary.total else None
+        hours = _hours(synced.playtime_minutes if synced else None)
+        mine = list(manual.completions)
+        theirs = list(synced.completions) if synced else []
+        together = len(mine) + len(theirs)
+        latest = max(mine, key=lambda c: c.completed_at) if mine else None
+        synced_title = row["candidate"].synced_title or ""
+        manual_title = manual.release.game.display_title or ""
+        row["result"] = {
+            "facts": [f for f in (hours, progress, _plural(together, "completion") if together else None) if f],
+            "source_label": _SOURCE_LABEL.get(release.source if release else "", "Sync"),
+            "source_facts": [f for f in (hours, progress) if f],
+            "yours_title": manual_title,
+            # Exact, not case-folded: "of the Night" becoming "Of The Night"
+            # is a visible change, and the one the merge will make.
+            "yours_replaced": synced_title.strip() != manual_title.strip(),
+            "yours_completions": len(mine),
+            "yours_latest": latest,
+            "yours_platform_differs": bool(release) and manual.release.display_platform != release.display_platform,
+        }
+
+
 @router.get("/tools/match-review")
 def match_review_page(
     request: Request,
@@ -697,6 +766,8 @@ def match_review_page(
             }
         )
 
+    _attach_results(db, current_user.id, enriched)
+
     # Group by manual_entry_id so multi-candidate entries can be rendered
     # as a single "pick one" card rather than separate cards.
     groups: list[dict] = []
@@ -714,6 +785,9 @@ def match_review_page(
         _seen[mid]["candidates"].append(row)
     for g in groups:
         g["multi"] = len(g["candidates"]) > 1
+        # The list groups single matches under their confidence (#221).
+        g["tier"] = g["candidates"][0]["label"]
+        g["pending"] = g["candidates"][0]["candidate"].status == "pending"
     groups.sort(
         key=lambda g: (
             not g["multi"],

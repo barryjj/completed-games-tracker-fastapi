@@ -3016,6 +3016,72 @@ def test_home_achievements_widget_shows_a_psn_only_library_from_its_totals(clien
     assert "Recent unlocks" not in stats, "no rows, no unlock list"
 
 
+def test_match_review_list_shows_what_confirm_produces(client, db_session):
+    """#221: a row is the RESULT of the merge -- the synced game, its playtime
+    and its own trophy or achievement list, plus every completion -- with the
+    two inputs under it, and your title marked when it is the one that goes
+    (casing counts: the merge keeps the synced spelling). Confidence is a
+    group, not a chip; only a group of more than one offers Approve all."""
+    import datetime
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    def _entry(source, platform, ext, title, *, raw=None, playtime=None):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=ext, raw_data=raw)
+        db_session.add(rel)
+        db_session.flush()
+        entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, playtime_minutes=playtime)
+        db_session.add(entry)
+        db_session.flush()
+        return entry
+
+    def _match(manual, source, ext, title, score):
+        db_session.add(
+            models.SyncMatchCandidate(
+                manual_entry_id=manual.id, platform_source=source, external_id=ext, synced_title=title, match_score=score
+            )
+        )
+
+    psn_title = "Castlevania Requiem: Symphony Of The Night & Rondo Of Blood"
+    mine = _entry("manual", "PS4", None, "Castlevania Requiem: Symphony of the Night & Rondo of Blood")
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=mine.id, completed_at=datetime.date(2019, 11, 3), playthroughs="1"))
+    _entry("psn", "PS4", "CUSA1", psn_title, raw={"npCommunicationId": "NPWR1"}, playtime=1518)
+    db_session.add(models.UserAchievementSet(user_id=user.id, source="psn", set_id="NPWR1", earned=34, total=34))
+    _match(mine, "psn", "CUSA1", psn_title, 1.0)
+
+    hades = _entry("manual", "PC", None, "Hades")
+    _entry("steam", "Steam", "2", "Hades", playtime=60)
+    _match(hades, "steam", "2", "Hades", 0.95)
+
+    chrome = _entry("manual", "PC", None, "Blazing Chrome")
+    _entry("steam", "Steam", "1", "Blazing Chrome", playtime=366)
+    db_session.add(models.UserAchievementSet(user_id=user.id, source="steam", set_id="1", earned=21, total=40))
+    _match(chrome, "steam", "1", "Blazing Chrome", 0.8)
+    db_session.commit()
+
+    body = client.get("/tools/match-review").text
+    high = body[body.index('data-tier="High"') : body.index('data-tier="Medium"')]
+    at = body.index('data-tier="Medium"')
+    medium = body[at : body.index("</details>", at)]
+    assert 'data-tier="High" open' in body and 'data-tier="Medium" open' not in body, "High opens; the rest wait"
+
+    assert "25.3 hrs · 34/34 trophies · 1 completion" in high
+    assert "6.1 hrs · 21/40 achievements" in medium, "a Steam game counts achievements"
+    assert "PSN sync" in high and "Steam sync" in medium
+    assert "cgt-result-source--replaced" in high, "your differently-cased title is the one that goes"
+    assert "(November 3, 2019)" in high
+    assert medium.count("cgt-result-source--replaced") == 0, "same title: nothing is replaced"
+
+    assert "Approve all 2" in high, "two in High"
+    assert "Approve all" not in medium, "a group of one has nothing to approve all of"
+    listing = body[body.index('id="candidate-list"') : body.index('id="candidate-stack"')]
+    assert "Not a match" in listing and ">Dismiss<" not in listing
+
+
 def test_home_rows_share_one_hover_treatment():
     """Home had three: a mauve tint on the list rows, an underline with no
     background on the Needs-attention rows, and a flat surface fill on the

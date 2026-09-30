@@ -66,10 +66,78 @@
 
 </div>
 
-{# List view — two tables: singles (bulk-selectable) + multi-candidate #}
+{# ── Result rows (#221) ──────────────────────────────────────────────────
+   A row is what Confirm PRODUCES, not the two things being compared: the
+   merge keeps the synced entry -- its title, art, playtime, achievements --
+   and moves your completions onto it. The two inputs are one click away
+   under the row, with your title marked when it is the one that goes.
+   Buttons stack to fill the row's two lines rather than float between them. #}
+{% macro result_row(row, manual, group_id=None) %}
+{% set c = row.candidate %}
+{% set synced = row.synced_entry %}
+{% set r = row.result %}
+{% set cover = synced | grid_cover_url('grid_h') if synced else None %}
+<div class="cgt-result-row{% if c.status == 'dismissed' %} cgt-match-row--skipped{% endif %}"
+     id="list-row-{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"{% if group_id %} data-group="{{ group_id }}"{% endif %}>
+  <div class="cgt-result-row__main">
+    {% if not group_id %}
+    <input type="checkbox" class="form-check-input mt-0 cgt-row-cb" data-id="{{ c.id }}"
+           {% if c.status != 'pending' %}disabled{% endif %} onchange="cgtRowCheck()">
+    {% endif %}
+    {% if cover %}
+    <img src="{{ cover }}" alt="" loading="lazy" class="cgt-result-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
+    {% else %}
+    <div class="cgt-result-row__thumb cgt-match-row__thumb--empty"></div>
+    {% endif %}
+    <div class="cgt-result-row__body">
+      <div class="cgt-result-row__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</div>
+      <div class="cgt-result-row__facts">
+        {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>{% endif %}
+        {% if r.facts %}<span class="cgt-result-row__factline">{{ r.facts | join(" · ") }}</span>{% endif %}
+        <button type="button" class="cgt-result-row__toggle" onclick="this.closest('.cgt-result-row').classList.toggle('cgt-result-row--open')">2 entries<span class="cgt-disclosure" aria-hidden="true"></span></button>
+      </div>
+    </div>
+    <div class="cgt-result-row__actions">
+      {% if c.status == 'pending' %}
+      <button class="btn btn-sm btn-primary"
+              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-on::after-request="{% if group_id %}cgtMultiConfirm('{{ c.id }}'){% else %}cgtListRowDone('{{ c.id }}'){% endif %}">Confirm</button>
+      <div class="cgt-result-row__secondary">
+        <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
+        {# "Not a match": a dismissed match stays dismissed and stops asking;
+           Show dismissed brings it back. #}
+        <button class="btn btn-sm btn-surface"
+                hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
+                hx-vals='{"note": "Not a match"}'
+                hx-on::after-request="{% if group_id %}cgtMultiDismiss('{{ c.id }}'){% else %}cgtListRowDone('{{ c.id }}'){% endif %}">Not a match</button>
+      </div>
+      {% else %}
+      <button class="btn btn-sm btn-surface"
+              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
+              hx-on::after-request="window.location.reload()">Merge anyway</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="cgt-result-row__sources">
+    <div class="cgt-result-source">
+      <span class="cgt-result-source__label">{{ r.source_label }}</span>
+      <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</span>
+      {% if r.source_facts %}<span class="cgt-result-source__facts">&middot; {{ r.source_facts | join(" · ") }}</span>{% endif %}
+    </div>
+    <div class="cgt-result-source{% if r.yours_replaced %} cgt-result-source--replaced{% endif %}">
+      <span class="cgt-result-source__label">Yours</span>
+      <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ manual.id }})">{{ r.yours_title }}</span>
+      {% if r.yours_platform_differs %}<span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>{% endif %}
+      <span class="cgt-result-source__facts">&middot; {% if r.yours_completions %}{{ r.yours_completions }} completion{{ 's' if r.yours_completions != 1 }}{% if r.yours_latest %} ({{ r.yours_latest | completion_date }}){% endif %}{% else %}no completions{% endif %}</span>
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+{# List view — confidence groups of single matches (bulk-selectable), then
+   entries that matched several games #}
 <div id="candidate-list" style="display:none;">
 
-{# ── Single-candidate matches ── #}
 {% set single_groups = groups | selectattr("multi", "equalto", false) | list %}
 {% if single_groups %}
 <div class="cgt-match-bulk mb-2">
@@ -77,119 +145,47 @@
   <span id="bulk-count" class="text-secondary small">0 selected</span>
   <button class="btn btn-sm btn-primary ms-auto" id="bulk-approve-btn" disabled onclick="cgtApproveSelected()">Approve selected</button>
 </div>
-<div class="cgt-match-list mb-4">
-{% for group in single_groups %}
-{% set row = group.candidates[0] %}
-{% set c = row.candidate %}
-{% set manual = group.manual_entry %}
-{% set manual_game = manual.release.game %}
-{% set synced = row.synced_entry %}
-{% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
-{% set manual_cover = manual | grid_cover_url('grid_h') %}
-<div class="cgt-match-row {% if c.status == 'dismissed' %}cgt-match-row--skipped{% endif %}"
-     id="list-row-{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}">
-  <input type="checkbox" class="form-check-input mt-0 cgt-row-cb" data-id="{{ c.id }}"
-         {% if c.status != 'pending' %}disabled{% endif %} onchange="cgtRowCheck()">
-  {% if synced_cover %}
-  <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
-  {% else %}
-  <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-  {% endif %}
-  <span style="color:var(--ctp-subtext0); font-size:.75rem; flex-shrink:0;">→</span>
-  {% if manual_cover %}
-  <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" title="View your entry">
-  {% else %}
-  <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-  {% endif %}
-  <div class="cgt-match-row__title" style="flex:1;">
-    <div class="d-flex align-items-center gap-1 flex-wrap">
-      <span class="badge rounded-pill fw-semibold" style="background:{{ row.color }};color:var(--ctp-crust);font-size:.65rem;">{{ row.label }}</span>
-      <span class="fw-semibold text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</span>
-      {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
-      <span class="text-secondary" style="font-size:.75rem;">→</span>
-      <span class="text-secondary text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})">{{ manual_game.display_title }}</span>
-      <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
-    </div>
-    {% if manual.completions %}<div class="text-secondary" style="font-size:.7rem;">{{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</div>{% endif %}
-  </div>
-  <div class="cgt-match-row__actions">
-    {% if c.status == 'pending' %}
-    <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-    <button class="btn btn-sm btn-surface"
-            hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
-            hx-on::after-request="cgtListRowDone('{{ c.id }}')">Dismiss</button>
-    <button class="btn btn-sm btn-primary"
-            hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-            hx-on::after-request="cgtListRowDone('{{ c.id }}')">Confirm</button>
-    {% else %}
-    <button class="btn btn-sm btn-surface"
-            hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-            hx-on::after-request="window.location.reload()">Merge anyway</button>
+{# Confidence is the group, not a chip on every row: the sort already said it,
+   and a group can be approved at once -- the one you would approve at once. #}
+{% for tier, dot in [("High", "green"), ("Medium", "yellow"), ("Low", "peach")] %}
+{% set tier_groups = single_groups | selectattr("tier", "equalto", tier) | list %}
+{% if tier_groups %}
+{% set tier_pending = tier_groups | selectattr("pending") | list | length %}
+<details class="cgt-result-tier mb-3" data-tier="{{ tier }}"{% if tier == "High" %} open{% endif %}>
+  <summary class="cgt-result-tier__head">
+    <span class="cgt-disclosure" aria-hidden="true"></span>
+    <span class="cgt-result-tier__dot" style="background: var(--ctp-{{ dot }});"></span>
+    <span class="cgt-result-tier__name">{{ tier }}</span>
+    <span class="cgt-result-tier__count">{{ tier_pending }}</span>
+    {% if tier_pending > 1 %}
+    <button type="button" class="btn btn-sm btn-surface ms-auto cgt-result-tier__approve"
+            onclick="event.preventDefault(); event.stopPropagation(); cgtApproveTier(this.closest('.cgt-result-tier'))">Approve all {{ tier_pending }}</button>
     {% endif %}
+  </summary>
+  <div class="cgt-match-list">
+    {% for group in tier_groups %}{{ result_row(group.candidates[0], group.manual_entry) }}{% endfor %}
   </div>
-</div>
+</details>
+{% endif %}
 {% endfor %}
-</div>
 {% endif %}
 
-{# ── Multi-candidate groups ── #}
+{# ── Entries that matched several games: one result per candidate ── #}
 {% set multi_groups = groups | selectattr("multi", "equalto", true) | list %}
 {% if multi_groups %}
-<p class="text-secondary small mb-2">These entries matched multiple games — confirm the correct one or dismiss wrong matches.</p>
+<p class="text-secondary small mb-2">These entries matched more than one game &mdash; confirm the right one; the rest are dismissed with it.</p>
 <div class="cgt-match-list mb-4">
 {% for group in multi_groups %}
 {% set manual = group.manual_entry %}
-{% set manual_game = manual.release.game %}
-{% set manual_cover = manual | grid_cover_url('grid_h') %}
-<div class="cgt-match-group" id="list-group-{{ group.candidates[0].candidate.manual_entry_id }}">
+{% set gid = group.candidates[0].candidate.manual_entry_id %}
+<div class="cgt-match-group" id="list-group-{{ gid }}">
   <div class="cgt-match-group__header">
-    {% if manual_cover %}
-    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" title="View your entry">
-    {% else %}
-    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-    {% endif %}
-    <span class="fw-semibold cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</span>
+    <span class="cgt-result-source__label">Yours</span>
+    <span class="fw-semibold cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})">{{ manual.release.game.display_title }}</span>
     <span class="tag-badge {{ manual.release.platform_tag_class }}" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
-    {% if manual.completions %}<span class="text-secondary" style="font-size:.7rem;">· {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}</span>{% endif %}
+    {% if manual.completions %}<span class="text-secondary" style="font-size:.7rem;">&middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 }}</span>{% endif %}
   </div>
-  <div class="cgt-match-group__candidates">
-  {% for row in group.candidates %}
-  {% set c = row.candidate %}
-  {% set synced = row.synced_entry %}
-  {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
-  <div class="cgt-match-group__row {% if c.status == 'dismissed' %}cgt-match-row--skipped{% endif %}"
-       id="list-row-{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"
-       data-group="{{ group.candidates[0].candidate.manual_entry_id }}">
-    {% if synced_cover %}
-    <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
-    {% else %}
-    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-    {% endif %}
-    <div class="cgt-match-row__title" style="flex:1;">
-      <div class="d-flex align-items-center gap-1 flex-wrap">
-        <span class="fw-semibold text-truncate cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</span>
-        {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
-        <span class="badge rounded-pill fw-semibold" style="background:{{ row.color }};color:var(--ctp-crust);font-size:.65rem;">{{ (c.match_score * 100) | int }}%</span>
-        {% if synced and synced.playtime_minutes %}<span class="text-secondary" style="font-size:.7rem;">{{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs</span>{% endif %}
-      </div>
-    </div>
-    <div class="cgt-match-row__actions">
-      {% if c.status == 'pending' %}
-      <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-      <button class="btn btn-sm btn-surface"
-              hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
-              hx-vals='{"note": "Dismissed by user"}'
-              hx-on::after-request="cgtMultiDismiss('{{ c.id }}')">Dismiss</button>
-      <button class="btn btn-sm btn-primary"
-              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="cgtMultiConfirm('{{ c.id }}')">Confirm</button>
-      {% else %}
-      <span class="text-secondary small">Dismissed</span>
-      {% endif %}
-    </div>
-  </div>
-  {% endfor %}
-  </div>
+  {% for row in group.candidates %}{{ result_row(row, manual, gid) }}{% endfor %}
 </div>
 {% endfor %}
 </div>
@@ -444,10 +440,34 @@ document.addEventListener('DOMContentLoaded', function () {
   window.cgtListRowDone = function(id) {
     const row = document.getElementById('list-row-' + id);
     const skip = document.getElementById('list-skip-' + id);
+    const tier = row && row.closest('.cgt-result-tier');
     if (row) row.remove();
     if (skip) skip.remove();
+    if (tier) cgtTierRecount(tier);
     cgtCandidateDone(id);
     cgtRowCheck();
+  };
+
+  // A confidence group's count and "Approve all" follow its rows; an empty
+  // group goes.
+  window.cgtTierRecount = function(tier) {
+    const pending = tier.querySelectorAll('.cgt-result-row[data-status="pending"]').length;
+    if (!tier.querySelector('.cgt-result-row')) { tier.remove(); return; }
+    const count = tier.querySelector('.cgt-result-tier__count');
+    if (count) count.textContent = pending;
+    const approve = tier.querySelector('.cgt-result-tier__approve');
+    if (approve) {
+      approve.textContent = 'Approve all ' + pending;
+      approve.hidden = pending < 2;
+    }
+  };
+
+  window.cgtApproveTier = function(tier) {
+    tier.querySelectorAll('.cgt-result-row[data-status="pending"] .cgt-row-cb:not(:disabled)').forEach(cb => {
+      const id = cb.dataset.id;
+      htmx.ajax('POST', '/tools/match-review/' + id + '/merge', { swap: 'none' })
+        .then(() => cgtListRowDone(id));
+    });
   };
 
   // Multi-candidate: confirm merges, backend auto-dismisses siblings
