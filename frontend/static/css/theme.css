@@ -2476,15 +2476,27 @@ body:has(.cgt-match-nav--sticky) {
    facts on line two; the actions stack to the height of those two lines --
    Confirm over Preview/Not a match -- so nothing floats between them. The
    two inputs sit under the row, one click away, starting under the thumb. */
-.cgt-result-tier__head {
+/* The groups are <details>, and the global details rule makes every summary
+   a mauve button with its own ▶. Out of both, here: a group header is a line
+   of text, and the one arrow is .cgt-disclosure. Specificity is the point --
+   (0,2,2) beats the light theme's html[data-bs-theme] details summary. */
+details.cgt-result-tier > :not(summary) { margin-top: 0; }
+details.cgt-result-tier > summary.cgt-result-tier__head,
+details.cgt-result-tier > summary.cgt-result-tier__head:hover {
   display: flex;
   align-items: center;
   gap: .5rem;
   padding: .2rem .15rem .5rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ctp-text);
   font-size: .82rem;
+  font-weight: 400;
   cursor: pointer;
   list-style: none;
 }
+details.cgt-result-tier > summary.cgt-result-tier__head::before { content: none; }
 .cgt-result-tier__head::-webkit-details-marker { display: none; }
 .cgt-result-tier__name { font-weight: 600; }
 .cgt-result-tier__count { color: var(--ctp-overlay1); }
@@ -2494,26 +2506,30 @@ body:has(.cgt-match-nav--sticky) {
   border-radius: 50%;
   flex-shrink: 0;
 }
-/* A right-pointing chevron drawn in CSS: quarter-turned when its group or
-   row is open. Not .cgt-chevron -- that is the toolbar drawer's glyph. */
+/* The app's own disclosure arrow -- the ▶ the global details rule draws --
+   quarter-turned when its group or row is open. Not .cgt-chevron: that is
+   the toolbar drawer's glyph. */
 .cgt-disclosure {
   display: inline-block;
-  width: .4em;
-  height: .4em;
-  margin: 0 .15em;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
+  margin: 0 .2em;
+  font-size: .65em;
   transition: transform .15s;
   flex-shrink: 0;
 }
+.cgt-disclosure::before { content: "▶"; }
 .cgt-result-tier[open] > summary .cgt-disclosure,
-.cgt-result-row--open .cgt-result-row__toggle .cgt-disclosure { transform: rotate(45deg); }
+.cgt-result-row--open .cgt-result-row__toggle .cgt-disclosure { transform: rotate(90deg); }
 
+/* On the list's own surface: a background here read as a band of its own
+   beside the bulk bar and the group header. --cgt-thumb-x is where the
+   thumbnail starts -- after the checkbox, or at the padding in a
+   several-candidate group, which has none -- and the tree guide hangs from it. */
 .cgt-result-row {
-  background: var(--ctp-base);
+  --cgt-thumb-x: calc(.75rem + 1rem + .6rem);
+  background: transparent;
   border-bottom: 1px solid var(--ctp-surface0);
 }
+.cgt-result-row[data-group] { --cgt-thumb-x: .75rem; }
 .cgt-result-row:last-child { border-bottom: none; }
 .cgt-result-row__main {
   display: flex;
@@ -2575,11 +2591,13 @@ body:has(.cgt-match-nav--sticky) {
   font-size: .7rem;
   white-space: nowrap;
 }
+/* The two inputs hang off a tree guide: a rule down the thumbnail's left
+   edge, a tick into each line. Branches of the row, not a band under it. */
 .cgt-result-row__sources {
   display: none;
-  padding: .35rem .75rem .45rem 2.25rem;
-  border-top: 1px solid var(--ctp-surface0);
-  background: var(--ctp-mantle);
+  margin: 0 .75rem .6rem var(--cgt-thumb-x);
+  padding-left: .75rem;
+  border-left: 2px solid var(--ctp-surface1);
   font-size: .75rem;
 }
 .cgt-result-row--open .cgt-result-row__sources {
@@ -2587,7 +2605,15 @@ body:has(.cgt-match-nav--sticky) {
   flex-direction: column;
   gap: .3rem;
 }
-.cgt-result-source { display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.cgt-result-source { position: relative; display: flex; align-items: center; gap: .5rem; min-width: 0; }
+.cgt-result-source::before {
+  content: "";
+  position: absolute;
+  left: -.75rem;
+  top: 50%;
+  width: .5rem;
+  border-top: 2px solid var(--ctp-surface1);
+}
 .cgt-result-source__label {
   width: 4.5rem;
   flex-shrink: 0;
