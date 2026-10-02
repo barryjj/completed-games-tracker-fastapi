@@ -726,7 +726,10 @@ def _attach_results(db: Session, user_id: int, enriched: list[dict]) -> None:
         synced_title = row["candidate"].synced_title or ""
         manual_title = manual.release.game.display_title or ""
         row["result"] = {
-            "facts": [f for f in (hours, progress, _plural(together, "completion") if together else None) if f],
+            # One slot each, aligned down the list; an empty one is a dash.
+            "hours": hours,
+            "progress": progress,
+            "completions": _plural(together, "completion") if together else None,
             "source_label": _SOURCE_LABEL.get(release.source if release else "", "Sync"),
             "source_facts": [f for f in (hours, progress) if f],
             "yours_title": manual_title,

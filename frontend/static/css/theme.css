@@ -2537,41 +2537,48 @@ details.cgt-result-tier > summary.cgt-result-tier__head::before { content: none;
   gap: .6rem;
   padding: .5rem .75rem;
 }
+/* Three lines: the title alone, the chip and stats, the entries toggle.
+   Sizes are the PSN and import review rows' -- .9rem title, .75rem below. */
 .cgt-result-row__thumb {
-  width: 64px;
-  height: 34px;
+  width: 96px;
+  height: 46px;
   object-fit: cover;
   border-radius: 3px;
   flex-shrink: 0;
 }
 .cgt-result-row__body { flex: 1; min-width: 0; }
 .cgt-result-row__title {
-  font-size: .82rem;
-  font-weight: 600;
+  font-size: .9rem;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.cgt-result-row__facts {
+/* Fixed-width slots line up down the list like columns, without taking any
+   width from line one; a narrow window wraps the last slot, never the title. */
+.cgt-result-row__stats {
   display: flex;
   align-items: center;
-  gap: .45rem;
+  flex-wrap: wrap;
+  row-gap: .1rem;
   margin-top: .2rem;
-  min-width: 0;
-  font-size: .7rem;
+  font-size: .75rem;
   color: var(--ctp-subtext0);
 }
-.cgt-result-row__facts .tag-badge { font-size: .6rem; flex-shrink: 0; }
-.cgt-result-row__factline { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.cgt-result-stat { flex-shrink: 0; white-space: nowrap; }
+.cgt-result-stat--platform { width: 3.75rem; }
+.cgt-result-stat--platform .tag-badge { font-size: .65rem; }
+.cgt-result-stat--hours { width: 4.75rem; }
+.cgt-result-stat--progress { width: 8.5rem; }
 .cgt-result-row__toggle {
   display: inline-flex;
   align-items: center;
-  flex-shrink: 0;
+  margin-top: .15rem;
   padding: 0;
   border: 0;
   background: none;
-  font-size: .7rem;
+  font-size: .75rem;
   color: var(--ctp-blue);
   white-space: nowrap;
   cursor: pointer;
