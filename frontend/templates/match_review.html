@@ -92,12 +92,13 @@
     <div class="cgt-result-row__body">
       <div class="cgt-result-row__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</div>
       {# Line two: the chip, then one fixed-width slot per fact, so the
-         columns line up down the list without taking width from the title. #}
+         columns line up down the list without taking width from the title.
+         An empty slot shows nothing but keeps its width. #}
       <div class="cgt-result-row__stats">
         <span class="cgt-result-stat cgt-result-stat--platform">{% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>{% endif %}</span>
-        <span class="cgt-result-stat cgt-result-stat--hours">{{ r.hours or "—" }}</span>
-        <span class="cgt-result-stat cgt-result-stat--progress">{{ r.progress or "—" }}</span>
-        <span class="cgt-result-stat cgt-result-stat--completions">{{ r.completions or "—" }}</span>
+        <span class="cgt-result-stat cgt-result-stat--hours">{{ r.hours or "" }}</span>
+        <span class="cgt-result-stat cgt-result-stat--progress">{{ r.progress or "" }}</span>
+        <span class="cgt-result-stat cgt-result-stat--completions">{{ r.completions or "" }}</span>
       </div>
       {# Its own line, so nothing on the stats line can push it off. #}
       <button type="button" class="cgt-result-row__toggle" onclick="this.closest('.cgt-result-row').classList.toggle('cgt-result-row--open')">2 entries<span class="cgt-disclosure" aria-hidden="true"></span></button>
@@ -133,7 +134,7 @@
       <span class="cgt-result-source__label">Yours</span>
       <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ manual.id }})">{{ r.yours_title }}</span>
       {% if r.yours_platform_differs %}<span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>{% endif %}
-      <span class="cgt-result-source__facts">&middot; {% if r.yours_completions %}{{ r.yours_completions }} completion{{ 's' if r.yours_completions != 1 }}{% if r.yours_latest %} ({{ r.yours_latest | completion_date }}){% endif %}{% else %}no completions{% endif %}</span>
+      {% if r.yours_completions %}<span class="cgt-result-source__facts">&middot; {{ r.yours_completions }} completion{{ 's' if r.yours_completions != 1 }}{% if r.yours_latest %} ({{ r.yours_latest | completion_date }}){% endif %}</span>{% endif %}
     </div>
   </div>
 </div>

@@ -3069,12 +3069,14 @@ def test_match_review_list_shows_what_confirm_produces(client, db_session):
     medium = body[at : body.index("</details>", at)]
     assert 'data-tier="High" open' in body and 'data-tier="Medium" open' not in body, "High opens; the rest wait"
 
-    # One slot per fact on line two; an empty slot is a dash, so it still lines up.
+    # One slot per fact on line two; an empty slot shows nothing but keeps
+    # its width, so the next one still lines up.
     assert 'cgt-result-stat--hours">25.3 hrs<' in high
     assert 'cgt-result-stat--progress">34/34 trophies<' in high
     assert 'cgt-result-stat--completions">1 completion<' in high
     assert 'cgt-result-stat--progress">21/40 achievements<' in medium, "a Steam game counts achievements"
-    assert 'cgt-result-stat--completions">—<' in medium, "no completions on either side"
+    assert 'cgt-result-stat--completions"><' in medium, "no completions on either side: blank, not a dash"
+    assert "no completions" not in body and 'stat--hours">—' not in body
     assert "PSN sync" in high and "Steam sync" in medium
     assert "cgt-result-source--replaced" in high, "your differently-cased title is the one that goes"
     assert "(November 3, 2019)" in high
