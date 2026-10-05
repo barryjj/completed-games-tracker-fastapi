@@ -3088,6 +3088,79 @@ def test_match_review_list_shows_what_confirm_produces(client, db_session):
     assert "Not a match" in listing and ">Dismiss<" not in listing
 
 
+def test_match_review_cards_and_the_psn_preview(client, db_session):
+    """#221: the card is the list row stood up -- hero, result, stats, the two
+    inputs, the decision -- and an entry with several candidates is one result
+    per candidate in both views, under the card stack's option ids. The
+    preview reads a PSN game's PS Store record where Steam's appdetails would
+    be (#210), and counts both sides' completions."""
+    import datetime
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    def _entry(source, platform, ext, title, *, raw=None, playtime=None):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        rel = models.GameRelease(game_id=game.id, platform=platform, source=source, external_id=ext, raw_data=raw)
+        db_session.add(rel)
+        db_session.flush()
+        entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, playtime_minutes=playtime)
+        db_session.add(entry)
+        db_session.flush()
+        return entry
+
+    def _match(manual, source, ext, title, score):
+        cand = models.SyncMatchCandidate(
+            manual_entry_id=manual.id, platform_source=source, external_id=ext, synced_title=title, match_score=score
+        )
+        db_session.add(cand)
+        db_session.flush()
+        return cand
+
+    store = {
+        "publisher": "Konami",
+        "genres": ["Action"],
+        "description": "Two classics in one.",
+        "release_date": "2018-10-26T00:00:00Z",
+    }
+    mine = _entry("manual", "PS4", None, "Castlevania Requiem")
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=mine.id, completed_at=datetime.date(2019, 11, 3), playthroughs="1"))
+    psn = _entry("psn", "PS4", "CUSA1", "Castlevania Requiem", raw={"productId": "UP0101-CUSA1_00-CVREQUIEM", "store": store}, playtime=90)
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=psn.id, completed_at=datetime.date(2021, 2, 1), playthroughs="1"))
+    single = _match(mine, "psn", "CUSA1", "Castlevania Requiem", 1.0)
+
+    tsushima = _entry("manual", "PS4", None, "Ghost of Tsushima")
+    _entry("psn", "PS5", "PPSA1", "Ghost of Tsushima", playtime=600)
+    _entry("steam", "Steam", "2215430", "Ghost of Tsushima DIRECTOR'S CUT", playtime=478)
+    a = _match(tsushima, "psn", "PPSA1", "Ghost of Tsushima", 0.95)
+    b = _match(tsushima, "steam", "2215430", "Ghost of Tsushima DIRECTOR'S CUT", 0.9)
+    db_session.commit()
+
+    body = client.get("/tools/match-review").text
+    stack = body[body.index('id="candidate-stack"') :]
+    card = stack[stack.index(f'id="candidate-{single.id}"') :]
+    card = card[: card.index("cgt-match-card__actions") + 1500]
+    assert "cgt-result-card__hero" in card and ">High<" in card
+    assert 'cgt-result-stat--hours">1.5 hrs<' in card and 'cgt-result-stat--completions">2 completions<' in card
+    assert "Not a match" in stack and ">Dismiss<" not in stack
+
+    # Several candidates: one result each, in both views, with the ids each
+    # view's script looks for -- and no bulk checkbox on either.
+    listing = body[body.index('id="candidate-list"') : body.index('id="candidate-stack"')]
+    assert f'id="list-row-{a.id}"' in listing and f'id="list-row-{b.id}"' in listing
+    assert f'id="option-{a.id}"' in stack and f'id="option-{b.id}"' in stack
+    assert f'data-id="{a.id}"' not in body, "a several-candidates row is not bulk-approvable"
+
+    preview = client.get(f"/tools/match-review/{single.id}/preview").text
+    assert "Konami" in preview and "Action" in preview and "Two classics in one." in preview
+    assert "Oct 26, 2018" in preview
+    assert "store.playstation.com/en-us/product/UP0101-CUSA1_00-CVREQUIEM" in preview
+    assert "(2)" in preview, "both sides' completions"
+    assert "Not a match" in preview and ">\n      Dismiss" not in preview
+
+
 def test_home_rows_share_one_hover_treatment():
     """Home had three: a mauve tint on the list rows, an underline with no
     background on the Needs-attention rows, and a flat surface fill on the

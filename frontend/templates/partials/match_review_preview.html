@@ -1,7 +1,9 @@
 {# Match review candidate preview pane.
    Shows the synced entry exactly as it will appear in the library after
    confirming the match. Completions come from the manual entry (they migrate
-   on confirm). Footer has Confirm / Dismiss / Close instead of Edit/More.
+   on confirm). Footer has Confirm / Not a match / Cancel instead of Edit/More.
+   PSN entries read the PS Store record (psn_meta) where Steam's appdetails
+   would be, in the same fallback order as the library detail pane (#210).
 #}
 
 <div class="offcanvas-body p-0">
@@ -64,6 +66,9 @@
             {% if release.source == "steam" %}
             <a href="https://store.steampowered.com/app/{{ release.external_id }}/"
                target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
+            {% elif release.source == "psn" and (release.raw_data or {}).get("productId") %}
+            <a href="https://store.playstation.com/en-us/product/{{ (release.raw_data or {}).get('productId') }}"
+               target="_blank" rel="noopener" class="ms-2 small">store ↗</a>
             {% endif %}
           </span>
         </dd>
@@ -75,11 +80,22 @@
         {% elif igdb_meta.year %}
         <dt>Released</dt>
         <dd>{{ igdb_meta.year }}</dd>
+        {% elif psn_meta.released %}
+        <dt>Released</dt>
+        <dd>{{ psn_meta.released }}</dd>
         {% endif %}
 
         {% if steam_meta.developers %}
         <dt>Developer</dt>
         <dd>{{ steam_meta.developers | join(", ") }}</dd>
+        {% endif %}
+
+        {% if steam_meta.publishers %}
+        <dt>Publisher</dt>
+        <dd>{{ steam_meta.publishers | join(", ") }}</dd>
+        {% elif psn_meta.publisher %}
+        <dt>Publisher</dt>
+        <dd>{{ psn_meta.publisher }}</dd>
         {% endif %}
 
         {% if steam_meta.genres %}
@@ -88,6 +104,9 @@
         {% elif igdb_meta.genres %}
         <dt>Genre</dt>
         <dd>{{ igdb_meta.genres | join(", ") }}</dd>
+        {% elif psn_meta.genres %}
+        <dt>Genre</dt>
+        <dd>{{ psn_meta.genres | join(", ") }}</dd>
         {% endif %}
       </dl>
     </div>
@@ -101,6 +120,11 @@
     <div class="cgt-detail-block mb-3">
       <h6 class="cgt-detail-block__heading">Description</h6>
       <p class="cgt-detail-description mb-0">{{ igdb_meta.summary }}</p>
+    </div>
+    {% elif psn_meta.description %}
+    <div class="cgt-detail-block mb-3">
+      <h6 class="cgt-detail-block__heading">Description</h6>
+      <p class="cgt-detail-description mb-0">{{ psn_meta.description }}</p>
     </div>
     {% endif %}
 
@@ -135,9 +159,9 @@
     <button class="btn btn-surface btn-sm"
             hx-post="/tools/match-review/{{ candidate.id }}/skip"
             hx-swap="none"
-            hx-vals='{"note": "Dismissed from preview"}'
+            hx-vals='{"note": "Not a match (from preview)"}'
             hx-on::after-request="closeMatchReviewDetail(); cgtMultiDismiss && cgtMultiDismiss('{{ candidate.id }}'); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
-      Dismiss
+      Not a match
     </button>
     <button class="btn btn-primary btn-sm"
             hx-post="/tools/match-review/{{ candidate.id }}/merge"

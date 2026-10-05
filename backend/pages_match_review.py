@@ -18,6 +18,7 @@ from .pages_common import (
     _base_ctx,
     _build_detail_pane_visuals,
     _extract_igdb_meta,
+    _extract_psn_store_meta,
     _extract_steam_meta,
     _resolve_view_mode,
     get_web_user,
@@ -915,8 +916,11 @@ def match_review_preview(
 
     visuals = _build_detail_pane_visuals(db, synced_entry, synced_entry.release.game, synced_entry.release) if synced_entry else {}
     appdetails = (synced_entry.release.raw_data or {}).get("appdetails") or {} if synced_entry else {}
-    # Completions come from the manual entry — they migrate to the synced entry on confirm
-    completions = sorted(manual_entry.completions, key=lambda c: c.completed_at, reverse=True) if manual_entry else []
+    # The merged entry's completions: yours move onto the synced entry on
+    # confirm, and the synced entry keeps any it already had. Showing only
+    # yours under-reported the result.
+    together = list(manual_entry.completions if manual_entry else []) + list(synced_entry.completions if synced_entry else [])
+    completions = sorted(together, key=lambda c: c.completed_at, reverse=True)
 
     return templates.TemplateResponse(
         request=request,
@@ -929,6 +933,9 @@ def match_review_preview(
             "appdetails": appdetails,
             "steam_meta": _extract_steam_meta(appdetails),
             "igdb_meta": _extract_igdb_meta(synced_entry.release) if synced_entry else {},
+            # The PS Store record, as the library detail pane reads it (#210):
+            # without it a PSN merge previewed as if its metadata vanished.
+            "psn_meta": _extract_psn_store_meta(synced_entry.release) if synced_entry else {},
             "completions": completions,
             "manual_entry": manual_entry,
             "current_user": current_user,

@@ -72,15 +72,70 @@
    and moves your completions onto it. The two inputs are one click away
    under the row, with your title marked when it is the one that goes.
    Buttons stack to fill the row's two lines rather than float between them. #}
-{% macro result_row(row, manual, group_id=None) %}
+{% macro result_stats(row) %}
+{% set r = row.result %}
+{# Line two: the chip, then one fixed-width slot per fact, so the columns
+   line up down the list without taking width from the title. An empty slot
+   shows nothing but keeps its width. #}
+<div class="cgt-result-row__stats">
+  <span class="cgt-result-stat cgt-result-stat--platform">{% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>{% endif %}</span>
+  <span class="cgt-result-stat cgt-result-stat--hours">{{ r.hours or "" }}</span>
+  <span class="cgt-result-stat cgt-result-stat--progress">{{ r.progress or "" }}</span>
+  <span class="cgt-result-stat cgt-result-stat--completions">{{ r.completions or "" }}</span>
+</div>
+{% endmacro %}
+
+{% macro result_toggle() %}
+{# Its own line, so nothing on the stats line can push it off. #}
+<button type="button" class="cgt-result-row__toggle" onclick="this.closest('.cgt-result-row').classList.toggle('cgt-result-row--open')">2 entries<span class="cgt-disclosure" aria-hidden="true"></span></button>
+{% endmacro %}
+
+{% macro result_sources(row, manual) %}
 {% set c = row.candidate %}
 {% set synced = row.synced_entry %}
 {% set r = row.result %}
+<div class="cgt-result-row__sources">
+  <div class="cgt-result-source">
+    <span class="cgt-result-source__label">{{ r.source_label }}</span>
+    <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</span>
+    {% if r.source_facts %}<span class="cgt-result-source__facts">&middot; {{ r.source_facts | join(" · ") }}</span>{% endif %}
+  </div>
+  <div class="cgt-result-source{% if r.yours_replaced %} cgt-result-source--replaced{% endif %}">
+    <span class="cgt-result-source__label">Yours</span>
+    <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ manual.id }})">{{ r.yours_title }}</span>
+    {% if r.yours_platform_differs %}<span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>{% endif %}
+    {% if r.yours_completions %}<span class="cgt-result-source__facts">&middot; {{ r.yours_completions }} completion{{ 's' if r.yours_completions != 1 }}{% if r.yours_latest %} ({{ r.yours_latest | completion_date }}){% endif %}</span>{% endif %}
+  </div>
+</div>
+{% endmacro %}
+
+{#- One result row. Three homes, one rendering:
+      list, single match:  checkbox, list-row-N, removed when decided
+      list, several:       group_id -- no checkbox, the group goes on confirm
+      card, several:       card_id  -- option-N, as the card stack expects -#}
+{% macro result_row(row, manual, group_id=None, card_id=None) %}
+{% set c = row.candidate %}
+{% set synced = row.synced_entry %}
 {% set cover = synced | grid_cover_url('grid_h') if synced else None %}
-<div class="cgt-result-row{% if c.status == 'dismissed' %} cgt-match-row--skipped{% endif %}"
-     id="list-row-{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"{% if group_id %} data-group="{{ group_id }}"{% endif %}>
+{% set in_card = card_id is not none %}
+{% set checkbox = not in_card and not group_id %}
+{% if in_card %}
+  {% set row_id = "option-" ~ c.id %}
+  {% set on_confirm = "cgtCandidateDone('" ~ card_id ~ "')" %}
+  {% set on_dismiss = "cgtCardOptionDismiss('" ~ c.id ~ "', '" ~ card_id ~ "')" %}
+{% elif group_id %}
+  {% set row_id = "list-row-" ~ c.id %}
+  {% set on_confirm = "cgtMultiConfirm('" ~ c.id ~ "')" %}
+  {% set on_dismiss = "cgtMultiDismiss('" ~ c.id ~ "')" %}
+{% else %}
+  {% set row_id = "list-row-" ~ c.id %}
+  {% set on_confirm = "cgtListRowDone('" ~ c.id ~ "')" %}
+  {% set on_dismiss = "cgtListRowDone('" ~ c.id ~ "')" %}
+{% endif %}
+<div class="cgt-result-row{% if not checkbox %} cgt-result-row--nocheck{% endif %}{% if in_card %} cgt-match-option{% if c.status == 'dismissed' %} cgt-match-option--skipped{% endif %}{% elif c.status == 'dismissed' %} cgt-match-row--skipped{% endif %}"
+     id="{{ row_id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"{% if group_id %} data-group="{{ group_id }}"{% endif %}>
   <div class="cgt-result-row__main">
-    {% if not group_id %}
+    {% if checkbox %}
     <input type="checkbox" class="form-check-input mt-0 cgt-row-cb" data-id="{{ c.id }}"
            {% if c.status != 'pending' %}disabled{% endif %} onchange="cgtRowCheck()">
     {% endif %}
@@ -91,23 +146,14 @@
     {% endif %}
     <div class="cgt-result-row__body">
       <div class="cgt-result-row__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</div>
-      {# Line two: the chip, then one fixed-width slot per fact, so the
-         columns line up down the list without taking width from the title.
-         An empty slot shows nothing but keeps its width. #}
-      <div class="cgt-result-row__stats">
-        <span class="cgt-result-stat cgt-result-stat--platform">{% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }}">{{ row.synced_release.display_platform }}</span>{% endif %}</span>
-        <span class="cgt-result-stat cgt-result-stat--hours">{{ r.hours or "" }}</span>
-        <span class="cgt-result-stat cgt-result-stat--progress">{{ r.progress or "" }}</span>
-        <span class="cgt-result-stat cgt-result-stat--completions">{{ r.completions or "" }}</span>
-      </div>
-      {# Its own line, so nothing on the stats line can push it off. #}
-      <button type="button" class="cgt-result-row__toggle" onclick="this.closest('.cgt-result-row').classList.toggle('cgt-result-row--open')">2 entries<span class="cgt-disclosure" aria-hidden="true"></span></button>
+      {{ result_stats(row) }}
+      {{ result_toggle() }}
     </div>
     <div class="cgt-result-row__actions">
       {% if c.status == 'pending' %}
       <button class="btn btn-sm btn-primary"
               hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="{% if group_id %}cgtMultiConfirm('{{ c.id }}'){% else %}cgtListRowDone('{{ c.id }}'){% endif %}">Confirm</button>
+              hx-on::after-request="{{ on_confirm }}">Confirm</button>
       <div class="cgt-result-row__secondary">
         <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
         {# "Not a match": a dismissed match stays dismissed and stops asking;
@@ -115,8 +161,10 @@
         <button class="btn btn-sm btn-surface"
                 hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
                 hx-vals='{"note": "Not a match"}'
-                hx-on::after-request="{% if group_id %}cgtMultiDismiss('{{ c.id }}'){% else %}cgtListRowDone('{{ c.id }}'){% endif %}">Not a match</button>
+                hx-on::after-request="{{ on_dismiss }}">Not a match</button>
       </div>
+      {% elif in_card %}
+      <span class="text-secondary small">Dismissed</span>
       {% else %}
       <button class="btn btn-sm btn-surface"
               hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
@@ -124,19 +172,7 @@
       {% endif %}
     </div>
   </div>
-  <div class="cgt-result-row__sources">
-    <div class="cgt-result-source">
-      <span class="cgt-result-source__label">{{ r.source_label }}</span>
-      <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</span>
-      {% if r.source_facts %}<span class="cgt-result-source__facts">&middot; {{ r.source_facts | join(" · ") }}</span>{% endif %}
-    </div>
-    <div class="cgt-result-source{% if r.yours_replaced %} cgt-result-source--replaced{% endif %}">
-      <span class="cgt-result-source__label">Yours</span>
-      <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ manual.id }})">{{ r.yours_title }}</span>
-      {% if r.yours_platform_differs %}<span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>{% endif %}
-      {% if r.yours_completions %}<span class="cgt-result-source__facts">&middot; {{ r.yours_completions }} completion{{ 's' if r.yours_completions != 1 }}{% if r.yours_latest %} ({{ r.yours_latest | completion_date }}){% endif %}</span>{% endif %}
-    </div>
-  </div>
+  {{ result_sources(row, manual) }}
 </div>
 {% endmacro %}
 
@@ -199,16 +235,16 @@
 
 </div>
 
-{# Card stack — one card per manual entry (groups handle multi-candidate) #}
+{# Card stack — one card per manual entry, the same object as the list row
+   stood up (#221): the art that survives the merge on top with its
+   confidence, then the result, the two inputs a click away, and the decision
+   in the footer. Several candidates for one entry: one result each, each
+   deciding itself. #}
 <div class="cgt-match-stage" id="candidate-stack">
 {% for group in groups %}
 {% set manual = group.manual_entry %}
-{% set manual_game = manual.release.game %}
-{% set manual_cover = manual | grid_cover_url('grid_h') %}
-{# Use the first candidate's id as the card anchor; status/score from first #}
 {% set first = group.candidates[0] %}
 {% set fc = first.candidate %}
-
 <div class="cgt-match-card cgt-match-card--hidden {% if fc.status == 'dismissed' and not group.multi %}cgt-match-card--skipped{% endif %}"
      id="candidate-{{ fc.id }}"
      data-candidate-id="{{ fc.id }}"
@@ -216,138 +252,45 @@
      data-score="{{ fc.match_score }}"
      style="border-left: 3px solid {% if group.multi %}var(--ctp-peach){% else %}{{ first.color }}{% endif %};">
 
-  {# Card header #}
-  <div class="cgt-match-card__header">
-    {% if group.multi %}
-    <span class="badge rounded-pill fw-semibold" style="background: var(--ctp-peach); color: var(--ctp-crust); font-size:.75rem;">
-      Multiple matches
-    </span>
-    <span class="text-secondary" style="font-size:.75rem;">{{ group.candidates | length }} candidates — pick one</span>
-    {% else %}
-    <span class="badge rounded-pill fw-semibold"
-          style="background: {{ first.color }}; color: var(--ctp-crust); font-size:.75rem;">
-      {{ first.label }}
-    </span>
-    <span class="text-secondary" style="font-size:.75rem;">{{ (fc.match_score * 100) | int }}% confidence</span>
-    {% if fc.status == "dismissed" %}
-    <span class="badge bg-secondary" style="font-size:.65rem;">Previously skipped</span>
-    {% endif %}
-    {% endif %}
-  </div>
-
   {% if group.multi %}
-  {# ── Multi-candidate: pick-one layout ── #}
-
-  {# Manual entry header strip #}
-  <div class="cgt-match-multi-header">
-    {% if manual_cover %}
-    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" title="View your entry">
-    {% else %}
-    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-    {% endif %}
-    <div class="flex-grow-1 min-w-0">
-      {# Says what the row IS. Only the top row used to be labelled, and the two
-         titles were rendered differently -- this one wrapped, the candidate's
-         truncated -- so one game read as two unrelated things. #}
-      <div class="cgt-match-row__source">Your entry{% if manual.completions %} &middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}{% endif %}</div>
-      <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
-    </div>
-    <span class="tag-badge {{ manual.release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
+  <div class="cgt-match-card__header">
+    <span class="badge rounded-pill fw-semibold" style="background: var(--ctp-peach); color: var(--ctp-crust); font-size:.75rem;">Several matches</span>
+    <span class="text-secondary" style="font-size:.75rem;">{{ group.candidates | length }} candidates &mdash; confirm the right one</span>
   </div>
-
-  {# Candidate option rows #}
-  {% for row in group.candidates %}
-  {% set c = row.candidate %}
-  {% set synced = row.synced_entry %}
-  {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
-  <div class="cgt-match-option {% if c.status == 'dismissed' %}cgt-match-option--skipped{% endif %}" id="option-{{ c.id }}">
-    <div class="d-flex align-items-center gap-3">
-      {% if synced_cover %}
-      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
-      {% else %}
-      <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-      {% endif %}
-      <div class="flex-grow-1 min-w-0">
-        <div class="cgt-match-row__source">
-          From {{ (row.synced_release.source if row.synced_release else "sync") | upper }} sync
-          &middot; {{ (c.match_score * 100) | int }}%
-          {%- if synced and synced.playtime_minutes %} &middot; {{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs{% endif %}
-        </div>
-        <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
-      </div>
-      {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
-      {% if c.status == 'pending' %}
-      <button class="btn btn-sm btn-surface flex-shrink-0" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-      <button class="btn btn-sm btn-surface flex-shrink-0"
-              hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
-              hx-vals='{"note": "Dismissed from card view"}'
-              hx-on::after-request="cgtCardOptionDismiss('{{ c.id }}', '{{ fc.id }}')">Dismiss</button>
-      <button class="btn btn-sm btn-primary flex-shrink-0"
-              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="cgtCandidateDone('{{ fc.id }}')">Confirm</button>
-      {% else %}
-      <span class="text-secondary small flex-shrink-0">Dismissed</span>
-      {% endif %}
-    </div>
+  <div class="cgt-result-card__yours">
+    <span class="cgt-result-source__label">Yours</span>
+    <span class="cgt-result-source__title" onclick="openMatchReviewDetail({{ manual.id }})">{{ manual.release.game.display_title }}</span>
+    <span class="tag-badge {{ manual.release.platform_tag_class }}">{{ manual.release.display_platform }}</span>
+    {% if manual.completions %}<span class="cgt-result-source__facts">&middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 }}</span>{% endif %}
   </div>
-  {% endfor %}
+  <div class="cgt-result-card__options">
+    {% for row in group.candidates %}{{ result_row(row, manual, card_id=fc.id) }}{% endfor %}
+  </div>
 
   {% else %}
-  {# ── Single candidate: same compact layout as multi, one option row ── #}
-  {% set row = group.candidates[0] %}
-  {% set c = row.candidate %}
+  {% set row = first %}
+  {% set c = fc %}
   {% set synced = row.synced_entry %}
-  {% set synced_cover = synced | grid_cover_url('grid_h') if synced else None %}
-
-  {# Manual entry header strip #}
-  <div class="cgt-match-multi-header">
-    {% if manual_cover %}
-    <img src="{{ manual_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" title="View your entry">
-    {% else %}
-    <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-    {% endif %}
-    <div class="flex-grow-1 min-w-0">
-      {# Says what the row IS. Only the top row used to be labelled, and the two
-         titles were rendered differently -- this one wrapped, the candidate's
-         truncated -- so one game read as two unrelated things. #}
-      <div class="cgt-match-row__source">Your entry{% if manual.completions %} &middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 else '' }}{% endif %}</div>
-      <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ manual.id }})" style="cursor:pointer;">{{ manual_game.display_title }}</div>
-    </div>
-    <span class="tag-badge {{ manual.release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ manual.release.display_platform }}</span>
+  {% set cover = synced | grid_cover_url('grid_h') if synced else None %}
+  <div class="cgt-result-card__hero">
+    {% if cover %}<img src="{{ cover }}" alt="" loading="lazy" onclick="openMatchReviewDetail({{ synced.id }})" title="View synced entry">{% endif %}
+    <span class="badge rounded-pill fw-semibold cgt-result-card__badge" style="background: {{ row.color }}; color: var(--ctp-crust);">{{ row.label }}</span>
+    {% if c.status == "dismissed" %}<span class="badge bg-secondary cgt-result-card__dismissed">Dismissed before</span>{% endif %}
   </div>
-
-  {# Single candidate option row #}
-  <div class="cgt-match-option {% if c.status == 'dismissed' %}cgt-match-option--skipped{% endif %}">
-    <div class="d-flex align-items-center gap-3">
-      {% if synced_cover %}
-      <img src="{{ synced_cover }}" alt="" loading="lazy" class="cgt-match-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
-      {% else %}
-      <div class="cgt-match-row__thumb cgt-match-row__thumb--empty"></div>
-      {% endif %}
-      <div class="flex-grow-1 min-w-0">
-        <div class="cgt-match-row__source">
-          From {{ (row.synced_release.source if row.synced_release else "sync") | upper }} sync
-          &middot; {{ (c.match_score * 100) | int }}%
-          {%- if synced and synced.playtime_minutes %} &middot; {{ "%.1f"|format(synced.playtime_minutes / 60) }} hrs{% endif %}
-        </div>
-        <div class="fw-semibold small cgt-match-row__title cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" style="cursor:pointer;">{{ c.synced_title }}</div>
-      </div>
-      {% if row.synced_release %}<span class="tag-badge {{ row.synced_release.platform_tag_class }} flex-shrink-0" style="font-size:.65rem;">{{ row.synced_release.display_platform }}</span>{% endif %}
-    </div>
-    {% if c.note %}<div class="text-secondary small mt-1" style="padding-left:calc(64px + .75rem);">Note: {{ c.note }}</div>{% endif %}
+  <div class="cgt-result-row cgt-result-row--card">
+    <div class="cgt-result-row__title cgt-result-card__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</div>
+    {{ result_stats(row) }}
+    {{ result_toggle() }}
+    {{ result_sources(row, manual) }}
+    {% if c.note %}<div class="text-secondary small mt-2">Note: {{ c.note }}</div>{% endif %}
   </div>
-
-  {# Actions get their own row. Sharing the option row's width is what squeezed
-     the title into an ellipsis while the entry above it wrapped -- three buttons
-     take roughly 250px out of a 560px card. Only the single-candidate card can
-     do this: multi-candidate options each decide themselves, so their buttons
-     have to stay on their own row. #}
   <div class="cgt-match-card__actions">
     {% if c.status == 'pending' %}
     <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
     <button class="btn btn-sm btn-surface"
             hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
-            hx-on::after-request="cgtCardDismiss('{{ c.id }}')">Dismiss</button>
+            hx-vals='{"note": "Not a match"}'
+            hx-on::after-request="cgtCardDismiss('{{ c.id }}')">Not a match</button>
     <button class="btn btn-sm btn-primary"
             hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
             hx-on::after-request="cgtCandidateDone('{{ c.id }}')">Confirm</button>
@@ -355,8 +298,7 @@
     <span class="text-secondary small">Dismissed</span>
     {% endif %}
   </div>
-
-  {% endif %}{# end single/multi branch #}
+  {% endif %}
 
 </div>
 {% endfor %}

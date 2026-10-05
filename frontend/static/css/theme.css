@@ -2529,7 +2529,7 @@ details.cgt-result-tier > summary.cgt-result-tier__head::before { content: none;
   background: transparent;
   border-bottom: 1px solid var(--ctp-surface0);
 }
-.cgt-result-row[data-group] { --cgt-thumb-x: .75rem; }
+.cgt-result-row--nocheck { --cgt-thumb-x: .75rem; }
 .cgt-result-row:last-child { border-bottom: none; }
 .cgt-result-row__main {
   display: flex;
@@ -2639,6 +2639,56 @@ details.cgt-result-tier > summary.cgt-result-tier__head::before { content: none;
 }
 .cgt-result-source__facts { flex-shrink: 0; white-space: nowrap; color: var(--ctp-subtext0); }
 .cgt-result-source .tag-badge { font-size: .6rem; flex-shrink: 0; }
+/* The card: the same result stood up. The art that survives the merge as a
+   hero, fixed height because the stage is (480px), with the confidence on it;
+   the body is a result row without a thumbnail, so its tree guide hangs from
+   the body's own edge. Several candidates scroll inside the card rather than
+   off the stage. */
+.cgt-result-card__hero {
+  position: relative;
+  height: 150px;
+  background: var(--ctp-crust);
+}
+.cgt-result-card__hero img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+.cgt-result-card__badge {
+  position: absolute;
+  left: .75rem;
+  bottom: .6rem;
+  font-size: .75rem;
+}
+.cgt-result-card__dismissed {
+  position: absolute;
+  right: .75rem;
+  bottom: .6rem;
+  font-size: .65rem;
+}
+.cgt-result-row--card {
+  --cgt-thumb-x: 0px;
+  padding: .75rem .9rem .4rem;
+  border-bottom: 0;
+}
+.cgt-result-row--card .cgt-result-row__sources { margin-right: 0; }
+.cgt-result-card__title { font-size: 1rem; white-space: normal; }
+.cgt-result-card__yours {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  min-width: 0;
+  padding: .6rem .9rem;
+  border-bottom: 1px solid var(--ctp-surface1);
+  font-size: .8rem;
+}
+.cgt-result-card__options { max-height: 360px; overflow-y: auto; }
+/* An option row is a result row; .cgt-match-option is only there for the card
+   stack's bookkeeping, so its own padding and border step aside. */
+.cgt-result-row.cgt-match-option { padding: 0; }
+
 /* Your title, when it differs: the merge keeps the synced one. */
 .cgt-result-source--replaced .cgt-result-source__title {
   color: var(--ctp-subtext0);
