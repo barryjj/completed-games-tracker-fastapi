@@ -743,14 +743,35 @@ def _attach_results(db: Session, user_id: int, enriched: list[dict]) -> None:
         }
 
 
+# The page's tabs, in order -- the same button group import and PSN review
+# use (#221). Confidence, then entries with several candidates, then what
+# you've said isn't a match. A tab holds only its own rows, so its badge is
+# its count and nothing in it is faded.
+MATCH_TABS = (
+    ("high", "High"),
+    ("medium", "Medium"),
+    ("low", "Low"),
+    ("several", "Several matches"),
+    ("dismissed", "Dismissed"),
+)
+
+
+def _match_tab_of(group: dict) -> str:
+    if group["candidates"][0]["candidate"].status == "dismissed":
+        return "dismissed"
+    if group["multi"]:
+        return "several"
+    return group["candidates"][0]["label"].lower()
+
+
 @router.get("/tools/match-review")
 def match_review_page(
     request: Request,
-    show_skipped: bool = Query(False),
+    tab: str = Query(""),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    candidates = match_review.get_candidates(db, current_user, include_skipped=show_skipped)
+    candidates = match_review.get_candidates(db, current_user, include_skipped=True)
     # Attach the synced release object to each candidate for the template
     # (look up by platform_source + external_id)
     enriched = []
@@ -772,32 +793,37 @@ def match_review_page(
 
     _attach_results(db, current_user.id, enriched)
 
-    # Group by manual_entry_id so multi-candidate entries can be rendered
-    # as a single "pick one" card rather than separate cards.
+    # Pending candidates group by manual entry, so an entry that matched
+    # several games is one "pick one" group. A dismissed candidate stands on
+    # its own: it is an answer you gave, not a choice still to make.
     groups: list[dict] = []
     _seen: dict[int, dict] = {}
     for row in enriched:
+        if row["candidate"].status == "dismissed":
+            groups.append({"manual_entry": row["manual_entry"], "candidates": [row], "multi": False})
+            continue
         mid = row["candidate"].manual_entry_id
         if mid not in _seen:
-            g = {
-                "manual_entry": row["manual_entry"],
-                "candidates": [],
-                "multi": False,
-            }
+            g = {"manual_entry": row["manual_entry"], "candidates": [], "multi": False}
             _seen[mid] = g
             groups.append(g)
         _seen[mid]["candidates"].append(row)
     for g in groups:
         g["multi"] = len(g["candidates"]) > 1
-        # The list groups single matches under their confidence (#221).
-        g["tier"] = g["candidates"][0]["label"]
-        g["pending"] = g["candidates"][0]["candidate"].status == "pending"
-    groups.sort(
-        key=lambda g: (
-            not g["multi"],
-            g["manual_entry"].title.lower(),
-        )
-    )
+        g["tab"] = _match_tab_of(g)
+
+    counts = {key: 0 for key, _ in MATCH_TABS}
+    for g in groups:
+        counts[g["tab"]] += 1
+    # The requested tab, else the first one with something to review.
+    keys = [key for key, _ in MATCH_TABS]
+    if tab not in keys:
+        tab = next((key for key in keys[:-1] if counts[key]), "high")
+    shown = [g for g in groups if g["tab"] == tab]
+    # Strongest first inside a confidence tab; by title elsewhere.
+    shown.sort(key=lambda g: (-g["candidates"][0]["candidate"].match_score, g["manual_entry"].title.lower()))
+    if tab in ("several", "dismissed"):
+        shown.sort(key=lambda g: g["manual_entry"].title.lower())
 
     pending = match_review.pending_count(db, current_user)
     return templates.TemplateResponse(
@@ -805,13 +831,40 @@ def match_review_page(
         name="match_review.html",
         context={
             "current_user": current_user,
-            "enriched": enriched,
-            "groups": groups,
+            "groups": shown,
+            "tab": tab,
+            "tabs": [(key, label, counts[key]) for key, label in MATCH_TABS],
             "pending": pending,
-            "show_skipped": show_skipped,
             **_base_ctx(db, current_user, request),
         },
     )
+
+
+@router.post("/tools/match-review/{candidate_id}/clear")
+def match_review_clear(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Forget one "not a match" answer (#221). The dismissed record is the only
+    thing that stops the scanner re-proposing the pair, so deleting it puts
+    the pair back in review on the next scan. Dismissed rows only: clearing a
+    pending one would just delete a question nobody answered."""
+    candidate = (
+        db.query(models.SyncMatchCandidate)
+        .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
+        .filter(
+            models.SyncMatchCandidate.id == candidate_id,
+            models.SyncMatchCandidate.status == "dismissed",
+            models.UserLibraryEntry.user_id == current_user.id,
+        )
+        .first()
+    )
+    if candidate is None:
+        return Response(status_code=404)
+    db.delete(candidate)
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/tools/match-review/{candidate_id}/merge")

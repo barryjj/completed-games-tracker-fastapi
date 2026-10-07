@@ -9,34 +9,31 @@
   </p>
 </div>
 
-{# Toolbar #}
-<div class="d-flex align-items-center gap-3 flex-wrap mb-4">
+{# Tabs: the button group import review and PSN review use (#221). Each tab
+   holds only its own rows, so its badge is its count, and nothing in it is
+   faded -- dismissed matches have a tab of their own instead. #}
+<div class="btn-group btn-group-sm mb-3" role="group" id="match-tabs">
+  {% for key, label, count in tabs %}
+  <button type="button" class="btn btn-surface{% if key == tab %} active{% endif %}"
+          onclick="window.location = '/tools/match-review?tab={{ key }}'">
+    {{ label }} <span class="badge bg-secondary ms-1" id="match-tab-count-{{ key }}">{{ count }}</span>
+  </button>
+  {% endfor %}
+</div>
+
+{# The same on every tab. Bulk mode reveals the row checkboxes; what it does
+   lives in the footer, as on the other review pages. #}
+<div class="d-flex align-items-center gap-2 flex-wrap mb-3">
   <div class="btn-group btn-group-sm" role="group" id="view-toggle">
     <button type="button" class="btn btn-surface" id="btn-list-view" onclick="cgtSetView('list')" title="List view">≡</button>
     <button type="button" class="btn btn-surface" id="btn-card-view" onclick="cgtSetView('card')" title="Card view">▦</button>
   </div>
-  <button class="btn btn-primary btn-sm" id="scan-btn"
-          hx-post="/integrations/match-review/scan"
-          hx-swap="none"
-          hx-on::after-request="cgtScanStarted()">
-    Scan for matches
-  </button>
-  <label class="form-check d-flex align-items-center gap-2 mb-0 small">
-    <input class="form-check-input mt-0" type="checkbox" id="show-skipped-toggle"
-           {% if show_skipped %}checked{% endif %}
-           onchange="window.location = '/tools/match-review?show_skipped=' + this.checked">
-    Show dismissed
-  </label>
-  <button class="btn btn-sm btn-surface"
-          hx-post="/tools/match-review/clear-dismissed"
-          hx-swap="none">
-    Clear dismissed
-  </button>
+  <button type="button" id="match-bulk-toggle" class="btn btn-sm btn-surface" onclick="cgtToggleBulk()">Bulk mode</button>
 </div>
 
 {# Reload when scan job completes — full navigation so scripts re-execute #}
 <div hx-trigger="cgt:matchScanDone from:body"
-     hx-on:cgt:match-scan-done="window.location.href = '/tools/match-review{% if show_skipped %}?show_skipped=true{% endif %}'"
+     hx-on:cgt:match-scan-done="window.location.href = '/tools/match-review?tab={{ tab }}'"
      style="display:none;"></div>
 
 {# Scanning in-progress indicator — shown after clicking Scan, hidden on load #}
@@ -45,33 +42,11 @@
   Scanning your library for matches…
 </div>
 
-{% if enriched %}
-{% set pending_rows = enriched | selectattr("candidate.status", "equalto", "pending") | list %}
-
-{# Queue header #}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <span class="text-secondary small" id="queue-status">
-    {% if pending > 0 %}
-      <span id="queue-count">{{ pending }}</span> match{{ 'es' if pending != 1 else '' }} to review
-    {% else %}
-      No pending matches
-    {% endif %}
-  </span>
-  {% set single_pending = groups | selectattr("multi", "equalto", false) | list %}
-  {% if single_pending | length > 1 %}
-  <button class="btn btn-sm btn-surface" id="merge-all-btn" onclick="cgtMergeAllHigh()">
-    Merge all high-confidence
-  </button>
-  {% endif %}
-
-</div>
-
 {# ── Result rows (#221) ──────────────────────────────────────────────────
    A row is what Confirm PRODUCES, not the two things being compared: the
    merge keeps the synced entry -- its title, art, playtime, achievements --
    and moves your completions onto it. The two inputs are one click away
-   under the row, with your title marked when it is the one that goes.
-   Buttons stack to fill the row's two lines rather than float between them. #}
+   under the row, with your title marked when it is the one that goes. #}
 {% macro result_stats(row) %}
 {% set r = row.result %}
 {# Line two: the chip, then one fixed-width slot per fact, so the columns
@@ -109,35 +84,39 @@
 </div>
 {% endmacro %}
 
-{#- One result row. Three homes, one rendering:
-      list, single match:  checkbox, list-row-N, removed when decided
-      list, several:       group_id -- no checkbox, the group goes on confirm
-      card, several:       card_id  -- option-N, as the card stack expects -#}
-{% macro result_row(row, manual, group_id=None, card_id=None) %}
+{#- The action buttons for one candidate, wherever it renders. Pending:
+    Confirm over Preview / Not a match. Dismissed: Clear. -#}
+{% macro result_actions(c) %}
+{% if c.status == 'pending' %}
+<button class="btn btn-sm btn-primary"
+        hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
+        hx-on::after-request="if (event.detail.successful) cgtRowDone('{{ c.id }}')">Confirm</button>
+<div class="cgt-result-row__secondary">
+  <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
+  <button class="btn btn-sm btn-surface"
+          hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
+          hx-vals='{"note": "Not a match"}'
+          hx-on::after-request="if (event.detail.successful) cgtRowDone('{{ c.id }}')">Not a match</button>
+</div>
+{% else %}
+<button class="btn btn-sm btn-surface"
+        hx-post="/tools/match-review/{{ c.id }}/clear" hx-swap="none"
+        hx-on::after-request="if (event.detail.successful) cgtRowDone('{{ c.id }}')">Clear</button>
+{% endif %}
+{% endmacro %}
+
+{#- One result row. In the list it carries a bulk checkbox (shown in bulk
+    mode); inside a card's several-candidates list it is an option, ids
+    option-N, no checkbox. -#}
+{% macro result_row(row, manual, group_id=None, in_card=False) %}
 {% set c = row.candidate %}
 {% set synced = row.synced_entry %}
 {% set cover = synced | grid_cover_url('grid_h') if synced else None %}
-{% set in_card = card_id is not none %}
-{% set checkbox = not in_card and not group_id %}
-{% if in_card %}
-  {% set row_id = "option-" ~ c.id %}
-  {% set on_confirm = "cgtCandidateDone('" ~ card_id ~ "')" %}
-  {% set on_dismiss = "cgtCardOptionDismiss('" ~ c.id ~ "', '" ~ card_id ~ "')" %}
-{% elif group_id %}
-  {% set row_id = "list-row-" ~ c.id %}
-  {% set on_confirm = "cgtMultiConfirm('" ~ c.id ~ "')" %}
-  {% set on_dismiss = "cgtMultiDismiss('" ~ c.id ~ "')" %}
-{% else %}
-  {% set row_id = "list-row-" ~ c.id %}
-  {% set on_confirm = "cgtListRowDone('" ~ c.id ~ "')" %}
-  {% set on_dismiss = "cgtListRowDone('" ~ c.id ~ "')" %}
-{% endif %}
-<div class="cgt-result-row{% if not checkbox %} cgt-result-row--nocheck{% endif %}{% if in_card %} cgt-match-option{% if c.status == 'dismissed' %} cgt-match-option--skipped{% endif %}{% elif c.status == 'dismissed' %} cgt-match-row--skipped{% endif %}"
-     id="{{ row_id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"{% if group_id %} data-group="{{ group_id }}"{% endif %}>
+<div class="cgt-result-row{% if in_card %} cgt-result-row--nocheck{% endif %}"
+     id="{{ 'option-' if in_card else 'list-row-' }}{{ c.id }}" data-candidate-id="{{ c.id }}" data-status="{{ c.status }}"{% if group_id %} data-group="{{ group_id }}"{% endif %}>
   <div class="cgt-result-row__main">
-    {% if checkbox %}
-    <input type="checkbox" class="form-check-input mt-0 cgt-row-cb" data-id="{{ c.id }}"
-           {% if c.status != 'pending' %}disabled{% endif %} onchange="cgtRowCheck()">
+    {% if not in_card %}
+    <input type="checkbox" class="form-check-input mt-0 cgt-row-cb" data-id="{{ c.id }}" onchange="cgtRowCheck(this)">
     {% endif %}
     {% if cover %}
     <img src="{{ cover }}" alt="" loading="lazy" class="cgt-result-row__thumb cgt-match-row__thumb--clickable" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})" title="View synced entry">
@@ -149,75 +128,22 @@
       {{ result_stats(row) }}
       {{ result_toggle() }}
     </div>
-    <div class="cgt-result-row__actions">
-      {% if c.status == 'pending' %}
-      <button class="btn btn-sm btn-primary"
-              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="{{ on_confirm }}">Confirm</button>
-      <div class="cgt-result-row__secondary">
-        <button class="btn btn-sm btn-surface" onclick="openCandidatePreview({{ c.id }})">Preview</button>
-        {# "Not a match": a dismissed match stays dismissed and stops asking;
-           Show dismissed brings it back. #}
-        <button class="btn btn-sm btn-surface"
-                hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
-                hx-vals='{"note": "Not a match"}'
-                hx-on::after-request="{{ on_dismiss }}">Not a match</button>
-      </div>
-      {% elif in_card %}
-      <span class="text-secondary small">Dismissed</span>
-      {% else %}
-      <button class="btn btn-sm btn-surface"
-              hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-              hx-on::after-request="window.location.reload()">Merge anyway</button>
-      {% endif %}
-    </div>
+    <div class="cgt-result-row__actions">{{ result_actions(c) }}</div>
   </div>
   {{ result_sources(row, manual) }}
 </div>
 {% endmacro %}
 
-{# List view — confidence groups of single matches (bulk-selectable), then
-   entries that matched several games #}
+<p class="text-secondary small mb-3" id="queue-status" hidden></p>
+
+{% if groups %}
+
+{# List view — the active tab's rows. Several matches: one result per
+   candidate, under the entry they would merge into. #}
 <div id="candidate-list" style="display:none;">
-
-{% set single_groups = groups | selectattr("multi", "equalto", false) | list %}
-{% if single_groups %}
-<div class="cgt-match-bulk mb-2">
-  <input type="checkbox" id="select-all-cb" class="form-check-input mt-0" onchange="cgtSelectAll(this.checked)">
-  <span id="bulk-count" class="text-secondary small">0 selected</span>
-  <button class="btn btn-sm btn-primary ms-auto" id="bulk-approve-btn" disabled onclick="cgtApproveSelected()">Approve selected</button>
-</div>
-{# Confidence is the group, not a chip on every row: the sort already said it,
-   and a group can be approved at once -- the one you would approve at once. #}
-{% for tier, dot in [("High", "green"), ("Medium", "yellow"), ("Low", "peach")] %}
-{% set tier_groups = single_groups | selectattr("tier", "equalto", tier) | list %}
-{% if tier_groups %}
-{% set tier_pending = tier_groups | selectattr("pending") | list | length %}
-<details class="cgt-result-tier mb-3" data-tier="{{ tier }}"{% if tier == "High" %} open{% endif %}>
-  <summary class="cgt-result-tier__head">
-    <span class="cgt-disclosure" aria-hidden="true"></span>
-    <span class="cgt-result-tier__dot" style="background: var(--ctp-{{ dot }});"></span>
-    <span class="cgt-result-tier__name">{{ tier }}</span>
-    <span class="cgt-result-tier__count">{{ tier_pending }}</span>
-    {% if tier_pending > 1 %}
-    <button type="button" class="btn btn-sm btn-surface ms-auto cgt-result-tier__approve"
-            onclick="event.preventDefault(); event.stopPropagation(); cgtApproveTier(this.closest('.cgt-result-tier'))">Approve all {{ tier_pending }}</button>
-    {% endif %}
-  </summary>
-  <div class="cgt-match-list">
-    {% for group in tier_groups %}{{ result_row(group.candidates[0], group.manual_entry) }}{% endfor %}
-  </div>
-</details>
-{% endif %}
-{% endfor %}
-{% endif %}
-
-{# ── Entries that matched several games: one result per candidate ── #}
-{% set multi_groups = groups | selectattr("multi", "equalto", true) | list %}
-{% if multi_groups %}
-<p class="text-secondary small mb-2">These entries matched more than one game &mdash; confirm the right one; the rest are dismissed with it.</p>
+{% if tab == 'several' %}
 <div class="cgt-match-list mb-4">
-{% for group in multi_groups %}
+{% for group in groups %}
 {% set manual = group.manual_entry %}
 {% set gid = group.candidates[0].candidate.manual_entry_id %}
 <div class="cgt-match-group" id="list-group-{{ gid }}">
@@ -231,21 +157,23 @@
 </div>
 {% endfor %}
 </div>
+{% else %}
+<div class="cgt-match-list mb-4">
+  {% for group in groups %}{{ result_row(group.candidates[0], group.manual_entry) }}{% endfor %}
+</div>
 {% endif %}
-
 </div>
 
 {# Card stack — one card per manual entry, the same object as the list row
-   stood up (#221): the art that survives the merge on top with its
-   confidence, then the result, the two inputs a click away, and the decision
-   in the footer. Several candidates for one entry: one result each, each
-   deciding itself. #}
+   stood up: the art that survives the merge on top with its confidence, then
+   the result, the two inputs a click away, and the decision in the footer.
+   Several candidates for one entry: one result each, each deciding itself. #}
 <div class="cgt-match-stage" id="candidate-stack">
 {% for group in groups %}
 {% set manual = group.manual_entry %}
 {% set first = group.candidates[0] %}
 {% set fc = first.candidate %}
-<div class="cgt-match-card cgt-match-card--hidden {% if fc.status == 'dismissed' and not group.multi %}cgt-match-card--skipped{% endif %}"
+<div class="cgt-match-card cgt-match-card--hidden"
      id="candidate-{{ fc.id }}"
      data-candidate-id="{{ fc.id }}"
      data-status="{{ fc.status }}"
@@ -264,7 +192,7 @@
     {% if manual.completions %}<span class="cgt-result-source__facts">&middot; {{ manual.completions | length }} completion{{ 's' if manual.completions | length != 1 }}</span>{% endif %}
   </div>
   <div class="cgt-result-card__options">
-    {% for row in group.candidates %}{{ result_row(row, manual, card_id=fc.id) }}{% endfor %}
+    {% for row in group.candidates %}{{ result_row(row, manual, in_card=True) }}{% endfor %}
   </div>
 
   {% else %}
@@ -275,7 +203,6 @@
   <div class="cgt-result-card__hero">
     {% if cover %}<img src="{{ cover }}" alt="" loading="lazy" onclick="openMatchReviewDetail({{ synced.id }})" title="View synced entry">{% endif %}
     <span class="badge rounded-pill fw-semibold cgt-result-card__badge" style="background: {{ row.color }}; color: var(--ctp-crust);">{{ row.label }}</span>
-    {% if c.status == "dismissed" %}<span class="badge bg-secondary cgt-result-card__dismissed">Dismissed before</span>{% endif %}
   </div>
   <div class="cgt-result-row cgt-result-row--card">
     <div class="cgt-result-row__title cgt-result-card__title" onclick="openMatchReviewDetail({{ synced.id if synced else 0 }})">{{ c.synced_title }}</div>
@@ -290,12 +217,14 @@
     <button class="btn btn-sm btn-surface"
             hx-post="/tools/match-review/{{ c.id }}/skip" hx-swap="none"
             hx-vals='{"note": "Not a match"}'
-            hx-on::after-request="cgtCardDismiss('{{ c.id }}')">Not a match</button>
+            hx-on::after-request="if (event.detail.successful) cgtRowDone('{{ c.id }}')">Not a match</button>
     <button class="btn btn-sm btn-primary"
             hx-post="/tools/match-review/{{ c.id }}/merge" hx-swap="none"
-            hx-on::after-request="cgtCandidateDone('{{ c.id }}')">Confirm</button>
+            hx-on::after-request="if (event.detail.successful) cgtRowDone('{{ c.id }}')">Confirm</button>
     {% else %}
-    <span class="text-secondary small">Dismissed</span>
+    <button class="btn btn-sm btn-surface"
+            hx-post="/tools/match-review/{{ c.id }}/clear" hx-swap="none"
+            hx-on::after-request="if (event.detail.successful) cgtRowDone('{{ c.id }}')">Clear</button>
     {% endif %}
   </div>
   {% endif %}
@@ -319,9 +248,31 @@
 
 {% else %}
 <p class="text-secondary small" id="no-matches-msg">
-  No matches pending review. Use <strong>Scan for matches</strong> to compare your manual entries against your synced library.
+  {% if tab == 'dismissed' %}No dismissed matches.{% else %}No matches to review here.{% endif %}
 </p>
 {% endif %}
+
+{# Footer — the review pages' sticky bar (DESIGN.md). Bulk actions on the
+   left in bulk mode: Confirm / Not a match, or Clear on the Dismissed tab.
+   Scan for matches is always here. #}
+<div class="cgt-sticky-actions">
+  <div id="match-bulk-bar" class="d-flex align-items-center gap-2 me-auto" hidden>
+    <span class="small text-secondary"><span id="bulk-count">0</span> selected</span>
+    <button type="button" class="btn btn-sm btn-surface" onclick="cgtSelectAll()">Select all</button>
+    {% if tab == 'dismissed' %}
+    <button type="button" class="btn btn-sm btn-primary cgt-bulk-act" disabled onclick="cgtBulk('clear')">Clear selected</button>
+    {% else %}
+    <button type="button" class="btn btn-sm btn-primary cgt-bulk-act" disabled onclick="cgtBulk('merge')">Confirm selected</button>
+    <button type="button" class="btn btn-sm btn-surface cgt-bulk-act" disabled onclick="cgtBulk('skip')">Not a match</button>
+    {% endif %}
+  </div>
+  <button class="btn btn-sm btn-surface" id="scan-btn"
+          hx-post="/integrations/match-review/scan"
+          hx-swap="none"
+          hx-on::after-request="cgtScanStarted()">Scan for matches</button>
+  <button type="button" id="match-back-to-top" class="btn btn-sm btn-surface"
+          onclick="window.scrollTo({top:0,behavior:'smooth'})" hidden>&uarr;</button>
+</div>
 
 <script>
 // Deferred, not immediate. app.js carries `defer`, so it does not run until the
@@ -332,12 +283,12 @@
 // the stage blank (#195). DOMContentLoaded fires after deferred scripts, which
 // is why import review is wrapped the same way.
 document.addEventListener('DOMContentLoaded', function () {
+  const ACTIVE_TAB = '{{ tab }}';
 
   // ── Scan state ───────────────────────────────────────────────────
   window.cgtScanStarted = function() {
     document.getElementById('scanning-indicator').hidden = false;
     document.getElementById('scan-btn').disabled = true;
-    // Hide existing queue content while scan runs
     ['candidate-stack','candidate-list','match-nav','queue-status','no-matches-msg']
       .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
   };
@@ -353,98 +304,82 @@ document.addEventListener('DOMContentLoaded', function () {
     if (stack) stack.style.display = mode === 'card' ? '' : 'none';
     if (nav) nav.style.display = mode === 'card' ? '' : 'none';
     if (list) list.style.display = mode === 'list' ? '' : 'none';
-    const mergeAll = document.getElementById('merge-all-btn');
-    if (mergeAll) mergeAll.style.display = mode === 'card' ? '' : 'none';
+    // Bulk mode is a list-view thing, as on import review.
+    const bulk = document.getElementById('match-bulk-toggle');
+    if (bulk) bulk.hidden = mode !== 'list';
+    if (mode !== 'list') cgtToggleBulk(false);
     document.getElementById('btn-list-view').classList.toggle('active', mode === 'list');
     document.getElementById('btn-card-view').classList.toggle('active', mode === 'card');
   };
 
-  const savedView = localStorage.getItem(PREF_KEY) || 'card';
-  cgtSetView(savedView);
-
-  // ── Bulk select ──────────────────────────────────────────────────
-  window.cgtRowCheck = function() {
-    const checked = document.querySelectorAll('.cgt-row-cb:checked').length;
-    const total = document.querySelectorAll('.cgt-row-cb:not(:disabled)').length;
-    document.getElementById('bulk-count').textContent = checked + ' selected';
-    document.getElementById('bulk-approve-btn').disabled = checked === 0;
-    document.getElementById('select-all-cb').indeterminate = checked > 0 && checked < total;
-    document.getElementById('select-all-cb').checked = checked === total && total > 0;
-  };
-
-  window.cgtSelectAll = function(checked) {
-    document.querySelectorAll('.cgt-row-cb:not(:disabled)').forEach(cb => cb.checked = checked);
+  // ── Bulk mode ────────────────────────────────────────────────────
+  window.cgtToggleBulk = function(force) {
+    const list = document.getElementById('candidate-list');
+    if (!list) return;
+    const on = force === undefined ? !list.classList.contains('cgt-bulk-on') : force;
+    list.classList.toggle('cgt-bulk-on', on);
+    document.getElementById('match-bulk-bar').hidden = !on;
+    document.getElementById('match-bulk-toggle').classList.toggle('active', on);
+    if (!on) list.querySelectorAll('.cgt-row-cb').forEach(cb => { cb.checked = false; });
     cgtRowCheck();
   };
 
-  window.cgtApproveSelected = function() {
-    const ids = Array.from(document.querySelectorAll('.cgt-row-cb:checked')).map(cb => cb.dataset.id);
-    ids.forEach(id => {
-      htmx.ajax('POST', '/tools/match-review/' + id + '/merge', { swap: 'none' })
-        .then(() => cgtListRowDone(id));
+  // An entry with several candidates merges into one of them: ticking a
+  // candidate clears its siblings.
+  window.cgtRowCheck = function(changed) {
+    if (changed && changed.checked) {
+      const group = changed.closest('.cgt-result-row').dataset.group;
+      if (group) {
+        document.querySelectorAll('#candidate-list .cgt-result-row[data-group="' + group + '"] .cgt-row-cb')
+          .forEach(cb => { if (cb !== changed) cb.checked = false; });
+      }
+    }
+    const n = document.querySelectorAll('#candidate-list .cgt-row-cb:checked').length;
+    const count = document.getElementById('bulk-count');
+    if (count) count.textContent = n;
+    document.querySelectorAll('.cgt-bulk-act').forEach(b => { b.disabled = n === 0; });
+  };
+
+  window.cgtSelectAll = function() {
+    const seen = new Set();
+    document.querySelectorAll('#candidate-list .cgt-row-cb').forEach(cb => {
+      const group = cb.closest('.cgt-result-row').dataset.group;
+      if (group) { cb.checked = !seen.has(group); seen.add(group); } else { cb.checked = true; }
     });
+    cgtRowCheck();
+  };
+
+  // fetch, not htmx.ajax: its promise doesn't settle reliably on swap-none
+  // responses, which froze import review's bulk buttons.
+  window.cgtBulk = function(action) {
+    const ids = Array.from(document.querySelectorAll('#candidate-list .cgt-row-cb:checked')).map(cb => cb.dataset.id);
+    const body = action === 'skip' ? new URLSearchParams({ note: 'Not a match' }) : undefined;
+    Promise.all(ids.map(id =>
+      fetch('/tools/match-review/' + id + '/' + action, { method: 'POST', body: body })
+        .then(r => { if (r.ok && ACTIVE_TAB !== 'several') cgtListRowDone(id); })
+    )).then(() => { if (ACTIVE_TAB === 'several') window.location.reload(); });
+  };
+
+  // One candidate decided, from either view or the preview. On Several
+  // matches the group's shape changes (a dismissal can leave one candidate,
+  // which belongs in a confidence tab), so the page re-renders instead.
+  window.cgtRowDone = function(id) {
+    if (ACTIVE_TAB === 'several') { window.location.reload(); return; }
+    cgtListRowDone(id);
   };
 
   window.cgtListRowDone = function(id) {
     const row = document.getElementById('list-row-' + id);
-    const skip = document.getElementById('list-skip-' + id);
-    const tier = row && row.closest('.cgt-result-tier');
     if (row) row.remove();
-    if (skip) skip.remove();
-    if (tier) cgtTierRecount(tier);
     cgtCandidateDone(id);
     cgtRowCheck();
   };
 
-  // A confidence group's count and "Approve all" follow its rows; an empty
-  // group goes.
-  window.cgtTierRecount = function(tier) {
-    const pending = tier.querySelectorAll('.cgt-result-row[data-status="pending"]').length;
-    if (!tier.querySelector('.cgt-result-row')) { tier.remove(); return; }
-    const count = tier.querySelector('.cgt-result-tier__count');
-    if (count) count.textContent = pending;
-    const approve = tier.querySelector('.cgt-result-tier__approve');
-    if (approve) {
-      approve.textContent = 'Approve all ' + pending;
-      approve.hidden = pending < 2;
-    }
-  };
-
-  window.cgtApproveTier = function(tier) {
-    tier.querySelectorAll('.cgt-result-row[data-status="pending"] .cgt-row-cb:not(:disabled)').forEach(cb => {
-      const id = cb.dataset.id;
-      htmx.ajax('POST', '/tools/match-review/' + id + '/merge', { swap: 'none' })
-        .then(() => cgtListRowDone(id));
-    });
-  };
-
-  // Multi-candidate: confirm merges, backend auto-dismisses siblings
-  window.cgtMultiConfirm = function(id) {
-    const row = document.getElementById('list-row-' + id);
-    if (!row) return;
-    const groupId = row.dataset.group;
-    const group = document.getElementById('list-group-' + groupId);
-    if (group) group.remove();
-    cgtCandidateDone(id);
-  };
-
-  // Multi-candidate: dismiss one candidate row; if only one remains in group,
-  // convert the group to a plain single row via page reload
-  window.cgtMultiDismiss = function(id) {
-    const row = document.getElementById('list-row-' + id);
-    if (!row) return;
-    const groupId = row.dataset.group;
-    row.remove();
-    const group = document.getElementById('list-group-' + groupId);
-    if (!group) return;
-    const remaining = group.querySelectorAll('.cgt-match-group__row[data-status="pending"]');
-    if (remaining.length === 0) {
-      group.remove();
-    } else if (remaining.length === 1) {
-      window.location.reload();
-    }
-  };
-
+  // ── Back to top ──────────────────────────────────────────────────
+  window.addEventListener('scroll', function () {
+    const btn = document.getElementById('match-back-to-top');
+    if (btn) btn.hidden = window.scrollY < 400;
+  }, { passive: true });
 
   // ── Detail / preview pane ────────────────────────────────────────
   let _matchDetailOffcanvas = null;
@@ -479,105 +414,76 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // ── Card stack ───────────────────────────────────────────────────
   const stack = document.getElementById('candidate-stack');
-  if (!stack) return;
-
-  const cards = Array.from(stack.querySelectorAll('.cgt-match-card'));
+  const cards = stack ? Array.from(stack.querySelectorAll('.cgt-match-card')) : [];
   let current = 0;
 
   function show(idx) {
     current = idx;
-    // The shared stack, same as PSN review and import review (#195). This page
-    // had its own: five hand-written classes (--prev/--next/--far-prev/
-    // --far-next) fanning cards out either side, which meant the card at +1 sat
-    // UNDER the active one and then had to become the card ON TOP of it. Cards
-    // are dealt now -- what is ahead waits off the right edge, above, and lands
-    // on the pile; what is done stays left and underneath.
-    //
-    // Assigned here rather than rendered because cgtCandidateDone splices cards
-    // out of the array as they are decided, so rows renumber as you work.
+    // The shared stack, same as PSN review and import review (#195). Cards
+    // are dealt: what is ahead waits off the right edge, above, and lands on
+    // the pile; what is done stays left and underneath. Positions are
+    // assigned here because decided cards are spliced out as you work.
     cards.forEach((card, i) => { card.dataset.pos = i; });
     cgtPlaceCards(cards, idx);
     const dots = document.querySelectorAll('.cgt-match-nav__dot');
     dots.forEach((d, i) => d.classList.toggle('cgt-match-nav__dot--active', i === idx));
-    // Buttons always enabled — navigation wraps around
   }
 
   window.cgtNav = function(dir) {
-    // Wrapping needs no special case now. Every card is positioned from its own
-    // offset on every move, so the card you wrap to is simply a long way off and
-    // arrives from the correct side; the old code had to snap it across without
-    // animating first, because the class-based version had no notion of "how
-    // far away".
-    show((current + dir + cards.length) % cards.length);
+    if (cards.length) show((current + dir + cards.length) % cards.length);
   };
 
-  window.cgtCardOptionDismiss = function(dismissedId, cardId) {
-    const option = document.getElementById('option-' + dismissedId);
-    if (option) option.remove();
-    const card = document.getElementById('candidate-' + cardId);
-    if (!card) return;
-    const remaining = card.querySelectorAll('.cgt-match-option:not(.cgt-match-option--skipped)');
-    if (remaining.length === 1) window.location.reload();
-    if (remaining.length === 0) cgtCandidateDone(cardId);
-  };
-
+  // A decided candidate leaves the card stack, the tab's count, and -- if it
+  // was still awaiting review -- the nav badge's pending count. Clearing a
+  // dismissed one was never pending, so the badge stays.
   window.cgtCandidateDone = function(id) {
     const card = document.getElementById('candidate-' + id);
-    if (!card) return;
-    const idx = cards.indexOf(card);
-    cards.splice(idx, 1);
-    card.remove();
-    // Remove corresponding dot
-    const dots = document.querySelectorAll('.cgt-match-nav__dot');
-    if (dots[idx]) dots[idx].remove();
-    const countEl = document.getElementById('queue-count');
-    const pending = cards.filter(c => c.dataset.status === 'pending').length;
-    if (countEl) countEl.textContent = pending;
+    const wasPending = card ? card.dataset.status === 'pending' : true;
 
-    // Update navbar badge
-    const navBadge = document.querySelector('.cgt-pending-badge');
-    if (navBadge) {
-      const newCount = parseInt(navBadge.textContent) - 1;
-      if (newCount <= 0) {
-        // Remove badge from button and pending item from dropdown
-        navBadge.remove();
-        const pendingItem = document.querySelector('.cgt-pending-item');
-        if (pendingItem) {
-          const li = pendingItem.closest('li');
-          const divider = li && li.nextElementSibling;
-          if (li) li.remove();
-          if (divider && divider.querySelector('.dropdown-divider')) divider.remove();
+    const tabCount = document.getElementById('match-tab-count-' + ACTIVE_TAB);
+    if (tabCount) tabCount.textContent = Math.max(0, parseInt(tabCount.textContent, 10) - 1);
+
+    if (wasPending) {
+      const navBadge = document.querySelector('.cgt-pending-badge');
+      if (navBadge) {
+        const newCount = parseInt(navBadge.textContent, 10) - 1;
+        if (newCount <= 0) {
+          navBadge.remove();
+          const pendingItem = document.querySelector('.cgt-pending-item');
+          if (pendingItem) {
+            const li = pendingItem.closest('li');
+            const divider = li && li.nextElementSibling;
+            if (li) li.remove();
+            if (divider && divider.querySelector('.dropdown-divider')) divider.remove();
+          }
+        } else {
+          navBadge.textContent = newCount;
         }
-      } else {
-        navBadge.textContent = newCount;
       }
     }
 
+    if (card) {
+      const idx = cards.indexOf(card);
+      if (idx >= 0) cards.splice(idx, 1);
+      card.remove();
+      const dots = document.querySelectorAll('.cgt-match-nav__dot');
+      if (idx >= 0 && dots[idx]) dots[idx].remove();
+    }
+
     if (cards.length === 0) {
-      document.getElementById('candidate-stack').style.display = 'none';
-      document.getElementById('queue-status').textContent = 'All done.';
-      const nav = document.getElementById('match-nav');
-      if (nav) nav.style.display = 'none';
+      ['candidate-stack', 'match-nav', 'candidate-list'].forEach(i => {
+        const el = document.getElementById(i);
+        if (el) el.style.display = 'none';
+      });
+      const status = document.getElementById('queue-status');
+      status.textContent = 'All done.';
+      status.hidden = false;
       return;
     }
     show(Math.min(current, cards.length - 1));
   };
 
-  window.cgtMergeAllHigh = function() {
-    const highCards = cards.filter(c => parseFloat(c.dataset.score) >= 0.90 && c.dataset.status === 'pending');
-    highCards.forEach(card => {
-      const id = card.dataset.candidateId;
-      htmx.ajax('POST', '/tools/match-review/' + id + '/merge', { swap: 'none' })
-        .then(() => cgtCandidateDone(id));
-    });
-  };
-
-  // One-click dismiss (fired from the button's hx-on::after-request).
-  window.cgtCardDismiss = function(id) {
-    const card = document.getElementById('candidate-' + id);
-    if (card) card.dataset.status = 'dismissed';
-    cgtCandidateDone(id);
-  };
+  cgtSetView(localStorage.getItem(PREF_KEY) || 'card');
 
   if (cards.length > 0) {
     // Suppress transition on first render so cards snap into position.

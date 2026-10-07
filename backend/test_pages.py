@@ -3063,11 +3063,16 @@ def test_match_review_list_shows_what_confirm_produces(client, db_session):
     _match(chrome, "steam", "1", "Blazing Chrome", 0.8)
     db_session.commit()
 
+    def _listing(page):
+        return page[page.index('id="candidate-list"') : page.index('id="candidate-stack"')]
+
+    # Opens on the first tab with something in it; each badge is its count.
     body = client.get("/tools/match-review").text
-    high = body[body.index('data-tier="High"') : body.index('data-tier="Medium"')]
-    at = body.index('data-tier="Medium"')
-    medium = body[at : body.index("</details>", at)]
-    assert 'data-tier="High" open' in body and 'data-tier="Medium" open' not in body, "High opens; the rest wait"
+    for key, n in (("high", 2), ("medium", 1), ("low", 0), ("several", 0), ("dismissed", 0)):
+        assert f'id="match-tab-count-{key}">{n}<' in body, key
+    high = _listing(body)
+    assert "Castlevania Requiem" in high and "Hades" in high and "Blazing Chrome" not in high, "a tab holds only its own rows"
+    medium = _listing(client.get("/tools/match-review?tab=medium").text)
 
     # One slot per fact on line two; an empty slot shows nothing but keeps
     # its width, so the next one still lines up.
@@ -3081,11 +3086,66 @@ def test_match_review_list_shows_what_confirm_produces(client, db_session):
     assert "cgt-result-source--replaced" in high, "your differently-cased title is the one that goes"
     assert "(November 3, 2019)" in high
     assert medium.count("cgt-result-source--replaced") == 0, "same title: nothing is replaced"
+    assert "Not a match" in high and ">Dismiss<" not in high
 
-    assert "Approve all 2" in high, "two in High"
-    assert "Approve all" not in medium, "a group of one has nothing to approve all of"
+    # The footer is the same on every tab: Scan for matches always, bulk
+    # actions behind Bulk mode, and Clear only where there is something to clear.
+    assert "Scan for matches" in body and "Bulk mode" in body and "Confirm selected" in body
+    assert "Clear selected" not in body and "Show dismissed" not in body and "Merge all high-confidence" not in body
+
+
+def test_match_review_dismissed_tab_and_clear(client, db_session):
+    """Dismissed matches have a tab of their own, at full strength -- they used
+    to sit faded in with the live ones, and a faded card let the stack behind
+    it show through. Clear forgets the answer: the record is the only thing
+    stopping the scanner re-proposing the pair, so it goes, and the pair comes
+    back on the next scan. Only a dismissed match can be cleared."""
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+
+    def _pair(title, ext, status):
+        rows = []
+        for source in ("manual", "steam"):
+            game = models.Game(title=title)
+            db_session.add(game)
+            db_session.flush()
+            rel = models.GameRelease(
+                game_id=game.id,
+                platform="Steam" if source == "steam" else "PC",
+                source=source,
+                external_id=ext if source == "steam" else None,
+            )
+            db_session.add(rel)
+            db_session.flush()
+            entry = models.UserLibraryEntry(user_id=user.id, release_id=rel.id)
+            db_session.add(entry)
+            db_session.flush()
+            rows.append(entry)
+        cand = models.SyncMatchCandidate(
+            manual_entry_id=rows[0].id, platform_source="steam", external_id=ext, synced_title=title, match_score=0.95, status=status
+        )
+        db_session.add(cand)
+        db_session.flush()
+        return cand
+
+    gone = _pair("Sword of Asumi", "1", "dismissed")
+    live = _pair("Hades", "2", "pending")
+    db_session.commit()
+
+    body = client.get("/tools/match-review?tab=dismissed").text
     listing = body[body.index('id="candidate-list"') : body.index('id="candidate-stack"')]
-    assert "Not a match" in listing and ">Dismiss<" not in listing
+    assert 'id="match-tab-count-dismissed">1<' in body and 'id="match-tab-count-high">1<' in body
+    assert "Sword of Asumi" in listing and "Hades" not in listing
+    assert f'hx-post="/tools/match-review/{gone.id}/clear"' in listing and "Merge anyway" not in body
+    assert "cgt-match-row--skipped" not in body and "cgt-match-card--skipped" not in body, "nothing faded"
+    assert "Clear selected" in body and "Scan for matches" in body
+
+    gone_id, live_id = gone.id, live.id
+    assert client.post(f"/tools/match-review/{live_id}/clear").status_code == 404, "a pending match is not an answer to forget"
+    assert client.post(f"/tools/match-review/{gone_id}/clear").status_code == 204
+    db_session.expunge_all()
+    assert db_session.get(models.SyncMatchCandidate, gone_id) is None
+    assert db_session.get(models.SyncMatchCandidate, live_id) is not None
 
 
 def test_match_review_cards_and_the_psn_preview(client, db_session):
@@ -3145,13 +3205,18 @@ def test_match_review_cards_and_the_psn_preview(client, db_session):
     assert "cgt-result-card__hero" in card and ">High<" in card
     assert 'cgt-result-stat--hours">1.5 hrs<' in card and 'cgt-result-stat--completions">2 completions<' in card
     assert "Not a match" in stack and ">Dismiss<" not in stack
+    assert "Ghost of Tsushima" not in stack, "an entry with several candidates is the Several matches tab's"
 
     # Several candidates: one result each, in both views, with the ids each
-    # view's script looks for -- and no bulk checkbox on either.
-    listing = body[body.index('id="candidate-list"') : body.index('id="candidate-stack"')]
+    # view's script looks for. The list rows can be bulk-ticked -- one per
+    # entry, which the page's script enforces.
+    several = client.get("/tools/match-review?tab=several").text
+    assert 'id="match-tab-count-several">1<' in several
+    listing = several[several.index('id="candidate-list"') : several.index('id="candidate-stack"')]
+    stack = several[several.index('id="candidate-stack"') :]
     assert f'id="list-row-{a.id}"' in listing and f'id="list-row-{b.id}"' in listing
     assert f'id="option-{a.id}"' in stack and f'id="option-{b.id}"' in stack
-    assert f'data-id="{a.id}"' not in body, "a several-candidates row is not bulk-approvable"
+    assert f'data-id="{a.id}"' in listing and f'data-id="{a.id}"' not in stack
 
     preview = client.get(f"/tools/match-review/{single.id}/preview").text
     assert "Konami" in preview and "Action" in preview and "Two classics in one." in preview

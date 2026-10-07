@@ -160,13 +160,13 @@
             hx-post="/tools/match-review/{{ candidate.id }}/skip"
             hx-swap="none"
             hx-vals='{"note": "Not a match (from preview)"}'
-            hx-on::after-request="closeMatchReviewDetail(); cgtMultiDismiss && cgtMultiDismiss('{{ candidate.id }}'); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
+            hx-on::after-request="closeMatchReviewDetail(); if (event.detail.successful) cgtRowDone('{{ candidate.id }}');">
       Not a match
     </button>
     <button class="btn btn-primary btn-sm"
             hx-post="/tools/match-review/{{ candidate.id }}/merge"
             hx-swap="none"
-            hx-on::after-request="closeMatchReviewDetail(); cgtListRowDone && cgtListRowDone('{{ candidate.id }}'); cgtCandidateDone && cgtCandidateDone('{{ candidate.id }}');">
+            hx-on::after-request="closeMatchReviewDetail(); if (event.detail.successful) cgtRowDone('{{ candidate.id }}');">
       Confirm
     </button>
   </div>
