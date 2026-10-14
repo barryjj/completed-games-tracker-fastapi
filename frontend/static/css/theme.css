@@ -1979,13 +1979,12 @@ body:has(.cgt-sticky-actions) {
 .cgt-match-stage {
   /* Card width, and the one number that sets it -- centring derives from this
      via calc rather than restating it, which is how the old 560/-280 and
-     900/-450 pairs came to disagree. The VALUE is per-queue on purpose: the
-     import and PSN cards carry a hero and two columns and want 900, while match
-     review is three thin rows, where that much width just makes a wide band.
-     560 was too tight and truncated titles; this fits them. */
-  --cgt-card-w: 680px;
+     900/-450 pairs came to disagree. Match review now carries a hero like the
+     import and PSN cards, so it takes their 900 (#221); the height fits that
+     hero at the art's own shape (~420px) plus the result row and the footer. */
+  --cgt-card-w: 900px;
   position: relative;
-  height: 480px;
+  height: 600px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -2610,13 +2609,13 @@ body:has(.cgt-match-nav--sticky) {
 .cgt-result-source__facts { flex-shrink: 0; white-space: nowrap; color: var(--ctp-subtext0); }
 .cgt-result-source .tag-badge { font-size: .6rem; flex-shrink: 0; }
 /* The card: the same result stood up. The art that survives the merge as a
-   hero, fixed height because the stage is (480px), with the confidence on it;
-   the body is a result row without a thumbnail, so its tree guide hangs from
-   the body's own edge. Several candidates scroll inside the card rather than
-   off the stage. */
+   hero, at the grid art's own 460x215 so nothing is cropped, with the
+   confidence on it; the body is a result row without a thumbnail, so its tree
+   guide hangs from the body's own edge. Several candidates scroll inside the
+   card rather than off the stage. */
 .cgt-result-card__hero {
   position: relative;
-  height: 150px;
+  aspect-ratio: 460 / 215;
   background: var(--ctp-crust);
 }
 .cgt-result-card__hero img {
@@ -2649,6 +2648,43 @@ body:has(.cgt-match-nav--sticky) {
   font-size: .8rem;
 }
 .cgt-result-card__options { max-height: 360px; overflow-y: auto; }
+
+/* Confidence tabs: the colour lives in the tab now, not a stripe on the card.
+   The light themes wash the active tab (Nord: nord14/13/12 + surface1 @55%;
+   Latte: green/yellow/peach + surface1 @15%) and its badge a deeper wash
+   (the ink @45% over that fill). Mocha has no wash -- the active tab takes the
+   colour in its text and border, and its badge is an outline of it. Every
+   count badge has a border. Dismissed and Several matches stay neutral. */
+#match-tabs .cgt-conf-tab--high   { --cgt-conf: var(--ctp-green);  --cgt-conf-ink: var(--cgt-green-ink); }
+#match-tabs .cgt-conf-tab--medium { --cgt-conf: var(--ctp-yellow); --cgt-conf-ink: var(--cgt-yellow-ink); }
+#match-tabs .cgt-conf-tab--low    { --cgt-conf: var(--ctp-peach);  --cgt-conf-ink: var(--cgt-peach-ink); }
+#match-tabs .badge {
+  border: 1px solid color-mix(in srgb, var(--ctp-text) 55%, rgb(var(--bs-secondary-rgb)));
+}
+html[data-bs-theme="dark"] #match-tabs .badge {
+  border-color: color-mix(in srgb, var(--ctp-text) 45%, rgb(var(--bs-secondary-rgb)));
+}
+html[data-bs-theme="light"] #match-tabs { --cgt-conf-wash: 55%; }
+html[data-palette="latte"] #match-tabs { --cgt-conf-wash: 15%; }
+html[data-bs-theme="light"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active {
+  --cgt-conf-fill: color-mix(in srgb, var(--cgt-conf) var(--cgt-conf-wash), var(--ctp-surface1));
+  --bs-btn-active-bg: var(--cgt-conf-fill);
+  --bs-btn-active-border-color: var(--cgt-conf-ink);
+}
+html[data-bs-theme="light"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active .badge {
+  background-color: color-mix(in srgb, var(--cgt-conf-ink) 45%, var(--cgt-conf-fill)) !important;
+  border-color: var(--cgt-conf-ink);
+  color: var(--ctp-text);
+}
+html[data-bs-theme="dark"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active {
+  --bs-btn-active-border-color: var(--cgt-conf);
+  --bs-btn-active-color: var(--cgt-conf);
+}
+html[data-bs-theme="dark"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active .badge {
+  background-color: var(--ctp-base) !important;
+  border-color: var(--cgt-conf);
+  color: var(--cgt-conf);
+}
 
 /* Your title, when it differs: the merge keeps the synced one. */
 .cgt-result-source--replaced .cgt-result-source__title {

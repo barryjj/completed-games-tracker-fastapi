@@ -14,7 +14,7 @@
    faded -- dismissed matches have a tab of their own instead. #}
 <div class="btn-group btn-group-sm mb-3" role="group" id="match-tabs">
   {% for key, label, count in tabs %}
-  <button type="button" class="btn btn-surface{% if key == tab %} active{% endif %}"
+  <button type="button" class="btn btn-surface cgt-conf-tab cgt-conf-tab--{{ key }}{% if key == tab %} active{% endif %}"
           onclick="window.location = '/tools/match-review?tab={{ key }}'">
     {{ label }} <span class="badge bg-secondary ms-1" id="match-tab-count-{{ key }}">{{ count }}</span>
   </button>
@@ -177,8 +177,7 @@
      id="candidate-{{ fc.id }}"
      data-candidate-id="{{ fc.id }}"
      data-status="{{ fc.status }}"
-     data-score="{{ fc.match_score }}"
-     style="border-left: 3px solid {% if group.multi %}var(--ctp-peach){% else %}{{ first.color }}{% endif %};">
+     data-score="{{ fc.match_score }}">
 
   {% if group.multi %}
   <div class="cgt-match-card__header">
