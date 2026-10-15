@@ -13,7 +13,7 @@ from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import JSONResponse, Response
-from sqlalchemy import case, func, or_
+from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from . import models
@@ -24,13 +24,10 @@ from .pages_common import (
     _base_ctx,
     _build_detail_pane_visuals,
     _build_lib_query,
-    _extract_entitlement_meta,
-    _extract_igdb_meta,
-    _extract_psn_store_meta,
-    _extract_steam_meta,
     _get_all_platforms,
     _import_confirmed_count,
     _import_tab_counts,
+    _library_detail_context,
     _needs_metadata_refresh,
     _resolve_view_mode,
     get_web_user,
@@ -906,43 +903,6 @@ def library_entry_detail(
     if not entry:
         return Response(status_code=404)
 
-    game = entry.release.game
-
-    # Child DLC / collection members: other Game rows where parent_id == this
-    # game.id AND the current user owns at least one of their releases.
-    child_entries = []
-    if not game.is_dlc:  # only base games / collections show children
-        child_entries = (
-            db.query(models.UserLibraryEntry)
-            .options(
-                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
-                joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
-                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
-                selectinload(models.UserLibraryEntry.user_artwork),
-            )
-            .join(models.GameRelease)
-            .join(models.Game)
-            .filter(
-                models.UserLibraryEntry.user_id == current_user.id,
-                models.Game.parent_id == game.id,
-                # DLC is platform-specific. When a base Game row is shared across
-                # stores (e.g. Control Ultimate Edition has both a Steam and a
-                # PSN release), an unscoped parent_id lookup leaks the other
-                # store's DLC into this pane. Require a DLC child's release to
-                # match the source of the release being viewed. Collection
-                # members are not platform-bound, so leave those unscoped.
-                or_(
-                    models.Game.is_dlc.is_(False),
-                    models.GameRelease.source == entry.release.source,
-                ),
-            )
-            .order_by(models.Game.title)
-            .all()
-        )
-
-    visuals = _build_detail_pane_visuals(db, entry, game, entry.release)
-    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
-
     # Stale-only auto-refresh: if this is a Steam entry and its metadata is
     # either never-fetched or older than the staleness threshold, the template
     # will emit a hidden HTMX trigger that fires the refresh in the background
@@ -954,20 +914,9 @@ def library_entry_detail(
         request=request,
         name="partials/library_detail.html",
         context={
-            "entry": entry,
-            "game": game,
-            "release": entry.release,
-            "appdetails": appdetails,
-            "steam_meta": _extract_steam_meta(appdetails),
-            "igdb_meta": _extract_igdb_meta(entry.release),
-            "psn_meta": _extract_psn_store_meta(entry.release),
-            "entitlement_meta": _extract_entitlement_meta(entry),
-            "child_entries": child_entries,
-            "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
-            "current_user": current_user,
+            **_library_detail_context(db, entry, current_user),
             "needs_refresh": needs_refresh,
             "fresh_open": fresh_open,
-            **visuals,
         },
     )
 

@@ -641,6 +641,61 @@ def _build_detail_pane_visuals(db: Session, entry, game, release) -> dict:
     }
 
 
+def _library_detail_context(db: Session, entry, current_user) -> dict:
+    """The library detail pane's data for one entry. Shared by the pane itself
+    and match review's merge preview (#221), so the preview IS the pane rather
+    than a copy of it that falls behind every time the pane gains a field."""
+    game = entry.release.game
+
+    # Child DLC / collection members: other Game rows where parent_id == this
+    # game.id AND the current user owns at least one of their releases.
+    child_entries = []
+    if not game.is_dlc:  # only base games / collections show children
+        child_entries = (
+            db.query(models.UserLibraryEntry)
+            .options(
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
+                joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
+                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
+                selectinload(models.UserLibraryEntry.user_artwork),
+            )
+            .join(models.GameRelease)
+            .join(models.Game)
+            .filter(
+                models.UserLibraryEntry.user_id == current_user.id,
+                models.Game.parent_id == game.id,
+                # DLC is platform-specific. When a base Game row is shared across
+                # stores (e.g. Control Ultimate Edition has both a Steam and a
+                # PSN release), an unscoped parent_id lookup leaks the other
+                # store's DLC into this pane. Require a DLC child's release to
+                # match the source of the release being viewed. Collection
+                # members are not platform-bound, so leave those unscoped.
+                or_(
+                    models.Game.is_dlc.is_(False),
+                    models.GameRelease.source == entry.release.source,
+                ),
+            )
+            .order_by(models.Game.title)
+            .all()
+        )
+
+    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
+    return {
+        "entry": entry,
+        "game": game,
+        "release": entry.release,
+        "appdetails": appdetails,
+        "steam_meta": _extract_steam_meta(appdetails),
+        "igdb_meta": _extract_igdb_meta(entry.release),
+        "psn_meta": _extract_psn_store_meta(entry.release),
+        "entitlement_meta": _extract_entitlement_meta(entry),
+        "child_entries": child_entries,
+        "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
+        "current_user": current_user,
+        **_build_detail_pane_visuals(db, entry, game, entry.release),
+    }
+
+
 def _attach_parent_fallbacks(db: Session, entries, current_user=None) -> None:
     """For each entry whose game has a parent (DLC -> base game), look up the
     parent's Steam artwork and stamp `_fallback_v` / `_fallback_h` URLs onto

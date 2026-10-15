@@ -9,17 +9,14 @@ import json as _json
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from . import match_review, models
 from .models import get_db
 from .pages_common import (
     _base_ctx,
-    _build_detail_pane_visuals,
-    _extract_igdb_meta,
-    _extract_psn_store_meta,
-    _extract_steam_meta,
+    _library_detail_context,
     _resolve_view_mode,
     get_web_user,
     remembered_filters,
@@ -925,8 +922,10 @@ def match_review_preview(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Render a preview pane showing what the synced entry looks like, with
-    Confirm / Dismiss / Close actions pinned in the footer."""
+    """The library detail pane for the entry Confirm would produce: the synced
+    entry (whose title, art and playtime survive the merge) carrying both
+    sides' completions, with Cancel / Not a match / Confirm in the footer.
+    It renders the real pane, not a copy of it (#221)."""
     candidate = (
         db.query(models.SyncMatchCandidate)
         .join(models.UserLibraryEntry, models.SyncMatchCandidate.manual_entry_id == models.UserLibraryEntry.id)
@@ -967,34 +966,28 @@ def match_review_preview(
         .first()
     )
 
-    visuals = _build_detail_pane_visuals(db, synced_entry, synced_entry.release.game, synced_entry.release) if synced_entry else {}
-    appdetails = (synced_entry.release.raw_data or {}).get("appdetails") or {} if synced_entry else {}
+    if not synced_entry:
+        return HTMLResponse(
+            '<div class="offcanvas-body p-3"><p class="text-secondary small">Synced entry not found — it may have been removed.</p></div>'
+        )
+
     # The merged entry's completions: yours move onto the synced entry on
     # confirm, and the synced entry keeps any it already had. Showing only
     # yours under-reported the result.
-    together = list(manual_entry.completions if manual_entry else []) + list(synced_entry.completions if synced_entry else [])
-    completions = sorted(together, key=lambda c: c.completed_at, reverse=True)
+    together = list(manual_entry.completions if manual_entry else []) + list(synced_entry.completions)
 
     return templates.TemplateResponse(
         request=request,
-        name="partials/match_review_preview.html",
+        name="partials/library_detail.html",
         context={
-            "candidate": candidate,
-            "entry": synced_entry,
-            "game": synced_entry.release.game if synced_entry else None,
-            "release": synced_entry.release if synced_entry else None,
-            "appdetails": appdetails,
-            "steam_meta": _extract_steam_meta(appdetails),
-            "igdb_meta": _extract_igdb_meta(synced_entry.release) if synced_entry else {},
-            # The PS Store record, as the library detail pane reads it (#210):
-            # without it a PSN merge previewed as if its metadata vanished.
-            "psn_meta": _extract_psn_store_meta(synced_entry.release) if synced_entry else {},
-            "completions": completions,
-            "manual_entry": manual_entry,
-            "current_user": current_user,
+            **_library_detail_context(db, synced_entry, current_user),
+            "completions": sorted(together, key=lambda c: c.completed_at, reverse=True),
+            "merge_candidate": candidate,
+            # Links inside the pane (parent, DLC rows) open in this pane.
+            "pane_target": "#match-review-detail-content",
+            # A preview fires none of the pane's open-time side effects.
             "needs_refresh": False,
             "fresh_open": False,
-            **visuals,
         },
     )
 

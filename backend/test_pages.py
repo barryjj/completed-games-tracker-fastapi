@@ -3218,12 +3218,29 @@ def test_match_review_cards_and_the_psn_preview(client, db_session):
     assert f'id="option-{a.id}"' in stack and f'id="option-{b.id}"' in stack
     assert f'data-id="{a.id}"' in listing and f'data-id="{a.id}"' not in stack
 
+    # The preview is the real library detail pane for the merged entry, not a
+    # copy of it: the pane's own completion records and DLC list, with links
+    # that stay in match review's pane and match review's decision in the
+    # footer.
+    dlc = models.Game(title="Castlevania Requiem Theme", is_dlc=True, parent_id=psn.release.game.id)
+    db_session.add(dlc)
+    db_session.flush()
+    dlc_rel = models.GameRelease(game_id=dlc.id, platform="PS4", source="psn", external_id="CUSA1-DLC")
+    db_session.add(dlc_rel)
+    db_session.flush()
+    db_session.add(models.UserLibraryEntry(user_id=user.id, release_id=dlc_rel.id))
+    db_session.commit()
+
     preview = client.get(f"/tools/match-review/{single.id}/preview").text
     assert "Konami" in preview and "Action" in preview and "Two classics in one." in preview
     assert "Oct 26, 2018" in preview
     assert "store.playstation.com/en-us/product/UP0101-CUSA1_00-CVREQUIEM" in preview
-    assert "(2)" in preview, "both sides' completions"
-    assert "Not a match" in preview and ">\n      Dismiss" not in preview
+    assert "(2)" in preview and "cgt-completion-record" in preview, "both sides' completions, as the pane lists them"
+    assert "Castlevania Requiem Theme" in preview and 'hx-target="#match-review-detail-content"' in preview
+    assert 'hx-target="#library-detail-content"' not in preview
+    assert "as it will be after Confirm" in preview
+    assert f"/tools/match-review/{single.id}/merge" in preview and f"/tools/match-review/{single.id}/skip" in preview
+    assert "/tools/import/" not in preview and ">\n      Dismiss" not in preview
 
 
 def test_home_rows_share_one_hover_treatment():

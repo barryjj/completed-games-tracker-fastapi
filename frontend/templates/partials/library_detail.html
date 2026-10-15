@@ -142,6 +142,14 @@
     {% set _title_diff = candidate and candidate.raw_title and (candidate.raw_title | titles_differ(game.display_title)) %}
     {% set _plat_diff = candidate and candidate.platform_id and release.platform_id and candidate.platform_id != release.platform_id %}
     {% set _plat_alias = candidate and candidate.platform_id and release.platform_id and candidate.platform_id == release.platform_id and candidate.raw_platform and release.display_platform and candidate.raw_platform.strip().lower() != release.display_platform.strip().lower() %}
+    {% if merge_candidate %}
+    {# Match review's merge preview (#221): this pane, as the entry will be
+       after Confirm. #}
+    <div class="mb-3 p-2 rounded small" style="background:color-mix(in srgb,var(--ctp-peach) 12%,transparent); border-left:3px solid var(--ctp-peach);">
+      <strong style="color:var(--ctp-peach);">Preview</strong>
+      &mdash; this is the library entry as it will be after Confirm.
+    </div>
+    {% endif %}
     {# Badges row: platform + flags. #}
     <div class="mb-2 d-flex flex-wrap gap-1 align-items-center">
       <span class="tag-badge {{ release.platform_tag_class }}">{{ release.display_platform }}</span>
@@ -214,7 +222,7 @@
       <dd>
         {% if parent_entry_id %}<a href="#" class="cgt-detail-title__parent"
            hx-get="/library/entries/{{ parent_entry_id }}/detail"
-           hx-target="#library-detail-content"
+           hx-target="{{ pane_target or '#library-detail-content' }}"
            hx-swap="innerHTML">{{ parent_game.display_title }}</a>{% else
         %}<span class="cgt-detail-title__parent cgt-detail-title__parent--unlinked">{{ parent_game.display_title }}</span>{% endif %}
         {% if parent_appid %}
@@ -399,7 +407,7 @@
             {% set _thumb = child | grid_cover_url('grid_h') %}
             <tr class="cgt-detail-child-row"
                 hx-get="/library/entries/{{ child.id }}/detail"
-                hx-target="#library-detail-content"
+                hx-target="{{ pane_target or '#library-detail-content' }}"
                 hx-swap="innerHTML">
               <td class="cgt-list-thumb-cell">
                 {% if _thumb %}<img class="cgt-list-row-thumb" src="{{ _thumb }}" alt="" loading="lazy"
@@ -456,6 +464,26 @@
           onclick="['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); return false;">
     Cancel
   </button>
+  {% elif merge_candidate %}
+  {% set _mc = merge_candidate %}
+  <button class="btn btn-sm btn-surface" onclick="closeMatchReviewDetail()">Cancel</button>
+  {% if _mc.status == 'pending' %}
+  <div class="ms-auto d-flex gap-2">
+    <button class="btn btn-surface btn-sm"
+            hx-post="/tools/match-review/{{ _mc.id }}/skip"
+            hx-swap="none"
+            hx-vals='{"note": "Not a match (from preview)"}'
+            hx-on::after-request="closeMatchReviewDetail(); if (event.detail.successful) cgtRowDone('{{ _mc.id }}');">
+      Not a match
+    </button>
+    <button class="btn btn-primary btn-sm"
+            hx-post="/tools/match-review/{{ _mc.id }}/merge"
+            hx-swap="none"
+            hx-on::after-request="closeMatchReviewDetail(); if (event.detail.successful) cgtRowDone('{{ _mc.id }}');">
+      Confirm
+    </button>
+  </div>
+  {% endif %}
   {% else %}
   <div class="dropdown ms-auto">
     <button class="btn btn-surface btn-sm dropdown-toggle" type="button"
