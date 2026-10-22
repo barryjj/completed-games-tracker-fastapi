@@ -436,8 +436,8 @@ def test_steam_games_sync_chains_the_achievement_pass(db_session, monkeypatch):
 
     monkeypatch.setattr(integrations, "_run_sync_job", _fake_sync_job)
     asyncio.run(integrations._run_steam_followups(1))
-    assert ran == ["steam_achievements"]
-    assert [j.kind for j in jobs.active_jobs_for(1)] == ["steam_achievements"], "a job of its own, so its toast is its own"
+    assert ran == ["steam_achievements", "import_recheck"]
+    assert [j.kind for j in jobs.active_jobs_for(1)] == ["steam_achievements", "import_recheck"], "each its own job and toast"
     jobs.clear_all()
 
 

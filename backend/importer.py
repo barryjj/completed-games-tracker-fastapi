@@ -590,6 +590,30 @@ def _library_prefix_match_entry(db: Session, user_id: int, raw_title: str, platf
     return None
 
 
+def _library_suffix_match_entry(db: Session, user_id: int, raw_title: str, platform_id: int) -> models.UserLibraryEntry | None:
+    """The other half of `_library_prefix_match_entry`: a sheet that names a
+    game by its own title ("Little Hope") where the library carries the series
+    in front ("The Dark Pictures Anthology: Little Hope") (#226). The library
+    title's subtitle must equal the sheet title exactly, and exactly one entry
+    may qualify -- two series that both end in ": Origins" are a tie a human
+    must break, not a guess."""
+    needle = _normalize_title(raw_title)
+    if not needle:
+        return None
+    winners: dict[int, models.UserLibraryEntry] = {}
+    for entry in _search_pool(db, user_id, platform_id, raw_title, base_only=True):
+        game = entry.release.game if entry.release and entry.release.game else None
+        if not game:
+            continue
+        for cand_title in (game.title, game.display_name):
+            subtitle = _colon_remainder(cand_title) if cand_title else None
+            if subtitle and _normalize_title(subtitle) == needle:
+                winners[entry.id] = entry
+    if len(winners) == 1:
+        return next(iter(winners.values()))
+    return None
+
+
 # Titles containing non-ASCII (ABZÛ, Pokémon...) are invisible to the SQL
 # pool search — SQLite LIKE only case-folds ASCII, so '%abzu%' never matches
 # ABZÛ and Python-side normalization never gets a candidate to compare.
@@ -790,6 +814,9 @@ def _best_matching_entry(
       2. `_library_prefix_match_entry` — spreadsheet title has no subtitle
          ("Sekiro") but a library base game does ("Sekiro: Shadows Die
          Twice"); split the library title instead.
+         `_library_suffix_match_entry` — the same, from the other end: the
+         sheet names the game ("Little Hope"), the library prefixes its
+         series ("The Dark Pictures Anthology: Little Hope").
       3. `_pool_fallback_entry` — nothing structural confirmed anything;
          accept a single unambiguous candidate from the narrowed pool.
       4. `_collection_match_entry` — only tried if 0-3 all found nothing
@@ -804,6 +831,7 @@ def _best_matching_entry(
         or _fuzzy_match_entry(db, user_id, raw_title, platform_id)
         or _prefix_match_entry(db, user_id, raw_title, platform_id)
         or _library_prefix_match_entry(db, user_id, raw_title, platform_id)
+        or _library_suffix_match_entry(db, user_id, raw_title, platform_id)
         or _pool_fallback_entry(db, user_id, raw_title, platform_id)
     )
     if direct:
@@ -813,31 +841,62 @@ def _best_matching_entry(
     return None
 
 
-def rematch_pending_candidates(db: Session, user_id: int) -> int:
+def rematch_pending_candidates(db: Session, user_id: int, *, unmatched_only: bool = False, on_progress=None) -> int:
     """Re-run title matching against the current library for every pending
     candidate, without re-parsing the spreadsheet. Useful after a sync adds
-    a game that was previously unmatched. Returns the number of candidates
-    whose match/action changed."""
-    candidates = (
-        db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "pending").all()
-    )
+    a game that was previously unmatched.
+
+    Also drops the rows the queue should no longer offer: ones already logged
+    in the library within a day, and ones already decided under the same title.
+    A candidate left with no rows is deleted (#226). Returns the number of
+    candidates changed -- re-pointed, pruned or deleted."""
+    query = db.query(models.ImportCandidate).filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "pending")
+    if unmatched_only:
+        query = query.filter(models.ImportCandidate.library_entry_id.is_(None))
+    candidates = query.all()
     updated = 0
-    for candidate in candidates:
-        if not candidate.platform_id:
-            continue
-        candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
-        best_entry = _best_matching_entry(db, user_id, candidate.raw_title, candidate.platform_id, candidate_collection)
-        if best_entry:
-            if candidate.library_entry_id != best_entry.id or candidate.proposed_action != "add_to_existing":
-                candidate.library_entry_id = best_entry.id
-                candidate.proposed_action = "add_to_existing"
-                updated += 1
-        elif candidate.proposed_action != "create_new":
-            candidate.library_entry_id = None
-            candidate.proposed_action = "create_new"
-            updated += 1
+    for done, candidate in enumerate(candidates, 1):
+        if on_progress:
+            on_progress(done, len(candidates), candidate.raw_title)
+        changed = False
+        if candidate.platform_id:
+            candidate_collection = next((r.raw_collection for r in candidate.rows if r.raw_collection), None)
+            best_entry = _best_matching_entry(db, user_id, candidate.raw_title, candidate.platform_id, candidate_collection)
+            if best_entry:
+                if candidate.library_entry_id != best_entry.id or candidate.proposed_action != "add_to_existing":
+                    candidate.library_entry_id = best_entry.id
+                    candidate.proposed_action = "add_to_existing"
+                    changed = True
+            elif candidate.proposed_action != "create_new":
+                candidate.library_entry_id = None
+                candidate.proposed_action = "create_new"
+                changed = True
+
+        decided = _decided_row_keys(db, user_id, candidate.raw_title, candidate.platform_id)
+        stale = [
+            r
+            for r in candidate.rows
+            if (r.completed_at, r.playthroughs, r.raw_notes) in decided or _already_logged(db, candidate.library_entry_id, r.completed_at)
+        ]
+        if stale:
+            changed = True
+            if len(stale) == len(candidate.rows):
+                _delete_candidate(db, candidate)
+            else:
+                for r in stale:
+                    db.delete(r)
+        updated += changed
     db.commit()
     return updated
+
+
+def recheck_after_sync(db: Session, user: models.User, on_progress=None) -> dict:
+    """Chained after every Steam and PSN sync (#226). A sync adds games, so a
+    pending row that matched nothing may match one now -- Castlevania:
+    Belmont's Curse was imported a minute before the sync that added it, and
+    sat in Create new. A sync adds no completions and can only give an
+    unmatched candidate a match, so only the unmatched are re-checked."""
+    return {"updated": rematch_pending_candidates(db, user.id, unmatched_only=True, on_progress=on_progress)}
 
 
 def backfill_completed_at_precision(db: Session, user_id: int) -> tuple[int, int]:
@@ -1288,6 +1347,97 @@ def parse_xlsx(file_bytes: bytes, db: Session, user_id: int) -> ParseResult:
 
 _BATCH_SIZE = 25
 
+# A completion this many days either side of a sheet row's date is the same
+# playthrough, logged once in the app and once in the sheet (#226).
+ALREADY_LOGGED_DAYS = 1
+
+
+def _candidates_for(db: Session, user_id: int, raw_title: str, platform_id: int | None, statuses: tuple[str, ...]):
+    """Every candidate this user has for one sheet title on one platform, in
+    the given statuses."""
+    column = models.ImportCandidate.platform_id
+    plat_filter = column == platform_id if platform_id is not None else column.is_(None)
+    return (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.raw_title == raw_title,
+            plat_filter,
+            models.ImportCandidate.status.in_(statuses),
+        )
+        .all()
+    )
+
+
+def _decided_row_keys(db: Session, user_id: int, raw_title: str, platform_id: int | None) -> set[tuple]:
+    """The rows already decided for this title: confirmed ones (they are in the
+    library) and dismissed ones (you said no to exactly this row). All of them,
+    not one candidate's -- several can accumulate for a title across uploads.
+
+    A row is its (date, clears, notes), so a dismissed row comes back as soon
+    as any of the three changes in the sheet: a placeholder dismissed with no
+    date returns once it has one (#226)."""
+    return {
+        (r.completed_at, r.playthroughs, r.raw_notes)
+        for c in _candidates_for(db, user_id, raw_title, platform_id, ("confirmed", "dismissed"))
+        for r in c.rows
+    }
+
+
+def _already_logged(db: Session, entry_id: int | None, completed_at: datetime.date | None) -> bool:
+    """True if the library entry already has a completion within a day of this
+    date. Then the sheet row is that completion logged twice -- once in the app,
+    once in the sheet, the two often a day apart -- whatever their clears and
+    notes say, and the library's copy stands (#226).
+
+    Checked against the library itself rather than import history, because
+    history only knows what an import put there: a completion logged by hand,
+    or a confirmed row whose columns a re-upload read differently, looked new.
+    Nothing is written to mark the row handled -- the completion is the record,
+    and a "confirmed" candidate pointing at it would hand Reopen a completion
+    it never created to delete."""
+    if not entry_id or not completed_at:
+        return False
+    window = datetime.timedelta(days=ALREADY_LOGGED_DAYS)
+    return (
+        db.query(models.Completion.id)
+        .filter(
+            models.Completion.library_entry_id == entry_id,
+            models.Completion.completed_at.between(completed_at - window, completed_at + window),
+        )
+        .first()
+        is not None
+    )
+
+
+def _add_rows(db: Session, candidate_id: int, rows: list[dict]) -> None:
+    for row in rows:
+        db.add(
+            models.ImportRow(
+                candidate_id=candidate_id,
+                raw_title=row["raw_title"],
+                raw_platform=row["raw_platform"],
+                raw_date=row["raw_date"],
+                raw_playthroughs=row["raw_playthroughs"],
+                raw_notes=row["raw_notes"],
+                raw_collection=row["raw_collection"],
+                source_tab=row["source_tab"],
+                row_number=row["row_number"],
+                completed_at=row["completed_at"],
+                completed_at_precision=row["completed_at_precision"],
+                playthroughs=row["playthroughs"],
+            )
+        )
+
+
+def _delete_candidate(db: Session, candidate: models.ImportCandidate) -> None:
+    """A real delete of a candidate and its rows. The rows go by query (the
+    relationship does not cascade deletes), then the loaded collection is
+    expired so deleting the parent does not try to null their foreign key."""
+    db.query(models.ImportRow).filter(models.ImportRow.candidate_id == candidate.id).delete(synchronize_session=False)
+    db.expire(candidate, ["rows"])
+    db.delete(candidate)
+
 
 def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress=None) -> int:
     """Write parsed groups to ImportCandidate + ImportRow rows in small batches. Returns candidate count."""
@@ -1295,55 +1445,45 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
     count = 0
     skipped = 0
     for group in result.candidates:
-        # Skip groups that already exist (pending or confirmed) from a previous upload
-        plat_filter = (
-            models.ImportCandidate.platform_id == group["platform_id"]
-            if group["platform_id"] is not None
-            else models.ImportCandidate.platform_id.is_(None)
-        )
-        # Skip if already staged (pending) — don't create a duplicate in the same session
-        already_pending = (
-            db.query(models.ImportCandidate)
-            .filter(
-                models.ImportCandidate.user_id == user_id,
-                models.ImportCandidate.raw_title == group["raw_title"],
-                plat_filter,
-                models.ImportCandidate.status == "pending",
-            )
-            .first()
-        )
-        if already_pending:
+        # Rows already decided (confirmed or dismissed) never come back as-is.
+        decided = _decided_row_keys(db, user_id, group["raw_title"], group["platform_id"])
+        rows = [r for r in group["rows"] if (r["completed_at"], r["playthroughs"], r["raw_notes"]) not in decided]
+
+        # A title still pending from an earlier upload is refreshed from the
+        # sheet rather than skipped, so a date or note fixed in the sheet
+        # reaches the queue (#226). It keeps the entry it points at -- that may
+        # have been linked by hand.
+        pending = next(iter(_candidates_for(db, user_id, group["raw_title"], group["platform_id"], ("pending",))), None)
+        if pending is None and not rows:
             skipped += 1
             continue
-
-        # Filter out individual rows already confirmed in a previous import.
-        # Checks ALL confirmed candidates for this title+platform, not just one —
-        # multiple confirmed candidates can accumulate for the same title across
-        # separate uploads over time (e.g. DLC rows added in later sessions).
-        confirmed_row_keys: set[tuple] = set()
-        confirmed_candidates = (
-            db.query(models.ImportCandidate)
-            .filter(
-                models.ImportCandidate.user_id == user_id,
-                models.ImportCandidate.raw_title == group["raw_title"],
-                plat_filter,
-                models.ImportCandidate.status == "confirmed",
-            )
-            .all()
-        )
-        for confirmed_candidate in confirmed_candidates:
-            for r in confirmed_candidate.rows:
-                confirmed_row_keys.add((r.completed_at, r.playthroughs, r.raw_notes))
-
-        new_rows = [r for r in group["rows"] if (r["completed_at"], r["playthroughs"], r["raw_notes"]) not in confirmed_row_keys]
-        if not new_rows:
-            skipped += 1
-            continue
-        group["rows"] = new_rows
 
         # Look for an existing library entry matching title + platform
         group_collection = next((r["raw_collection"] for r in group["rows"] if r.get("raw_collection")), None)
-        existing_entry = _best_matching_entry(db, user_id, group["raw_title"], group["platform_id"], group_collection)
+        if pending is not None and pending.library_entry_id:
+            existing_entry = pending.library_entry
+        else:
+            existing_entry = _best_matching_entry(db, user_id, group["raw_title"], group["platform_id"], group_collection)
+        rows = [r for r in rows if not _already_logged(db, existing_entry.id if existing_entry else None, r["completed_at"])]
+
+        if pending is not None:
+            if rows:
+                db.query(models.ImportRow).filter(models.ImportRow.candidate_id == pending.id).delete(synchronize_session=False)
+                db.expire(pending, ["rows"])
+                _add_rows(db, pending.id, rows)
+                if existing_entry and not pending.library_entry_id:
+                    pending.library_entry_id = existing_entry.id
+                    pending.proposed_action = "add_to_existing"
+            else:
+                # Everything it held is in the library now, or decided.
+                _delete_candidate(db, pending)
+            db.flush()
+            skipped += 1
+            continue
+        if not rows:
+            skipped += 1
+            continue
+        group["rows"] = rows
 
         if existing_entry:
             action = "add_to_existing"
@@ -1364,23 +1504,7 @@ def write_candidates(result: ParseResult, db: Session, user_id: int, on_progress
         db.add(candidate)
         db.flush()
 
-        for row in group["rows"]:
-            db.add(
-                models.ImportRow(
-                    candidate_id=candidate.id,
-                    raw_title=row["raw_title"],
-                    raw_platform=row["raw_platform"],
-                    raw_date=row["raw_date"],
-                    raw_playthroughs=row["raw_playthroughs"],
-                    raw_notes=row["raw_notes"],
-                    raw_collection=row["raw_collection"],
-                    source_tab=row["source_tab"],
-                    row_number=row["row_number"],
-                    completed_at=row["completed_at"],
-                    completed_at_precision=row["completed_at_precision"],
-                    playthroughs=row["playthroughs"],
-                )
-            )
+        _add_rows(db, candidate.id, group["rows"])
         count += 1
         if count % _BATCH_SIZE == 0:
             db.commit()

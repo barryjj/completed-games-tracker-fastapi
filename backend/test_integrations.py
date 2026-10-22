@@ -283,12 +283,12 @@ def test_sync_kickoff_returns_started_toast_and_creates_job(client, db_session):
     assert b"started" in r.content.lower()
 
     # A job for this user should exist (may already have completed in the
-    # background), and once the games sync has run, the achievement pass it
-    # chains is a job of its own (#136).
+    # background), and once the games sync has run, the achievement pass and
+    # the import queue re-check it chains are jobs of their own (#136, #226).
     user = db_session.query(models.User).first()
     all_jobs = [j for j in jobs._jobs.values() if j.user_id == user.id]
     assert [j.kind for j in all_jobs][:1] == ["steam_sync_games"]
-    assert {j.kind for j in all_jobs} <= {"steam_sync_games", "steam_achievements"}
+    assert {j.kind for j in all_jobs} <= {"steam_sync_games", "steam_achievements", "import_recheck"}
 
 
 def test_sync_kickoff_rejects_concurrent_run(client, db_session):

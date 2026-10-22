@@ -121,10 +121,17 @@
     <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
             hx-post="/tools/import/dismiss-bulk"
             hx-vals='js:{ids: importCheckedIds()}'
-            hx-confirm="Dismiss the selected candidates? They can be re-detected by a future re-upload after Clear dismissed."
+            hx-confirm="Dismiss the selected candidates? They stay dismissed until their date, clears or notes change in your sheet."
             hx-swap="none"
             hx-disabled-elt="this"
             hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Dismiss selected</button>
+    <button type="button" id="import-bulk-delete" class="btn btn-sm btn-surface" disabled
+            hx-post="/tools/import/delete-bulk"
+            hx-vals='js:{ids: importCheckedIds()}'
+            hx-confirm="Delete the selected candidates? The next upload will offer them again."
+            hx-swap="none"
+            hx-disabled-elt="this"
+            hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Delete selected</button>
   </div>
   {# Page-level operations — used rarely, so they live down here instead of
      hovering in the header. #}
@@ -213,7 +220,7 @@ window.importBulkSync = function() {
   var n = document.querySelectorAll('#import-table .import-bulk-check:checked').length;
   var count = document.getElementById('import-bulk-count');
   if (count) count.textContent = n;
-  ['import-bulk-confirm', 'import-bulk-dismiss'].forEach(function(id) {
+  ['import-bulk-confirm', 'import-bulk-dismiss', 'import-bulk-delete'].forEach(function(id) {
     var btn = document.getElementById(id);
     if (btn) btn.disabled = n === 0;
   });

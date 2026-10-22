@@ -121,6 +121,11 @@
                hx-post="/tools/import/{{ c.id }}/dismiss"
                hx-target="#import-row-{{ c.id }}"
                hx-swap="outerHTML">Dismiss</a></li>
+        <li><a class="dropdown-item" href="#"
+               hx-post="/tools/import/{{ c.id }}/delete"
+               hx-confirm="Delete this candidate? The next upload will offer it again."
+               hx-target="#import-row-{{ c.id }}"
+               hx-swap="outerHTML">Delete</a></li>
       </ul>
     </div>
     {% elif c.status == "confirmed" %}

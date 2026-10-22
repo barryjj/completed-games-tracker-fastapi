@@ -12,7 +12,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
 from . import igdb as _igdb
-from . import jobs, models, psn, psn_store, steam, steam_achievements, worker_state
+from . import importer, jobs, models, psn, psn_store, steam, steam_achievements, worker_state
 from . import match_review as _match_review
 from . import steamgriddb as sgdb
 from .models import SessionLocal, get_db
@@ -632,6 +632,18 @@ _STEAM_KINDS: dict[str, dict] = {
         "label": "Store metadata",
         "job_label": "PSN store metadata",
     },
+    # Chained after every Steam and PSN sync, no button of its own (import
+    # review has Recheck matches): a sync adds games a pending import row may
+    # have been waiting for (#226).
+    "import_recheck": {
+        "fn": "recheck_after_sync",
+        "module": "importer",
+        "no_credentials": True,
+        "progress": True,
+        "started": "Re-checking the import queue against your library — you'll see a toast when it finishes.",
+        "label": "Import re-check",
+        "job_label": "Import queue re-check",
+    },
 }
 
 
@@ -680,6 +692,12 @@ def _format_sync_result(db: Session, user: models.User, kind: str, result: dict)
         return "\n".join(lines)
     if kind == "psn_review_art":
         return f"PSN review artwork complete\n{result['filled']:,} filled · {result['no_candidate']:,} not found"
+    if kind == "import_recheck":
+        updated = result["updated"]
+        if not updated:
+            return "Import queue re-checked\nNothing new matched"
+        rows = f"{updated:,} pending row{'' if updated == 1 else 's'}"
+        return f"Import queue re-checked\n{rows} matched to your library — open Tools → Import"
     if kind == "steam_achievements":
         if result.get("skipped_no_credentials"):
             return "Steam achievements skipped\nSave a Steam API key and sign in on the Steam configure page."
@@ -811,6 +829,9 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
     # pass self-gates on Sony's last-earned stamp so a quiet sync costs no
     # calls. After the entry-writing steps so a just-added game is covered.
     steps.append(("psn_trophies", "Trophies"))
+    # After the store retitle, so a pending import row can match the
+    # corrected title (#226).
+    steps.append(("import_recheck", "Import re-check"))
     if has_sgdb_key:
         # Scoped to PSN entries: re-scanning all 18k+ never finishes and buries
         # the covers actually being waited on.
@@ -833,17 +854,24 @@ async def _run_psn_followups(user_id: int, *, added: bool, needs_review: bool, h
 
 
 # Where a job kind's "module" points; anything unlisted is steam.
-_JOB_MODULES = {"psn": psn, "psn_store": psn_store, "steamgriddb": sgdb, "steam_achievements": steam_achievements}
+_JOB_MODULES = {
+    "psn": psn,
+    "psn_store": psn_store,
+    "steamgriddb": sgdb,
+    "steam_achievements": steam_achievements,
+    "importer": importer,
+}
 
 
 async def _run_steam_followups(user_id: int) -> None:
-    """What a Steam games sync chains: the achievement pass (#136). One
-    step today; the same shape as _run_psn_followups so more can join."""
-    job = jobs.create(user_id=user_id, kind="steam_achievements", label="Achievements")
-    try:
-        await _run_sync_job(job.id, user_id, "steam_achievements")
-    except Exception:
-        _logger.exception("Steam follow-up steam_achievements failed for user %s", user_id)
+    """What a Steam games sync chains: the achievement pass (#136), then the
+    import queue re-check (#226). The same shape as _run_psn_followups."""
+    for kind, label in (("steam_achievements", "Achievements"), ("import_recheck", "Import re-check")):
+        job = jobs.create(user_id=user_id, kind=kind, label=label)
+        try:
+            await _run_sync_job(job.id, user_id, kind)
+        except Exception:
+            _logger.exception("Steam follow-up %s failed for user %s", kind, user_id)
 
 
 async def _run_sync_job(job_id: str, user_id: int, kind: str) -> None:

@@ -4200,3 +4200,201 @@ def test_tools_badge_means_something_new_since_you_looked(client, db_session):
     body = client.get("/library").text
     assert badge(body), "an arrival after the look brings it back"
     assert "Import review: 1 new, 2 pending" in body, "one new, two pending -- the old one is not new again"
+
+
+# --- import dedupe (#226) ---
+
+
+def _import_setup(client, db_session):
+    """A signed-in user, a Steam platform, and helpers to add library entries
+    with completions and to hand write_candidates a parsed sheet."""
+    import datetime as dt
+
+    from backend import importer
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    steam = models.Platform(name="Steam", display_name="Steam", is_custom=True)
+    db_session.add(steam)
+    db_session.commit()
+
+    def entry(title, *completions):
+        game = models.Game(title=title)
+        db_session.add(game)
+        db_session.flush()
+        rel = models.GameRelease(game_id=game.id, source="steam", platform="Steam", platform_id=steam.id)
+        db_session.add(rel)
+        db_session.flush()
+        e = models.UserLibraryEntry(user_id=user.id, release_id=rel.id, import_source="steam_import")
+        db_session.add(e)
+        db_session.flush()
+        for day, clears, notes in completions:
+            db_session.add(models.Completion(user_id=user.id, library_entry_id=e.id, completed_at=day, playthroughs=clears, notes=notes))
+        db_session.commit()
+        return e
+
+    def row(title, day, clears=None, notes=None):
+        return {
+            "raw_title": title,
+            "raw_platform": "Steam",
+            "raw_date": day.strftime("%-m/%-d/%Y") if day else None,
+            "raw_playthroughs": clears,
+            "raw_notes": notes,
+            "raw_collection": None,
+            "source_tab": "Completed Games - 2026",
+            "row_number": None,
+            "completed_at": day,
+            "completed_at_precision": "day" if day else None,
+            "playthroughs": clears,
+        }
+
+    def upload(title, *rows):
+        result = importer.ParseResult()
+        result.candidates = [{"raw_title": title, "raw_platform": "Steam", "platform_id": steam.id, "rows": list(rows)}]
+        return importer.write_candidates(result, db_session, user.id)
+
+    def candidates(title):
+        db_session.expire_all()
+        return db_session.query(models.ImportCandidate).filter_by(user_id=user.id, raw_title=title).all()
+
+    return dt, importer, user, steam, entry, row, upload, candidates
+
+
+def test_import_skips_rows_already_logged_within_a_day(client, db_session):
+    """A sheet row is the completion the library already has when that game has
+    one within a day of it, whatever the clears and notes say: Frank Stone was
+    logged in the app with 3 clears, the sheet says 2; Little Hope is the 18th
+    in the app and the 19th in the sheet. Neither may come back as a candidate
+    -- only a genuinely new playthrough does."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    entry("The Casting of Frank Stone", (dt.date(2026, 7, 3), "3", "100%"))
+    entry("Little Hope", (dt.date(2026, 7, 18), "4", "100%"))
+
+    assert upload("The Casting of Frank Stone", row("The Casting of Frank Stone", dt.date(2026, 7, 3), "2", "100%")) == 0
+    assert upload("Little Hope", row("Little Hope", dt.date(2026, 7, 19), "4", "100%")) == 0
+    assert candidates("The Casting of Frank Stone") == [] and candidates("Little Hope") == []
+
+    # Two days out is a different playthrough.
+    upload(
+        "The Casting of Frank Stone",
+        row("The Casting of Frank Stone", dt.date(2026, 7, 3)),
+        row("The Casting of Frank Stone", dt.date(2026, 7, 6), "1"),
+    )
+    (cand,) = candidates("The Casting of Frank Stone")
+    assert [r.completed_at for r in cand.rows] == [dt.date(2026, 7, 6)]
+    assert db_session.query(models.Completion).count() == 2, "nothing written to the library"
+
+
+def test_dismissed_row_stays_dismissed_until_it_changes(client, db_session):
+    """Tokon: a placeholder row with no date, dismissed. Re-uploads leave it
+    dismissed; once the sheet gives it a date it is a different row and comes
+    back. Notes and clears changing bring it back the same way."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    placeholder = row("Marvel Tokon: Fighting Souls", None, "1", "1 of 4 campaigns")
+    upload("Marvel Tokon: Fighting Souls", placeholder)
+    (cand,) = candidates("Marvel Tokon: Fighting Souls")
+    cand.status = "dismissed"
+    db_session.commit()
+
+    assert upload("Marvel Tokon: Fighting Souls", placeholder) == 0
+    assert [c.status for c in candidates("Marvel Tokon: Fighting Souls")] == ["dismissed"]
+
+    assert upload("Marvel Tokon: Fighting Souls", row("Marvel Tokon: Fighting Souls", None, "1", "2 of 4 campaigns")) == 1
+    pending = [c for c in candidates("Marvel Tokon: Fighting Souls") if c.status == "pending"]
+    assert len(pending) == 1 and pending[0].rows[0].raw_notes == "2 of 4 campaigns"
+
+
+def test_reupload_refreshes_a_pending_candidate_and_drops_one_now_logged(client, db_session):
+    """A title still pending is refreshed from the sheet, not skipped, so a
+    fix made in the sheet reaches the queue -- one candidate, new rows. And
+    Terminator's case: pending since a CSV run that read no clears or notes,
+    for a completion the library already has. It goes, on the next upload or
+    on Recheck matches."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    entry("Islets")
+    upload("Islets", row("Islets", dt.date(2026, 1, 14)))
+    (cand,) = candidates("Islets")
+    upload("Islets", row("Islets", dt.date(2026, 1, 14), "1", "100%"))
+    (again,) = candidates("Islets")
+    assert again.id == cand.id and [(r.playthroughs, r.raw_notes) for r in again.rows] == [("1", "100%")]
+
+    t2 = entry("Terminator 2D: NO FATE")
+    upload("Terminator 2D: NO FATE", row("Terminator 2D: NO FATE", dt.date(2026, 1, 1)))
+    assert len(candidates("Terminator 2D: NO FATE")) == 1
+    db_session.add(
+        models.Completion(user_id=user.id, library_entry_id=t2.id, completed_at=dt.date(2026, 1, 1), playthroughs="2", notes="100%")
+    )
+    db_session.commit()
+    upload("Terminator 2D: NO FATE", row("Terminator 2D: NO FATE", dt.date(2026, 1, 1)))
+    assert candidates("Terminator 2D: NO FATE") == []
+
+    upload("Islets", row("Islets", dt.date(2026, 1, 14), "1", "100%"))
+    db_session.add(models.Completion(user_id=user.id, library_entry_id=again.library_entry_id, completed_at=dt.date(2026, 1, 14)))
+    db_session.commit()
+    assert importer.rematch_pending_candidates(db_session, user.id) == 1
+    assert candidates("Islets") == []
+
+
+def test_a_series_title_in_the_library_matches_the_bare_name_in_the_sheet(client, db_session):
+    """ "Little Hope" in the sheet is "The Dark Pictures Anthology: Little Hope"
+    in the library -- it used to land in Create new and would have made a
+    duplicate game. Two series sharing a subtitle are a tie and match nothing."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    hope = entry("The Dark Pictures Anthology: Little Hope")
+    hit = importer._best_matching_entry(db_session, user.id, "Little Hope", steam.id)
+    assert hit is not None and hit.id == hope.id
+
+    entry("Assassin's Creed: Origins")
+    entry("Mortal Shell: Origins")
+    assert importer._best_matching_entry(db_session, user.id, "Origins", steam.id) is None
+
+
+def test_delete_removes_a_candidate_so_the_next_upload_offers_it_again(client, db_session):
+    """Delete forgets the row entirely, unlike Dismiss. Confirmed candidates are
+    history and cannot be deleted."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    hx = {"HX-Request": "true"}
+    upload("Pragmata", row("Pragmata", dt.date(2026, 5, 24), "1", "100%"))
+    (cand,) = candidates("Pragmata")
+    cid = cand.id
+
+    assert client.post(f"/tools/import/{cid}/delete", headers=hx).status_code == 200
+    assert candidates("Pragmata") == []
+    assert db_session.query(models.ImportRow).filter_by(candidate_id=cid).count() == 0
+    assert upload("Pragmata", row("Pragmata", dt.date(2026, 5, 24), "1", "100%")) == 1
+
+    (cand,) = candidates("Pragmata")
+    cand.status = "confirmed"
+    db_session.commit()
+    assert client.post(f"/tools/import/{cand.id}/delete", headers=hx).status_code == 404
+
+    upload("Hell is Us", row("Hell is Us", dt.date(2026, 6, 20)))
+    upload("The Exit 8", row("The Exit 8", dt.date(2026, 6, 25)))
+    ids = [c.id for c in candidates("Hell is Us") + candidates("The Exit 8")]
+    r = client.post("/tools/import/delete-bulk", data={"ids": ",".join(map(str, ids))}, headers=hx)
+    assert "Deleted 2 candidates" in r.text
+    assert candidates("Hell is Us") == [] and candidates("The Exit 8") == []
+    assert [c.status for c in candidates("Pragmata")] == ["confirmed"]
+
+
+def test_a_sync_rechecks_the_import_queue(client, db_session):
+    """Castlevania: Belmont's Curse was imported a minute before the Steam sync
+    that added it and sat in Create new. The re-check a sync chains points it
+    at the new entry -- and a row the library has since logged drops out."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    upload("Castlevania: Belmont's Curse", row("Castlevania: Belmont's Curse", dt.date(2026, 10, 18), "1", "Bad Ending"))
+    upload("Clive Barker's Hellraiser: Revivial", row("Clive Barker's Hellraiser: Revivial", dt.date(2026, 10, 13), "1"))
+    (cv,) = candidates("Castlevania: Belmont's Curse")
+    assert cv.proposed_action == "create_new"
+
+    belmont = entry("Castlevania: Belmont's Curse")
+    entry("Clive Barker's Hellraiser: Revivial", (dt.date(2026, 10, 13), "1", None))
+    assert importer.recheck_after_sync(db_session, user) == {"updated": 2}
+    (cv,) = candidates("Castlevania: Belmont's Curse")
+    assert cv.library_entry_id == belmont.id and cv.proposed_action == "add_to_existing"
+    assert candidates("Clive Barker's Hellraiser: Revivial") == []
+
+    from backend.integrations import _STEAM_KINDS, _format_sync_result
+
+    assert _STEAM_KINDS["import_recheck"]["fn"] == "recheck_after_sync"
+    assert "1 pending row matched" in _format_sync_result(db_session, user, "import_recheck", {"updated": 1})

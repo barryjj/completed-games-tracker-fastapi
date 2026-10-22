@@ -1429,7 +1429,15 @@ def test_psn_sync_followups_run_in_sequence_store_metadata_first(db_session, mon
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
-    assert ran == ["psn_store_refresh", "psn_igdb_titles", "psn_igdb_link", "psn_trophies", "sgdb_fill_all", "psn_review_art"]
+    assert ran == [
+        "psn_store_refresh",
+        "psn_igdb_titles",
+        "psn_igdb_link",
+        "psn_trophies",
+        "import_recheck",
+        "sgdb_fill_all",
+        "psn_review_art",
+    ]
     jobs.clear_all()
 
 
@@ -1453,11 +1461,13 @@ def test_psn_followups_skip_what_does_not_apply(db_session, monkeypatch):
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=False, needs_review=False, has_sgdb_key=False))
-    assert ran == ["psn_store_refresh", "psn_trophies"], "both self-gate, so both run regardless of what the sync added"
+    assert ran == ["psn_store_refresh", "psn_trophies", "import_recheck"], (
+        "all three self-gate, so all three run regardless of what the sync added"
+    )
 
     ran.clear()
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=False))
-    assert ran == ["psn_store_refresh", "psn_igdb_titles", "psn_igdb_link", "psn_trophies"], (
+    assert ran == ["psn_store_refresh", "psn_igdb_titles", "psn_igdb_link", "psn_trophies", "import_recheck"], (
         "no SGDB key kills the artwork passes, not the IGDB steps"
     )
     jobs.clear_all()
@@ -1485,7 +1495,7 @@ def test_one_failing_followup_does_not_strand_the_rest(db_session, monkeypatch):
     monkeypatch.setattr(integrations, "_run_sgdb_fill_all_job", _fake_fill)
 
     asyncio.run(integrations._run_psn_followups(user.id, added=True, needs_review=True, has_sgdb_key=True))
-    assert ran == ["psn_igdb_titles", "psn_igdb_link", "psn_trophies", "sgdb_fill_all", "psn_review_art"]
+    assert ran == ["psn_igdb_titles", "psn_igdb_link", "psn_trophies", "import_recheck", "sgdb_fill_all", "psn_review_art"]
     jobs.clear_all()
 
 

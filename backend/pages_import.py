@@ -996,6 +996,69 @@ def dismiss_import_bulk(
     return Response(content=toast + counts, media_type="text/html")
 
 
+@router.post("/tools/import/{candidate_id}/delete")
+def import_delete(
+    candidate_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """A real delete: the candidate and its rows go and nothing remembers them,
+    so the next upload offers the row again as it stands in the sheet. Dismiss
+    is the other answer -- it holds until the row changes (#226). Confirmed
+    candidates are refused: their rows are the history that stops the sheet
+    re-importing what is already logged."""
+    candidate = (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
+        .first()
+    )
+    if not candidate or candidate.status not in ("pending", "dismissed"):
+        return Response(status_code=404)
+    importer._delete_candidate(db, candidate)
+    db.commit()
+    tab_counts = _import_tab_counts(db, current_user.id)
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_import_counts_oob.html",
+        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
+    )
+
+
+@router.post("/tools/import/delete-bulk")
+def delete_import_bulk(
+    request: Request,
+    ids: str = Form(""),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """Delete a batch of pending or dismissed candidates (bulk-select mode)."""
+    id_list = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    if not id_list:
+        return Response(status_code=422)
+    candidates = (
+        db.query(models.ImportCandidate)
+        .filter(
+            models.ImportCandidate.id.in_(id_list),
+            models.ImportCandidate.user_id == current_user.id,
+            models.ImportCandidate.status.in_(("pending", "dismissed")),
+        )
+        .all()
+    )
+    for candidate in candidates:
+        importer._delete_candidate(db, candidate)
+    db.commit()
+
+    tab_counts = _import_tab_counts(db, current_user.id)
+    pending = sum(tab_counts.values())
+    toast = templates.get_template("partials/_toast.html").render(
+        kind="success", body=f"Deleted {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
+    )
+    counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
+    return Response(content=toast + counts, media_type="text/html")
+
+
 @router.post("/tools/import/{candidate_id}/confirm")
 def import_confirm(
     candidate_id: int,

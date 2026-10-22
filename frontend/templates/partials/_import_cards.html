@@ -162,6 +162,15 @@
             hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
       Dismiss
     </button>
+    <button class="btn btn-surface btn-sm"
+            hx-post="/tools/import/{{ c.id }}/delete"
+            hx-confirm="Delete this candidate? The next upload will offer it again."
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML"
+            hx-disabled-elt="this"
+            hx-on::after-request="if(event.detail.successful) importCardDone('{{ c.id }}')">
+      Delete
+    </button>
   </div>
 
   {# Off-DOM anchor for the confirm/dismiss HX-Retarget response — the
