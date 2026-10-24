@@ -28,6 +28,7 @@ from .pages_common import (
     _extract_steam_meta,
     _get_all_platforms,
     _import_confirmed_count,
+    _import_dismissed_count,
     _import_tab_counts,
     get_web_user,
     logger,
@@ -324,8 +325,10 @@ def _tab_candidate_filters(user_id: int, tab: str) -> list:
     dropdowns populate from a different candidate set than the rows shown —
     on the confirmed tab they used to match nothing and render empty."""
     clauses = [models.ImportCandidate.user_id == user_id]
-    if tab == "confirmed":
-        clauses.append(models.ImportCandidate.status == "confirmed")
+    if tab in ("confirmed", "dismissed"):
+        # Dismissed is the same shape: decided rows of any proposed_action,
+        # listed so they can be cleared like match review's (#226).
+        clauses.append(models.ImportCandidate.status == tab)
     else:
         clauses += [
             models.ImportCandidate.status == "pending",
@@ -423,7 +426,7 @@ def import_review_page(
     remember = request.cookies.get("cgt-import-remember") == "1"
     if remember and "tab" not in qp:
         tab = request.cookies.get("cgt-import-tab", tab)
-    if tab not in _IMPORT_TABS and tab != "confirmed":
+    if tab not in _IMPORT_TABS and tab not in ("confirmed", "dismissed"):
         tab = "add_to_existing"
     # unquote: the client writes these cookies with encodeURIComponent (raw
     # platform names can contain spaces), so a value like "pid:5" is stored as
@@ -576,6 +579,7 @@ def import_review_page(
             "candidates": candidates,
             "pending": pending,
             "confirmed_count": confirmed_count,
+            "dismissed_count": _import_dismissed_count(db, current_user.id),
             "tab": tab,
             "tab_total": tab_total,
             "tab_counts": tab_counts,
@@ -879,13 +883,22 @@ def import_dismiss(
         candidate.status = "dismissed"
         candidate.reviewed_at = datetime.datetime.now(datetime.UTC)
         db.commit()
-    tab_counts = _import_tab_counts(db, current_user.id)
+    tab_counts, pending = _badge_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
         name="partials/_import_counts_oob.html",
-        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        context={"tab_counts": tab_counts, "pending": pending},
         headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
     )
+
+
+def _badge_counts(db: Session, user_id: int) -> tuple[dict[str, int], int]:
+    """Every tab's badge for a response that moves rows into or out of
+    Dismissed, and the pending total (which Dismissed is not part of)."""
+    tab_counts = _import_tab_counts(db, user_id)
+    pending = sum(tab_counts.values())
+    tab_counts["dismissed"] = _import_dismissed_count(db, user_id)
+    return tab_counts, pending
 
 
 def _confirm_add_to_existing(db: Session, current_user: models.User, candidate) -> None:
@@ -987,8 +1000,7 @@ def dismiss_import_bulk(
         candidate.reviewed_at = now
     db.commit()
 
-    tab_counts = _import_tab_counts(db, current_user.id)
-    pending = sum(tab_counts.values())
+    tab_counts, pending = _badge_counts(db, current_user.id)
     toast = templates.get_template("partials/_toast.html").render(
         kind="success", body=f"Dismissed {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
     )
@@ -1017,11 +1029,11 @@ def import_delete(
         return Response(status_code=404)
     importer._delete_candidate(db, candidate)
     db.commit()
-    tab_counts = _import_tab_counts(db, current_user.id)
+    tab_counts, pending = _badge_counts(db, current_user.id)
     return templates.TemplateResponse(
         request=request,
         name="partials/_import_counts_oob.html",
-        context={"tab_counts": tab_counts, "pending": sum(tab_counts.values())},
+        context={"tab_counts": tab_counts, "pending": pending},
         headers={"HX-Reswap": "outerHTML", "HX-Retarget": f"#import-row-{candidate_id}"},
     )
 
@@ -1046,14 +1058,15 @@ def delete_import_bulk(
         )
         .all()
     )
+    # The Dismissed tab calls this "Clear selected", as match review does.
+    verb = "Cleared" if candidates and all(c.status == "dismissed" for c in candidates) else "Deleted"
     for candidate in candidates:
         importer._delete_candidate(db, candidate)
     db.commit()
 
-    tab_counts = _import_tab_counts(db, current_user.id)
-    pending = sum(tab_counts.values())
+    tab_counts, pending = _badge_counts(db, current_user.id)
     toast = templates.get_template("partials/_toast.html").render(
-        kind="success", body=f"Deleted {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
+        kind="success", body=f"{verb} {len(candidates)} candidate{'s' if len(candidates) != 1 else ''}."
     )
     counts = templates.get_template("partials/_import_counts_oob.html").render(tab_counts=tab_counts, pending=pending)
     return Response(content=toast + counts, media_type="text/html")

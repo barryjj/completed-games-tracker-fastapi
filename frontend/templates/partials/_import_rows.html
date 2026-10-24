@@ -4,7 +4,7 @@
   {# Bulk-select cell — only rendered visible while select mode is on
      (#import-table.import-select-mode); only confirmable rows get a box. #}
   <td class="import-select-cell align-middle">
-    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}
+    {% if (c.proposed_action == "add_to_existing" and c.status == "pending") or c.status == "dismissed" %}
     <input class="form-check-input import-bulk-check" type="checkbox" value="{{ c.id }}"
            onchange="importBulkSync()">
     {% endif %}
@@ -128,6 +128,13 @@
                hx-swap="outerHTML">Delete</a></li>
       </ul>
     </div>
+    {% elif c.status == "dismissed" %}
+    {# Dismissed: Clear is the one decision left, as in match review. A real
+       delete, so the next upload offers the row again. #}
+    <button type="button" class="btn btn-sm btn-surface"
+            hx-post="/tools/import/{{ c.id }}/delete"
+            hx-target="#import-row-{{ c.id }}"
+            hx-swap="outerHTML">Clear</button>
     {% elif c.status == "confirmed" %}
     <button type="button" class="btn btn-sm btn-surface"
             hx-post="/tools/import/{{ c.id }}/reopen"

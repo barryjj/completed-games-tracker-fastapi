@@ -794,6 +794,14 @@ def _import_confirmed_count(db: Session, user_id: int) -> int:
     )
 
 
+def _import_dismissed_count(db: Session, user_id: int) -> int:
+    return (
+        db.query(models.ImportCandidate)
+        .filter(models.ImportCandidate.user_id == user_id, models.ImportCandidate.status == "dismissed")
+        .count()
+    )
+
+
 def _import_tab_counts(db: Session, user_id: int) -> dict[str, int]:
     counts = dict.fromkeys(_IMPORT_TABS, 0)
     rows = (

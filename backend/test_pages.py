@@ -4398,3 +4398,30 @@ def test_a_sync_rechecks_the_import_queue(client, db_session):
 
     assert _STEAM_KINDS["import_recheck"]["fn"] == "recheck_after_sync"
     assert "1 pending row matched" in _format_sync_result(db_session, user, "import_recheck", {"updated": 1})
+
+
+def test_import_review_has_a_dismissed_tab_with_clear(client, db_session):
+    """Dismissed import rows were invisible -- no tab, no way to clear one. Now
+    a Dismissed tab lists them like match review's: Clear on each row, Clear
+    selected in bulk mode, and its badge follows dismiss and clear."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    hx = {"HX-Request": "true"}
+    for title in ("Marvel Tokon: Fighting Souls", "Silent Hill: Townfall", "Control Resonant"):
+        upload(title, row(title, dt.date(2026, 9, 26)))
+    tokon, townfall, control = (candidates(t)[0].id for t in ("Marvel Tokon: Fighting Souls", "Silent Hill: Townfall", "Control Resonant"))
+
+    r = client.post(f"/tools/import/{tokon}/dismiss", headers=hx)
+    assert 'id="import-tab-count-dismissed" hx-swap-oob="true">1<' in r.text
+    client.post("/tools/import/dismiss-bulk", data={"ids": f"{townfall},{control}"}, headers=hx)
+
+    page = client.get("/tools/import/review?tab=dismissed").text
+    assert 'id="import-tab-count-dismissed">3<' in page
+    assert "Marvel Tokon: Fighting Souls" in page and "Control Resonant" in page
+    assert f'hx-post="/tools/import/{tokon}/delete"' in page and ">Clear</button>" in page
+    assert ">Clear selected</button>" in page and f'class="form-check-input import-bulk-check" type="checkbox" value="{tokon}"' in page
+    assert "Marvel Tokon" not in client.get("/tools/import/review?tab=create_new").text, "dismissed rows stay off the pending tabs"
+
+    r = client.post(f"/tools/import/{tokon}/delete", headers=hx)
+    assert 'id="import-tab-count-dismissed" hx-swap-oob="true">2<' in r.text
+    r = client.post("/tools/import/delete-bulk", data={"ids": f"{townfall},{control}"}, headers=hx)
+    assert "Cleared 2 candidates" in r.text and 'id="import-tab-count-dismissed" hx-swap-oob="true">0<' in r.text

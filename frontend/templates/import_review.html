@@ -37,6 +37,12 @@
           hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
     Confirmed <span class="badge bg-secondary ms-1" id="import-tab-count-confirmed">{{ confirmed_count }}</span>
   </button>
+  <button type="button" class="btn btn-surface{% if tab == 'dismissed' %} active{% endif %}" data-tab="dismissed"
+          onclick="importSwitchTab(this, 'dismissed')"
+          hx-get="/tools/import/review" hx-vals='{"tab":"dismissed","refresh_filters":1}' hx-include="#import-search, #import-view-field"
+          hx-target="#import-tab-content" hx-swap="innerHTML" hx-push-url="true">
+    Dismissed <span class="badge bg-secondary ms-1" id="import-tab-count-dismissed">{{ dismissed_count }}</span>
+  </button>
 </div>
 
 <form
@@ -57,7 +63,7 @@
     {# Bulk mode: reveals row checkboxes; the footer holds the actions that
        operate on the selection. #}
     <button type="button" id="import-select-toggle" class="btn btn-sm btn-surface"
-            {% if tab != 'add_to_existing' or view != 'list' %}hidden{% endif %}
+            {% if tab not in ('add_to_existing', 'dismissed') or view != 'list' %}hidden{% endif %}
             onclick="importToggleSelect()">Bulk mode</button>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
     {% include "partials/_import_filter_selects.html" %}
@@ -111,27 +117,34 @@
     {# Native hx attributes, not htmx.ajax() — the JS API's promise doesn't
        reliably settle on swap-none/OOB responses, which froze the buttons
        mid-flight. hx-vals js: reads the checked ids at click time. #}
-    <button type="button" id="import-bulk-confirm" class="btn btn-sm btn-primary" disabled
+    <button type="button" id="import-bulk-confirm" {% if tab == 'dismissed' %}hidden {% endif %}class="import-bulk-pending btn btn-sm btn-primary" disabled
             hx-post="/tools/import/confirm-bulk"
             hx-vals='js:{ids: importCheckedIds()}'
             hx-confirm="Confirm the selected candidates? Their completions will be logged against the matched library entries."
             hx-swap="none"
             hx-disabled-elt="this"
             hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Confirm selected</button>
-    <button type="button" id="import-bulk-dismiss" class="btn btn-sm btn-surface" disabled
+    <button type="button" id="import-bulk-dismiss" {% if tab == 'dismissed' %}hidden {% endif %}class="import-bulk-pending btn btn-sm btn-surface" disabled
             hx-post="/tools/import/dismiss-bulk"
             hx-vals='js:{ids: importCheckedIds()}'
             hx-confirm="Dismiss the selected candidates? They stay dismissed until their date, clears or notes change in your sheet."
             hx-swap="none"
             hx-disabled-elt="this"
             hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Dismiss selected</button>
-    <button type="button" id="import-bulk-delete" class="btn btn-sm btn-surface" disabled
+    <button type="button" id="import-bulk-delete" {% if tab == 'dismissed' %}hidden {% endif %}class="import-bulk-pending btn btn-sm btn-surface" disabled
             hx-post="/tools/import/delete-bulk"
             hx-vals='js:{ids: importCheckedIds()}'
             hx-confirm="Delete the selected candidates? The next upload will offer them again."
             hx-swap="none"
             hx-disabled-elt="this"
             hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Delete selected</button>
+    <button type="button" id="import-bulk-clear" {% if tab != 'dismissed' %}hidden {% endif %}class="import-bulk-dismissed btn btn-sm btn-surface" disabled
+            hx-post="/tools/import/delete-bulk"
+            hx-vals='js:{ids: importCheckedIds()}'
+            hx-confirm="Clear the selected dismissed rows? The next upload will offer them again."
+            hx-swap="none"
+            hx-disabled-elt="this"
+            hx-on::after-request="importExitSelect(); if(event.detail.successful){ htmx.trigger('#import-filters-form','submit-view'); }">Clear selected</button>
   </div>
   {# Page-level operations — used rarely, so they live down here instead of
      hovering in the header. #}
@@ -220,7 +233,7 @@ window.importBulkSync = function() {
   var n = document.querySelectorAll('#import-table .import-bulk-check:checked').length;
   var count = document.getElementById('import-bulk-count');
   if (count) count.textContent = n;
-  ['import-bulk-confirm', 'import-bulk-dismiss', 'import-bulk-delete'].forEach(function(id) {
+  ['import-bulk-confirm', 'import-bulk-dismiss', 'import-bulk-delete', 'import-bulk-clear'].forEach(function(id) {
     var btn = document.getElementById(id);
     if (btn) btn.disabled = n === 0;
   });
@@ -277,8 +290,12 @@ window.importSwitchTab = function(button, tab) {
   var toggle = document.getElementById('import-view-toggle');
   if (toggle) toggle.hidden = tab !== 'add_to_existing';
   var selectToggle = document.getElementById('import-select-toggle');
-  if (selectToggle) selectToggle.hidden = tab !== 'add_to_existing';
-  if (tab !== 'add_to_existing') importExitSelect();
+  if (selectToggle) selectToggle.hidden = tab !== 'add_to_existing' && tab !== 'dismissed';
+  // Each tab's bulk bar holds that tab's decisions: Clear on Dismissed, the
+  // pending ones everywhere else.
+  importExitSelect();
+  document.querySelectorAll('.import-bulk-pending').forEach(function(b) { b.hidden = tab === 'dismissed'; });
+  document.querySelectorAll('.import-bulk-dismissed').forEach(function(b) { b.hidden = tab !== 'dismissed'; });
   var hiddenView = document.getElementById('import-view-field');
   if (tab !== 'add_to_existing') {
     if (hiddenView) hiddenView.value = 'list';
