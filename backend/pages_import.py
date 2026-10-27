@@ -30,6 +30,7 @@ from .pages_common import (
     _import_confirmed_count,
     _import_dismissed_count,
     _import_tab_counts,
+    _library_detail_context,
     get_web_user,
     logger,
     templates,
@@ -603,8 +604,10 @@ def import_candidate_preview(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Detail pane content for an add_to_existing candidate — shows the matched
-    library entry with an import-specific Confirm footer."""
+    """Detail pane content for a candidate with a matched library entry: the
+    entry's pane with the sheet's differences on top and a footer for the
+    candidate's status -- Confirm on pending rows, Reopen on confirmed ones,
+    Clear on dismissed ones -- so every tab's rows open the same pane."""
     candidate = (
         db.query(models.ImportCandidate)
         .filter(models.ImportCandidate.id == candidate_id, models.ImportCandidate.user_id == current_user.id)
@@ -633,48 +636,25 @@ def import_candidate_preview(
     if not entry:
         return Response(status_code=404)
 
-    game = entry.release.game
-    child_entries = []
-    if not game.is_dlc:
-        child_entries = (
-            db.query(models.UserLibraryEntry)
-            .options(
-                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game),
-                joinedload(models.UserLibraryEntry.release).selectinload(models.GameRelease.artwork),
-                joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.platform_obj),
-                selectinload(models.UserLibraryEntry.user_artwork),
-            )
-            .join(models.GameRelease)
-            .join(models.Game)
-            .filter(
-                models.UserLibraryEntry.user_id == current_user.id,
-                models.Game.parent_id == game.id,
-            )
-            .order_by(models.Game.title)
-            .all()
-        )
-
-    visuals = _build_detail_pane_visuals(db, entry, game, entry.release)
-    appdetails = (entry.release.raw_data or {}).get("appdetails") or {}
-
     return templates.TemplateResponse(
         request=request,
         name="partials/library_detail.html",
         context={
-            "entry": entry,
-            "game": game,
-            "release": entry.release,
-            "appdetails": appdetails,
-            "steam_meta": _extract_steam_meta(appdetails),
-            "igdb_meta": _extract_igdb_meta(entry.release),
-            "child_entries": child_entries,
-            "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
-            "current_user": current_user,
+            # The real pane's data, shared with the library route, rather than
+            # a copy of it that fell behind -- it had no PS Store fields, no
+            # Access, and listed other stores' DLC.
+            **_library_detail_context(db, entry, current_user),
             "needs_refresh": False,
             "fresh_open": False,
             "candidate": candidate,
-            "import_rows": sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True),
-            **visuals,
+            # Only a pending candidate's rows are still to come. A confirmed
+            # one's are the completions already listed; a dismissed one's
+            # never will be.
+            "import_rows": (
+                sorted(candidate.rows, key=lambda r: r.completed_at or datetime.date.min, reverse=True)
+                if candidate.status == "pending"
+                else []
+            ),
         },
     )
 

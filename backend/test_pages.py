@@ -4425,3 +4425,35 @@ def test_import_review_has_a_dismissed_tab_with_clear(client, db_session):
     assert 'id="import-tab-count-dismissed" hx-swap-oob="true">2<' in r.text
     r = client.post("/tools/import/delete-bulk", data={"ids": f"{townfall},{control}"}, headers=hx)
     assert "Cleared 2 candidates" in r.text and 'id="import-tab-count-dismissed" hx-swap-oob="true">0<' in r.text
+
+
+def test_confirmed_and_dismissed_import_rows_open_the_same_pane(client, db_session):
+    """A Confirmed row's "!" said "click to see details" and clicking did
+    nothing. Rows on Confirmed and Dismissed open the same pane as pending
+    ones now -- the sheet's differences on top -- with the footer their tab
+    offers: Reopen, or Clear. Nothing in it claims to be importing."""
+    dt, importer, user, steam, entry, row, upload, candidates = _import_setup(client, db_session)
+    hx = {"HX-Request": "true"}
+    entry("Castlevania: Portrait of Ruin")
+    entry("Gunstar Super Heroes")
+    upload("Castlevania: Portrait of Ruin", row("Castlevania: Portrait of Ruin", dt.date(2007, 3, 1), "1"))
+    upload("Gunstar Super Heroes", row("Gunstar Super Heroes", dt.date(2007, 8, 1), "1"))
+    ruin, gunstar = candidates("Castlevania: Portrait of Ruin")[0].id, candidates("Gunstar Super Heroes")[0].id
+    assert client.post(f"/tools/import/{ruin}/confirm", headers=hx).status_code == 200
+    client.post(f"/tools/import/{gunstar}/dismiss", headers=hx)
+
+    confirmed = client.get("/tools/import/review?tab=confirmed", headers=hx).text
+    assert f'id="import-row-{ruin}"\n    class="import-row-clickable"' in confirmed
+
+    pane = client.get(f"/tools/import/{ruin}/preview").text
+    assert f"/tools/import/{ruin}/reopen" in pane and f"/tools/import/{ruin}/confirm" not in pane
+    assert "importing" not in pane and "cgt-completion-record" in pane, "the confirmed completion, listed once"
+
+    pane = client.get(f"/tools/import/{gunstar}/preview").text
+    assert f"/tools/import/{gunstar}/delete" in pane and ">\n    Clear\n" in pane
+    assert f"/tools/import/{gunstar}/confirm" not in pane and "importing" not in pane
+
+    upload("Gunstar Super Heroes", row("Gunstar Super Heroes", dt.date(2008, 8, 1), "1"))
+    pending = next(c for c in candidates("Gunstar Super Heroes") if c.status == "pending")
+    pane = client.get(f"/tools/import/{pending.id}/preview").text
+    assert f"/tools/import/{pending.id}/confirm" in pane and "1 importing" in pane

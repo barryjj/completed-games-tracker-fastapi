@@ -442,6 +442,26 @@
 <div class="cgt-detail-actions border-top d-flex flex-wrap gap-2 align-items-center p-3">
   {% if candidate %}
   {% set _cid = candidate.id %}
+  {# The footer is the decision the row's tab offers: Reopen on Confirmed,
+     Clear on Dismissed, Confirm / Dismiss / Edit on the pending tabs. #}
+  {% if candidate.status == "confirmed" %}
+  <button class="btn btn-sm btn-surface ms-auto"
+          hx-post="/tools/import/{{ _cid }}/reopen"
+          hx-confirm="Reopen this candidate? The completion(s) its confirm created will be deleted and it returns to the review queue."
+          hx-target="#import-row-{{ _cid }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose(null); }">
+    Reopen
+  </button>
+  {% elif candidate.status == "dismissed" %}
+  <button class="btn btn-sm btn-surface ms-auto"
+          hx-post="/tools/import/{{ _cid }}/delete"
+          hx-target="#import-row-{{ _cid }}"
+          hx-swap="outerHTML"
+          hx-on::after-request="if(event.detail.successful){ if(typeof importAdvanceOrClose==='function') importAdvanceOrClose(null); }">
+    Clear
+  </button>
+  {% else %}
   <button class="btn btn-sm btn-primary ms-auto"
           hx-post="/tools/import/{{ _cid }}/confirm"
           hx-target="#import-row-{{ _cid }}"
@@ -460,6 +480,7 @@
           onclick="openImportEdit({{ _cid }}); return false;">
     Edit
   </button>
+  {% endif %}
   <button class="btn btn-sm btn-surface"
           onclick="['import-preview-pane','library-detail-offcanvas'].forEach(function(pid){ var el=document.getElementById(pid); if(el){ var bs=bootstrap.Offcanvas.getInstance(el); if(bs) bs.hide(); } }); return false;">
     Cancel

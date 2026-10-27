@@ -1,6 +1,6 @@
 {% for c in candidates %}
 <tr id="import-row-{{ c.id }}"
-    {% if c.proposed_action == "add_to_existing" and c.status == "pending" %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
+    {% if (c.proposed_action == "add_to_existing" and c.status == "pending") or (c.status in ("confirmed", "dismissed") and c.library_entry) %}class="import-row-clickable" style="cursor:pointer;"{% endif %}>
   {# Bulk-select cell — only rendered visible while select mode is on
      (#import-table.import-select-mode); only confirmable rows get a box. #}
   <td class="import-select-cell align-middle">
