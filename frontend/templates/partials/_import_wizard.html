@@ -36,6 +36,15 @@
       {% if sheet.header_row is not none %}header on row {{ sheet.header_row + 1 }}{% else %}no header found{% endif %}
       &middot; {{ sheet.importable_rows }} row{{ "s" if sheet.importable_rows != 1 }} to import
       {%- if sheet.data_rows != sheet.importable_rows %} &middot; {{ sheet.data_rows - sheet.importable_rows }} empty{% endif %}
+      {#- Per sheet, because a workbook's tabs each have their own answer. Only
+          when some date needs a year and the name has none: a year in the sheet
+          or file name is simply used, and the notes under the table name the
+          rows it went to. -#}
+      {%- if sheet.needs_year %}
+      &middot; <label class="mb-0" for="year-{{ si }}">year for dates without one</label>
+      <input type="text" class="form-control form-control-sm d-inline-block ms-1" style="width:4.5rem"
+             id="year-{{ si }}" name="sheet.{{ si }}.year" placeholder="none" inputmode="numeric">
+      {%- endif %}
     </span>
   </div>
 
@@ -58,29 +67,6 @@
     </div>
     {% endfor %}
   </div>
-
-  {# Asked only when the sheet cannot answer it: every row whose Date carries a
-     full date already knows its year, so a file with complete dates never sees
-     this. It appears when something is blank or says only "January".
-
-     Set apart from the mapping grid rather than sitting in it -- it is a
-     different kind of question, and as one more cell in the row it read as a
-     column mapping with a cut-off label. #}
-  {% if sheet.needs_year %}
-  <div class="cgt-detail-block mb-3">
-    <div class="d-flex align-items-center flex-wrap gap-2">
-      <label class="mb-0" for="year-{{ si }}">Year to use for dates that don&rsquo;t give one</label>
-      <input type="text" class="form-control form-control-sm" style="width:5.5rem"
-             id="year-{{ si }}" name="sheet.{{ si }}.year"
-             value="{{ sheet.year or '' }}" placeholder="none" inputmode="numeric">
-      <span class="text-secondary small">
-        {%- if sheet.year %}taken from the sheet name &mdash; change it if that&rsquo;s wrong
-        {%- else %}nothing in the sheet name to go on; leave it blank and those rows import without a date
-        {%- endif %}
-      </span>
-    </div>
-  </div>
-  {% endif %}
 
   {% if sheet.preview %}
   {# Say what the table IS. Without this it reads as the import itself rather

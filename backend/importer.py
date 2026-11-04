@@ -1163,6 +1163,16 @@ def _parse_sheet(
         )
 
 
+def _rows_have(titles: list) -> str:
+    return "1 row has" if len(titles) == 1 else f"{len(titles)} rows have"
+
+
+def _sample_titles(titles: list, shown: int = 3) -> str:
+    """The rows a note is about, named, without a tab of 22 becoming a paragraph."""
+    names = ", ".join(titles[:shown])
+    return f"{names} and {len(titles) - shown} more" if len(titles) > shown else names
+
+
 def _sheets_from_upload(file_bytes: bytes, filename: str) -> list[tuple[str, list]]:
     """(sheet name, rows) for either format. One entry for a CSV, named after
     the file, since the name is where a CSV keeps its year."""
@@ -1242,12 +1252,25 @@ def inspect_upload(file_bytes: bytes, filename: str, db: Session, samples: int =
                     "collection": _cell(row, cols, "collection"),
                 }
             )
-        # Does this sheet actually need a fallback year? Only if some row's date
-        # cannot supply one on its own -- a blank cell, or a bare month like
-        # "January". Scanned across every importable row, not just the three
-        # shown, so a file with complete dates is never asked a question it has
-        # already answered.
-        needs_year = any(_parse_date(_cell(r, cols, "date"), None)[0] is None for r in importable)
+        # The rows whose date cannot supply a year on its own, scanned across
+        # every importable row, not just the three shown. A blank cell or a bare
+        # month takes the sheet's year; a date nothing can read is beyond any
+        # year's help, so it is reported and never asks for one.
+        undated, month_only, unreadable = [], [], []
+        for r in importable:
+            raw_date = _cell(r, cols, "date")
+            if _parse_date(raw_date, None)[0] is not None:
+                continue
+            title = _cell(r, cols, "game", "title")
+            if not raw_date:
+                undated.append(title)
+            elif _parse_date(raw_date, year or 2000)[0] is not None:
+                month_only.append(title)
+            else:
+                unreadable.append(title)
+        # Asked only when there is no answer to be had: a year in the sheet or
+        # file name is simply used, and the notes below say where it went.
+        needs_year = bool(undated or month_only) and not year
 
         # One note per kind, under the table, instead of a parenthetical on
         # every row that happens to trip it.
@@ -1256,6 +1279,15 @@ def inspect_upload(file_bytes: bytes, filename: str, db: Session, samples: int =
             notes.append(("Playthroughs", "must be a whole number — anything else in the cell is dropped."))
         if any(p["date_vague"] for p in preview):
             notes.append(("Completed", "no day given, so the completion is recorded to the month or year only."))
+        missing = f"recorded as {year}" if year else "enter a year above or they import undated"
+        if undated:
+            notes.append(("Completed", f"{_rows_have(undated)} no date, {missing}: {_sample_titles(undated)}."))
+        if month_only:
+            notes.append(("Completed", f"{_rows_have(month_only)} a month but no year, {missing}: {_sample_titles(month_only)}."))
+        if unreadable:
+            notes.append(
+                ("Completed", f"{_rows_have(unreadable)} a date that can't be read, so they import undated: {_sample_titles(unreadable)}.")
+            )
         out.append(
             {
                 "name": name,

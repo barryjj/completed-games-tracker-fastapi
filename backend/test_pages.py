@@ -3924,24 +3924,80 @@ def test_the_mapping_chosen_in_the_wizard_is_what_gets_imported(client, db_sessi
     assert specs["Completed Games - 2026"]["year"] == 2026
 
 
-def test_the_year_is_only_asked_for_when_the_dates_cannot_answer(client, db_session):
-    """A sheet whose Date column carries full dates already knows every year,
-    so asking is noise. It is asked only when something is blank or says just
-    "January" -- and scanned across every row, not just the ones shown."""
+def test_the_year_is_only_asked_for_when_nothing_can_answer(client, db_session):
+    """Full dates know their year, and a year in the sheet or file name is
+    simply used -- one blank row (Tokon, 40 rows down) put a whole card on the
+    page asking what the filename already said, without saying which row. It is
+    asked only when a date needs a year and the name has none; the rows affected
+    are named either way, across every row, not just the ones shown."""
     _signup_and_login(client)
     db_session.add(models.Platform(name="Steam", display_name="Steam"))
     db_session.commit()
 
     full = _upload_wizard_csv(client).text
-    assert "Year to use for dates" not in full, "every date here carries its own year"
+    assert 'name="sheet.0.year"' not in full, "every date here carries its own year"
+    assert "no date" not in full
+
+    rows = "".join(f"{i},Game {i},Steam,1/{i}/2026\n" for i in range(1, 6))
+    named = _upload_wizard_csv(client, body=f",Game,Platform,Date\n{rows}6,Marvel Tokon,Steam,\n").text
+    assert 'name="sheet.0.year"' not in named, "the file name already answers it"
+    assert "1 row has no date, recorded as 2026: Marvel Tokon." in named, "the note finds a row past the preview"
 
     vague = _upload_wizard_csv(
         client,
         name="Backlog.csv",
-        body=",Game,Platform,Date\n1,Some Game,Steam,January\n2,Other Game,Steam,\n",
+        body=",Game,Platform,Date\n1,Some Game,Steam,January\n2,Other Game,Steam,\n3,Odd Game,Steam,Q3 2026\n",
     ).text
-    assert "Year to use for dates" in vague
-    assert "nothing in the sheet name to go on" in vague, "and it says so when it cannot guess"
+    assert 'name="sheet.0.year"' in vague
+    assert "1 row has no date, enter a year above or they import undated: Other Game." in vague
+    assert "1 row has a month but no year, enter a year above or they import undated: Some Game." in vague
+    assert "1 row has a date that can&#39;t be read, so they import undated: Odd Game." in vague
+
+    # A date no year can help never asks for one.
+    unreadable = _upload_wizard_csv(client, name="Backlog.csv", body=",Game,Platform,Date\n1,Odd Game,Steam,Q3 2026\n").text
+    assert 'name="sheet.0.year"' not in unreadable
+
+
+def test_the_year_is_answered_sheet_by_sheet_in_a_workbook(client, db_session):
+    """A workbook's tabs each have their own answer: the 2006 tab's blank rows
+    take 2006 without asking, and only the tab with no year in its name gets a
+    field, whose answer reaches that tab's rows alone."""
+    from io import BytesIO
+
+    import openpyxl
+
+    from backend import importer
+
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    db_session.add(models.Platform(name="Steam", display_name="Steam"))
+    db_session.commit()
+
+    wb = openpyxl.Workbook()
+    old = wb.active
+    old.title = "2006"
+    for row in (("Game", "Platform", "Date"), *((f"Old Game {i}", "Steam", None) for i in range(5))):
+        old.append(row)
+    backlog = wb.create_sheet("Backlog")
+    for row in (("Game", "Platform", "Date"), ("Later Game", "Steam", "March")):
+        backlog.append(row)
+    buf = BytesIO()
+    wb.save(buf)
+    body = buf.getvalue()
+
+    html = client.post(
+        "/tools/import/upload",
+        files={"file": ("Completed Games.xlsx", body, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    ).text
+    assert 'name="sheet.0.year"' not in html and 'name="sheet.1.year"' in html
+    assert "5 rows have no date, recorded as 2006: Old Game 0, Old Game 1, Old Game 2 and 2 more." in html
+
+    cols = {"game": 0, "platform": 1, "date": 2}
+    specs = {"2006": {"header_row": 0, "cols": cols, "year": None}, "Backlog": {"header_row": 0, "cols": cols, "year": 2019}}
+    result = importer.parse_upload(body, "Completed Games.xlsx", db_session, user.id, specs)
+    dates = {g["raw_title"]: g["rows"][0]["completed_at"] for g in result.candidates}
+    assert dates["Old Game 3"] == datetime.date(2006, 1, 1)
+    assert dates["Later Game"] == datetime.date(2019, 3, 1)
 
 
 def test_row_order_comes_from_position_not_from_a_numbering_column(db_session):
