@@ -56,7 +56,28 @@ def import_page(
     return templates.TemplateResponse(
         request=request,
         name="import.html",
-        context={"current_user": current_user, "pending": pending, **_base_ctx(db, current_user, request)},
+        context={
+            "current_user": current_user,
+            "pending": pending,
+            # Coming back to a running import shows it, not a form that would
+            # only refuse another file.
+            "job": _active_import(current_user.id),
+            **_base_ctx(db, current_user, request),
+        },
+    )
+
+
+def _active_import(user_id: int) -> jobs.Job | None:
+    """The import running for this user. One at a time: there is no queue."""
+    return next((j for j in jobs.active_jobs_for(user_id) if j.kind == "import_xlsx"), None)
+
+
+def _import_running_toast(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/_toast.html",
+        context={"kind": "error", "body": "An import is already running — wait for it to finish."},
+        headers={"HX-Reswap": "none"},
     )
 
 
@@ -80,6 +101,8 @@ async def import_upload(
             context={"kind": "error", "body": "Upload a .xlsx or .csv file."},
             headers={"HX-Reswap": "none"},
         )
+    if _active_import(current_user.id):
+        return _import_running_toast(request)
     contents = await file.read()
     # Uploading no longer imports. It shows what the parser found -- which sheets,
     # which header row, what each column will be read as, and a few rows rendered
@@ -115,7 +138,9 @@ async def import_process(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Second half of the upload: run the import with the confirmed mapping."""
+    """Second half of the upload: run the import with the confirmed mapping. The
+    wizard gives way to the progress bar, whose poll carries on to the review
+    page when the import finishes."""
     staged = jobs.staged_upload(token, current_user.id)
     if not staged:
         return templates.TemplateResponse(
@@ -127,15 +152,15 @@ async def import_process(
     filename, contents = staged
     form = await request.form()
     specs = _specs_from_form(form)
+    if _active_import(current_user.id):
+        return _import_running_toast(request)
     jobs.drop_staged_upload(token)
-    jobs.enqueue_import(current_user.id, filename, contents, specs)
-    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx" and j.status == jobs.JobStatus.RUNNING]
-    if not active:
-        asyncio.create_task(_drain_import_queue(current_user.id))
+    job = jobs.create(current_user.id, "import_xlsx", label=f"Import: {filename}")
+    asyncio.create_task(_run_import_job(job.id, current_user.id, contents, filename, specs))
     return templates.TemplateResponse(
         request=request,
-        name="partials/_toast.html",
-        context={"kind": "success", "body": f"Queued: {filename}"},
+        name="partials/_import_progress.html",
+        context={"job": job, "pending": _pending_count(db, current_user.id)},
     )
 
 
@@ -167,16 +192,6 @@ def _specs_from_form(form) -> dict:
         elif what == "col" and len(parts) == 4 and value:
             spec["cols"][value] = int(parts[3])
     return {spec.pop("name"): spec for spec in by_index.values() if spec.get("name")}
-
-
-async def _drain_import_queue(user_id: int) -> None:
-    """Process queued import jobs one at a time until the queue is empty."""
-    while True:
-        item = jobs.next_queued_import(user_id)
-        if not item:
-            break
-        job_id, filename, file_bytes, specs = item
-        await _run_import_job(job_id, user_id, file_bytes, filename, specs)
 
 
 async def _run_import_job(job_id: str, user_id: int, file_bytes: bytes, filename: str = "", specs: dict | None = None) -> None:
@@ -257,41 +272,43 @@ def import_cancel_job(
     )
 
 
-@router.post("/tools/import/cancel/{job_id}")
-def import_cancel_queued(
-    request: Request,
-    job_id: str,
-    current_user: models.User = Depends(get_web_user),
-):
-    removed = jobs.cancel_queued_import(job_id, current_user.id)
-    return templates.TemplateResponse(
-        request=request,
-        name="partials/_toast.html",
-        context={"kind": "success" if removed else "error", "body": "Queued upload removed." if removed else "Not found."},
+def _pending_count(db: Session, user_id: int) -> int:
+    return (
+        db.query(func.count(models.ImportCandidate.id))
+        .filter(
+            models.ImportCandidate.user_id == user_id,
+            models.ImportCandidate.status == "pending",
+        )
+        .scalar()
     )
 
 
 @router.get("/tools/import/progress")
 def import_progress(
     request: Request,
+    job: str = "",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    active = [j for j in jobs.active_jobs_for(current_user.id) if j.kind == "import_xlsx"]
-    job = active[0] if active else None
-    queue = jobs.queued_imports_for(current_user.id)
-    pending = (
-        db.query(func.count(models.ImportCandidate.id))
-        .filter(
-            models.ImportCandidate.user_id == current_user.id,
-            models.ImportCandidate.status == "pending",
-        )
-        .scalar()
-    )
+    """Polled by the progress bar, so only a page watching the import gets moved
+    along: leave during an import and nothing pulls you back. Finished, it goes
+    to the review page. Failed, cancelled or lost to a restart, the upload form
+    returns, and the job's toast says why."""
+    watched = jobs.get(job)
+    if watched and watched.user_id != current_user.id:
+        watched = None
+    if watched and watched.status == jobs.JobStatus.DONE:
+        # The job poller may have shown its toast on this page a moment ago,
+        # where the redirect would wipe it. The review page reports it instead.
+        jobs.update(watched.id, notified=False)
+        return Response(status_code=200, headers={"HX-Redirect": "/tools/import/review"})
     return templates.TemplateResponse(
         request=request,
         name="partials/_import_progress.html",
-        context={"job": job, "queue": queue, "pending": pending},
+        context={
+            "job": watched if watched and not watched.is_terminal else None,
+            "pending": _pending_count(db, current_user.id),
+        },
     )
 
 
@@ -1240,12 +1257,10 @@ def import_clear_all(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_web_user),
 ):
-    """Cancel running/queued import jobs, then delete pending candidates (confirmed stay)."""
+    """Cancel a running import, then delete pending candidates (confirmed stay)."""
     for j in jobs.active_jobs_for(current_user.id):
         if j.kind == "import_xlsx":
             jobs.request_cancel(j.id)
-    for job_id, _ in jobs.queued_imports_for(current_user.id):
-        jobs.cancel_queued_import(job_id, current_user.id)
     pending_ids = [
         r[0]
         for r in db.query(models.ImportCandidate.id)

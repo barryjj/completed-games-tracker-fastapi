@@ -3888,14 +3888,21 @@ def test_the_mapping_chosen_in_the_wizard_is_what_gets_imported(client, db_sessi
 
     from . import jobs, pages_import
 
-    # Captured at the enqueue: the background drain pops the queue as soon as
-    # the task runs, so reading it back afterwards is a race.
+    jobs.clear_all()
+
+    # Captured when the job is built rather than when its task runs, so reading
+    # it back afterwards is not a race.
     queued: list[tuple] = []
-    monkeypatch.setattr(
-        pages_import.jobs,
-        "enqueue_import",
-        lambda uid, fn, body, specs=None: queued.append((fn, specs)) or jobs.Job(id="t", user_id=uid, kind="import_xlsx", label=fn),
-    )
+
+    def _fake_run(job_id, user_id, file_bytes, filename="", specs=None):
+        queued.append((filename, specs))
+
+        async def _finish():
+            jobs.mark_done(job_id, "done")
+
+        return _finish()
+
+    monkeypatch.setattr(pages_import, "_run_import_job", _fake_run)
 
     html = _upload_wizard_csv(client).text
     token = _re.search(r'name="token" value="([^"]+)"', html)[1]
@@ -3915,13 +3922,64 @@ def test_the_mapping_chosen_in_the_wizard_is_what_gets_imported(client, db_sessi
         },
     )
     assert resp.status_code == 200
-    assert "Queued" in resp.text
+    assert 'id="import-progress"' in resp.text, "the wizard gives way to the progress bar"
+    assert 'id="import-wizard"' not in resp.text
 
-    assert queued, "the import was never queued"
+    assert queued, "the import was never started"
     filename, specs = queued[0]
     assert filename == "Completed Games - 2026.csv"
     assert specs["Completed Games - 2026"]["cols"] == {"game": 1, "platform": 2, "date": 4}, "Notes must not be mapped"
     assert specs["Completed Games - 2026"]["year"] == 2026
+
+
+def test_an_import_runs_alone_and_finishes_on_the_review_page(client, db_session):
+    """Pressing Import used to land back on the upload form. The progress bar
+    takes its place and carries on to the review page when the import is done;
+    a failure brings the form back. There is no queue: a second file is refused
+    while one runs, and a page not watching the import is never moved."""
+    from . import jobs
+
+    jobs.clear_all()
+    _signup_and_login(client)
+    user = db_session.query(models.User).first()
+    db_session.add(models.Platform(name="Steam", display_name="Steam"))
+    db_session.commit()
+
+    assert 'name="file"' in client.get("/tools/import").text, "nothing running: the form"
+    assert 'id="import-progress"' not in client.get("/tools/import").text
+
+    job = jobs.create(user.id, "import_xlsx", label="Import: sheet.csv")
+    jobs.update(job.id, status=jobs.JobStatus.RUNNING)
+
+    page = client.get("/tools/import").text
+    assert f"/tools/import/progress?job={job.id}" in page, "back on the page: the running import, not the form"
+    assert 'name="file"' not in page
+    assert "/tools/import/cancel" in page
+
+    refused = _upload_wizard_csv(client)
+    assert "already running" in refused.text and refused.headers["HX-Reswap"] == "none"
+
+    poll = client.get(f"/tools/import/progress?job={job.id}", follow_redirects=False)
+    assert "HX-Redirect" not in poll.headers and f"progress?job={job.id}" in poll.text, "still going: keep polling"
+
+    jobs.mark_done(job.id, "Import complete — 0 candidates ready to review.")
+    jobs.update(job.id, notified=True)
+    done = client.get(f"/tools/import/progress?job={job.id}", follow_redirects=False)
+    assert done.headers["HX-Redirect"] == "/tools/import/review"
+    assert [j.id for j in jobs.pending_notifications_for(user.id)] == [job.id], "the review page gets the toast"
+
+    failed = jobs.create(user.id, "import_xlsx", label="Import: bad.csv")
+    jobs.mark_failed(failed.id, "Import failed: nope")
+    back = client.get(f"/tools/import/progress?job={failed.id}", follow_redirects=False)
+    assert "HX-Redirect" not in back.headers and 'name="file"' in back.text
+
+    # Lost to a server restart, or someone else's: the form, not a redirect.
+    gone = client.get("/tools/import/progress?job=nope", follow_redirects=False)
+    assert "HX-Redirect" not in gone.headers and 'name="file"' in gone.text
+    theirs = jobs.create(user.id + 1, "import_xlsx", label="Import: theirs.csv")
+    jobs.mark_done(theirs.id, "done")
+    assert "HX-Redirect" not in client.get(f"/tools/import/progress?job={theirs.id}", follow_redirects=False).headers
+    jobs.clear_all()
 
 
 def test_the_year_is_only_asked_for_when_nothing_can_answer(client, db_session):

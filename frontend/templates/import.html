@@ -24,18 +24,10 @@
    that does not. Sharing one col-md-6 wrapper squeezed the wizard into half
    the page and wrapped every cell (#197). #}
 <div id="import-upload-pane">
+  {% if job %}
+  {% include "partials/_import_progress.html" %}
+  {% else %}
   {% include "partials/_import_upload_form.html" %}
+  {% endif %}
 </div>
-
-<div class="row g-3 mt-0">
-  <div class="col-md-6">
-    <div id="import-progress"
-         hx-get="/tools/import/progress"
-         hx-trigger="load, every 2s"
-         hx-swap="outerHTML"></div>
-  </div>
-</div>
-<script>
-document.body.addEventListener('cgt:importDone', function() { window.location.reload(); });
-</script>
 {% endblock %}
