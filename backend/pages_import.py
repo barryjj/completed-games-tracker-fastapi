@@ -10,6 +10,7 @@ pages_common because the home and library pages render them too.
 
 import asyncio
 import datetime
+import re
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
@@ -255,6 +256,7 @@ async def _run_import_thumbnails_job(user_id: int) -> None:
 
 
 _IMPORT_PAGE_SIZE = 50
+_IMPORT_HELD_FILTER = re.compile(r"cgt-import-[a-z_]+-(platform|year|sort)")
 
 
 @router.post("/tools/import/cancel")
@@ -436,12 +438,12 @@ def import_review_page(
     # fill in whatever the request didn't pass explicitly (explicit params —
     # a live filter change — always win).
     qp = request.query_params
-    # Opt-in (#189): this page remembered its filters unconditionally, which was
-    # never a choice the user made. Same contract as Library / Completions / PSN
-    # review now — nothing is bound unless cgt-import-remember is "1". The
-    # template migrates existing installs on first load so nobody silently loses
-    # filters they were already relying on.
+    # Opt-in (#189): a fresh page load binds nothing unless cgt-import-remember is
+    # "1", same contract as Library / Completions / PSN review. Within the page
+    # (any htmx request) a tab always gets back what it was holding: the box
+    # decides whether choices outlive the page, not whether a tab keeps its own.
     remember = request.cookies.get("cgt-import-remember") == "1"
+    held = remember or bool(request.headers.get("HX-Request"))
     if remember and "tab" not in qp:
         tab = request.cookies.get("cgt-import-tab", tab)
     if tab not in _IMPORT_TABS and tab not in ("confirmed", "dismissed"):
@@ -449,11 +451,11 @@ def import_review_page(
     # unquote: the client writes these cookies with encodeURIComponent (raw
     # platform names can contain spaces), so a value like "pid:5" is stored as
     # "pid%3A5" — decode it back before the startswith("pid:")/option matching.
-    if remember and "platform" not in qp:
+    if held and "platform" not in qp:
         platform = unquote(request.cookies.get(f"cgt-import-{tab}-platform", platform))
-    if remember and "year" not in qp:
+    if held and "year" not in qp:
         year = unquote(request.cookies.get(f"cgt-import-{tab}-year", year))
-    if remember and "sort" not in qp:
+    if held and "sort" not in qp:
         sort = unquote(request.cookies.get(f"cgt-import-{tab}-sort", sort))
     if sort not in ("id", "date_desc", "date_asc"):
         sort = "id"
@@ -589,7 +591,7 @@ def import_review_page(
             },
         )
 
-    return templates.TemplateResponse(
+    page = templates.TemplateResponse(
         request=request,
         name="import_review.html",
         context={
@@ -612,6 +614,13 @@ def import_review_page(
             **_base_ctx(db, current_user, request),
         },
     )
+    # A fresh load is where unremembered choices end. Left in place, the next tab
+    # switch would bring back a filter from the last visit.
+    if not remember:
+        for name in request.cookies:
+            if _IMPORT_HELD_FILTER.fullmatch(name):
+                page.delete_cookie(name, path="/")
+    return page
 
 
 @router.get("/tools/import/{candidate_id}/preview")

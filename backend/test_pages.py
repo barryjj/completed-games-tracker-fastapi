@@ -3785,9 +3785,59 @@ def test_import_review_no_longer_remembers_unconditionally(client, db_session):
     body = client.get("/tools/import/review?tab=create_new").text
     assert "Switch Game" in body, "stored filter applied without the opt-in"
 
+    client.cookies.set("cgt-import-create_new-platform", f"pid%3A{steam.id}")
     client.cookies.set("cgt-import-remember", "1")
     body = client.get("/tools/import/review?tab=create_new").text
     assert "Switch Game" not in body, "opt-in should bind the stored filter"
+
+
+def test_each_import_tab_holds_its_own_filters_while_on_the_page(client, db_session):
+    """Going to another tab and back keeps a tab's sort and platform with the box
+    unticked. The box decides whether they outlive the page: unticked, a fresh
+    load shows the defaults and the next tab switch doesn't revive them."""
+    from backend import models
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    steam = models.Platform(name="Steam", display_name="Steam")
+    switch = models.Platform(name="Switch", display_name="Nintendo Switch")
+    db_session.add_all([steam, switch])
+    db_session.flush()
+    _make_import_candidate(db_session, user.id, "Steam Game", steam)
+    _make_import_candidate(db_session, user.id, "Switch Game", switch)
+    db_session.commit()
+
+    newest = 'value="date_desc" selected'
+    switch_url = "/tools/import/review?tab={}&refresh_filters=1"
+    for name, value in (("sort", "date_desc"), ("platform", f"pid%3A{steam.id}")):
+        client.cookies.set(f"cgt-import-create_new-{name}", value)
+
+    back = client.get(switch_url.format("create_new"), headers=_HX).text
+    assert newest in back, "the tab lost its sort"
+    assert "Switch Game" not in back, "the tab lost its platform"
+
+    other = client.get(switch_url.format("needs_review"), headers=_HX).text
+    assert newest not in other, "one tab's sort leaked onto another"
+
+    # The server's delete is read off the response: a cookie set by hand here has
+    # no domain, so the test client's jar keeps it where a browser would not.
+    page = client.get("/tools/import/review?tab=create_new")
+    assert newest not in page.text, "a fresh load must not bind an unremembered sort"
+    deletes = [c for c in page.headers.get_list("set-cookie") if "max-age=0" in c.lower()]
+    for name in ("sort", "platform"):
+        assert any(c.startswith(f"cgt-import-create_new-{name}=") for c in deletes), f"{name} outlived the page"
+        client.cookies.delete(f"cgt-import-create_new-{name}")
+
+    fresh = client.get(switch_url.format("create_new"), headers=_HX).text
+    assert newest not in fresh
+    assert "Switch Game" in fresh
+
+    client.cookies.set("cgt-import-create_new-sort", "date_desc")
+    client.cookies.set("cgt-import-remember", "1")
+    page = client.get("/tools/import/review?tab=create_new")
+    assert newest in page.text
+    kept = [c for c in page.headers.get_list("set-cookie") if c.startswith("cgt-import-create_new-")]
+    assert not kept, "a remembered sort must survive a fresh load"
 
 
 def test_psn_review_filters_are_remembered_when_opted_in(client, db_session):

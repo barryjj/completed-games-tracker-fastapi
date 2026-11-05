@@ -67,10 +67,10 @@
             onclick="importToggleSelect()">Bulk mode</button>
     <input id="import-search" name="q" type="search" class="form-control form-control-sm" placeholder="Search title…" style="max-width:220px" value="{{ q }}" autocomplete="off">
     {% include "partials/_import_filter_selects.html" %}
-    {# Opt-in filter memory (#189). This page remembered unconditionally, which
-       was never a choice — the toggle makes it one. Cookies are keyed PER TAB
-       here (cgt-import-<tab>-<filter>), so this can't reuse the flat-prefix
-       persister the other pages share. #}
+    {# Each tab holds its own filters while you are on this page; this box only
+       decides whether they outlive it (#189). Cookies are keyed PER TAB here
+       (cgt-import-<tab>-<filter>), so this can't reuse the flat-prefix persister
+       the other pages share. #}
     <div class="form-check mb-0 ms-1">
       <input class="form-check-input" type="checkbox" id="import-remember-filters">
       <label class="form-check-label text-secondary" for="import-remember-filters"><small>Remember filters</small></label>
@@ -257,19 +257,20 @@ function importCurrentTab() {
   var el = document.querySelector('#import-filters-form input[name="tab"]');
   return el ? el.value : 'add_to_existing';
 }
-// onchange for each filter select (see _import_filter_selects.html): remember
-// the chosen value in a PER-TAB cookie so the server can bind it into the next
-// full render / tab switch and paint the list already filtered (no client
-// re-fetch). The "all"/default option clears the cookie so an empty filter is
-// never remembered as a value. sort's default ("id") is treated as unset.
+// onchange for each filter select (see _import_filter_selects.html): hold the
+// chosen value in a PER-TAB cookie so the server can bind it into the next tab
+// switch and paint the list already filtered (no client re-fetch). Always
+// written, because a tab keeps its choices with the box unticked too; ticked is
+// what gives the cookie a lifetime, and unticked the server drops it on the next
+// fresh page load. The "all"/default option clears the cookie so an empty filter
+// is never stored as a value. sort's default ("id") is treated as unset.
 window.importRememberFilter = function(el) {
-  // Opt-in (#189): do nothing unless the user asked for filter memory.
   var box = document.getElementById('import-remember-filters');
-  if (box && !box.checked) return;
   var name = 'cgt-import-' + importCurrentTab() + '-' + el.dataset.filter;
   var keep = el.value && el.value !== 'id';
+  var life = !keep ? ';max-age=0' : (box && box.checked ? ';max-age=31536000' : '');
   document.cookie = name + '=' + encodeURIComponent(keep ? el.value : '') +
-    ';path=/;max-age=' + (keep ? 31536000 : 0) + ';samesite=lax';
+    ';path=/' + life + ';samesite=lax';
 };
 
 window.importCheckedIds = function() {
@@ -531,9 +532,11 @@ document.addEventListener('htmx:afterSwap', function(e) {
 
 });
 
-// Filter memory opt-in (#189). Ticking persists what's set right now; unticking
-// deletes every stored value for every tab so nothing lingers.
+// Filter memory opt-in (#189). Ticking makes what every tab holds right now
+// permanent; unticking deletes every stored value for every tab so nothing
+// lingers, and the tab on screen goes on holding what it shows.
 (function () {
+  var HELD = /^cgt-import-[a-z_]+-(platform|year|sort)$/;
   var box = document.getElementById('import-remember-filters');
   if (!box) return;
   function cookie(name) {
@@ -541,21 +544,28 @@ document.addEventListener('htmx:afterSwap', function(e) {
     return m ? decodeURIComponent(m[2]) : null;
   }
   box.checked = cookie('cgt-import-remember') === '1';
+  // A page opened from a filtered URL holds that filter too, or leaving the tab
+  // and coming back would lose what it is showing. Waits for DOMContentLoaded
+  // because that is where importRememberFilter gets defined.
+  if (!box.checked) {
+    document.addEventListener('DOMContentLoaded', function () {
+      document.querySelectorAll('#import-filters-form [data-filter]').forEach(importRememberFilter);
+    });
+  }
   box.addEventListener('change', function () {
     var on = box.checked;
     document.cookie = 'cgt-import-remember=' + (on ? '1' : '') +
       ';path=/;max-age=' + (on ? 31536000 : 0) + ';samesite=lax';
-    if (on) {
-      document.querySelectorAll('#import-filters-form [data-filter]').forEach(importRememberFilter);
-    } else {
-      // Clear every tab's stored values, not just the visible tab's.
-      document.cookie.split(';').forEach(function (c) {
-        var n = c.split('=')[0].trim();
-        if (/^cgt-import-[a-z_]+-(platform|year|sort)$/.test(n)) {
-          document.cookie = n + '=;path=/;max-age=0;samesite=lax';
-        }
-      });
-    }
+    // Every tab's values, not just the visible tab's. They are rewritten as
+    // stored: already encoded, and encodeURIComponent leaves no "=" in them.
+    document.cookie.split(';').forEach(function (c) {
+      var parts = c.trim().split('=');
+      if (HELD.test(parts[0])) {
+        document.cookie = parts[0] + '=' + (on ? parts[1] + ';max-age=31536000' : ';max-age=0') +
+          ';path=/;samesite=lax';
+      }
+    });
+    document.querySelectorAll('#import-filters-form [data-filter]').forEach(importRememberFilter);
   });
 })();
 </script>
