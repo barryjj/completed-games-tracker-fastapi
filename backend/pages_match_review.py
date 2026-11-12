@@ -6,7 +6,8 @@ lives in `match_review.py`; this module is only the HTTP surface for it.
 """
 
 import json as _json
-from urllib.parse import urlencode
+import re
+from urllib.parse import unquote, urlencode
 
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, Response
@@ -111,6 +112,9 @@ _CARD_RADIUS = 4
 # light index means each page builds only its own.
 _LIST_PAGE_SIZE = 50
 
+# Each tab's own platform and sort: cgt-psn-review-<kind>-<filter>.
+_PSN_HELD_FILTER = re.compile(r"cgt-psn-review-[a-z_]+-(platform|sort)")
+
 
 @router.get("/tools/psn-review")
 def psn_review_page(
@@ -139,10 +143,18 @@ def psn_review_page(
 
     # Opt-in sticky filters (#189), same contract as Library / Completions /
     # Import review. `q` excluded — a remembered search string is surprising.
-    _f = remembered_filters(request, "psn-review", {"platform": platform, "sort": sort, "kind": kind})
-    platform, sort, kind = _f["platform"], _f["sort"], _f["kind"]
-
+    # Only the tab is a remembered value of the page. Platform and sort belong
+    # to each tab, as on import review: within the page (any htmx request) a tab
+    # gets back what it was holding whatever the box says; ticked is what keeps
+    # them past a fresh load.
+    remember = request.cookies.get("cgt-psn-review-remember") == "1"
+    kind = remembered_filters(request, "psn-review", {"kind": kind})["kind"]
     kind = kind if kind in _PSN_REVIEW_KINDS or kind == "decided" else "cross_play"
+    held = remember or bool(request.headers.get("HX-Request"))
+    if held and "platform" not in request.query_params:
+        platform = unquote(request.cookies.get(f"cgt-psn-review-{kind}-platform", platform))
+    if held and "sort" not in request.query_params:
+        sort = unquote(request.cookies.get(f"cgt-psn-review-{kind}-sort", sort))
     # List or card is NOT a filter, and it does not belong in the opt-in filter
     # bundle where it used to live: that made remembering which layout you chose
     # conditional on having ticked a checkbox about filters, so for anyone who
@@ -249,6 +261,12 @@ def psn_review_page(
         response = templates.TemplateResponse(request=request, name="partials/_psn_review_content.html", context={**ctx, "oob": True})
     else:
         response = templates.TemplateResponse(request=request, name="psn_review.html", context=ctx)
+        # A fresh load is where unremembered choices end. Left in place, the
+        # next tab switch would bring back a filter from the last visit.
+        if not remember:
+            for name in request.cookies:
+                if _PSN_HELD_FILTER.fullmatch(name):
+                    response.delete_cookie(name, path="/")
     # no-store: rows are derived live from the candidates and the cross-buy
     # reference on every render, so a reload IS the refresh — but the desktop
     # shell's WKWebView heuristically caches GETs that carry no cache headers,

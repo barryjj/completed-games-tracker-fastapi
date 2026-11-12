@@ -36,7 +36,7 @@
       hx-swap="innerHTML"
       hx-push-url="true"
       hx-trigger="submit, input changed delay:300ms from:#psn-search"
-      hx-on::config-request="if (event.detail.triggeringEvent && event.detail.triggeringEvent.type === 'input') { psnResetCardIndex(); event.detail.parameters.card_index = 0; }">
+      hx-on::config-request="if (event.detail.triggeringEvent && event.detail.triggeringEvent.type === 'input') { psnResetCardIndex(); event.detail.parameters.card_index = 0; } if (window.psnSwitchingKind) { window.psnSwitchingKind = false; delete event.detail.parameters.platform; delete event.detail.parameters.sort; }">
   <input type="hidden" name="view" id="psn-view-field" value="{{ view }}">
   {# Which card the stack is on. Server-side now, so paging is a request rather
      than unhiding one of 561 cards nobody wanted in the DOM. #}
@@ -53,15 +53,7 @@
       <button type="button" class="btn btn-surface{% if view == 'card' %} active{% endif %}"
               onclick="psnSetView('card')" title="Card view">&#9638;</button>
     </div>
-    <select class="form-select form-select-sm" id="psn-platform" name="platform" style="width:auto;"
-            {% if kind == "played_only" %}hidden{% endif %}
-            onchange="htmx.trigger('#psn-review-filters', 'submit')"
-            title="Show only trophy sets offering this platform">
-      <option value="">All platforms</option>
-      {% for p in review_platforms %}
-      <option value="{{ p }}"{% if p == platform %} selected{% endif %}>{{ p }}</option>
-      {% endfor %}
-    </select>
+    {% include "partials/_psn_platform_select.html" %}
     <input id="psn-search" name="q" type="search" class="form-control form-control-sm"
            placeholder="Search title&hellip;" style="max-width:220px" value="{{ q }}" autocomplete="off">
     {# Sort options differ per queue: trophy progress is what tells two sets of
@@ -279,16 +271,14 @@ window.psnPendingDelta = function(d) {
 window.psnSetKind = function(kind) {
   psnResetCardIndex();
   document.getElementById('psn-kind-field').value = kind;
-  // A platform filter from the other tab would silently empty this one.
-  var sel = document.querySelector('#psn-review-filters select[name="platform"]');
-  if (sel) sel.value = '';
   var search = document.getElementById('psn-search');
   if (search) search.value = '';
-  // Sort keys are per-queue ("progress" means nothing on played-only).
-  var sortSel = document.querySelector('#psn-review-filters select[name="sort"]');
-  if (sortSel) sortSel.value = 'name';
-  // Every field above was set from script, so none of them fired a change
-  // event and none would have been stored on their own.
+  // Platform and sort belong to each tab. Sending the selects would hand this
+  // tab the last one's ("progress" means nothing on played-only), so the
+  // form's config-request drops them and the server answers with what this
+  // tab was holding, repainting both selects out-of-band.
+  window.psnSwitchingKind = true;
+  // kind was set from script, so it fired no change event to be stored by.
   if (window.psnPersistFilters) psnPersistFilters();
   htmx.trigger('#psn-review-filters', 'submit');
 };
@@ -702,57 +692,78 @@ document.addEventListener('DOMContentLoaded', function() {
    Unchecking deletes the values outright — no stale state left to surprise. #}
 
 (function () {
-  var PREFIX = 'psn-review';
-  // No 'view' here. Which layout you are in is a display preference, not a
-  // filter, and it has its own always-on cookie written by psnSetView — living
-  // in this opt-in bundle is exactly why it never stuck unless you happened to
-  // have "Remember filters" ticked.
-  var FIELDS = [{name:'platform',el:'psn-platform'},{name:'sort',el:'psn-sort'},{name:'kind',el:'psn-kind-field'}];
+  // Platform and sort are held PER TAB (cgt-psn-review-<kind>-<filter>), the
+  // way import review holds its filters: always written, so leaving a tab and
+  // coming back keeps them with the box unticked; ticked is what gives them a
+  // lifetime, and unticked the server drops them on the next fresh load. The
+  // tab you were on is the one value only the box remembers. No 'view' here:
+  // which layout you are in is a display preference with its own always-on
+  // cookie, written by psnSetView.
+  var PREFIX = 'cgt-psn-review-';
+  var HELD = /^cgt-psn-review-[a-z_]+-(platform|sort)$/;
+  var FOREVER = ';max-age=31536000';
   var box = document.getElementById('psn-remember-filters');
   if (!box) return;
 
-  function put(name, value, keep) {
-    document.cookie = 'cgt-' + PREFIX + '-' + name + '=' + encodeURIComponent(value) +
-      ';path=/;max-age=' + (keep ? 31536000 : 0) + ';samesite=lax';
+  function put(name, value, life) {
+    document.cookie = PREFIX + name + '=' + encodeURIComponent(value) + ';path=/' + life + ';samesite=lax';
   }
   function readCookie(name) {
-    var m = document.cookie.match('(^|;)\\s*cgt-' + PREFIX + '-' + name + '\\s*=\\s*([^;]*)');
+    var m = document.cookie.match('(^|;)\\s*' + PREFIX + name + '\\s*=\\s*([^;]*)');
     return m ? decodeURIComponent(m[2]) : null;
   }
-  function currentValue(id) {
-    var el = document.getElementById(id);
-    if (!el) return null;
-    return el.type === 'checkbox' ? (el.checked ? '1' : '') : el.value;
+  // Defaults clear the cookie, so "All platforms" or Title is never stored.
+  function hold(el) {
+    var keep = el.value && el.value !== (el.name === 'sort' ? 'name' : '');
+    put(psnCurrentKind() + '-' + el.name, keep ? el.value : '',
+        !keep ? ';max-age=0' : (box.checked ? FOREVER : ''));
   }
-  function persistAll(keep) {
-    FIELDS.forEach(function (f) {
-      var v = currentValue(f.el);
-      if (v === null) return;
-      put(f.name, keep ? v : '', keep);
+  function holdShown() {
+    ['psn-platform', 'psn-sort'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) hold(el);
     });
   }
+  function putKind() {
+    put('kind', box.checked ? psnCurrentKind() : '', box.checked ? FOREVER : ';max-age=0');
+  }
+
+  // Older builds kept one platform and one sort for every tab; nothing reads
+  // those now.
+  put('platform', '', ';max-age=0');
+  put('sort', '', ';max-age=0');
 
   box.checked = readCookie('remember') === '1';
+  // A page opened from a filtered URL holds that filter too, or leaving the tab
+  // and coming back would lose what it is showing.
+  if (!box.checked) holdShown();
+
+  // Ticking makes what every tab holds right now permanent; unticking deletes
+  // every tab's values, and the tab on screen goes on holding what it shows.
   box.addEventListener('change', function () {
     var on = box.checked;
-    put('remember', on ? '1' : '', on);
-    persistAll(on);
+    put('remember', on ? '1' : '', on ? FOREVER : ';max-age=0');
+    // Rewritten as stored: already encoded, and encodeURIComponent leaves no
+    // "=" in them.
+    document.cookie.split(';').forEach(function (c) {
+      var parts = c.trim().split('=');
+      if (HELD.test(parts[0])) {
+        document.cookie = parts[0] + '=' + (on ? parts[1] + FOREVER : ';max-age=0') + ';path=/;samesite=lax';
+      }
+    });
+    putKind();
+    holdShown();
   });
-  // Re-persist on every filter change while the box is on, so the stored set
-  // always matches what's on screen.
-  FIELDS.forEach(function (f) {
-    var el = document.getElementById(f.el);
-    if (el) el.addEventListener('change', function () { if (box.checked) persistAll(true); });
+  // Delegated: a tab switch replaces both selects out-of-band, and a listener
+  // bound to the old element would stop hearing changes after the first one.
+  document.addEventListener('change', function (e) {
+    var el = e.target;
+    if (el && (el.id === 'psn-platform' || el.id === 'psn-sort')) hold(el);
   });
 
-  // The view and kind fields are HIDDEN inputs written by psnSetView/psnSetKind.
-  // Assigning .value from script fires no 'change' event, so the listener above
-  // never ran for them and neither was ever stored: the view you picked came
-  // back as whatever it had been the last time a real <select> fired. Those
-  // functions call this instead of relying on an event they do not emit.
-  window.psnPersistFilters = function () {
-    if (box.checked) persistAll(true);
-  };
+  // The kind field is a HIDDEN input written by psnSetKind. Assigning .value
+  // from script fires no 'change' event, so psnSetKind calls this instead.
+  window.psnPersistFilters = putKind;
 })();
 
 

@@ -1,6 +1,6 @@
 {# Everything outside this swap target that describes the current queue rides
-   along OOB — tabs, pending count, blurb, and the per-queue sort options. #}
-{% if oob %}{% include "partials/_psn_review_chrome.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
+   along OOB — tabs, pending count, blurb, and the tab's own platform and sort. #}
+{% if oob %}{% include "partials/_psn_review_chrome.html" %}{% include "partials/_psn_platform_select.html" %}{% include "partials/_psn_sort_select.html" %}{% endif %}
 {# The review body — one queue and one view at a time, server-rendered.
    Swapped wholesale by the tab buttons, the view toggle and the filter. #}
 {# Decided rows are their own shape — an outcome and an undo, not a decision to

@@ -3851,10 +3851,57 @@ def test_psn_review_filters_are_remembered_when_opted_in(client, db_session):
     body = client.get("/tools/psn-review").text
     assert 'id="psn-remember-filters"' in body
 
-    client.cookies.set("cgt-psn-review-sort", "name")
+    client.cookies.set("cgt-psn-review-cross_play-sort", "progress")
     client.cookies.set("cgt-psn-review-remember", "1")
     r = client.get("/tools/psn-review")
     assert r.status_code == 200
+    assert 'value="progress" selected' in r.text
+
+
+def test_each_psn_review_tab_holds_its_own_filters_while_on_the_page(client, db_session):
+    """Switching tabs used to reset platform and sort, and with one stored value
+    for every tab even Remember filters couldn't give a tab its own back. Now
+    each tab holds its own while on the page; the box decides whether they
+    outlive it. Platform shows only on cross-play, the one queue it filters."""
+    import re
+
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    user.psn_npsso, user.psn_online_id = "npsso", "tester"
+    db_session.commit()
+
+    hx = {"HX-Request": "true"}
+    progress = 'value="progress" selected'
+
+    def platform_select(html):
+        return re.search(r'<select[^>]*id="psn-platform"[^>]*>', html).group(0)
+
+    client.cookies.set("cgt-psn-review-cross_play-sort", "progress")
+
+    played = client.get("/tools/psn-review?kind=played_only", headers=hx).text
+    assert 'value="name" selected' in played, "cross-play's sort leaked onto played-only"
+    assert "hidden" in platform_select(played), "platform shown where it filters nothing"
+    assert "hx-swap-oob" in platform_select(played), "platform select not repainted on a tab switch"
+
+    back = client.get("/tools/psn-review?kind=cross_play", headers=hx).text
+    assert progress in back, "the tab lost its sort"
+    assert "hidden" not in platform_select(back)
+
+    # The server's delete is read off the response: a cookie set by hand here
+    # has no domain, so the test client's jar keeps it where a browser would not.
+    page = client.get("/tools/psn-review?kind=cross_play")
+    assert progress not in page.text, "a fresh load must not bind an unremembered sort"
+    deletes = [c for c in page.headers.get_list("set-cookie") if "max-age=0" in c.lower()]
+    assert any(c.startswith("cgt-psn-review-cross_play-sort=") for c in deletes), "sort outlived the page"
+    client.cookies.delete("cgt-psn-review-cross_play-sort")
+    assert progress not in client.get("/tools/psn-review?kind=cross_play", headers=hx).text
+
+    client.cookies.set("cgt-psn-review-cross_play-sort", "progress")
+    client.cookies.set("cgt-psn-review-remember", "1")
+    page = client.get("/tools/psn-review?kind=cross_play")
+    assert progress in page.text
+    kept = [c for c in page.headers.get_list("set-cookie") if c.startswith("cgt-psn-review-cross_play-")]
+    assert not kept, "a remembered sort must survive a fresh load"
 
 
 def test_external_link_interceptor_binds_unconditionally():
