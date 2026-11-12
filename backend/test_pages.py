@@ -3880,7 +3880,7 @@ def test_each_psn_review_tab_holds_its_own_filters_while_on_the_page(client, db_
 
     played = client.get("/tools/psn-review?kind=played_only", headers=hx).text
     assert 'value="name" selected' in played, "cross-play's sort leaked onto played-only"
-    assert "hidden" in platform_select(played), "platform shown where it filters nothing"
+    assert "hidden" not in platform_select(played), "every tab filters by platform (#227)"
     assert "hx-swap-oob" in platform_select(played), "platform select not repainted on a tab switch"
 
     back = client.get("/tools/psn-review?kind=cross_play", headers=hx).text

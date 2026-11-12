@@ -1234,6 +1234,18 @@ def _platform_of_category(category: str) -> str | None:
     return None
 
 
+def played_platforms(item: dict) -> list[str]:
+    """Every platform a played-feed item was played on, oldest console first.
+
+    From all of its play categories, not the single `category` field, which only
+    keeps the last record merged: a game played on PS4 and again on PS5 is on
+    both, so a PS5 filter must find it (#227)."""
+    found = {_platform_of_category(c) for c in (item.get("playCategories") or [item.get("category")])}
+    found.discard(None)
+    ranked = [p for p in _PS_PLATFORM_RANK if p in found]
+    return ranked + sorted(found - set(ranked))
+
+
 def played_minutes_by_platform(item: dict) -> dict[str, int]:
     """Minutes played per platform, derived from the play records' categories."""
     out: dict[str, int] = {}
@@ -2153,6 +2165,9 @@ def decided_rows(db: Session, user_id: int) -> list[dict]:
                 "kind": cand.kind,
                 "status": cand.status,
                 "chosen_platforms": cand.chosen_platforms or [],
+                # What the platform filter matches: what was chosen, or for a
+                # dismissal, which chose nothing, the row's own platforms (#227).
+                "platforms": cand.chosen_platforms or platform_candidates(cand.raw_data or {}),
                 "image": cand.thumbnail_url,
                 "hero": cand.hero_url or cand.thumbnail_url,
                 "logo": cand.logo_url,
@@ -2215,6 +2230,7 @@ def played_only_rows(db: Session, user_id: int) -> list[dict]:
                 "hero": cand.hero_url or cand.thumbnail_url,
                 "logo": cand.logo_url,
                 "category": item.get("category"),
+                "platforms": played_platforms(item),
                 "service": item.get("service"),
                 "minutes": duration_to_minutes(item.get("playDuration")) or 0,
                 "play_count": item.get("playCount"),

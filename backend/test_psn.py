@@ -5715,6 +5715,70 @@ def test_media_app_matching_never_eats_a_real_game():
         assert not psn.is_media_app({"name": name}), name
 
 
+def test_the_platform_filter_works_on_every_review_tab(client, db_session):
+    """It only ever filtered cross-play, so "review my PS5 games" was impossible
+    on played-only and decided (#227). Played-only goes by where a game was
+    played, every play record counted; decided by what was chosen, or for a
+    dismissal the row's own platforms. Each tab offers its own rows' platforms,
+    and one that isn't among them filters nothing."""
+    _seed_platforms(db_session)
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    played = [
+        ("PPSA90001_00", "Native Five", "ps5_native_game", None),
+        ("CUSA90001_00", "Old Four", "ps4_game", None),
+        ("CUSA90002_00", "Played Both", "ps5_native_game", ["ps4_game", "ps5_native_game"]),
+    ]
+    _seed_review(
+        db_session,
+        user,
+        [
+            {
+                "titleId": tid,
+                "name": name,
+                "displayName": name,
+                "category": cat,
+                "playDuration": "PT3H",
+                "sources": ["played"],
+                **({"playCategories": cats} if cats else {}),
+            }
+            for tid, name, cat, cats in played
+        ],
+        kind="played_only",
+    )
+    for ext, title, status, chosen, plat in (
+        ("NPWR90005_00", "Kept Five", "confirmed", ["PS5"], "PS4,PS5"),
+        ("NPWR90004_00", "Dropped Four", "dismissed", [], "PS4"),
+    ):
+        db_session.add(
+            models.PsnReviewCandidate(
+                user_id=user.id,
+                external_id=ext,
+                title=title,
+                kind="cross_play",
+                status=status,
+                chosen_platforms=chosen,
+                raw_data={"npCommunicationId": ext, "name": title, "displayName": title, "platform": plat},
+            )
+        )
+    db_session.commit()
+
+    hx = {"HX-Request": "true"}
+    five = client.get("/tools/psn-review?kind=played_only&view=list&platform=PS5", headers=hx).text
+    assert "Native Five" in five and "Played Both" in five
+    assert "Old Four" not in five
+    assert '<option value="PS4"' in five, "played-only offers its own rows' platforms"
+
+    five = client.get("/tools/psn-review?kind=decided&platform=PS5", headers=hx).text
+    assert "Kept Five" in five and "Dropped Four" not in five
+    # The set offered PS4 too, but only PS5 was chosen.
+    four = client.get("/tools/psn-review?kind=decided&platform=PS4", headers=hx).text
+    assert "Dropped Four" in four and "Kept Five" not in four
+
+    stale = client.get("/tools/psn-review?kind=decided&platform=PS3", headers=hx).text
+    assert "Kept Five" in stale and "Dropped Four" in stale, "a platform the tab doesn't offer filtered it"
+
+
 def test_a_decided_row_can_be_reopened(client, db_session):
     """This queue used to drop decided rows entirely, so a mis-click was
     unrecoverable from the UI — import review keeps a Confirmed tab and

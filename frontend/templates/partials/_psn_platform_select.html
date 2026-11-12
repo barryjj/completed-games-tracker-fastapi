@@ -1,14 +1,11 @@
 {# The platform filter, in one place so the copy in the filter form (full page)
    and the out-of-band copy (every partial response, `oob` true) can't drift.
-   It rides along OOB because each tab holds its own platform: a tab switch
-   repaints it with what that tab was holding. Shown on cross-play only, the
-   one queue it filters -- played-only and decided rows ignore it, and a
-   control that does nothing when used is worse than an absent one. #}
+   It rides along OOB because each tab holds its own platform and offers its
+   own rows' platforms: a tab switch repaints it with both (#227). #}
 <select class="form-select form-select-sm" id="psn-platform" name="platform" style="width:auto;"
-        {% if kind != "cross_play" %}hidden{% endif %}
         {% if oob %}hx-swap-oob="true"{% endif %}
         onchange="htmx.trigger('#psn-review-filters', 'submit')"
-        title="Show only trophy sets offering this platform">
+        title="Show only games on this platform">
   <option value="">All platforms</option>
   {% for p in review_platforms %}
   <option value="{{ p }}"{% if p == platform %} selected{% endif %}>{{ p }}</option>

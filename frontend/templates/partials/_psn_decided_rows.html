@@ -2,7 +2,7 @@
    this queue used to drop them entirely, which made a mis-click unrecoverable
    from the UI (#180). #}
 {% if not rows %}
-<p class="text-secondary">Nothing decided yet.</p>
+<p class="text-secondary">{% if platform %}Nothing decided on {{ platform }}.{% else %}Nothing decided yet.{% endif %}</p>
 {% else %}
 <table class="table align-middle">
   <thead>

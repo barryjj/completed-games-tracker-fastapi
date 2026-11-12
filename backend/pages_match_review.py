@@ -182,6 +182,10 @@ def psn_review_page(
     next_page_url = None
 
     if indexed:
+        # A held platform only survives while it's still an option here: the
+        # select can't show a value it has no option for, so the queue would
+        # read as filtered with no filter visible to clear.
+        platform = platform if platform in review_platforms else ""
         if platform:
             index_rows = [i for i in index_rows if platform in i["platforms"]]
         if q:
@@ -207,28 +211,27 @@ def psn_review_page(
         counts = {"cross_play": card_total, "played_only": len(played_rows), "decided": len(decided)}
     else:
         # The played-only and decided tabs do not show cross-play rows at all --
-        # they only need its COUNT for the tab badge and its platforms for the
-        # filter. Building all 561 to produce a number and a list of platform
-        # names is the same mistake count_pending_review_rows was written to fix
-        # for the header badge, missed here (#196).
-        #
-        # Both come off the light index instead, which is one query and no row
-        # building. It also makes the platform filter agree with the cross-play
-        # tab, which already sourced it from the index.
+        # they only need its COUNT for the tab badge. Building all 561 to
+        # produce a number is the same mistake count_pending_review_rows was
+        # written to fix for the header badge, missed here (#196), so it comes
+        # off the light index instead: one query and no row building. Their
+        # platform filters come from their own rows (#227).
         counts = {
             "cross_play": psn.count_pending_review_rows(db, current_user.id),
             "played_only": len(played_rows),
             "decided": len(decided),
         }
-        review_platforms = sorted({p for i in psn.review_row_index(db, current_user.id) for p in i["platforms"]})
         if kind in ("played_only", "decided"):
             rows = played_rows if kind == "played_only" else decided
+            # Each tab filters by, and offers, its own rows' platforms (#227).
+            review_platforms = sorted({p for r in rows for p in r["platforms"]})
+            platform = platform if platform in review_platforms else ""
+            if platform:
+                rows = [r for r in rows if platform in r["platforms"]]
         else:
             # A kind that is neither -- reachable by URL (title_fix, media_app,
             # igdb_link) and genuinely needs the rows.
             rows = psn.import_review_rows(db, current_user.id)
-        if kind == "cross_play" and platform:
-            rows = [r for r in rows if any(o["platform"] == platform for o in r["options"])]
         if q:
             needle = q.casefold()
             rows = [r for r in rows if needle in (r["name"] or "").casefold()]
