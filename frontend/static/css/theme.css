@@ -54,6 +54,7 @@ html[data-bs-theme="dark"] {
   --cgt-btn-warning-edge: color-mix(in srgb, var(--ctp-yellow) 55%, var(--cgt-btn-tint-base));
   --cgt-conf-wash:  20%;  /* active confidence tab */
   --cgt-conf-badge: 30%;  /* its count badge, ink over the tab fill */
+  --cgt-nav-tint:   55%;  /* active settings-nav item */
 
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
@@ -198,6 +199,7 @@ html[data-bs-theme="light"] {
   --cgt-btn-warning-edge: var(--cgt-yellow-ink);
   --cgt-conf-wash:  40%;
   --cgt-conf-badge: 45%;
+  --cgt-nav-tint:   55%;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #dfe3e8;
@@ -237,7 +239,7 @@ html[data-bs-theme="light"] {
   --bs-dropdown-link-active-color: #ffffff;
   --bs-card-border-color:         #b3bcc9;
   --bs-card-bg:                   #ffffff;
-  --bs-input-bg:                  #ffffff;
+  --bs-input-bg:                  #eceff4;  /* nord6: white fields glared on the grey page */
   --bs-input-border-color:        #b3bcc9;
   --bs-input-color:               #2e3440;
   --bs-input-placeholder-color:   #8792a5;
@@ -317,6 +319,7 @@ html[data-palette="latte"] {
   --cgt-btn-warning-edge: color-mix(in srgb, var(--ctp-yellow) 55%, var(--cgt-btn-tint-base));
   --cgt-conf-wash:  25%;
   --cgt-conf-badge: 45%;
+  --cgt-nav-tint:   30%;
 
   --bs-body-bg:                   #dce0e8;
   --bs-body-bg-rgb:               220,224,232;
@@ -2820,9 +2823,11 @@ html[data-bs-theme="dark"] #match-tabs .badge {
   background: var(--ctp-surface0);
   color: var(--ctp-text);
 }
+/* The tinted-button recipe (#207): normal text on mauve over the tint base,
+   mauve edge. Accent text on a faint wash was loud in Latte, dusty in Nord. */
 .cgt-settings-nav__item.active {
-  color: var(--ctp-mauve);
-  background: color-mix(in srgb, var(--ctp-mauve) 10%, transparent);
+  color: var(--ctp-text);
+  background: color-mix(in srgb, var(--ctp-mauve) var(--cgt-nav-tint), var(--cgt-btn-tint-base));
   border-left-color: var(--ctp-mauve);
   border-radius: 0 4px 4px 0;
 }
