@@ -171,6 +171,66 @@ def test_sync_writes_definitions_per_app_and_unlocks_per_account(db_session, mon
     assert (summary.earned, summary.total, summary.progress, summary.title) == (1, 2, 50, "Game 440")
 
 
+_LEGACY = "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/"
+_CURRENT = "https://shared.akamai.steamstatic.com/community_assets/images/apps/"
+
+
+def test_icons_on_the_retired_host_are_stored_on_the_current_one(db_session, monkeypatch):
+    """GetSchemaForGame still returns steamcdn-a icons, which 404 for newer
+    games; a sync stores the same path on the current host."""
+    user = _user(db_session)
+    _entry(db_session, user, "4115450")
+    schema = [{"name": "A", "displayName": "A", "icon": _LEGACY + "4115450/a.jpg", "icongray": _LEGACY + "4115450/a_g.jpg"}]
+    _api(monkeypatch, schema={"4115450": schema}, player={"4115450": []})
+
+    sa.sync_achievements(db_session, user, sleep=0)
+
+    d = db_session.query(models.AchievementDefinition).filter_by(source="steam", set_id="4115450").one()
+    assert d.icon_url == _CURRENT + "4115450/a.jpg"
+    assert d.icon_locked_url == _CURRENT + "4115450/a_g.jpg"
+    # Anything else passes through untouched.
+    assert sa._icon("https://x/win.jpg") == "https://x/win.jpg" and sa._icon(None) is None
+
+
+def test_migration_moves_stored_steam_icons_to_the_current_host(db_session, monkeypatch):
+    """b5e8d1f3a7c2 rewrites what earlier syncs stored: Steam rows on the
+    retired host only, both icon columns, path kept."""
+    import importlib.util
+    import pathlib
+
+    path = next(pathlib.Path(__file__).parent.parent.glob("alembic/versions/b5e8d1f3a7c2_*.py"))
+    spec = importlib.util.spec_from_file_location("mig_b5e8d1f3a7c2", path)
+    mig = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mig)
+
+    def define(source, ext, icon, locked):
+        row = models.AchievementDefinition(
+            source=source, set_id="1", external_id=ext, name=ext, icon_url=icon, icon_locked_url=locked, sort_order=0
+        )
+        db_session.add(row)
+        return row
+
+    old = define("steam", "old", _LEGACY + "1/a.jpg", _LEGACY + "1/a_g.jpg")
+    other = define("steam", "other", "https://x/b.jpg", None)
+    psn = define("psn", "psn", _LEGACY + "1/c.jpg", None)
+    db_session.commit()
+
+    class _Op:
+        @staticmethod
+        def get_bind():
+            return db_session.connection()
+
+    monkeypatch.setattr(mig, "op", _Op)
+    mig.upgrade()
+    db_session.commit()
+    for row in (old, other, psn):
+        db_session.refresh(row)
+
+    assert (old.icon_url, old.icon_locked_url) == (_CURRENT + "1/a.jpg", _CURRENT + "1/a_g.jpg")
+    assert (other.icon_url, other.icon_locked_url) == ("https://x/b.jpg", None)
+    assert psn.icon_url == _LEGACY + "1/c.jpg"
+
+
 def test_sync_is_current_after_one_pass_and_refetches_progress_when_played_again(db_session, monkeypatch):
     """The gate is last_played_at against the rows on file: a quiet re-run
     spends nothing; a games sync that moves the stamp refetches progress and

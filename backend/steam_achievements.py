@@ -59,6 +59,20 @@ _PROGRESS_KEY = "achievement_progress"
 # says the schema has grown since.
 _SCHEMA_KEY = "achievement_schema"
 
+# GetSchemaForGame still hands out icons on the retired steamcdn-a host,
+# which serves older games but 404s newer ones (Phantom Blade Zero showed
+# WebKit's broken-image "?"). The same path lives on the current host for
+# every game, old and new.
+_LEGACY_ICON_BASE = "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/apps/"
+_ICON_BASE = "https://shared.akamai.steamstatic.com/community_assets/images/apps/"
+
+
+def _icon(url: str | None) -> str | None:
+    """An achievement icon on Steam's current image host."""
+    if url and url.startswith(_LEGACY_ICON_BASE):
+        return _ICON_BASE + url[len(_LEGACY_ICON_BASE) :]
+    return url
+
 
 def _get(url: str, params: dict) -> httpx.Response:
     """One WebAPI call. Returned raw: GetPlayerAchievements answers a game
@@ -288,8 +302,8 @@ def _store_definitions(
             "name": a.get("displayName") or ext,
             "description": a.get("description"),
             "hidden": bool(a.get("hidden")),
-            "icon_url": a.get("icon"),
-            "icon_locked_url": a.get("icongray"),
+            "icon_url": _icon(a.get("icon")),
+            "icon_locked_url": _icon(a.get("icongray")),
             "rarity_pct": rates.get(ext),
             "sort_order": i,
             "raw_data": a,

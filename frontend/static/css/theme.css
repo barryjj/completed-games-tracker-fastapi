@@ -3270,12 +3270,16 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-tool-grid--paired .cgt-tool-card--tall {
   grid-row: span 2;
 }
-/* Five cards is four columns in column flow, which needs ~1,250px. Below
-   that, and above the single-column fallback, two columns in row flow: the
-   short pair sits side by side and the list cards fill a row each. Scoped to
-   a grid that actually has a fifth card, so four cards keep the three-column
-   pairing they had; without this tier the fourth column ran off the page. */
-@media (max-width: 1250px) {
+/* Five cards is four columns in column flow: 4 x 300px + gaps = 1,248px of
+   content. That is the .container's width, not the viewport's -- Bootstrap
+   caps it at 1,116px of content below its xxl edge (1,400px), so four columns
+   only fit from there up. Below that, and above the single-column fallback,
+   two columns in row flow: the short pair sits side by side and the list
+   cards fill a row each. Scoped to a grid that actually has a fifth card, so
+   four cards keep the three-column pairing they had. The breakpoint was once
+   1,250px (the content width), which ran the fourth column off the page for
+   windows between 1,250 and 1,400px wide. */
+@media (max-width: 1399.98px) {
   .cgt-tool-grid--paired:has(> :nth-child(5)) {
     grid-auto-flow: row;
     grid-template-columns: repeat(2, minmax(0, 1fr));
