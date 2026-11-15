@@ -38,6 +38,34 @@ Mocha.
 
 **Rule: no emoji in UI chrome.** Badge labels, headings, button text — plain text only.
 
+### Tinted buttons and tabs (#207)
+
+Coloured buttons (`btn-primary` / `-success` / `-danger` / `-warning`) and the
+active match-review confidence tab are **tinted, not filled**: the accent mixed
+into the card colour, normal `--ctp-text`, and the colour carried in the edge.
+
+- **Mix into the card colour, never a grey surface.** The tint base is
+  `--cgt-btn-tint-base`: `--ctp-mantle` (cards) in the light palettes,
+  `--ctp-base` (page) in Mocha. Accent + grey is mud — it's what turned the old
+  orange tab brown and red dusty rose.
+- Strengths and edges are per palette, in the palette blocks of `theme.css`;
+  the fills themselves are built once under "Buttons".
+
+| | Latte | Nord | Mocha |
+|---|---|---|---|
+| Button tint / hover | 30% / 45% | 45% / 60% (primary 75% / 90%) | 45% / 60% |
+| Button edge | accent 55% over the tint base | Save/Delete/warning: badge inks (`--cgt-*-ink`); primary: mauve 90% | accent 55% over the tint base |
+| Active tab tint (`--cgt-conf-wash`) | 25% | 40% | 20% |
+| Tab badge (`--cgt-conf-badge`) | ink 45% over the tab fill | 45% | 30% |
+| Grey button (`btn-surface`) | surface0 fill, surface2 edge | surface0, surface2 | surface0, surface1 |
+
+Confidence tabs are green / yellow / **red** for High / Medium / Low.
+
+Latte has its own surfaces, remapped from its published greys so cards lift off
+the page: page `#dce0e8` (published crust), cards and navbar `#eff1f5`
+(published base), card border surface1 `#bcc0cc`. Platform badges wash at 26%
+in both light palettes.
+
 ---
 
 ## Navigation & Page Layout
@@ -77,8 +105,8 @@ guessed at.
 
 | Var | Mocha | Latte | Role |
 |-----|-------|-------|------|
-| `--ctp-base` | `#1e1e2e` | `#eff1f5` | Page background |
-| `--ctp-mantle` | `#181825` | `#e6e9ef` | Sidebar / offcanvas bg |
+| `--ctp-base` | `#1e1e2e` | `#dce0e8` | Page background |
+| `--ctp-mantle` | `#181825` | `#eff1f5` | Cards, navbar, sidebar / offcanvas bg |
 | `--ctp-surface0` | `#313244` | `#ccd0da` | Card bg, input bg |
 | `--ctp-surface1` | `#45475a` | `#bcc0cc` | Hover / raised surfaces, IGDB linked card bg |
 | `--ctp-overlay0` | `#6c7086` | `#9ca0b0` | Placeholder text |
@@ -97,7 +125,7 @@ guessed at.
 | `--ctp-peach` | `#fab387` | `#fe640b` | Metacritic "Weak" score |
 | `--ctp-yellow` | `#f9e2af` | `#df8e1d` | Metacritic "Mixed" score |
 | `--ctp-red` | `#f38ba8` | `#d20f39` | Danger buttons, Nintendo badge, Metacritic "Bad" |
-| `--ctp-crust` | `#11111b` | `#dce0e8` | Button text on colored backgrounds |
+| `--ctp-crust` | `#11111b` | `#e6e9ef` | Darkest surface (Latte's is remapped, see above) |
 
 ---
 

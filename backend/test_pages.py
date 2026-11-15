@@ -3359,14 +3359,21 @@ def test_button_shade_tokens_exist_in_every_palette():
     used = set(re.findall(r"var\((--cgt-btn-[a-z-]+)\)", css))
     assert used, "no button tokens consumed — did they get renamed?"
 
-    blocks = {
-        "dark": css[css.index('html[data-bs-theme="dark"]') : css.index('html[data-bs-theme="light"]')],
-        "light": css[css.index('html[data-bs-theme="light"]') : css.index('html[data-palette="latte"]')],
-        "latte": css[css.index('html[data-palette="latte"]') :],
-    }
+    def block_at(start: int) -> str:
+        return css[start : css.index("\n}", start)]
+
+    dark = block_at(css.index('html[data-bs-theme="dark"] {'))
+    light = block_at(css.index('html[data-bs-theme="light"] {'))
+    latte = block_at(css.index('html[data-palette="latte"] {'))
+    # The tinted-button fills (#207) are built once from each palette's own
+    # strengths, in a bare `html {` block that applies under every palette.
+    shared = block_at(css.index("\nhtml {") + 1)
+    # What each palette actually sees: Latte is also data-bs-theme="light", so
+    # it inherits whatever the Nord block declares and it doesn't override.
+    sees = {"dark": dark + shared, "light": light + shared, "latte": latte + light + shared}
     for token in sorted(used):
-        for palette, block in blocks.items():
-            assert f"{token}:" in block, f"{token} is consumed but undefined in {palette} — invisible there only"
+        for palette, scope in sees.items():
+            assert f"{token}:" in scope, f"{token} is consumed but undefined in {palette} — invisible there only"
 
 
 def test_boot_script_migrates_pre_nord_theme_settings():
@@ -3529,8 +3536,9 @@ def test_key_rules_survive_comment_stripping():
 
     css = re.sub(r"/\*.*?\*/", "", open("frontend/static/css/theme.css").read(), flags=re.S)
     for selector, needle in (
-        (".btn-primary {", "var(--ctp-mauve)"),
-        (".btn-danger {", "var(--ctp-red)"),
+        (".btn-primary {", "var(--cgt-btn-primary-fill)"),
+        (".btn-danger {", "var(--cgt-btn-danger-fill)"),
+        ("\nhtml {", "var(--ctp-mauve)"),
         (".cgt-tool-card {", "var(--ctp-mantle)"),
         (".cgt-tool-card__body {", "font-size:"),
     ):
@@ -4278,13 +4286,12 @@ def test_every_pale_nord_accent_has_an_ink_and_sega_is_blue():
             assert f"--cgt-{accent}-ink" in block, f"{accent} ink missing from {name}"
         assert "--cgt-chip-wash" in block, f"{name} defines no chip wash"
 
-    # Nord leans on a heavier wash because its accents are muted; the others
-    # would look heavy with it.
-    nord = css[css.index(blocks["nord"]) :][:4000]
-    assert "--cgt-chip-wash: 26%" in nord
-    for other in ("mocha", "latte"):
-        block = css[css.index(blocks[other]) :][:4000]
-        assert "--cgt-chip-wash: 15%" in block, other
+    # The light palettes take a heavier wash: Nord because its accents are
+    # muted, Latte since #207 because at 15% the PS4 chip blurred into its new
+    # page colour. Mocha's accents already separate from near-black.
+    for light in ("nord", "latte"):
+        assert "--cgt-chip-wash: 26%" in css[css.index(blocks[light]) :][:4000], light
+    assert "--cgt-chip-wash: 15%" in css[css.index(blocks["mocha"]) :][:4000]
 
     # Every chip takes its ink and the palette's wash — no hardcoded 15%.
     for accent in pale:

@@ -40,6 +40,20 @@ html[data-bs-theme="dark"] {
   --cgt-btn-danger:         var(--ctp-red);
   --cgt-btn-danger-hover:   var(--ctp-maroon);
   --cgt-btn-on-fill:        var(--ctp-crust);
+  /* Tinted buttons and match-review tabs (#207) -- recipe under "Buttons".
+     Dark tints over its own page colour; a little goes a long way on near-black,
+     which is what lets Mocha drop the outline-only tabs. */
+  --cgt-btn-tint-base:          var(--ctp-base);
+  --cgt-btn-tint:               45%;
+  --cgt-btn-tint-hover:         60%;
+  --cgt-btn-primary-tint:       45%;
+  --cgt-btn-primary-tint-hover: 60%;
+  --cgt-btn-primary-edge: color-mix(in srgb, var(--ctp-mauve)  55%, var(--cgt-btn-tint-base));
+  --cgt-btn-success-edge: color-mix(in srgb, var(--ctp-green)  55%, var(--cgt-btn-tint-base));
+  --cgt-btn-danger-edge:  color-mix(in srgb, var(--ctp-red)    55%, var(--cgt-btn-tint-base));
+  --cgt-btn-warning-edge: color-mix(in srgb, var(--ctp-yellow) 55%, var(--cgt-btn-tint-base));
+  --cgt-conf-wash:  20%;  /* active confidence tab */
+  --cgt-conf-badge: 30%;  /* its count badge, ink over the tab fill */
 
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
@@ -169,6 +183,21 @@ html[data-bs-theme="light"] {
   --cgt-btn-danger-hover:   #b14852;
   --cgt-btn-on-fill:        #ffffff;
   --cgt-btn-primary-rgb:    167,122,159;
+  /* Tinted buttons and match-review tabs (#207). Nord's accents are pale, so
+     they take more tint than Latte's; Confirm (primary) gets more again or it
+     reads as disabled next to Save. Save/Delete edges are the badge inks --
+     55% of a pale accent blended into the page. */
+  --cgt-btn-tint-base:          var(--ctp-mantle);
+  --cgt-btn-tint:               45%;
+  --cgt-btn-tint-hover:         60%;
+  --cgt-btn-primary-tint:       75%;
+  --cgt-btn-primary-tint-hover: 90%;
+  --cgt-btn-primary-edge: color-mix(in srgb, var(--ctp-mauve) 90%, var(--cgt-btn-tint-base));
+  --cgt-btn-success-edge: var(--cgt-green-ink);
+  --cgt-btn-danger-edge:  var(--cgt-red-ink);
+  --cgt-btn-warning-edge: var(--cgt-yellow-ink);
+  --cgt-conf-wash:  40%;
+  --cgt-conf-badge: 45%;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #dfe3e8;
@@ -224,9 +253,13 @@ html[data-bs-theme="light"] {
 }
 
 /* ─── Catppuccin Latte (light, opt-in) ───────────────────────────────────── */
-/* Same surfaces as Nord — the flat page↔card step was a Latte problem worth
-   fixing regardless of which accents sit on it. Only the accents and the
-   shades derived from them change.
+/* Its own surfaces (#207). It used to borrow Nord's greys, because published
+   Latte's page↔card step (#eff1f5 page, #e6e9ef cards) is too flat for cards
+   to lift off the page. The fix is a REMAP of Latte's own greys, not new ones:
+   the page takes crust (#dce0e8), cards and the navbar take base (#eff1f5),
+   and mantle (#e6e9ef) sits between as crust. Surfaces, overlays and text are
+   published Latte. Every hardcoded Nord hex in the light block's Bootstrap
+   overrides is re-pointed below, or Latte would inherit it.
    These are Latte's published accents, rendered as published. Previously the
    stat rows mixed every accent 65% toward --ctp-text, which stripped an
    average of 42% of their saturation, unevenly (teal lost 29%, pink 55%) —
@@ -239,6 +272,10 @@ html[data-palette="latte"] {
   --ctp-maroon:   #e64553; --ctp-red:      #d20f39; --ctp-peach:    #fe640b;
   --ctp-yellow:   #df8e1d; --ctp-green:    #40a02b; --ctp-teal:     #179299;
   --ctp-sky:      #04a5e5; --ctp-sapphire: #209fb5;
+  --ctp-base:     #dce0e8; --ctp-mantle:   #eff1f5; --ctp-crust:    #e6e9ef;
+  --ctp-surface0: #ccd0da; --ctp-surface1: #bcc0cc; --ctp-surface2: #acb0be;
+  --ctp-overlay0: #9ca0b0; --ctp-overlay1: #8c8fa1; --ctp-text:     #4c4f69;
+  --ctp-subtext:  #5c5f77; --ctp-subtext0: #6c6f85; --ctp-subtext1: #5c5f77;
 
   --cgt-ps-ink: #5566d8;  /* latte lavender darkened */
   --cgt-igdb-ink: #40a02b;  /* latte green is already dark enough */
@@ -257,7 +294,8 @@ html[data-palette="latte"] {
   --cgt-flamingo-ink:  var(--ctp-flamingo);
   --cgt-rosewater-ink: var(--ctp-rosewater);
   --cgt-peach-ink:     var(--ctp-peach);
-  --cgt-chip-wash: 15%;
+  /* Nord's 26%: at 15% the PS4 chip blurred into the page. */
+  --cgt-chip-wash: 26%;
   --cgt-btn-primary:        #a370e8;
   --cgt-btn-primary-hover:  #8f5cd4;
   --cgt-btn-success:        #5aba54;
@@ -266,7 +304,49 @@ html[data-palette="latte"] {
   --cgt-btn-danger-hover:   #c23555;
   --cgt-btn-on-fill:        #ffffff;
   --cgt-btn-primary-rgb:    163,112,232;
+  /* Tinted buttons and match-review tabs (#207). Latte's accents are already
+     dark, so they need the least tint, and the edge is the accent at 55% --
+     Nord's inks would be pass-throughs here and read too heavy. */
+  --cgt-btn-tint:               30%;
+  --cgt-btn-tint-hover:         45%;
+  --cgt-btn-primary-tint:       30%;
+  --cgt-btn-primary-tint-hover: 45%;
+  --cgt-btn-primary-edge: color-mix(in srgb, var(--ctp-mauve)  55%, var(--cgt-btn-tint-base));
+  --cgt-btn-success-edge: color-mix(in srgb, var(--ctp-green)  55%, var(--cgt-btn-tint-base));
+  --cgt-btn-danger-edge:  color-mix(in srgb, var(--ctp-red)    55%, var(--cgt-btn-tint-base));
+  --cgt-btn-warning-edge: color-mix(in srgb, var(--ctp-yellow) 55%, var(--cgt-btn-tint-base));
+  --cgt-conf-wash:  25%;
+  --cgt-conf-badge: 45%;
 
+  --bs-body-bg:                   #dce0e8;
+  --bs-body-bg-rgb:               220,224,232;
+  --bs-body-color:                #4c4f69;
+  --bs-body-color-rgb:            76,79,105;
+  --bs-emphasis-color:            #4c4f69;
+  --bs-secondary-color:           #5c5f77;
+  --bs-secondary-bg:              #eff1f5;
+  --bs-tertiary-bg:               #ccd0da;
+  --bs-border-color:              #bcc0cc;
+  --bs-border-color-translucent:  rgba(188,192,204,0.3);
+  --bs-navbar-color:              #5c5f77;
+  --bs-navbar-hover-color:        #4c4f69;
+  --bs-navbar-active-color:       #4c4f69;
+  --bs-nav-link-color:            #5c5f77;
+  --bs-nav-link-hover-color:      #4c4f69;
+  --bs-dropdown-bg:               #eff1f5;
+  --bs-dropdown-border-color:     #bcc0cc;
+  --bs-dropdown-divider-bg:       #bcc0cc;
+  --bs-dropdown-link-color:       #5c5f77;
+  --bs-dropdown-link-hover-color: #4c4f69;
+  --bs-dropdown-link-hover-bg:    #ccd0da;
+  --bs-card-border-color:         #bcc0cc;
+  --bs-card-bg:                   #eff1f5;
+  --bs-input-bg:                  #eff1f5;
+  --bs-input-border-color:        #bcc0cc;
+  --bs-input-color:               #4c4f69;
+  --bs-input-placeholder-color:   #9ca0b0;
+  --bs-table-striped-bg:          rgba(239,241,245,0.55);
+  --bs-table-border-color:        #bcc0cc;
   --bs-link-color:                #a370e8;
   --bs-link-hover-color:          #8f5cd4;
   --bs-primary:                   #a370e8;
@@ -305,45 +385,51 @@ html[data-palette="latte"] {
 .form-label { color: var(--ctp-text); font-weight: 500; }
 
 /* ─── Buttons ────────────────────────────────────────────────────────────── */
-.btn-primary {
-  --bs-btn-bg:                  var(--ctp-mauve);
-  --bs-btn-border-color:        var(--ctp-mauve);
-  --bs-btn-color:               var(--ctp-crust);
-  --bs-btn-hover-bg:            var(--ctp-lavender);
-  --bs-btn-hover-border-color:  var(--ctp-lavender);
-  --bs-btn-hover-color:         var(--ctp-crust);
-  --bs-btn-active-bg:           var(--ctp-lavender);
-  --bs-btn-disabled-bg:         var(--ctp-mauve);
-  --bs-btn-disabled-border-color: var(--ctp-mauve);
-  --bs-btn-disabled-color:      var(--ctp-crust);
-  --bs-btn-focus-shadow-rgb:    var(--bs-primary-rgb);
+/* Coloured buttons are TINTED, not filled (#207): the accent mixed into
+   --cgt-btn-tint-base (the card colour in light, the page in dark) at
+   --cgt-btn-tint, normal --ctp-text, and the colour carried in the edge
+   (--cgt-btn-*-edge). Hover steps the tint to --cgt-btn-tint-hover. It is the
+   same recipe as the active match-review tab, so the two read as one family.
+   Solid fills were what made Latte's buttons shout and Nord's look muddy.
+
+   Never mix the tint into a grey surface: accent + grey is what turned orange
+   brown and red dusty rose on the old tabs. Mix into the card/page colour.
+
+   The fills are built once, here, so anything else that should look like a
+   primary button (light-mode <details> summaries) can use them. The palette
+   blocks only set the strengths and edges. The solid --cgt-btn-* shades are
+   NOT buttons any more -- links, the navbar brand and selection tints use them. */
+html {
+  --cgt-btn-primary-fill:       color-mix(in srgb, var(--ctp-mauve)  var(--cgt-btn-primary-tint),       var(--cgt-btn-tint-base));
+  --cgt-btn-primary-fill-hover: color-mix(in srgb, var(--ctp-mauve)  var(--cgt-btn-primary-tint-hover), var(--cgt-btn-tint-base));
+  --cgt-btn-success-fill:       color-mix(in srgb, var(--ctp-green)  var(--cgt-btn-tint),       var(--cgt-btn-tint-base));
+  --cgt-btn-success-fill-hover: color-mix(in srgb, var(--ctp-green)  var(--cgt-btn-tint-hover), var(--cgt-btn-tint-base));
+  --cgt-btn-danger-fill:        color-mix(in srgb, var(--ctp-red)    var(--cgt-btn-tint),       var(--cgt-btn-tint-base));
+  --cgt-btn-danger-fill-hover:  color-mix(in srgb, var(--ctp-red)    var(--cgt-btn-tint-hover), var(--cgt-btn-tint-base));
+  --cgt-btn-warning-fill:       color-mix(in srgb, var(--ctp-yellow) var(--cgt-btn-tint),       var(--cgt-btn-tint-base));
+  --cgt-btn-warning-fill-hover: color-mix(in srgb, var(--ctp-yellow) var(--cgt-btn-tint-hover), var(--cgt-btn-tint-base));
 }
-/* Latte's mauve is vivid on light bg; use a softer mid-tone instead */
-html[data-bs-theme="light"] .btn-primary {
-  --bs-btn-bg:                  var(--cgt-btn-primary);
-  --bs-btn-border-color:        var(--cgt-btn-primary);
-  --bs-btn-color:               var(--cgt-btn-on-fill);
-  --bs-btn-hover-bg:            var(--cgt-btn-primary-hover);
-  --bs-btn-hover-border-color:  var(--cgt-btn-primary-hover);
-  --bs-btn-hover-color:         var(--cgt-btn-on-fill);
-  --bs-btn-active-bg:           var(--cgt-btn-primary-hover);
-  --bs-btn-disabled-bg:         var(--cgt-btn-primary);
-  --bs-btn-disabled-border-color: var(--cgt-btn-primary);
-  --bs-btn-disabled-color:      var(--cgt-btn-on-fill);
-  --bs-btn-focus-shadow-rgb:    var(--cgt-btn-primary-rgb);
+/* --cgt-tint-* are per-button locals (which fill and edge this button takes),
+   not palette tokens, hence no --cgt-btn- prefix. */
+.btn-primary { --cgt-tint-fill: var(--cgt-btn-primary-fill); --cgt-tint-fill-hover: var(--cgt-btn-primary-fill-hover); --cgt-tint-edge: var(--cgt-btn-primary-edge); }
+.btn-success { --cgt-tint-fill: var(--cgt-btn-success-fill); --cgt-tint-fill-hover: var(--cgt-btn-success-fill-hover); --cgt-tint-edge: var(--cgt-btn-success-edge); }
+.btn-danger { --cgt-tint-fill: var(--cgt-btn-danger-fill); --cgt-tint-fill-hover: var(--cgt-btn-danger-fill-hover); --cgt-tint-edge: var(--cgt-btn-danger-edge); }
+.btn-warning { --cgt-tint-fill: var(--cgt-btn-warning-fill); --cgt-tint-fill-hover: var(--cgt-btn-warning-fill-hover); --cgt-tint-edge: var(--cgt-btn-warning-edge); }
+:is(.btn-primary, .btn-success, .btn-danger, .btn-warning) {
+  --bs-btn-bg:                    var(--cgt-tint-fill);
+  --bs-btn-border-color:          var(--cgt-tint-edge);
+  --bs-btn-color:                 var(--ctp-text);
+  --bs-btn-hover-bg:              var(--cgt-tint-fill-hover);
+  --bs-btn-hover-border-color:    var(--cgt-tint-edge);
+  --bs-btn-hover-color:           var(--ctp-text);
+  --bs-btn-active-bg:             var(--cgt-tint-fill-hover);
+  --bs-btn-active-border-color:   var(--cgt-tint-edge);
+  --bs-btn-active-color:          var(--ctp-text);
+  --bs-btn-disabled-bg:           var(--cgt-tint-fill);
+  --bs-btn-disabled-border-color: var(--cgt-tint-edge);
+  --bs-btn-disabled-color:        var(--ctp-text);
 }
-html[data-bs-theme="light"] .btn-success {
-  --bs-btn-bg:                  var(--cgt-btn-success);
-  --bs-btn-border-color:        var(--cgt-btn-success);
-  --bs-btn-color:               var(--cgt-btn-on-fill);
-  --bs-btn-hover-bg:            var(--cgt-btn-success-hover);
-  --bs-btn-hover-border-color:  var(--cgt-btn-success-hover);
-  --bs-btn-hover-color:         var(--cgt-btn-on-fill);
-  --bs-btn-active-bg:           var(--cgt-btn-success-hover);
-  --bs-btn-disabled-bg:         var(--cgt-btn-success);
-  --bs-btn-disabled-border-color: var(--cgt-btn-success);
-  --bs-btn-disabled-color:      var(--cgt-btn-on-fill);
-}
+.btn-primary { --bs-btn-focus-shadow-rgb: var(--cgt-btn-primary-rgb); }
 .btn-outline-secondary {
   --bs-btn-color:              var(--ctp-text);
   --bs-btn-border-color:       var(--ctp-surface1);
@@ -358,59 +444,33 @@ html[data-bs-theme="light"] .btn-outline-secondary {
   --bs-btn-border-color:       var(--ctp-overlay1);
   --bs-btn-hover-bg:           var(--ctp-surface1);
 }
-.btn-danger {
-  --bs-btn-bg:                    var(--ctp-red);
-  --bs-btn-border-color:          var(--ctp-red);
-  --bs-btn-color:                 var(--ctp-crust);
-  --bs-btn-hover-bg:              var(--ctp-red);
-  --bs-btn-hover-border-color:    var(--ctp-red);
-  --bs-btn-hover-color:           var(--ctp-crust);
-  --bs-btn-active-bg:             var(--ctp-red);
-  --bs-btn-disabled-bg:           var(--ctp-red);
-  --bs-btn-disabled-border-color: var(--ctp-red);
-  --bs-btn-disabled-color:        var(--ctp-crust);
-  filter: brightness(1);
-}
-.btn-danger:hover { filter: brightness(1.1); }
-html[data-bs-theme="light"] .btn-danger {
-  --bs-btn-bg:                    var(--cgt-btn-danger);
-  --bs-btn-border-color:          var(--cgt-btn-danger);
-  --bs-btn-color:                 var(--cgt-btn-on-fill);
-  --bs-btn-hover-bg:              var(--cgt-btn-danger-hover);
-  --bs-btn-hover-border-color:    var(--cgt-btn-danger-hover);
-  --bs-btn-hover-color:           var(--cgt-btn-on-fill);
-  --bs-btn-active-bg:             var(--cgt-btn-danger-hover);
-  --bs-btn-disabled-bg:           var(--cgt-btn-danger);
-  --bs-btn-disabled-border-color: var(--cgt-btn-danger);
-  --bs-btn-disabled-color:        var(--cgt-btn-on-fill);
-  filter: none;
-}
-html[data-bs-theme="light"] .btn-danger:hover { filter: none; }
 .btn-outline-danger {
   --bs-btn-color:              var(--ctp-red);
   --bs-btn-border-color:       var(--ctp-red);
   --bs-btn-hover-bg:           var(--ctp-red);
   --bs-btn-hover-color:        var(--ctp-crust);
 }
-/* Surface button — filled with surface0. More "present" than an outline button
-   without the visual weight of primary. For secondary config page actions. */
+/* Surface button — the grey one. More "present" than an outline button without
+   the weight of a coloured one. surface0 since #207: on surface1 it sat a shade
+   too dark beside the tinted buttons. Hover steps up one surface. The edge is
+   surface2 in light (separates it from the page) and surface1 in dark. Inactive
+   tabs are this button, so they lightened with it. */
 .btn-surface {
-  --bs-btn-bg:                  var(--ctp-surface1);
-  --bs-btn-border-color:        var(--ctp-surface2);
+  --bs-btn-bg:                  var(--ctp-surface0);
+  --bs-btn-border-color:        var(--ctp-surface1);
   --bs-btn-color:               var(--ctp-text);
-  --bs-btn-hover-bg:            var(--ctp-surface2);
+  --bs-btn-hover-bg:            var(--ctp-surface1);
   --bs-btn-hover-border-color:  var(--ctp-mauve);
   --bs-btn-hover-color:         var(--ctp-text);
   --bs-btn-active-bg:           var(--ctp-surface2);
   --bs-btn-active-border-color: var(--ctp-mauve);
-  --bs-btn-disabled-bg:         var(--ctp-surface1);
-  --bs-btn-disabled-border-color: var(--ctp-surface2);
+  --bs-btn-disabled-bg:         var(--ctp-surface0);
+  --bs-btn-disabled-border-color: var(--ctp-surface1);
   --bs-btn-disabled-color:      var(--ctp-subtext);
 }
 html[data-bs-theme="light"] .btn-surface {
-  --bs-btn-bg:           var(--ctp-surface1);
-  --bs-btn-border-color: var(--ctp-surface2);
-  --bs-btn-hover-bg:     var(--ctp-surface2);
+  --bs-btn-border-color:          var(--ctp-surface2);
+  --bs-btn-disabled-border-color: var(--ctp-surface2);
 }
 /* Danger button with surface backing — red text on surface0, inverts to red
    fill on hover. Modeled on the GitHub "Danger Zone" pattern: grounded enough
@@ -429,48 +489,6 @@ html[data-bs-theme="light"] .btn-surface {
   --bs-btn-disabled-bg:         var(--ctp-surface0);
   --bs-btn-disabled-border-color: color-mix(in srgb, var(--ctp-red) 20%, var(--ctp-surface1));
 }
-.btn-success {
-  --bs-btn-bg:                    var(--ctp-green);
-  --bs-btn-border-color:          var(--ctp-green);
-  --bs-btn-color:                 var(--ctp-crust);
-  --bs-btn-hover-bg:              var(--ctp-green);
-  --bs-btn-hover-border-color:    var(--ctp-green);
-  --bs-btn-hover-color:           var(--ctp-crust);
-  --bs-btn-active-bg:             var(--ctp-green);
-  --bs-btn-disabled-bg:           var(--ctp-green);
-  --bs-btn-disabled-border-color: var(--ctp-green);
-  --bs-btn-disabled-color:        var(--ctp-crust);
-  filter: brightness(1);
-}
-.btn-success:hover { filter: brightness(1.1); }
-html[data-bs-theme="light"] .btn-success { filter: none; }
-html[data-bs-theme="light"] .btn-success:hover { filter: none; }
-/* Warning button — Catppuccin yellow. Used for "attention needed" states
-   like the pending match-review indicator. */
-.btn-warning {
-  --bs-btn-bg:                    var(--ctp-yellow);
-  --bs-btn-border-color:          var(--ctp-yellow);
-  --bs-btn-color:                 var(--ctp-crust);
-  --bs-btn-hover-bg:              var(--ctp-yellow);
-  --bs-btn-hover-border-color:    var(--ctp-yellow);
-  --bs-btn-hover-color:           var(--ctp-crust);
-  --bs-btn-active-bg:             var(--ctp-yellow);
-  --bs-btn-disabled-bg:           var(--ctp-yellow);
-  --bs-btn-disabled-border-color: var(--ctp-yellow);
-  --bs-btn-disabled-color:        var(--ctp-crust);
-  filter: brightness(1);
-}
-.btn-warning:hover { filter: brightness(1.1); }
-html[data-bs-theme="light"] .btn-warning {
-  --bs-btn-bg:                    var(--ctp-yellow);
-  --bs-btn-border-color:          var(--ctp-yellow);
-  --bs-btn-color:                 var(--ctp-crust);
-  --bs-btn-hover-bg:              var(--ctp-yellow);
-  --bs-btn-hover-border-color:    var(--ctp-yellow);
-  --bs-btn-hover-color:           var(--ctp-crust);
-  filter: none;
-}
-html[data-bs-theme="light"] .btn-warning:hover { filter: none; }
 
 /* ─── Navbar ─────────────────────────────────────────────────────────────── */
 .navbar { background-color: var(--ctp-mantle); border-bottom-color: var(--ctp-surface0) !important; }
@@ -858,11 +876,12 @@ details summary::-webkit-details-marker { display: none; }
 details summary::before { content: "▶"; font-size: 0.65em; transition: transform 150ms; }
 details[open] summary::before { transform: rotate(90deg); }
 details summary:hover { background: rgba(var(--bs-primary-rgb), 0.08); border-color: var(--ctp-mauve); }
+/* Styled as a primary button, so it follows the tinted recipe (#207). */
 html[data-bs-theme="light"] details summary {
-  background-color: var(--cgt-btn-primary); color: var(--cgt-btn-on-fill); border-color: var(--cgt-btn-primary);
+  background-color: var(--cgt-btn-primary-fill); color: var(--ctp-text); border-color: var(--cgt-btn-primary-edge);
 }
 html[data-bs-theme="light"] details summary:hover {
-  background-color: var(--cgt-btn-primary-hover); border-color: var(--cgt-btn-primary-hover);
+  background-color: var(--cgt-btn-primary-fill-hover); border-color: var(--cgt-btn-primary-edge);
 }
 details > :not(summary) { margin-top: 1rem; }
 
@@ -2650,41 +2669,34 @@ body:has(.cgt-match-nav--sticky) {
 }
 .cgt-result-card__options { max-height: 360px; overflow-y: auto; }
 
-/* Confidence tabs: the colour lives in the tab now, not a stripe on the card.
-   The light themes wash the active tab (Nord: nord14/13/12 + surface1 @55%;
-   Latte: green/yellow/peach + surface1 @15%) and its badge a deeper wash
-   (the ink @45% over that fill). Mocha has no wash -- the active tab takes the
-   colour in its text and border, and its badge is an outline of it. Every
-   count badge has a border. Dismissed and Several matches stay neutral. */
+/* Confidence tabs: the colour lives in the tab, not a stripe on the card.
+   Green / yellow / red. The active tab is the accent washed over the card
+   colour (--cgt-btn-tint-base) at --cgt-conf-wash -- Nord 40%, Latte 25%,
+   Mocha 20% -- with normal text and the ink as its edge; its badge is the ink
+   at --cgt-conf-badge over that fill. Same recipe as the tinted buttons (#207).
+   It used to wash into surface1, and accent + grey is mud: that is what made
+   orange brown and red dusty rose. Mocha used an outline instead because no
+   fill tone wasn't overpowering; a light tint over the page is that tone.
+   Every count badge has a border. Dismissed and Several matches stay neutral. */
 #match-tabs .cgt-conf-tab--high   { --cgt-conf: var(--ctp-green);  --cgt-conf-ink: var(--cgt-green-ink); }
 #match-tabs .cgt-conf-tab--medium { --cgt-conf: var(--ctp-yellow); --cgt-conf-ink: var(--cgt-yellow-ink); }
-#match-tabs .cgt-conf-tab--low    { --cgt-conf: var(--ctp-peach);  --cgt-conf-ink: var(--cgt-peach-ink); }
+#match-tabs .cgt-conf-tab--low    { --cgt-conf: var(--ctp-red);    --cgt-conf-ink: var(--cgt-red-ink); }
 #match-tabs .badge {
   border: 1px solid color-mix(in srgb, var(--ctp-text) 55%, rgb(var(--bs-secondary-rgb)));
 }
 html[data-bs-theme="dark"] #match-tabs .badge {
   border-color: color-mix(in srgb, var(--ctp-text) 45%, rgb(var(--bs-secondary-rgb)));
 }
-html[data-bs-theme="light"] #match-tabs { --cgt-conf-wash: 55%; }
-html[data-palette="latte"] #match-tabs { --cgt-conf-wash: 15%; }
-html[data-bs-theme="light"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active {
-  --cgt-conf-fill: color-mix(in srgb, var(--cgt-conf) var(--cgt-conf-wash), var(--ctp-surface1));
+#match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active {
+  --cgt-conf-fill: color-mix(in srgb, var(--cgt-conf) var(--cgt-conf-wash), var(--cgt-btn-tint-base));
   --bs-btn-active-bg: var(--cgt-conf-fill);
   --bs-btn-active-border-color: var(--cgt-conf-ink);
+  --bs-btn-active-color: var(--ctp-text);
 }
-html[data-bs-theme="light"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active .badge {
-  background-color: color-mix(in srgb, var(--cgt-conf-ink) 45%, var(--cgt-conf-fill)) !important;
+#match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active .badge {
+  background-color: color-mix(in srgb, var(--cgt-conf-ink) var(--cgt-conf-badge), var(--cgt-conf-fill)) !important;
   border-color: var(--cgt-conf-ink);
   color: var(--ctp-text);
-}
-html[data-bs-theme="dark"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active {
-  --bs-btn-active-border-color: var(--cgt-conf);
-  --bs-btn-active-color: var(--cgt-conf);
-}
-html[data-bs-theme="dark"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--medium, .cgt-conf-tab--low).active .badge {
-  background-color: var(--ctp-base) !important;
-  border-color: var(--cgt-conf);
-  color: var(--cgt-conf);
 }
 
 /* Your title, when it differs: the merge keeps the synced one. */
@@ -3112,13 +3124,9 @@ html[data-bs-theme="dark"] #match-tabs :is(.cgt-conf-tab--high, .cgt-conf-tab--m
   color: var(--ctp-overlay0);
 }
 
-/* Split-button seam: both segments are the same mauve, so without a divider
-   the control reads as one oversized primary button with a stray caret —
-   unlike every other (single-block) mauve button in the app. A crust-tinted
-   left edge on the chevron segment makes the split legible on purpose. */
-.btn-group > .btn-primary.dropdown-toggle-split {
-  border-left: 1px solid color-mix(in srgb, var(--ctp-crust) 35%, var(--ctp-mauve));
-}
+/* No split-button seam rule: solid fills needed a crust-tinted divider so the
+   chevron read as its own control. Tinted buttons carry a coloured edge, and
+   the group's collapsed borders draw the seam on their own (#207). */
 
 
 /* Breakdown list — stacked count-first lines ("534  add to existing"),
