@@ -1,0 +1,51 @@
+{# Full achievement list for one set (#210), swapped into the detail pane
+   behind the box's "View all". Deliberately no .cgt-pane-nav: the pane
+   stack tracks entries, not this view -- its own Back returns to the pane
+   it came from (back_url / target). Earned rows look normal; locked rows are
+   dimmed. No row is tinted, so a finished set reads clean. #}
+{% set s = set %}
+{% set _base = "/library/entries/" ~ entry.id ~ "/achievements?source=" ~ s.source ~ "&set_id=" ~ (s.set_id | urlencode) ~ ("&completion_id=" ~ completion_id if completion_id is not none else "") %}
+<div class="offcanvas-body p-0">
+  <div class="cgt-ach-list__bar">
+    <a href="#" class="cgt-ach-list__back" hx-get="{{ back_url }}" hx-target="{{ target }}" hx-swap="innerHTML">&lsaquo; Back</a>
+    <span class="cgt-ach-list__title text-truncate">{{ game.display_title }}</span>
+    <span class="tag-badge {{ release.platform_tag_class }} ms-auto">{{ release.display_platform }}</span>
+  </div>
+  <div class="cgt-detail-body">
+    <div class="cgt-detail-block mb-2">
+      {% include "partials/_achievements_summary.html" %}
+      <div class="cgt-ach-filters">
+        {% for key, label in [("all", "All"), ("unlocked", "Unlocked"), ("locked", "Locked")] %}
+        <button type="button" class="btn btn-sm {{ 'btn-primary' if show == key else 'btn-surface' }}"
+                hx-get="{{ _base }}&show={{ key }}{{ '&group=' ~ (group | urlencode) if group }}" hx-target="{{ target }}" hx-swap="innerHTML">{{ label }}</button>
+        {% endfor %}
+        {% if group %}
+        <button type="button" class="btn btn-sm btn-surface ms-auto"
+                hx-get="{{ _base }}&show={{ show }}" hx-target="{{ target }}" hx-swap="innerHTML">All sets</button>
+        {% endif %}
+      </div>
+    </div>
+
+    {% for sec in sections %}
+    {% if sec.group %}
+    <div class="cgt-ach-label cgt-ach-list__section">{{ "Full game" if sec.group.base else "Add-on · " ~ sec.group.name }} <span class="text-secondary">{{ sec.group.earned }}/{{ sec.group.total }}</span></div>
+    {% endif %}
+    {% for i in sec["items"] %}
+    <div class="cgt-ach-row{{ ' cgt-ach-row--locked' if not i.earned }}">
+      <img class="cgt-ach-tile cgt-ach-tile--lg{{ ' cgt-ach-tile--grey' if i.grey }}" src="{{ i.icon_url or '' }}" alt="" loading="lazy" onerror="this.onerror=null;this.removeAttribute('src')">
+      <div class="cgt-ach-row__text">
+        <div class="cgt-ach-row__name">{{ i.name }}</div>
+        {% if i.description %}<div class="cgt-ach-desc">{{ i.description }}</div>{% endif %}
+      </div>
+      <div class="cgt-ach-row__when">
+        {% if i.earned %}{% if i.earned_at %}{{ i.earned_at.strftime("%b %-d, %Y") }}{% endif %}{% else %}Locked{% endif %}
+        {% if i.rarity_pct is not none %}<br>{{ "%.1f" | format(i.rarity_pct) }}%{% endif %}
+      </div>
+      {% if i.tier %}<span class="cgt-trophy-tier cgt-trophy-tier--{{ i.tier }}" title="{{ i.tier | capitalize }}">{% include "partials/_icon_trophy.svg" %}</span>{% else %}<span></span>{% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="text-secondary small mb-0">Nothing {{ "unlocked" if show == "unlocked" else "locked" }} here.</p>
+    {% endfor %}
+  </div>
+</div>

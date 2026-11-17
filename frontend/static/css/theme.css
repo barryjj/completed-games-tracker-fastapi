@@ -55,6 +55,8 @@ html[data-bs-theme="dark"] {
   --cgt-conf-wash:  20%;  /* active confidence tab */
   --cgt-conf-badge: 30%;  /* its count badge, ink over the tab fill */
   --cgt-nav-tint:   55%;  /* active settings-nav item */
+  --cgt-earn-tint:  5%;   /* "Rarest earned" card: green over the tint base */
+  --cgt-earn-edge:  90%;
 
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
@@ -200,6 +202,8 @@ html[data-bs-theme="light"] {
   --cgt-conf-wash:  40%;
   --cgt-conf-badge: 45%;
   --cgt-nav-tint:   55%;
+  --cgt-earn-tint:  30%;
+  --cgt-earn-edge:  45%;
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #dfe3e8;
@@ -320,6 +324,8 @@ html[data-palette="latte"] {
   --cgt-conf-wash:  25%;
   --cgt-conf-badge: 45%;
   --cgt-nav-tint:   30%;
+  --cgt-earn-tint:  14%;
+  --cgt-earn-edge:  45%;
 
   --bs-body-bg:                   #dce0e8;
   --bs-body-bg-rgb:               220,224,232;
@@ -3793,3 +3799,135 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   border-color: var(--ctp-mauve);
   outline: none;
 }
+
+/* ── Achievements box + full list in the detail panes (#210) ────────────────
+   Steam's sidebar shape (summary, rarest, icon strips, view all) with the
+   PlayStation app's tiers and full-game / add-on split. Green marks only the
+   one card meant to stand out -- "Rarest earned" -- at the palette's
+   --cgt-earn-tint / --cgt-earn-edge over the tint base. Full-list rows are
+   never tinted: earned rows read normal, locked rows dim, so a finished set
+   reads clean instead of all-highlighted. */
+.cgt-ach-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.cgt-ach-summary b { font-weight: 600; }
+.cgt-ach-summary__text { font-size: 0.85rem; }
+.cgt-ach-summary__tiers { margin-top: 2px; font-size: 0.85rem; }
+.cgt-ach-ring { width: 46px; height: 46px; flex-shrink: 0; }
+.cgt-ach-ring__track { fill: none; stroke: var(--ctp-surface0); stroke-width: 3.5; }
+.cgt-ach-ring__arc { fill: none; stroke: var(--ctp-mauve); stroke-width: 3.5; stroke-linecap: round; }
+.cgt-ach-ring--done .cgt-ach-ring__arc { stroke: var(--ctp-green); }
+.cgt-ach-ring__check { fill: none; stroke: var(--cgt-green-ink, var(--ctp-green)); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.cgt-ach-ring__pct { font-size: 9.5px; font-weight: 600; fill: var(--ctp-text); text-anchor: middle; dominant-baseline: central; }
+.cgt-ach-done { color: var(--cgt-green-ink, var(--ctp-green)); font-weight: 600; }
+.cgt-ach-label {
+  margin: 10px 0 4px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ctp-overlay1);
+}
+/* Full game / add-ons: one line, opens to a row per set. */
+.cgt-ach-sets { margin-top: 8px; padding-top: 4px; border-top: 1px solid var(--ctp-surface0); }
+.cgt-ach-sets__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.cgt-ach-sets__toggle b { font-weight: 600; }
+.cgt-ach-sets__toggle:hover { background: var(--ctp-base); }
+.cgt-ach-sets__caret::before { content: "▸"; display: inline-block; color: var(--ctp-overlay1); transition: transform 150ms; }
+.cgt-ach-sets__toggle[aria-expanded="true"] .cgt-ach-sets__caret::before { transform: rotate(90deg); }
+.cgt-ach-sets__list { padding-left: 16px; }
+.cgt-ach-set {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 10px;
+  padding: 5px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.cgt-ach-set:hover { background: var(--ctp-base); color: inherit; }
+.cgt-ach-set__count { color: var(--ctp-overlay1); }
+.cgt-ach-set__tiers { gap: 2px 8px; font-size: 0.75rem; }
+.cgt-trophy-tier--none { opacity: 0.5; }
+.cgt-ach-bar { grid-column: 1 / -1; height: 5px; border-radius: 3px; overflow: hidden; background: var(--ctp-surface0); }
+.cgt-ach-bar i { display: block; height: 100%; background: var(--ctp-mauve); }
+.cgt-ach-bar i.cgt-ach-bar--done { background: var(--ctp-green); }
+/* Icon tiles: a failed icon keeps its square (onerror drops the src). */
+.cgt-ach-tile {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 3px;
+  object-fit: cover;
+  background-color: var(--ctp-surface0);
+  border: 1px solid var(--ctp-surface1);
+}
+.cgt-ach-tile--lg { width: 40px; height: 40px; }
+.cgt-ach-tile--locked { opacity: 0.55; }
+.cgt-ach-tile--grey { filter: grayscale(1); }
+.cgt-ach-tile--more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--ctp-subtext);
+}
+.cgt-ach-strip { display: flex; flex-wrap: wrap; gap: 4px; }
+.cgt-ach-rarest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ctp-green) var(--cgt-earn-tint), var(--cgt-btn-tint-base));
+  border: 1px solid color-mix(in srgb, var(--ctp-green) var(--cgt-earn-edge), var(--cgt-btn-tint-base));
+}
+.cgt-ach-rarest__text, .cgt-ach-row__text { min-width: 0; }
+.cgt-ach-rarest__name, .cgt-ach-row__name { font-weight: 600; }
+.cgt-ach-desc { font-size: 0.75rem; color: var(--ctp-subtext); }
+.cgt-ach-meta { font-size: 0.7rem; color: var(--ctp-overlay1); }
+.cgt-ach-viewall { font-size: 0.75rem; }
+/* Full list */
+.cgt-ach-list__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--ctp-mantle);
+  border-bottom: 1px solid var(--ctp-surface1);
+}
+.cgt-ach-list__title { font-weight: 600; min-width: 0; }
+.cgt-ach-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.cgt-ach-list__section { margin: 12px 2px 4px; }
+.cgt-ach-row {
+  display: grid;
+  grid-template-columns: 40px 1fr auto 16px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 8px;
+  margin-bottom: 4px;
+  border-radius: 4px;
+  background: var(--ctp-mantle);
+  border: 1px solid var(--ctp-surface0);
+}
+.cgt-ach-row__when { font-size: 0.7rem; color: var(--ctp-overlay1); text-align: right; white-space: nowrap; }
+.cgt-ach-row--locked { background: var(--ctp-base); }
+.cgt-ach-row--locked .cgt-ach-row__text { opacity: 0.6; }
+.cgt-ach-row--locked .cgt-ach-tile { opacity: 0.55; }
+.cgt-ach-row--locked .cgt-trophy-tier svg { opacity: 0.5; }

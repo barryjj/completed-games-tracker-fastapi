@@ -58,6 +58,7 @@ into the card colour, normal `--ctp-text`, and the colour carried in the edge.
 | Active tab tint (`--cgt-conf-wash`) | 25% | 40% | 20% |
 | Tab badge (`--cgt-conf-badge`) | ink 45% over the tab fill | 45% | 30% |
 | Active settings-nav item (`--cgt-nav-tint`) | 30% | 55% | 55% |
+| "Rarest earned" card (`--cgt-earn-tint` / `-edge`, green) | 14% / 45% | 30% / 45% | 5% / 90% |
 | Form fields (`--bs-input-bg`) | `#eff1f5` (cards) | nord6 `#eceff4` | surface0 |
 | Grey button (`btn-surface`) | surface0 fill, surface2 edge | surface0, surface2 | surface0, surface1 |
 

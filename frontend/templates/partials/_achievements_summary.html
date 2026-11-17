@@ -1,0 +1,22 @@
+{# Ring + "N of M earned" + PSN tier counts. Shared by the pane box and the
+   full list. Expects `s` (an achievements.set_view). The ring's arc is a
+   stroke-dasharray over a 100-unit circumference (r = 100 / 2pi). #}
+<div class="cgt-ach-summary">
+  <svg class="cgt-ach-ring{{ ' cgt-ach-ring--done' if s.complete }}" viewBox="0 0 40 40" aria-hidden="true">
+    <circle class="cgt-ach-ring__track" cx="20" cy="20" r="15.915" />
+    <circle class="cgt-ach-ring__arc" cx="20" cy="20" r="15.915" stroke-dasharray="{{ s.percent }} 100" transform="rotate(-90 20 20)" />
+    {% if s.complete %}
+    <path class="cgt-ach-ring__check" d="M14 20.5l4 4 8-9" />
+    {% else %}
+    <text class="cgt-ach-ring__pct" x="20" y="20">{{ s.percent }}%</text>
+    {% endif %}
+  </svg>
+  <div class="cgt-ach-summary__text">
+    <div><b>{{ s.earned }}</b> <span class="text-secondary">of {{ s.total }} earned</span></div>
+    {% if s.tiers %}
+    <div class="cgt-trophy-tiers cgt-ach-summary__tiers">
+      {% for t in s.tiers %}<span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}" title="{{ t.tier | capitalize }} — {{ t.earned }} of {{ t.total }}">{% include "partials/_icon_trophy.svg" %}<b>{{ t.earned }}</b></span>{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>

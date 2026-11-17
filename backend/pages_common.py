@@ -19,7 +19,7 @@ from markupsafe import Markup, escape
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload, selectinload
 
-from . import importer, match_review, models, users
+from . import achievements, importer, match_review, models, users
 from .models import get_db
 
 logger = logging.getLogger(__name__)
@@ -691,6 +691,7 @@ def _library_detail_context(db: Session, entry, current_user) -> dict:
         "entitlement_meta": _extract_entitlement_meta(entry),
         "child_entries": child_entries,
         "completions": sorted(entry.completions, key=lambda c: c.completed_at, reverse=True),
+        "achievement_sets": achievements.views_for(db, current_user.id, entry.release) if current_user else [],
         "current_user": current_user,
         **_build_detail_pane_visuals(db, entry, game, entry.release),
     }

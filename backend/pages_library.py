@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session, joinedload, selectinload
 
-from . import models
+from . import achievements, models
 from .models import get_db
 from .pages_common import (
     VIEW_MODES,
@@ -917,6 +917,73 @@ def library_entry_detail(
             **_library_detail_context(db, entry, current_user),
             "needs_refresh": needs_refresh,
             "fresh_open": fresh_open,
+        },
+    )
+
+
+_ACH_SHOW = ("all", "unlocked", "locked")
+
+
+@router.get("/library/entries/{entry_id}/achievements")
+def library_entry_achievements(
+    request: Request,
+    entry_id: int,
+    source: str = Query(...),
+    set_id: str = Query(...),
+    show: str = Query("all"),
+    group: str = Query(""),
+    completion_id: int | None = Query(None),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_web_user),
+):
+    """The full list behind the detail pane's achievements box (#210). Swaps
+    into whichever pane asked -- library, or a completion's -- and links back
+    to it. Only a set the entry's release actually shows."""
+    entry = (
+        db.query(models.UserLibraryEntry)
+        .options(joinedload(models.UserLibraryEntry.release).joinedload(models.GameRelease.game))
+        .filter_by(id=entry_id, user_id=current_user.id)
+        .first()
+    )
+    if not entry or (source, set_id) not in achievements.sets_of(entry.release):
+        return Response(status_code=404)
+    view = achievements.set_view(db, current_user.id, source, set_id)
+    if view is None:
+        return Response(status_code=404)
+    if completion_id is not None:
+        owns = db.query(models.Completion.id).filter_by(id=completion_id, user_id=current_user.id, library_entry_id=entry.id).first()
+        if not owns:
+            return Response(status_code=404)
+    show = show if show in _ACH_SHOW else "all"
+    items = view["items"]
+    if group:
+        items = [i for i in items if i["group_id"] == group]
+    if show != "all":
+        items = [i for i in items if i["earned"] == (show == "unlocked")]
+    # Grouped as the summary splits them: the full game, then each add-on.
+    sections = []
+    for g in view["groups"] or [None]:
+        rows = items if g is None else [i for i in items if i["group_id"] == g["id"]]
+        if rows:
+            sections.append({"group": g, "items": rows})
+    if completion_id is not None:
+        back_url, target = f"/completions/{completion_id}/detail", "#completion-detail-content"
+    else:
+        back_url, target = f"/library/entries/{entry.id}/detail", "#library-detail-content"
+    return templates.TemplateResponse(
+        request=request,
+        name="partials/achievements_list.html",
+        context={
+            "entry": entry,
+            "game": entry.release.game,
+            "release": entry.release,
+            "set": view,
+            "sections": sections,
+            "show": show,
+            "group": group,
+            "completion_id": completion_id,
+            "back_url": back_url,
+            "target": target,
         },
     )
 

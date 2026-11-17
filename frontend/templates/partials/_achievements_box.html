@@ -1,0 +1,79 @@
+{# The detail pane's achievements box (#210): one per set the release shows.
+   Steam's library sidebar for the shape (summary, rarest, two icon strips,
+   view all), the PlayStation app for PSN's tiers and full-game / add-on
+   split. Data from achievements.set_view.
+
+   Expects: achievement_sets, entry. Optional: ach_completion_id (when this
+   is a completion's pane, so View all returns there), ach_target. #}
+{% set _ach_target = ach_target or '#library-detail-content' %}
+{% for s in achievement_sets %}
+{% set _list_url = "/library/entries/" ~ entry.id ~ "/achievements?source=" ~ s.source ~ "&set_id=" ~ (s.set_id | urlencode) ~ ("&completion_id=" ~ ach_completion_id if ach_completion_id else "") %}
+<div class="cgt-detail-block cgt-ach mb-3">
+  <h6 class="cgt-detail-block__heading">{{ s.noun }}{% if achievement_sets | length > 1 %} <span class="text-secondary fw-normal ms-1">{{ "PlayStation" if s.source == "psn" else "Steam" }}</span>{% endif %}</h6>
+  {% include "partials/_achievements_summary.html" %}
+
+  {% if s.groups %}
+  {% set _base = s.groups[0] %}
+  {% set _addons = s.groups[1:] %}
+  {% set _ae = _addons | sum(attribute="earned") %}
+  {% set _at = _addons | sum(attribute="total") %}
+  <div class="cgt-ach-sets">
+    <button type="button" class="cgt-ach-sets__toggle" aria-expanded="false"
+            onclick="var o=this.getAttribute('aria-expanded')!=='true';this.setAttribute('aria-expanded',o);this.nextElementSibling.hidden=!o;">
+      <span class="cgt-ach-sets__caret" aria-hidden="true"></span>
+      <span>{{ _base.name }} <b class="{{ 'cgt-ach-done' if _base.earned == _base.total }}">{{ _base.earned }}/{{ _base.total }}</b>
+        <span class="text-secondary">&middot; {{ _addons | length }} add-on{{ "s" if _addons | length != 1 }}</span>
+        <b class="{{ 'cgt-ach-done' if _ae == _at }}">{{ _ae }}/{{ _at }}</b></span>
+    </button>
+    <div class="cgt-ach-sets__list" hidden>
+      {% for g in s.groups %}
+      {% if loop.index == 2 %}<div class="cgt-ach-label">Add-ons</div>{% endif %}
+      <a class="cgt-ach-set" href="#"
+         hx-get="{{ _list_url }}&group={{ g.id | urlencode }}" hx-target="{{ _ach_target }}" hx-swap="innerHTML">
+        <span class="cgt-ach-set__name">{{ g.name }}</span>
+        <span class="cgt-ach-set__count {{ 'cgt-ach-done' if g.earned == g.total }}">{{ g.earned }}/{{ g.total }}</span>
+        <span class="cgt-trophy-tiers cgt-ach-set__tiers">
+          {% for t in g.tiers %}<span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}{{ ' cgt-trophy-tier--none' if not t.earned }}">{% include "partials/_icon_trophy.svg" %}{{ t.earned }}</span>{% endfor %}
+        </span>
+        <span class="cgt-ach-bar"><i style="width: {{ g.percent }}%"{% if g.earned == g.total %} class="cgt-ach-bar--done"{% endif %}></i></span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if s.rarest %}
+  {% set r = s.rarest %}
+  <div class="cgt-ach-label">Rarest earned</div>
+  <div class="cgt-ach-rarest">
+    <img class="cgt-ach-tile cgt-ach-tile--lg" src="{{ r.icon_url or '' }}" alt="" loading="lazy" onerror="this.onerror=null;this.removeAttribute('src')">
+    <div class="cgt-ach-rarest__text">
+      <div class="cgt-ach-rarest__name">{% if r.tier %}<span class="cgt-trophy-tier cgt-trophy-tier--{{ r.tier }}">{% include "partials/_icon_trophy.svg" %}</span> {% endif %}{{ r.name }}</div>
+      {% if r.description %}<div class="cgt-ach-desc">{{ r.description }}</div>{% endif %}
+      <div class="cgt-ach-meta">{% if r.earned_at %}{{ r.earned_at.strftime("%b %-d, %Y") }}{% endif %}{% if r.earned_at and r.rarity_pct is not none %} &middot; {% endif %}{% if r.rarity_pct is not none %}{{ "%.1f" | format(r.rarity_pct) }}% of players{% endif %}</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if s.unlocked %}
+  <div class="cgt-ach-label">Unlocked</div>
+  <div class="cgt-ach-strip">
+    {% for i in s.unlocked %}<img class="cgt-ach-tile" src="{{ i.icon_url or '' }}" alt="" title="{{ i.name }}" loading="lazy" onerror="this.onerror=null;this.removeAttribute('src')">{% endfor %}
+    {% if s.unlocked_more %}<span class="cgt-ach-tile cgt-ach-tile--more">+{{ s.unlocked_more }}</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if s.locked %}
+  <div class="cgt-ach-label">Locked</div>
+  <div class="cgt-ach-strip">
+    {% for i in s.locked %}<img class="cgt-ach-tile cgt-ach-tile--locked{{ ' cgt-ach-tile--grey' if i.grey }}" src="{{ i.icon_url or '' }}" alt="" title="{{ i.name }}" loading="lazy" onerror="this.onerror=null;this.removeAttribute('src')">{% endfor %}
+    {% if s.locked_more %}<span class="cgt-ach-tile cgt-ach-tile--more cgt-ach-tile--locked">+{{ s.locked_more }}</span>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if s["items"] %}
+  <div class="text-end">
+    <a href="#" class="cgt-ach-viewall" hx-get="{{ _list_url }}" hx-target="{{ _ach_target }}" hx-swap="innerHTML">View all {{ s.total }} &rsaquo;</a>
+  </div>
+  {% endif %}
+</div>
+{% endfor %}

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, contains_eager, joinedload
 
-from . import models
+from . import achievements, models
 from . import steamgriddb as sgdb
 from .models import get_db
 from .pages_common import (
@@ -432,6 +432,7 @@ def completion_detail(
             "steam_meta": _extract_steam_meta(appdetails),
             "igdb_meta": _extract_igdb_meta(release),
             "sibling_completions": sibling_completions,
+            "achievement_sets": achievements.views_for(db, current_user.id, release),
             "needs_refresh": _needs_metadata_refresh(release),
             "fresh_open": fresh_open,
             "current_user": current_user,

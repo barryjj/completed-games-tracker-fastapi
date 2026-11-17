@@ -265,6 +265,9 @@
     </div>
     {% endif %}
 
+    {# Achievements / trophies (#210), below the completions. #}
+    {% with ach_completion_id = completion.id, ach_target = '#completion-detail-content' %}{% include "partials/_achievements_box.html" %}{% endwith %}
+
     {# Actions footer moved OUT of .offcanvas-body so it pins to the bottom
        of the pane. See cgt-detail-actions below. #}
   </div>

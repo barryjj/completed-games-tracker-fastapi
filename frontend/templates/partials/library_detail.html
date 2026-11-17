@@ -430,6 +430,9 @@
 
     {% if not candidate %}{{ completions_block() }}{% endif %}
 
+    {# Achievements / trophies (#210), below Completions. #}
+    {% with ach_target = pane_target %}{% include "partials/_achievements_box.html" %}{% endwith %}
+
     {# Actions footer was here — moved OUT of .offcanvas-body so it pins to
        the bottom of the pane as a sibling, always visible regardless of
        scroll position. See the .cgt-detail-actions block below. #}

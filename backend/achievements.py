@@ -125,6 +125,176 @@ def unlocks_fetched_at(db: Session, user_id: int, source: str, set_id: str) -> d
     return latest
 
 
+TIERS = ("platinum", "gold", "silver", "bronze")
+# Sony's progress weights each trophy by points and leaves the platinum out:
+# ASTRO BOT at 53 of 63 is 87% in the PlayStation app, not 84%.
+_PSN_POINTS = {"platinum": 0, "gold": 90, "silver": 30, "bronze": 15}
+_STRIP = 10  # icons per strip in the pane box before "+N"
+
+
+def _psn_progress(items: list[dict]) -> int:
+    total = sum(_PSN_POINTS.get(i["tier"] or "", 0) for i in items)
+    earned = sum(_PSN_POINTS.get(i["tier"] or "", 0) for i in items if i["earned"])
+    return earned * 100 // total if total else 0
+
+
+def _percent(source: str, items: list[dict]) -> int:
+    if source == "psn":
+        return _psn_progress(items)
+    earned = sum(1 for i in items if i["earned"])
+    return round(earned * 100 / len(items)) if items else 0
+
+
+def _tiers(items: list[dict]) -> list[dict]:
+    return [
+        {
+            "tier": t,
+            "earned": sum(1 for i in items if i["tier"] == t and i["earned"]),
+            "total": sum(1 for i in items if i["tier"] == t),
+        }
+        for t in TIERS
+    ]
+
+
+def set_view(db: Session, user_id: int, source: str, set_id: str) -> dict | None:
+    """One set as the detail pane shows it (#210): the summary, PSN's tiers
+    and per-group split, the rarest earned, the pane's two icon strips, and
+    every item for the full list.
+
+    Built from the definitions and this account's unlock rows. A set known
+    only by its summary (Steam's batch progress, no rows yet) shows the
+    counts and nothing else. None when the account has neither."""
+    summary = db.query(models.UserAchievementSet).filter_by(user_id=user_id, source=source, set_id=set_id).first()
+    defs = (
+        db.query(models.AchievementDefinition)
+        .filter_by(source=source, set_id=set_id)
+        .order_by(models.AchievementDefinition.sort_order, models.AchievementDefinition.id)
+        .all()
+    )
+    mine = {}
+    if defs:
+        mine = {
+            a.definition_id: a
+            for a in db.query(models.UserAchievement).filter(
+                models.UserAchievement.user_id == user_id,
+                models.UserAchievement.definition_id.in_([d.id for d in defs]),
+            )
+        }
+    noun = "Trophies" if source == "psn" else "Achievements"
+    if not mine:
+        if summary is None or not summary.total:
+            return None
+        tiers = None
+        if source == "psn" and summary.tiers:
+            tiers = [{"tier": t, **(summary.tiers.get(t) or {"earned": 0, "total": 0})} for t in TIERS]
+        return {
+            "source": source,
+            "set_id": set_id,
+            "noun": noun,
+            "earned": summary.earned,
+            "total": summary.total,
+            "percent": summary.progress if summary.progress is not None else round(summary.earned * 100 / summary.total),
+            "complete": summary.earned >= summary.total,
+            "tiers": tiers,
+            "groups": [],
+            "rarest": None,
+            "unlocked": [],
+            "unlocked_more": 0,
+            "locked": [],
+            "locked_more": 0,
+            "items": [],
+        }
+
+    items = []
+    for d in defs:
+        a = mine.get(d.id)
+        earned = bool(a and a.earned)
+        # A hidden one you have not earned stays hidden, as on the platforms.
+        secret = d.hidden and not earned
+        items.append(
+            {
+                "name": ("Hidden trophy" if source == "psn" else "Hidden achievement") if secret else d.name,
+                "description": None if secret else d.description,
+                "icon_url": (d.icon_locked_url or d.icon_url) if not earned else d.icon_url,
+                # PSN ships one icon per trophy; a locked one is greyed in CSS.
+                "grey": not earned and not d.icon_locked_url,
+                "earned": earned,
+                "earned_at": a.earned_at if earned else None,
+                "rarity_pct": d.rarity_pct,
+                "tier": d.tier,
+                "group_id": d.group_id or "default",
+                "group_name": d.group_name,
+            }
+        )
+
+    earned_items = sorted(
+        (i for i in items if i["earned"]),
+        key=lambda i: (i["earned_at"] is None, -(i["earned_at"].timestamp() if i["earned_at"] else 0)),
+    )
+    locked_items = [i for i in items if not i["earned"]]
+    rated = [i for i in earned_items if i["rarity_pct"] is not None]
+    rarest = min(rated, key=lambda i: i["rarity_pct"]) if rated else (earned_items[0] if earned_items else None)
+
+    groups = []
+    if source == "psn":
+        by_group: dict[str, list[dict]] = defaultdict(list)
+        for i in items:
+            by_group[i["group_id"]].append(i)
+        if len(by_group) > 1:
+            # The base game is Sony's "default" group; add-ons follow in the
+            # order Sony lists them.
+            order = sorted(by_group, key=lambda g: (g != "default", list(by_group).index(g)))
+            for gid in order:
+                g_items = by_group[gid]
+                groups.append(
+                    {
+                        "id": gid,
+                        "name": "Full game" if gid == "default" else (g_items[0]["group_name"] or gid),
+                        "base": gid == "default",
+                        "earned": sum(1 for i in g_items if i["earned"]),
+                        "total": len(g_items),
+                        "percent": _psn_progress(g_items),
+                        "tiers": _tiers(g_items),
+                    }
+                )
+
+    earned_n = len(earned_items)
+    return {
+        "source": source,
+        "set_id": set_id,
+        "noun": noun,
+        "earned": earned_n,
+        "total": len(items),
+        "percent": _percent(source, items),
+        "complete": earned_n == len(items),
+        "tiers": _tiers(items) if source == "psn" else None,
+        "groups": groups,
+        "rarest": rarest,
+        "unlocked": earned_items[:_STRIP],
+        "unlocked_more": max(0, earned_n - _STRIP),
+        "locked": locked_items[:_STRIP],
+        "locked_more": max(0, len(locked_items) - _STRIP),
+        "items": items,
+    }
+
+
+def sets_of(release: "models.GameRelease") -> list[tuple[str, str]]:
+    """The achievement sets a release shows: a Steam game's own, and a PSN
+    set -- a PlayStation release's, or a PC copy's attached to a Steam one."""
+    keys = []
+    if release.source == "steam" and release.external_id:
+        keys.append(("steam", release.external_id))
+    item = trophy_item_of(release)
+    if item:
+        keys.append(("psn", item["npCommunicationId"]))
+    return keys
+
+
+def views_for(db: Session, user_id: int, release: "models.GameRelease") -> list[dict]:
+    """set_view for every set the release shows that the account has."""
+    return [v for v in (set_view(db, user_id, s, sid) for s, sid in sets_of(release)) if v]
+
+
 def recent_unlocks(db: Session, user_id: int, limit: int = 8) -> list[dict]:
     """The account's latest unlocks, newest first, each with the game it
     belongs to: an owning entry to link to when there is one, else the set's
