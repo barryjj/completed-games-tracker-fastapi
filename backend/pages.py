@@ -255,10 +255,10 @@ def home_page(
             models.Completion.sort_order.asc().nulls_last(),
             models.Completion.id.desc(),
         )
-        # Twelve: the footer button is gone AND every card is forced to the
-        # tallest one's height (grid-auto-rows: 1fr), so a short list here is
-        # dead space rather than a tidy card.
-        .limit(12)
+        # More than ever fit: the card's height comes from its tallest
+        # sibling, and .cgt-fill-list shows only the whole rows that fit it
+        # (theme.css), so the card fills to the bottom whatever that is.
+        .limit(30)
         .all()
     )
     library_total = _build_lib_query(db, current_user, "", "", "default", "name", False, False, "list")[0].count()

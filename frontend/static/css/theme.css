@@ -3308,6 +3308,31 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   }
 }
 
+/* A list that fills its card to the bottom, whatever height the grid gives
+   it (Home's Recently completed). The server sends more rows than ever fit;
+   the list contributes no height of its own (flex-basis 0), takes what the
+   card has left, and wraps in column flow -- a row that doesn't fit wraps
+   into a second column, which overflow clips. So only whole rows show and
+   nothing is cut in half. The list takes over the rows' -8px bleed itself
+   (rows get no side margin), so their hover still reaches the card edge and
+   the wrapped column starts exactly where the clip is. */
+.cgt-fill-list {
+  flex: 1 1 0;
+  min-height: 15rem;
+  display: flex;
+  flex-direction: column;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow: hidden;
+  margin: 0 -8px;
+}
+.cgt-fill-list > * { width: 100%; margin: 0; }
+/* Stacked one card per row, nothing sets the height: a plain list of 12. */
+@media (max-width: 900px) {
+  .cgt-fill-list { flex: none; min-height: 0; display: block; overflow: visible; }
+  .cgt-fill-list > :nth-child(n + 13) { display: none; }
+}
+
 /* Completion date in the Recently-completed rows. Deliberately smaller than the
    title: the list is ordered newest-first, so the exact date is context rather
    than the point, and at the same size it crowded the titles it sits beside. */

@@ -129,7 +129,8 @@
   <div class="cgt-tool-card cgt-tool-card--tall">
     <div class="cgt-tool-card__title">Recently completed</div>
     {% if recent_completions %}
-    <div>
+    {# Fills the card: more rows than fit are sent, and only whole ones show. #}
+    <div class="cgt-fill-list">
       {% for c in recent_completions %}
       {% set _thumb = c.library_entry | grid_cover_url('grid_h') %}
       <a class="cgt-detail-list-row d-flex align-items-center gap-2"
