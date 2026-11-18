@@ -3929,15 +3929,18 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-ach-meta { font-size: 0.7rem; color: var(--ctp-overlay1); }
 .cgt-ach-viewall { font-size: 0.75rem; }
 /* Full list */
+/* Sits outside .cgt-detail-body, so it sets the body's size itself -- at
+   the page default, Back and the title ran large into each other. */
 .cgt-ach-list__bar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--ctp-mantle);
-  border-bottom: 1px solid var(--ctp-surface1);
+  gap: 10px;
+  padding: 6px 8px;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--ctp-surface0);
 }
 .cgt-ach-list__title { font-weight: 600; min-width: 0; }
+.cgt-ach-list__game { font-weight: 400; color: var(--ctp-subtext); }
 .cgt-ach-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .cgt-ach-list__section { margin: 12px 2px 4px; }
 .cgt-ach-row {
