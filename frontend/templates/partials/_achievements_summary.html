@@ -12,7 +12,7 @@
     {% endif %}
   </svg>
   <div class="cgt-ach-summary__text">
-    <div><b>{{ s.earned }}</b> <span class="text-secondary">of {{ s.total }} earned</span></div>
+    <div><b>{{ s.earned }}</b> <span class="text-secondary">of {{ s.total }} {{ s.noun | lower }} earned</span></div>
     {% if s.tiers %}
     <div class="cgt-trophy-tiers cgt-ach-summary__tiers">
       {% for t in s.tiers %}<span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}" title="{{ t.tier | capitalize }} — {{ t.earned }} of {{ t.total }}">{% include "partials/_icon_trophy.svg" %}<b>{{ t.earned }}</b></span>{% endfor %}

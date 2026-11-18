@@ -6,13 +6,14 @@
 {% set s = set %}
 {% set _base = "/library/entries/" ~ entry.id ~ "/achievements?source=" ~ s.source ~ "&set_id=" ~ (s.set_id | urlencode) ~ ("&completion_id=" ~ completion_id if completion_id is not none else "") %}
 <div class="offcanvas-body p-0">
-  {# The pane's own Back button (as app.js injects for a DLC drill-in), and
-     the list's kind as its heading -- Achievements or Trophies tells Steam
-     from PSN, so no platform badge. #}
+  {# The pane's own Back button (as app.js injects for a DLC drill-in) and
+     the game's title, with the bar's full width for it. The kind --
+     achievements or trophies -- is in the summary line below, which tells
+     Steam from PSN, so no platform badge. #}
   <div class="cgt-ach-list__bar">
     <button type="button" class="btn btn-sm btn-outline-secondary cgt-pane-back"
             hx-get="{{ back_url }}" hx-target="{{ target }}" hx-swap="innerHTML">&larr; Back</button>
-    <span class="cgt-ach-list__title text-truncate">{{ s.noun }} <span class="cgt-ach-list__game">&middot; {{ game.display_title }}</span></span>
+    <span class="cgt-ach-list__title text-truncate" title="{{ game.display_title }}">{{ game.display_title }}</span>
   </div>
   <div class="cgt-detail-body">
     <div class="cgt-detail-block mb-2">

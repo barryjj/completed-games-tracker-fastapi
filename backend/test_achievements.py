@@ -234,6 +234,9 @@ def test_full_list_groups_filters_and_links_back(client, db_session):
     url = f"/library/entries/{entry.id}/achievements?source=psn&set_id=NPWR1"
 
     body = client.get(url, headers=_HX).text
+    # The kind rides in the summary; the bar is just Back and the title.
+    assert "of 3 trophies earned" in body
+    assert 'class="cgt-ach-list__title text-truncate" title="ASTRO BOT">ASTRO BOT</span>' in body
     assert "Full game" in body and "Add-on · GAME [001]" in body
     assert body.index("Astro-nomical!") < body.index("Timely Rescue")
     assert "cgt-ach-row--locked" in body
