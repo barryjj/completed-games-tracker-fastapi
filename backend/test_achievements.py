@@ -274,3 +274,21 @@ def test_completion_pane_box_returns_to_the_completion(client, db_session):
 
     lst = client.get(f"/library/entries/{entry.id}/achievements?source=psn&set_id=NPWR1&completion_id={c.id}", headers=_HX).text
     assert f'hx-get="/completions/{c.id}/detail"' in lst
+
+
+def test_preview_panes_show_the_box_read_only(db_session):
+    """Import and merge previews reuse the library pane but aren't it: View
+    all and the set rows would swap into a pane that isn't on the page."""
+    from backend.pages_common import templates
+
+    user = _user(db_session)
+    entry = _psn_entry(db_session, user)
+    sets = achievements.views_for(db_session, user.id, entry.release)
+    box = templates.env.get_template("partials/_achievements_box.html")
+
+    live = box.render(achievement_sets=sets, entry=entry)
+    assert "View all 3" in live and 'class="cgt-ach-set" href="#"' in live
+
+    preview = box.render(achievement_sets=sets, entry=entry, ach_readonly=True)
+    assert "Rarest earned" in preview and "Full game" in preview
+    assert "View all" not in preview and "hx-get" not in preview

@@ -3886,6 +3886,7 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   text-decoration: none;
 }
 .cgt-ach-set:hover { background: var(--ctp-base); color: inherit; }
+.cgt-ach-set--static:hover { background: none; }
 .cgt-ach-set__count { color: var(--ctp-overlay1); }
 .cgt-ach-set__tiers { gap: 2px 8px; font-size: 0.75rem; }
 .cgt-trophy-tier--none { opacity: 0.5; }

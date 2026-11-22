@@ -4,7 +4,8 @@
    split. Data from achievements.set_view.
 
    Expects: achievement_sets, entry. Optional: ach_completion_id (when this
-   is a completion's pane, so View all returns there), ach_target. #}
+   is a completion's pane, so View all returns there), ach_target, and
+   ach_readonly (a preview pane: no View all, set rows don't link). #}
 {% set _ach_target = ach_target or '#library-detail-content' %}
 {% for s in achievement_sets %}
 {% set _list_url = "/library/entries/" ~ entry.id ~ "/achievements?source=" ~ s.source ~ "&set_id=" ~ (s.set_id | urlencode) ~ ("&completion_id=" ~ ach_completion_id if ach_completion_id else "") %}
@@ -28,15 +29,16 @@
     <div class="cgt-ach-sets__list" hidden>
       {% for g in s.groups %}
       {% if loop.index == 2 %}<div class="cgt-ach-label">Add-ons</div>{% endif %}
+      {% if ach_readonly %}<div class="cgt-ach-set cgt-ach-set--static">{% else %}
       <a class="cgt-ach-set" href="#"
-         hx-get="{{ _list_url }}&group={{ g.id | urlencode }}" hx-target="{{ _ach_target }}" hx-swap="innerHTML">
+         hx-get="{{ _list_url }}&group={{ g.id | urlencode }}" hx-target="{{ _ach_target }}" hx-swap="innerHTML">{% endif %}
         <span class="cgt-ach-set__name">{{ g.name }}</span>
         <span class="cgt-ach-set__count {{ 'cgt-ach-done' if g.earned == g.total }}">{{ g.earned }}/{{ g.total }}</span>
         <span class="cgt-trophy-tiers cgt-ach-set__tiers">
           {% for t in g.tiers %}<span class="cgt-trophy-tier cgt-trophy-tier--{{ t.tier }}{{ ' cgt-trophy-tier--none' if not t.earned }}">{% include "partials/_icon_trophy.svg" %}{{ t.earned }}</span>{% endfor %}
         </span>
         <span class="cgt-ach-bar"><i style="width: {{ g.percent }}%"{% if g.earned == g.total %} class="cgt-ach-bar--done"{% endif %}></i></span>
-      </a>
+      {% if ach_readonly %}</div>{% else %}</a>{% endif %}
       {% endfor %}
     </div>
   </div>
@@ -70,7 +72,7 @@
   </div>
   {% endif %}
 
-  {% if s["items"] %}
+  {% if s["items"] and not ach_readonly %}
   <div class="text-end">
     <a href="#" class="cgt-ach-viewall" hx-get="{{ _list_url }}" hx-target="{{ _ach_target }}" hx-swap="innerHTML">View all {{ s.total }} &rsaquo;</a>
   </div>

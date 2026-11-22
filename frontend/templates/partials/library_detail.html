@@ -430,8 +430,10 @@
 
     {% if not candidate %}{{ completions_block() }}{% endif %}
 
-    {# Achievements / trophies (#210), below Completions. #}
-    {% with ach_target = pane_target %}{% include "partials/_achievements_box.html" %}{% endwith %}
+    {# Achievements / trophies (#210), below Completions. Read-only in the
+       import and merge previews: those panes aren't the library pane, so
+       View all (and its Back) would have nowhere to land. #}
+    {% with ach_target = pane_target, ach_readonly = (candidate or merge_candidate) %}{% include "partials/_achievements_box.html" %}{% endwith %}
 
     {# Actions footer was here — moved OUT of .offcanvas-body so it pins to
        the bottom of the pane as a sibling, always visible regardless of
