@@ -344,6 +344,32 @@ platforms table.
 ```
 Color thresholds: ≥85 green, ≥70 teal, ≥50 yellow, ≥20 peach, else red.
 
+### Date field (#231)
+```jinja
+{% from "partials/_date_field.html" import date_field %}
+{{ date_field("completed_at", today, id="completed-at-input", required=True) }}
+```
+**No native `type="date"` anywhere.** WebKit's control is three-segment
+editing, and an empty one shows today as a coloured placeholder that looks
+like a value. The field is a text box that takes natural input (`11/18/26`,
+`2026-11-18`, `Nov 18 2026`, `18 Nov`, `today`, `yesterday`), with a calendar
+popup (`cgtDate` in `app.js`) and a hidden ISO input that is the only part
+the server sees. It displays `Nov 18, 2026` (`short_date` on the first render,
+the same format from JS after that).
+
+- Typed dates apply on blur or Enter, not per keystroke. A bad one gets an
+  inline red message and blocks the form's submit; the stored value is kept.
+- Popup: the `.dropdown-menu` surface; the selected day uses the tinted
+  primary-button fill, today a mauve ring. Click the month title to pick a
+  month, then again for a year. Arrow keys move the day, Enter picks, Esc
+  closes (without closing a modal under it).
+- Fill one from script with `cgtDate.set(id, "2026-11-18")`; `id` is the hidden
+  input's, and change fires on it when the value moves.
+- Completions' range dropdown (This year / Last year / All time / Custom…)
+  shows the two fields only for Custom. The this-year default is applied on
+  the server and never written into a field. The range is remembered with the
+  other filters, but never Custom.
+
 ---
 
 ## Library Grid / List Views

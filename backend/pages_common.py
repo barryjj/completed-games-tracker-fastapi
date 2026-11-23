@@ -145,6 +145,26 @@ def _long_date(value) -> str:
 templates.env.filters["long_date"] = _long_date
 
 
+def _short_date(value) -> str:
+    """An ISO date as "Nov 18, 2026": what the date fields show (#231).
+
+    app.js's cgtDate formats the same way once someone types or picks a date,
+    so the server's first render and the client's agree. Anything that isn't
+    an ISO date is passed through so the field shows it rather than blanking.
+    """
+    if not value:
+        return ""
+    if isinstance(value, str):
+        try:
+            value = datetime.date.fromisoformat(value[:10])
+        except ValueError:
+            return value
+    return value.strftime("%b %-d, %Y")
+
+
+templates.env.filters["short_date"] = _short_date
+
+
 def _stack_cards(rows: list, active_offset: int = 0) -> list[tuple]:
     """Order a card-stack window for PAINTING: deepest first, active last.
 

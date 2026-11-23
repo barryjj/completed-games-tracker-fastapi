@@ -178,8 +178,107 @@ def test_completions_all_time_shows_past_year_completion(client, db_session):
     db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=datetime.date(2020, 5, 1)))
     db_session.commit()
 
-    r = client.get("/completions?all_time=true")
+    r = client.get("/completions?range=all")
     assert b"Old Game From The Past" in r.content
+
+
+# --- completions date range (#231) ---
+
+
+def _three_years(client, db_session):
+    """One completion this year, one last year, one in 2015."""
+    token = _signup_and_login(client)
+    user = db_session.query(models.User).filter_by(api_token=token).first()
+    year = datetime.date.today().year
+    for title, when in (
+        ("Game This Year", datetime.date(year, 1, 1)),
+        ("Game Last Year", datetime.date(year - 1, 6, 15)),
+        ("Game From 2015", datetime.date(2015, 3, 9)),
+    ):
+        entry = _add_game(db_session, user, title=title)
+        db_session.add(models.Completion(user_id=user.id, library_entry_id=entry.id, completed_at=when))
+    db_session.commit()
+
+
+def _shown(r):
+    return {t for t in ("Game This Year", "Game Last Year", "Game From 2015") if t.encode() in r.content}
+
+
+def test_completions_range_default_is_this_year_and_never_fills_the_fields(client, db_session):
+    """The this-year default is applied on the server. It used to be written
+    back into the From box, so it looked like something the user had typed."""
+    _three_years(client, db_session)
+    r = client.get("/completions")
+    assert _shown(r) == {"Game This Year"}
+    assert b'<option value="year"      selected>This year</option>' in r.content
+    assert b'id="comp-from" value="" disabled' in r.content
+    assert b'id="comp-to" value="" disabled' in r.content
+    assert b'id="comp-custom-range" hidden' in r.content
+
+
+def test_completions_range_presets(client, db_session):
+    _three_years(client, db_session)
+    assert _shown(client.get("/completions?range=last_year")) == {"Game Last Year"}
+    assert _shown(client.get("/completions?range=all")) == {"Game This Year", "Game Last Year", "Game From 2015"}
+
+
+def test_completions_range_custom_uses_the_dates_and_shows_them(client, db_session):
+    _three_years(client, db_session)
+    r = client.get("/completions?range=custom&completed_from=2015-01-01&completed_to=2015-12-31")
+    assert _shown(r) == {"Game From 2015"}
+    # The fields show the readable form; only the hidden value is ISO.
+    assert b'value="Jan 1, 2015"' in r.content
+    assert b'id="comp-from" value="2015-01-01">' in r.content
+    assert b'id="comp-custom-range" hidden' not in r.content
+
+
+def test_completions_range_dates_without_a_range_count_as_custom(client, db_session):
+    """An old link (dates, no range) still filters by its dates."""
+    _three_years(client, db_session)
+    r = client.get("/completions?completed_from=2015-01-01&completed_to=2015-12-31")
+    assert _shown(r) == {"Game From 2015"}
+    assert b'<option value="custom"    selected>' in r.content
+
+
+def test_completions_range_ignores_dates_outside_custom(client, db_session):
+    _three_years(client, db_session)
+    r = client.get("/completions?range=last_year&completed_from=2015-01-01")
+    assert _shown(r) == {"Game Last Year"}
+
+
+def test_completions_range_bad_dates_are_ignored_not_a_500(client, db_session):
+    _three_years(client, db_session)
+    r = client.get("/completions?range=custom&completed_from=banana&completed_to=2015-13-45")
+    assert r.status_code == 200
+    assert _shown(r) == {"Game This Year", "Game Last Year", "Game From 2015"}
+
+
+def test_completions_range_is_remembered_but_never_custom(client, db_session):
+    """A remembered Custom would be a silent all-time view (the dates aren't
+    stored), defeating the this-year default."""
+    _three_years(client, db_session)
+    client.cookies.set("cgt-completions-remember", "1")
+    client.cookies.set("cgt-completions-range", "last_year")
+    assert _shown(client.get("/completions")) == {"Game Last Year"}
+    client.cookies.set("cgt-completions-range", "custom")
+    assert _shown(client.get("/completions")) == {"Game This Year"}
+    # Picking Custom right now is still honoured.
+    assert _shown(client.get("/completions?range=custom&completed_from=2015-01-01&completed_to=2015-12-31")) == {"Game From 2015"}
+
+
+def test_no_native_date_controls_left(client, db_session):
+    """#231: every date is the in-house field. The import edit modal is
+    checked by rendering it, since it needs a candidate to reach by URL."""
+    from backend.pages_common import templates
+
+    _signup_and_login(client)
+    assert b'type="date"' not in client.get("/completions").content
+    row = type("Row", (), {"id": 1, "completed_at": datetime.date(2015, 3, 9), "playthroughs": "1", "raw_notes": ""})()
+    candidate = type("Candidate", (), {"id": 1, "raw_title": "x", "raw_platform": "", "rows": [row]})()
+    html = templates.env.get_template("partials/_import_edit_modal.html").render(candidate=candidate, platforms=[])
+    assert 'type="date"' not in html
+    assert 'name="row_date" value="2015-03-09"' in html
+    assert 'value="Mar 9, 2015"' in html
 
 
 def test_log_completion(client, db_session):

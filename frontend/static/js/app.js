@@ -1000,3 +1000,279 @@ window.cgtPsnReviewDecisions = function () {
     }
   };
 })();
+
+// ─── Date fields (#231) ───────────────────────────────────────────────────
+// Every date in the app is a partials/_date_field.html field: a text box that
+// takes natural input, a calendar popup, and a hidden ISO value that is the
+// only part a form sends. Plain JS, no dependency: flatpickr was mocked up and
+// rejected (restyling it meant overriding a dozen of its classes, and its year
+// control looked bad). Everything is delegated from document, so fields in
+// swapped-in HTML need no init.
+//
+// Typed text is applied on blur or Enter, not per keystroke, so the
+// Completions filter doesn't refetch on every character. A bad date gets an
+// inline error and setCustomValidity, which blocks the form's submit; the
+// stored value is left as it was. The server still validates: this is a
+// convenience, not the check.
+(function () {
+  var MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July',
+                'August', 'September', 'October', 'November', 'December'];
+  var DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+  var BAD = "That isn't a date. Try 11/18/2026 or Nov 18 2026.";
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function toIso(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  // "Nov 18, 2026" -- the same shape as the short_date filter's first render.
+  function show(d) { return MONTHS[d.getMonth()].slice(0, 3) + ' ' + d.getDate() + ', ' + d.getFullYear(); }
+  function today() { var n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+  function sameDay(a, b) { return !!a && !!b && a.getTime() === b.getTime(); }
+  // A real calendar date or null (m is 1-based). new Date() alone would roll
+  // Feb 30 into March, so read the parts back and compare.
+  function make(y, m, d) {
+    if (!(y >= 1000 && y <= 9999)) return null;
+    var dt = new Date(y, m - 1, d);
+    return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d ? dt : null;
+  }
+  function fromIso(s) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+    return m ? make(+m[1], +m[2], +m[3]) : null;
+  }
+  // No year means this year. Two digits: up to next year is this century,
+  // anything later the last one ("98" is 1998, "26" is 2026).
+  function fullYear(y) {
+    if (!y) return today().getFullYear();
+    if (y.length === 4) return +y;
+    return (+y <= today().getFullYear() % 100 + 1 ? 2000 : 1900) + +y;
+  }
+  function monthOf(word) {  // "nov", "november", "sept" -> 1-12, or 0
+    if (word.length < 3) return 0;
+    for (var i = 0; i < 12; i++) if (MONTHS[i].toLowerCase().indexOf(word) === 0) return i + 1;
+    return 0;
+  }
+  // Text -> a Date, null for an empty box, or false when it isn't a date.
+  // Numeric dates are month first (11/18/2026); ISO is year first.
+  function parse(text) {
+    var s = String(text || '').toLowerCase().replace(/,/g, ' ').replace(/([a-z])\./g, '$1')
+      .replace(/\s+/g, ' ').trim();
+    if (!s) return null;
+    if (s === 'today') return today();
+    if (s === 'yesterday') { var t = today(); t.setDate(t.getDate() - 1); return t; }
+    var m, d = null;
+    if ((m = /^(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})$/.exec(s))) d = make(+m[1], +m[2], +m[3]);
+    else if ((m = /^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2}|\d{4})$/.exec(s))) d = make(fullYear(m[3]), +m[1], +m[2]);
+    else if ((m = /^([a-z]+) (\d{1,2})(?:st|nd|rd|th)?(?: (\d{2}|\d{4}))?$/.exec(s))) d = monthOf(m[1]) && make(fullYear(m[3]), monthOf(m[1]), +m[2]);
+    else if ((m = /^(\d{1,2})(?:st|nd|rd|th)? ([a-z]+)(?: (\d{2}|\d{4}))?$/.exec(s))) d = monthOf(m[2]) && make(fullYear(m[3]), monthOf(m[2]), +m[1]);
+    return d || false;
+  }
+
+  function isText(el) { return !!(el && el.classList && el.classList.contains('cgt-date__text')); }
+  function field(el) {
+    var box = el && el.closest && el.closest('.cgt-date');
+    if (!box) return null;
+    return { box: box, text: box.querySelector('.cgt-date__text'),
+             value: box.querySelector('.cgt-date__value'), error: box.querySelector('.cgt-date__error') };
+  }
+  function setError(f, msg) {
+    f.error.textContent = msg;
+    f.error.hidden = !msg;
+    f.text.classList.toggle('is-invalid', !!msg);
+    f.text.setCustomValidity(msg);
+  }
+  // Show d and store it. change fires on the hidden input (what htmx triggers
+  // and page scripts watch) only when the stored value really moved.
+  function setDate(f, d) {
+    var v = d ? toIso(d) : '';
+    f.text.value = d ? show(d) : '';
+    setError(f, '');
+    if (f.value.value !== v) {
+      f.value.value = v;
+      f.value.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  function commit(f) {
+    var d = parse(f.text.value);
+    if (d === false) { setError(f, BAD); return false; }
+    setDate(f, d);
+    return true;
+  }
+
+  // ── Calendar popup ── one open at a time; `view` is what it shows:
+  // mode days | months | years, the year and month on screen, and the
+  // keyboard's day.
+  var cur = null, pop = null, view = null;
+
+  function close(refocus) {
+    if (!pop) return;
+    var f = cur;
+    pop.remove();
+    pop = cur = null;
+    f.text.setAttribute('aria-expanded', 'false');
+    if (refocus) f.text.focus();
+  }
+  function open(f) {
+    if (cur && cur.box === f.box) return;
+    close(false);
+    cur = f;
+    var d = parse(f.text.value) || fromIso(f.value.value) || today();
+    view = { mode: 'days', year: d.getFullYear(), month: d.getMonth(), focus: d };
+    pop = document.createElement('div');
+    pop.className = 'dropdown-menu show cgt-cal';
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', 'Choose a date');
+    // Inside the field, not on <body>: a Bootstrap modal's focus trap pulls
+    // focus back from anything outside the modal, which breaks the keyboard.
+    // position: fixed still lets it hang over the modal's edge.
+    f.box.appendChild(pop);
+    f.text.setAttribute('aria-expanded', 'true');
+    render(false);
+  }
+  function place() {
+    if (!pop) return;
+    if (!document.body.contains(cur.box)) { pop = cur = null; return; }  // swapped away
+    var r = cur.text.getBoundingClientRect(), h = pop.offsetHeight, w = pop.offsetWidth;
+    var top = r.bottom + 4;
+    if (top + h > window.innerHeight - 8 && r.top - h - 4 >= 8) top = r.top - h - 4;
+    pop.style.top = top + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8)) + 'px';
+  }
+  function cell(pick, text, label, fl) {
+    return '<button type="button" class="cgt-cal__cell' +
+      (fl.out ? ' cgt-cal__cell--out' : '') + (fl.today ? ' cgt-cal__cell--today' : '') +
+      (fl.selected ? ' cgt-cal__cell--selected' : '') + '" data-pick="' + pick + '" aria-label="' + label +
+      '" tabindex="' + (fl.focus ? 0 : -1) + '"' + (fl.selected ? ' aria-pressed="true"' : '') + '>' + text + '</button>';
+  }
+  function render(focusGrid) {
+    var v = view, now = today(), sel = fromIso(cur.value.value), title, cells = '', unit, i;
+    if (v.mode === 'days') {
+      title = MONTHS[v.month] + ' ' + v.year;
+      unit = 'month';
+      cells = DOW.map(function (w) { return '<span class="cgt-cal__dow" aria-hidden="true">' + w + '</span>'; }).join('');
+      var lead = new Date(v.year, v.month, 1).getDay();
+      for (i = 0; i < 42; i++) {  // always six weeks, so the popup never changes height
+        var d = new Date(v.year, v.month, 1 - lead + i);
+        cells += cell(toIso(d), d.getDate(), MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear(), {
+          out: d.getMonth() !== v.month, today: sameDay(d, now), selected: sameDay(d, sel), focus: sameDay(d, v.focus) });
+      }
+    } else if (v.mode === 'months') {
+      title = String(v.year);
+      unit = 'year';
+      for (i = 0; i < 12; i++) {
+        cells += cell(i, MONTHS[i].slice(0, 3), MONTHS[i] + ' ' + v.year, {
+          today: v.year === now.getFullYear() && i === now.getMonth(),
+          selected: !!sel && sel.getFullYear() === v.year && sel.getMonth() === i, focus: i === v.month });
+      }
+    } else {
+      var first = Math.floor(v.year / 12) * 12;
+      title = first + ' – ' + (first + 11);
+      unit = '12 years';
+      for (i = first; i < first + 12; i++) {
+        cells += cell(i, i, String(i), {
+          today: i === now.getFullYear(), selected: !!sel && sel.getFullYear() === i, focus: i === v.year });
+      }
+    }
+    pop.innerHTML =
+      '<div class="cgt-cal__head">' +
+        '<button type="button" class="cgt-cal__nav" data-cal="prev" aria-label="Previous ' + unit + '">‹</button>' +
+        '<button type="button" class="cgt-cal__title" data-cal="up"' +
+          (v.mode === 'years' ? ' disabled' : ' title="Pick a ' + (v.mode === 'days' ? 'month' : 'year') + '"') + '>' + title + '</button>' +
+        '<button type="button" class="cgt-cal__nav" data-cal="next" aria-label="Next ' + unit + '">›</button>' +
+      '</div>' +
+      '<div class="cgt-cal__grid cgt-cal__grid--' + v.mode + '">' + cells + '</div>' +
+      '<div class="cgt-cal__foot">' +
+        '<button type="button" data-cal="today">Today</button>' +
+        '<button type="button" data-cal="clear">Clear</button>' +
+      '</div>';
+    place();
+    if (focusGrid) {
+      var t = pop.querySelector('.cgt-cal__cell[tabindex="0"]');
+      if (t) t.focus();
+    }
+  }
+  function clampDay(y, m, d) { return new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate())); }
+  function setFocusDay(d) { view.focus = d; view.year = d.getFullYear(); view.month = d.getMonth(); }
+  function page(n) {  // the arrows in the header, and PageUp / PageDown
+    var v = view;
+    if (v.mode === 'days') setFocusDay(clampDay(v.year, v.month + n, v.focus.getDate()));
+    else v.year += v.mode === 'months' ? n : 12 * n;
+  }
+  function move(n) {  // arrow keys in the grid
+    var v = view;
+    if (v.mode === 'days') setFocusDay(new Date(v.focus.getFullYear(), v.focus.getMonth(), v.focus.getDate() + n));
+    else if (v.mode === 'months') { var m = v.year * 12 + v.month + n; v.year = Math.floor(m / 12); v.month = m - v.year * 12; }
+    else v.year += n;
+    render(true);
+  }
+  // A click in the popup. After a mouse click focus is still in the text box
+  // (mousedown is cancelled below); after Enter on a cell it's in the grid,
+  // and the redraw has to put it back there.
+  function act(target) {
+    var b = target.closest && target.closest('button');
+    if (!b || !pop.contains(b)) return false;
+    var v = view, a = b.getAttribute('data-cal'), pick = b.getAttribute('data-pick');
+    var kb = document.activeElement !== cur.text;
+    if (a === 'prev' || a === 'next') { page(a === 'prev' ? -1 : 1); render(kb); }
+    else if (a === 'up') { v.mode = v.mode === 'days' ? 'months' : 'years'; render(kb); }
+    else if (a === 'today') { setDate(cur, today()); close(true); }
+    else if (a === 'clear') { setDate(cur, null); close(true); }
+    else if (pick !== null) {
+      if (v.mode === 'days') { setDate(cur, fromIso(pick)); close(true); }
+      else if (v.mode === 'months') { v.mode = 'days'; setFocusDay(clampDay(v.year, +pick, v.focus.getDate())); render(kb); }
+      else { v.year = +pick; v.mode = 'months'; render(kb); }
+    }
+    return true;
+  }
+
+  document.addEventListener('mousedown', function (e) {
+    if (pop && pop.contains(e.target)) { e.preventDefault(); return; }  // keep focus in the text box
+    if (cur && !cur.box.contains(e.target)) close(false);
+  }, true);
+  document.addEventListener('click', function (e) {
+    if (pop && act(e.target)) return;
+    if (isText(e.target)) open(field(e.target));
+  });
+  document.addEventListener('input', function (e) {
+    if (!isText(e.target)) return;
+    var f = field(e.target);
+    setError(f, '');
+    // Typing a whole date moves the open calendar to it.
+    var d = cur && cur.box === f.box ? parse(f.text.value) : null;
+    if (d) { view = { mode: 'days', year: d.getFullYear(), month: d.getMonth(), focus: d }; render(false); }
+  });
+  document.addEventListener('focusout', function (e) {
+    if (isText(e.target)) commit(field(e.target));
+    // Tabbing out of the field (text box or popup) closes the popup.
+    if (cur && e.relatedTarget && !cur.box.contains(e.relatedTarget)) close(false);
+  });
+  // Capture phase, so Escape closes the popup without also closing a modal.
+  document.addEventListener('keydown', function (e) {
+    var t = e.target;
+    if (pop && pop.contains(t)) {
+      var grid = view.mode === 'days' ? 7 : 3;
+      var step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -grid, ArrowDown: grid }[e.key];
+      if (step && t.classList.contains('cgt-cal__cell')) { e.preventDefault(); move(step); }
+      else if (e.key === 'PageUp' || e.key === 'PageDown') { e.preventDefault(); page(e.key === 'PageUp' ? -1 : 1); render(true); }
+      else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); }
+      return;  // Enter / Space click the focused button natively
+    }
+    if (!isText(t)) return;
+    var f = field(t);
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (!cur || cur.box !== f.box) open(f);
+      render(true);
+    } else if (e.key === 'Escape' && cur && cur.box === f.box) {
+      e.preventDefault(); e.stopPropagation(); close(false);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();  // apply the date; don't submit the form under it
+      if (commit(f)) close(false);
+    }
+  }, true);
+  window.addEventListener('resize', place);
+  document.addEventListener('scroll', place, true);
+
+  window.cgtDate = {
+    // Fill a field from script by its id (the hidden input's), e.g. when the
+    // Log completion modal is opened to edit an existing record.
+    set: function (id, iso) { var f = field(document.getElementById(id)); if (f) setDate(f, fromIso(iso)); },
+  };
+})();

@@ -3959,3 +3959,56 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-ach-row--locked .cgt-ach-row__text { opacity: 0.6; }
 .cgt-ach-row--locked .cgt-ach-tile { opacity: 0.55; }
 .cgt-ach-row--locked .cgt-trophy-tier svg { opacity: 0.5; }
+
+/* ─── Date fields and calendar (#231) ─────────────────────────────────────── */
+/* partials/_date_field.html + cgtDate in app.js. The text box is a normal
+   form-control; the popup borrows .dropdown-menu for its surface, border and
+   shadow, so it already matches each palette. */
+.cgt-date { position: relative; display: block; }
+.cgt-date--inline { display: inline-block; width: 8.5rem; }
+.cgt-date-range { display: inline-flex; align-items: center; gap: 0.5rem; }
+.cgt-date-range[hidden] { display: none; }
+/* Bootstrap's invalid icon eats a narrow field; the red edge and message are enough. */
+.cgt-date__text.is-invalid { background-image: none; padding-right: 0.5rem; }
+.cgt-date__error { display: block; margin-top: 0.25rem; font-size: 0.75rem; color: var(--ctp-red); }
+/* In a toolbar the message hangs below the field rather than pushing the row apart. */
+.cgt-date--inline .cgt-date__error {
+  position: absolute; top: 100%; left: 0; z-index: 5;
+  white-space: nowrap; padding: 2px 6px; border-radius: 4px;
+  background: var(--bs-dropdown-bg); border: 1px solid var(--ctp-surface1);
+}
+.cgt-date__error[hidden] { display: none; }
+
+.cgt-cal {
+  position: fixed; z-index: 1090;  /* over a modal (1055) */
+  width: 16rem; margin: 0; padding: 0.5rem; font-size: 0.85rem;
+}
+.cgt-cal button {
+  background: none; border: 1px solid transparent; border-radius: 6px;
+  color: var(--ctp-text); padding: 0.25rem 0; line-height: 1.25;
+}
+.cgt-cal button:hover:not(:disabled) { background: var(--ctp-surface0); }
+.cgt-cal button:focus-visible { outline: 2px solid var(--ctp-mauve); outline-offset: -1px; }
+.cgt-cal__head { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.35rem; }
+.cgt-cal__nav { width: 2rem; font-size: 1.1rem; }
+.cgt-cal__title { flex: 1; font-weight: 600; }
+.cgt-cal__title:disabled { opacity: 1; cursor: default; }
+.cgt-cal__grid { display: grid; gap: 2px; }
+.cgt-cal__grid--days { grid-template-columns: repeat(7, 1fr); }
+.cgt-cal__grid--months,
+.cgt-cal__grid--years { grid-template-columns: repeat(3, 1fr); }
+.cgt-cal__grid--months .cgt-cal__cell,
+.cgt-cal__grid--years .cgt-cal__cell { padding: 0.55rem 0; }
+.cgt-cal__dow { text-align: center; font-size: 0.7rem; color: var(--ctp-subtext); padding: 0.15rem 0; }
+.cgt-cal .cgt-cal__cell--out { color: var(--ctp-overlay1); }
+/* Today: a ring. Selected: the tinted primary-button recipe (#207). */
+.cgt-cal .cgt-cal__cell--today { border-color: var(--ctp-mauve); }
+.cgt-cal .cgt-cal__cell--selected,
+.cgt-cal .cgt-cal__cell--selected:hover:not(:disabled) {
+  background: var(--cgt-btn-primary-fill); border-color: var(--cgt-btn-primary-edge);
+}
+.cgt-cal__foot {
+  display: flex; justify-content: space-between;
+  margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--ctp-surface0);
+}
+.cgt-cal .cgt-cal__foot button { padding: 0.2rem 0.5rem; color: var(--bs-link-color); }

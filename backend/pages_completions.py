@@ -32,6 +32,35 @@ router = APIRouter()
 
 
 COMPLETIONS_SORT_OPTIONS = ["date_desc", "date_asc", "title_asc", "title_desc"]
+COMPLETIONS_RANGES = ("year", "last_year", "all", "custom")
+
+
+def _iso_or_none(value: str) -> datetime.date | None:
+    """A date field's ISO value, or None. The client validates before sending;
+    this is the safety net, so a bad value is ignored rather than a 500."""
+    try:
+        return datetime.date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
+
+
+def _completions_range(date_range: str, completed_from: str, completed_to: str):
+    """(range, from, to) for the Completions date filter (#231).
+
+    "This year" is the default and is applied here, never written into the date
+    fields: they only matter for "Custom", and are blank otherwise. A request
+    with dates but no range (an old link) counts as Custom.
+    """
+    if date_range not in COMPLETIONS_RANGES:
+        date_range = "custom" if (completed_from or completed_to) else "year"
+    year = datetime.date.today().year
+    if date_range == "year":
+        return date_range, datetime.date(year, 1, 1), None
+    if date_range == "last_year":
+        return date_range, datetime.date(year - 1, 1, 1), datetime.date(year - 1, 12, 31)
+    if date_range == "all":
+        return date_range, None, None
+    return date_range, _iso_or_none(completed_from), _iso_or_none(completed_to)
 
 
 @router.get("/completions")
@@ -39,9 +68,9 @@ def completions_page(
     request: Request,
     q: str = Query(""),
     platform: str = Query(""),
+    date_range: str = Query("", alias="range"),
     completed_from: str = Query(""),
     completed_to: str = Query(""),
-    all_time: bool = Query(False),
     view_mode: str | None = Query(None),
     sort: str = Query("date_desc"),
     db: Session = Depends(get_db),
@@ -52,17 +81,16 @@ def completions_page(
 
     # Opt-in sticky filters (#189). `q` excluded for the same reason as the
     # library: a remembered search string is surprising, a remembered platform
-    # or sort is not. The date range is excluded too — it has its own
-    # default-to-current-year rule immediately below, and a remembered range
-    # would silently defeat it.
-    _f = remembered_filters(request, "completions", {"platform": platform, "sort": sort})
-    platform, sort = _f["platform"], _f["sort"]
-    # Default to current calendar year if neither date filter is set — unless
-    # all_time is explicitly set, which is the only way to distinguish "user
-    # cleared both fields to see everything" from "fresh page load with no
-    # filters yet" (both look identical as blank query params otherwise).
-    if not completed_from and not completed_to and not all_time:
-        completed_from = f"{datetime.date.today().year}-01-01"
+    # or sort is not. The range choice is remembered, but never "Custom": the
+    # dates themselves aren't stored, so a remembered Custom would be a silent
+    # all-time view that defeats the this-year default.
+    _f = remembered_filters(request, "completions", {"platform": platform, "sort": sort, "range": date_range})
+    platform, sort, date_range = _f["platform"], _f["sort"], _f["range"]
+    if date_range == "custom" and "range" not in request.query_params:
+        date_range = ""
+    date_range, date_from, date_to = _completions_range(date_range, completed_from, completed_to)
+    if date_range != "custom":
+        completed_from = completed_to = ""
     completions_q = (
         db.query(models.Completion)
         .join(models.Completion.library_entry)
@@ -93,16 +121,10 @@ def completions_page(
         )
     if platform:
         completions_q = completions_q.filter(models.GameRelease.platform == platform)
-    if completed_from:
-        try:
-            completions_q = completions_q.filter(models.Completion.completed_at >= datetime.date.fromisoformat(completed_from))
-        except ValueError:
-            pass
-    if completed_to:
-        try:
-            completions_q = completions_q.filter(models.Completion.completed_at <= datetime.date.fromisoformat(completed_to))
-        except ValueError:
-            pass
+    if date_from:
+        completions_q = completions_q.filter(models.Completion.completed_at >= date_from)
+    if date_to:
+        completions_q = completions_q.filter(models.Completion.completed_at <= date_to)
     if sort not in COMPLETIONS_SORT_OPTIONS:
         sort = "date_desc"
     # sort_order preserves the original spreadsheet row order for historical
@@ -156,9 +178,9 @@ def completions_page(
             "today": datetime.date.today().isoformat(),
             "q": q,
             "platform": platform,
+            "date_range": date_range,
             "completed_from": completed_from,
             "completed_to": completed_to,
-            "all_time": all_time,
             "comp_platforms": comp_platform_list,
             "view_mode": view_mode,
             "sort": sort,

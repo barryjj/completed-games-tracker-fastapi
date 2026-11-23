@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/_date_field.html" import date_field %}
 {% block title %}Completions{% endblock %}
 
 {% block content %}
@@ -58,8 +59,8 @@
             </div>
           </div>
           <div class="mb-3">
-            <label class="form-label">Date Completed</label>
-            <input type="date" class="form-control" name="completed_at" id="completed-at-input" value="{{ today }}" required>
+            <label class="form-label" for="completed-at-input-text">Date Completed</label>
+            {{ date_field("completed_at", today, id="completed-at-input", required=True) }}
           </div>
           <div class="mb-3">
             <label class="form-label">Clears</label>
@@ -206,7 +207,7 @@ function editCompletion(ds) {
   document.getElementById('edit-completion-id').value = ds.completionId;
   document.getElementById('library-entry-id').value = ds.entryId;
   document.getElementById('game-search-input').value = ds.label;
-  document.getElementById('completed-at-input').value = ds.date;
+  cgtDate.set('completed-at-input', ds.date);
   document.getElementById('playthroughs-input').value = ds.playthroughs;
   document.getElementById('notes-input').value = ds.notes;
   document.getElementById('game-search-results').innerHTML = '';
@@ -223,7 +224,7 @@ function resetCompletionForm() {
   document.getElementById('edit-completion-id').value = '';
   document.getElementById('library-entry-id').value = '';
   document.getElementById('game-search-input').value = '';
-  document.getElementById('completed-at-input').value = '{{ today }}';
+  cgtDate.set('completed-at-input', '{{ today }}');
   document.getElementById('playthroughs-input').value = '1';
   document.getElementById('notes-input').value = '';
   document.getElementById('game-search-results').innerHTML = '';
@@ -348,7 +349,7 @@ function resetCompletionForm() {
   hx-target="#completions-content"
   hx-select="#completions-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, change from:#comp-all-time, change from:#comp-sort"
+  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, cgt-range, change from:#comp-sort"
 >
   <input type="hidden" name="view_mode" id="comp-view-mode" value="{{ view_mode }}">
   <input type="text" class="form-control form-control-sm"
@@ -361,25 +362,34 @@ function resetCompletionForm() {
     <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
     {% endfor %}
   </select>
-  <input type="date" class="form-control form-control-sm w-auto"
-         id="comp-from" name="completed_from" value="{{ completed_from }}" title="From date"
-         {% if all_time %}disabled{% endif %}>
-  <input type="date" class="form-control form-control-sm w-auto"
-         id="comp-to" name="completed_to" value="{{ completed_to }}" title="To date"
-         {% if all_time %}disabled{% endif %}>
-  {# Escape hatch for the current-year default below — blank from/to always
-     re-applies that default (the server can't tell "fresh page load" from
-     "user cleared both fields"), so there was no way to browse older
-     completions without first picking a specific date. Disabling the date
-     inputs (rather than clearing them) means the browser excludes them from
-     the request entirely while checked, and unchecking naturally restores
-     whatever was in the boxes before — no extra JS state to track. #}
-  <div class="form-check mb-0">
-    <input class="form-check-input" type="checkbox" id="comp-all-time" name="all_time" value="true"
-           {% if all_time %}checked{% endif %}
-           onchange="document.getElementById('comp-from').disabled = this.checked; document.getElementById('comp-to').disabled = this.checked;">
-    <label class="form-check-label text-secondary" for="comp-all-time"><small>All time</small></label>
-  </div>
+  {# Date range (#231). "This year" is the default and is applied on the
+     server, never written into the date fields: they only show for Custom.
+     Outside Custom their hidden values are disabled, so the request leaves
+     them out. Picking a preset refetches straight away (the cgt-range event
+     above); picking Custom just opens the fields, and refetches only if they
+     already hold a date. #}
+  <select class="form-select form-select-sm w-auto" id="comp-range" name="range" title="Date range"
+          onchange="cgtCompRange(this)">
+    <option value="year"      {% if date_range == 'year'      %}selected{% endif %}>This year</option>
+    <option value="last_year" {% if date_range == 'last_year' %}selected{% endif %}>Last year</option>
+    <option value="all"       {% if date_range == 'all'       %}selected{% endif %}>All time</option>
+    <option value="custom"    {% if date_range == 'custom'    %}selected{% endif %}>Custom…</option>
+  </select>
+  <span class="cgt-date-range" id="comp-custom-range" {% if date_range != 'custom' %}hidden{% endif %}>
+    {{ date_field("completed_from", completed_from, id="comp-from", small=True, inline=True, disabled=(date_range != 'custom'), label="From date", placeholder="From") }}
+    <span class="text-secondary" aria-hidden="true">–</span>
+    {{ date_field("completed_to", completed_to, id="comp-to", small=True, inline=True, disabled=(date_range != 'custom'), label="To date", placeholder="To") }}
+  </span>
+  <script>
+  function cgtCompRange(select) {
+    var custom = select.value === 'custom';
+    var from = document.getElementById('comp-from'), to = document.getElementById('comp-to');
+    document.getElementById('comp-custom-range').hidden = !custom;
+    from.disabled = to.disabled = !custom;
+    if (custom) document.getElementById('comp-from-text').focus();
+    if (!custom || from.value || to.value) htmx.trigger('#comp-filters-form', 'cgt-range');
+  }
+  </script>
   <select class="form-select form-select-sm w-auto" id="comp-sort" name="sort">
     <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
     <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>
@@ -405,7 +415,10 @@ function resetCompletionForm() {
 <script>
 (function () {
   var PREFIX = 'completions';
-  var FIELDS = [{name:'platform',el:'comp-platform'},{name:'sort',el:'comp-sort'}];
+  // range is remembered, but never Custom (the dates aren't stored; see
+  // completions_page). Custom is stored blank, which the server reads as
+  // the this-year default.
+  var FIELDS = [{name:'platform',el:'comp-platform'},{name:'sort',el:'comp-sort'},{name:'range',el:'comp-range'}];
   var box = document.getElementById('comp-remember-filters');
   if (!box) return;
 
@@ -426,6 +439,7 @@ function resetCompletionForm() {
     FIELDS.forEach(function (f) {
       var v = currentValue(f.el);
       if (v === null) return;
+      if (f.name === 'range' && v === 'custom') v = '';
       put(f.name, keep ? v : '', keep);
     });
   }

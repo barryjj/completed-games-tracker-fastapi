@@ -2,6 +2,7 @@
    raw title/platform and re-run the matcher, or manually link straight to
    a specific existing library entry (skipping the matcher entirely) for
    cases it should catch but doesn't. #}
+{% from "partials/_date_field.html" import date_field %}
 <form id="import-edit-form"
       hx-post="/tools/import/{{ candidate.id }}/edit"
       hx-swap="none"
@@ -35,8 +36,7 @@
       <div class="row g-2 mb-2">
         <div class="col-6">
           <label class="form-label small mb-0">Date</label>
-          <input type="date" class="form-control form-control-sm" name="row_date"
-                 value="{{ row.completed_at.isoformat() if row.completed_at else '' }}">
+          {{ date_field("row_date", row.completed_at.isoformat() if row.completed_at else "", small=True, label="Date") }}
         </div>
         <div class="col-6">
           <label class="form-label small mb-0">Playthroughs</label>
