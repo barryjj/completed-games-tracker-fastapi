@@ -57,6 +57,8 @@ html[data-bs-theme="dark"] {
   --cgt-nav-tint:   55%;  /* active settings-nav item */
   --cgt-earn-tint:  5%;   /* "Rarest earned" card: green over the tint base */
   --cgt-earn-edge:  90%;
+  --cgt-range-wash:  16%;  /* days between the ends of a date range */
+  --cgt-range-track: var(--ctp-base);  /* behind its presets */
 
   --ctp-base:     #1e1e2e; --ctp-mantle:   #181825; --ctp-crust:    #11111b;
   --ctp-surface0: #313244; --ctp-surface1: #45475a; --ctp-surface2: #585b70;
@@ -204,6 +206,8 @@ html[data-bs-theme="light"] {
   --cgt-nav-tint:   55%;
   --cgt-earn-tint:  30%;
   --cgt-earn-edge:  45%;
+  --cgt-range-wash:  18%;  /* days between the ends of a date range */
+  --cgt-range-track: var(--ctp-crust);  /* behind its presets */
 
   /* Bootstrap overrides */
   --bs-body-bg:                   #dfe3e8;
@@ -326,6 +330,8 @@ html[data-palette="latte"] {
   --cgt-nav-tint:   30%;
   --cgt-earn-tint:  14%;
   --cgt-earn-edge:  45%;
+  --cgt-range-wash:  9%;  /* days between the ends of a date range */
+  --cgt-range-track: var(--ctp-base);  /* behind its presets */
 
   --bs-body-bg:                   #dce0e8;
   --bs-body-bg-rgb:               220,224,232;
@@ -3965,30 +3971,21 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
    form-control; the popup borrows .dropdown-menu for its surface, border and
    shadow, so it already matches each palette. */
 .cgt-date { position: relative; display: block; }
-.cgt-date--inline { display: inline-block; width: 8.5rem; }
-.cgt-date-range { display: inline-flex; align-items: center; gap: 0.5rem; }
-.cgt-date-range[hidden] { display: none; }
 /* Bootstrap's invalid icon eats a narrow field; the red edge and message are enough. */
 .cgt-date__text.is-invalid { background-image: none; padding-right: 0.5rem; }
 .cgt-date__error { display: block; margin-top: 0.25rem; font-size: 0.75rem; color: var(--ctp-red); }
-/* In a toolbar the message hangs below the field rather than pushing the row apart. */
-.cgt-date--inline .cgt-date__error {
-  position: absolute; top: 100%; left: 0; z-index: 5;
-  white-space: nowrap; padding: 2px 6px; border-radius: 4px;
-  background: var(--bs-dropdown-bg); border: 1px solid var(--ctp-surface1);
-}
 .cgt-date__error[hidden] { display: none; }
 
 .cgt-cal {
   position: fixed; z-index: 1090;  /* over a modal (1055) */
   width: 16rem; margin: 0; padding: 0.5rem; font-size: 0.85rem;
 }
-.cgt-cal button {
+.cgt-cal :is(.cgt-cal__head, .cgt-cal__grid, .cgt-cal__foot) button {
   background: none; border: 1px solid transparent; border-radius: 6px;
   color: var(--ctp-text); padding: 0.25rem 0; line-height: 1.25;
 }
-.cgt-cal button:hover:not(:disabled) { background: var(--ctp-surface0); }
-.cgt-cal button:focus-visible { outline: 2px solid var(--ctp-mauve); outline-offset: -1px; }
+.cgt-cal :is(.cgt-cal__head, .cgt-cal__grid, .cgt-cal__foot) button:hover:not(:disabled) { background: var(--ctp-surface0); }
+.cgt-cal :is(.cgt-cal__head, .cgt-cal__grid, .cgt-cal__foot) button:focus-visible { outline: 2px solid var(--ctp-mauve); outline-offset: -1px; }
 .cgt-cal__head { display: flex; align-items: center; gap: 0.25rem; margin-bottom: 0.35rem; }
 .cgt-cal__nav { width: 2rem; font-size: 1.1rem; }
 .cgt-cal__title { flex: 1; font-weight: 600; }
@@ -4000,11 +3997,11 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
 .cgt-cal__grid--months .cgt-cal__cell,
 .cgt-cal__grid--years .cgt-cal__cell { padding: 0.55rem 0; }
 .cgt-cal__dow { text-align: center; font-size: 0.7rem; color: var(--ctp-subtext); padding: 0.15rem 0; }
-.cgt-cal .cgt-cal__cell--out { color: var(--ctp-overlay1); }
+.cgt-cal .cgt-cal__grid .cgt-cal__cell--out { color: var(--ctp-overlay1); }
 /* Today: a ring. Selected: the tinted primary-button recipe (#207). */
-.cgt-cal .cgt-cal__cell--today { border-color: var(--ctp-mauve); }
-.cgt-cal .cgt-cal__cell--selected,
-.cgt-cal .cgt-cal__cell--selected:hover:not(:disabled) {
+.cgt-cal .cgt-cal__grid .cgt-cal__cell--today { border-color: var(--ctp-mauve); }
+.cgt-cal .cgt-cal__grid .cgt-cal__cell--selected,
+.cgt-cal .cgt-cal__grid .cgt-cal__cell--selected:hover:not(:disabled) {
   background: var(--cgt-btn-primary-fill); border-color: var(--cgt-btn-primary-edge);
 }
 .cgt-cal__foot {
@@ -4012,3 +4009,60 @@ a.cgt-tool-stat--link:hover .cgt-tool-stat__label {
   margin-top: 0.35rem; padding-top: 0.35rem; border-top: 1px solid var(--ctp-surface0);
 }
 .cgt-cal .cgt-cal__foot button { padding: 0.2rem 0.5rem; color: var(--bs-link-color); }
+
+/* Range picker (partials/_completions_range.html): the calendar popup with
+   presets and a two-ended bar on top. */
+.cgt-rangepick { display: inline-block; }
+.cgt-rangepick__btn { text-align: start; white-space: nowrap; }
+.cgt-rangepick__half { padding: 1px 4px; border-radius: 4px; }
+.cgt-rangepick__half:hover { background: color-mix(in srgb, var(--ctp-mauve) var(--cgt-range-wash), var(--bs-input-bg)); }
+.cgt-rangepick__pop { width: 19rem; padding: 0.75rem; }
+.cgt-rangepick__seg {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding: 2px; border-radius: 7px; background: var(--cgt-range-track);
+}
+.cgt-rangepick__seg button {
+  padding: 0.3rem 0; border: 1px solid transparent; border-radius: 5px;
+  background: none; color: var(--ctp-text); font-size: 0.78rem; line-height: 1.25;
+}
+.cgt-rangepick__seg button:hover { border-color: var(--ctp-surface1); }
+.cgt-rangepick__seg button:focus-visible { outline: 2px solid var(--ctp-mauve); outline-offset: -1px; }
+.cgt-rangepick__seg button[aria-pressed="true"] {
+  background: var(--cgt-btn-primary-fill); border-color: var(--cgt-btn-primary-edge);
+}
+.cgt-rangepick__bar {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0.75rem 0 0.6rem; overflow: hidden;
+  border: 1px solid var(--ctp-surface1); border-radius: 8px;
+}
+.cgt-rangepick__end { padding: 0.35rem 0.65rem 0.45rem; cursor: text; min-width: 0; }
+.cgt-rangepick__end + .cgt-rangepick__end { border-left: 1px solid var(--ctp-surface1); }
+.cgt-rangepick__end:hover { background: var(--cgt-range-track); }
+.cgt-rangepick__end.is-active {
+  background: color-mix(in srgb, var(--ctp-mauve) var(--cgt-range-wash), var(--bs-dropdown-bg));
+  box-shadow: inset 0 -2px 0 var(--ctp-mauve);
+}
+.cgt-rangepick__end > span { display: block; font-size: 0.7rem; color: var(--ctp-subtext); }
+/* A real text box with its box hidden; the bar around it is the field. */
+.cgt-rangepick__text {
+  display: block; width: 100%; padding: 0; border: 0; outline: 0; background: none;
+  color: var(--ctp-text); font-size: 0.9rem; font-weight: 500;
+}
+.cgt-rangepick__text::placeholder { color: var(--ctp-overlay0); font-weight: 400; }
+.cgt-rangepick__text.is-invalid { color: var(--ctp-red); }
+.cgt-rangepick__pop .cgt-date__error { margin: 0 0 0.4rem; }
+.cgt-rangepick__pop .cgt-cal__grid--days { gap: 2px 0; }  /* so the band is unbroken */
+.cgt-cal .cgt-cal__grid .cgt-cal__cell--between {
+  border-radius: 0;
+  background: color-mix(in srgb, var(--ctp-mauve) var(--cgt-range-wash), var(--bs-dropdown-bg));
+}
+.cgt-rangepick__foot { display: flex; justify-content: flex-end; gap: 0.4rem; margin-top: 0.6rem; }
+
+/* Sort, opposite a list's count: reads as text with a caret, not a field. */
+.cgt-sort-quiet {
+  width: auto; field-sizing: content; text-align-last: right;
+  padding-block: 0; background-color: transparent; border-color: transparent; color: var(--ctp-subtext);
+}
+.cgt-sort-quiet:hover { background-color: transparent; color: var(--ctp-text); }
+.cgt-sort-quiet:focus { background-color: transparent; }
+.cgt-sort-quiet:focus:not(:focus-visible) { border-color: transparent; box-shadow: none; }

@@ -1114,7 +1114,7 @@ window.cgtPsnReviewDecisions = function () {
     close(false);
     cur = f;
     var d = parse(f.text.value) || fromIso(f.value.value) || today();
-    view = { mode: 'days', year: d.getFullYear(), month: d.getMonth(), focus: d };
+    view = dayView(d);
     pop = document.createElement('div');
     pop.className = 'dropdown-menu show cgt-cal';
     pop.setAttribute('role', 'dialog');
@@ -1138,11 +1138,15 @@ window.cgtPsnReviewDecisions = function () {
   function cell(pick, text, label, fl) {
     return '<button type="button" class="cgt-cal__cell' +
       (fl.out ? ' cgt-cal__cell--out' : '') + (fl.today ? ' cgt-cal__cell--today' : '') +
-      (fl.selected ? ' cgt-cal__cell--selected' : '') + '" data-pick="' + pick + '" aria-label="' + label +
+      (fl.selected ? ' cgt-cal__cell--selected' : '') + (fl.between ? ' cgt-cal__cell--between' : '') + '" data-pick="' + pick + '" aria-label="' + label +
       '" tabindex="' + (fl.focus ? 0 : -1) + '"' + (fl.selected ? ' aria-pressed="true"' : '') + '>' + text + '</button>';
   }
-  function render(focusGrid) {
-    var v = view, now = today(), sel = fromIso(cur.value.value), title, cells = '', unit, i;
+  // The header and grid for one view. ends holds what's chosen: one date for a
+  // field, the start and end for the range picker (either may be null).
+  function calHtml(v, ends) {
+    var now = today(), title, cells = '', unit, i;
+    function picked(test) { return ends.some(function (d) { return !!d && test(d); }); }
+    function between(d) { return ends.length === 2 && !!ends[0] && !!ends[1] && d > ends[0] && d < ends[1]; }
     if (v.mode === 'days') {
       title = MONTHS[v.month] + ' ' + v.year;
       unit = 'month';
@@ -1151,15 +1155,16 @@ window.cgtPsnReviewDecisions = function () {
       for (i = 0; i < 42; i++) {  // always six weeks, so the popup never changes height
         var d = new Date(v.year, v.month, 1 - lead + i);
         cells += cell(toIso(d), d.getDate(), MONTHS[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear(), {
-          out: d.getMonth() !== v.month, today: sameDay(d, now), selected: sameDay(d, sel), focus: sameDay(d, v.focus) });
+          out: d.getMonth() !== v.month, today: sameDay(d, now), between: between(d), focus: sameDay(d, v.focus),
+          selected: picked(function (e) { return sameDay(d, e); }) });
       }
     } else if (v.mode === 'months') {
       title = String(v.year);
       unit = 'year';
       for (i = 0; i < 12; i++) {
         cells += cell(i, MONTHS[i].slice(0, 3), MONTHS[i] + ' ' + v.year, {
-          today: v.year === now.getFullYear() && i === now.getMonth(),
-          selected: !!sel && sel.getFullYear() === v.year && sel.getMonth() === i, focus: i === v.month });
+          today: v.year === now.getFullYear() && i === now.getMonth(), focus: i === v.month,
+          selected: picked(function (e) { return e.getFullYear() === v.year && e.getMonth() === i; }) });
       }
     } else {
       var first = Math.floor(v.year / 12) * 12;
@@ -1167,40 +1172,57 @@ window.cgtPsnReviewDecisions = function () {
       unit = '12 years';
       for (i = first; i < first + 12; i++) {
         cells += cell(i, i, String(i), {
-          today: i === now.getFullYear(), selected: !!sel && sel.getFullYear() === i, focus: i === v.year });
+          today: i === now.getFullYear(), focus: i === v.year,
+          selected: picked(function (e) { return e.getFullYear() === i; }) });
       }
     }
-    pop.innerHTML =
-      '<div class="cgt-cal__head">' +
+    return '<div class="cgt-cal__head">' +
         '<button type="button" class="cgt-cal__nav" data-cal="prev" aria-label="Previous ' + unit + '">‹</button>' +
         '<button type="button" class="cgt-cal__title" data-cal="up"' +
           (v.mode === 'years' ? ' disabled' : ' title="Pick a ' + (v.mode === 'days' ? 'month' : 'year') + '"') + '>' + title + '</button>' +
         '<button type="button" class="cgt-cal__nav" data-cal="next" aria-label="Next ' + unit + '">›</button>' +
       '</div>' +
-      '<div class="cgt-cal__grid cgt-cal__grid--' + v.mode + '">' + cells + '</div>' +
+      '<div class="cgt-cal__grid cgt-cal__grid--' + v.mode + '">' + cells + '</div>';
+  }
+  function focusCell(root) {
+    var t = root.querySelector('.cgt-cal__cell[tabindex="0"]');
+    if (t) t.focus();
+  }
+  function render(focusGrid) {
+    pop.innerHTML = calHtml(view, [fromIso(cur.value.value)]) +
       '<div class="cgt-cal__foot">' +
         '<button type="button" data-cal="today">Today</button>' +
         '<button type="button" data-cal="clear">Clear</button>' +
       '</div>';
     place();
-    if (focusGrid) {
-      var t = pop.querySelector('.cgt-cal__cell[tabindex="0"]');
-      if (t) t.focus();
-    }
+    if (focusGrid) focusCell(pop);
   }
+  // A view is {mode: days | months | years, year, month, focus}: what one
+  // calendar is showing. These change it; the caller redraws.
+  function dayView(d) { return { mode: 'days', year: d.getFullYear(), month: d.getMonth(), focus: d }; }
   function clampDay(y, m, d) { return new Date(y, m, Math.min(d, new Date(y, m + 1, 0).getDate())); }
-  function setFocusDay(d) { view.focus = d; view.year = d.getFullYear(); view.month = d.getMonth(); }
-  function page(n) {  // the arrows in the header, and PageUp / PageDown
-    var v = view;
-    if (v.mode === 'days') setFocusDay(clampDay(v.year, v.month + n, v.focus.getDate()));
+  function setFocusDay(v, d) { v.focus = d; v.year = d.getFullYear(); v.month = d.getMonth(); }
+  function page(v, n) {  // the arrows in the header, and PageUp / PageDown
+    if (v.mode === 'days') setFocusDay(v, clampDay(v.year, v.month + n, v.focus.getDate()));
     else v.year += v.mode === 'months' ? n : 12 * n;
   }
-  function move(n) {  // arrow keys in the grid
-    var v = view;
-    if (v.mode === 'days') setFocusDay(new Date(v.focus.getFullYear(), v.focus.getMonth(), v.focus.getDate() + n));
-    else if (v.mode === 'months') { var m = v.year * 12 + v.month + n; v.year = Math.floor(m / 12); v.month = m - v.year * 12; }
-    else v.year += n;
-    render(true);
+  function zoomOut(v) { v.mode = v.mode === 'days' ? 'months' : 'years'; }
+  function zoomIn(v, pick) {  // a month or year was picked
+    if (v.mode === 'months') { v.mode = 'days'; setFocusDay(v, clampDay(v.year, pick, v.focus.getDate())); }
+    else { v.year = pick; v.mode = 'months'; }
+  }
+  // Arrow keys and PageUp / PageDown in a grid. True if the key was one.
+  function gridKey(v, e) {
+    var wide = v.mode === 'days' ? 7 : 3;
+    var n = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -wide, ArrowDown: wide }[e.key];
+    if (n && e.target.classList.contains('cgt-cal__cell')) {
+      if (v.mode === 'days') setFocusDay(v, new Date(v.focus.getFullYear(), v.focus.getMonth(), v.focus.getDate() + n));
+      else if (v.mode === 'months') { var m = v.year * 12 + v.month + n; v.year = Math.floor(m / 12); v.month = m - v.year * 12; }
+      else v.year += n;
+    } else if (e.key === 'PageUp' || e.key === 'PageDown') page(v, e.key === 'PageUp' ? -1 : 1);
+    else return false;
+    e.preventDefault();
+    return true;
   }
   // A click in the popup. After a mouse click focus is still in the text box
   // (mousedown is cancelled below); after Enter on a cell it's in the grid,
@@ -1210,14 +1232,13 @@ window.cgtPsnReviewDecisions = function () {
     if (!b || !pop.contains(b)) return false;
     var v = view, a = b.getAttribute('data-cal'), pick = b.getAttribute('data-pick');
     var kb = document.activeElement !== cur.text;
-    if (a === 'prev' || a === 'next') { page(a === 'prev' ? -1 : 1); render(kb); }
-    else if (a === 'up') { v.mode = v.mode === 'days' ? 'months' : 'years'; render(kb); }
+    if (a === 'prev' || a === 'next') { page(v, a === 'prev' ? -1 : 1); render(kb); }
+    else if (a === 'up') { zoomOut(v); render(kb); }
     else if (a === 'today') { setDate(cur, today()); close(true); }
     else if (a === 'clear') { setDate(cur, null); close(true); }
     else if (pick !== null) {
       if (v.mode === 'days') { setDate(cur, fromIso(pick)); close(true); }
-      else if (v.mode === 'months') { v.mode = 'days'; setFocusDay(clampDay(v.year, +pick, v.focus.getDate())); render(kb); }
-      else { v.year = +pick; v.mode = 'months'; render(kb); }
+      else { zoomIn(v, +pick); render(kb); }
     }
     return true;
   }
@@ -1236,7 +1257,7 @@ window.cgtPsnReviewDecisions = function () {
     setError(f, '');
     // Typing a whole date moves the open calendar to it.
     var d = cur && cur.box === f.box ? parse(f.text.value) : null;
-    if (d) { view = { mode: 'days', year: d.getFullYear(), month: d.getMonth(), focus: d }; render(false); }
+    if (d) { view = dayView(d); render(false); }
   });
   document.addEventListener('focusout', function (e) {
     if (isText(e.target)) commit(field(e.target));
@@ -1247,10 +1268,7 @@ window.cgtPsnReviewDecisions = function () {
   document.addEventListener('keydown', function (e) {
     var t = e.target;
     if (pop && pop.contains(t)) {
-      var grid = view.mode === 'days' ? 7 : 3;
-      var step = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -grid, ArrowDown: grid }[e.key];
-      if (step && t.classList.contains('cgt-cal__cell')) { e.preventDefault(); move(step); }
-      else if (e.key === 'PageUp' || e.key === 'PageDown') { e.preventDefault(); page(e.key === 'PageUp' ? -1 : 1); render(true); }
+      if (gridKey(view, e)) render(true);
       else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(true); }
       return;  // Enter / Space click the focused button natively
     }
@@ -1269,6 +1287,211 @@ window.cgtPsnReviewDecisions = function () {
   }, true);
   window.addEventListener('resize', place);
   document.addEventListener('scroll', place, true);
+
+  // ── Range picker ── Completions' date range (partials/_completions_range.html).
+  // It works on a draft (rp.ends) while open; the hidden inputs change, and
+  // cgt-range fires for htmx, only when a preset or Apply is clicked. Closing
+  // any other way drops the draft. Typed dates follow the same rules as a date
+  // field. rp.side is the end the next calendar click sets.
+  var rp = null;
+
+  function closeRange(refocus) {
+    if (!rp) return;
+    var r = rp;
+    rp = null;  // first, so the focusout this causes doesn't commit anything
+    r.pop.classList.remove('show');
+    r.btn.setAttribute('aria-expanded', 'false');
+    r.texts.forEach(function (t) { t.classList.remove('is-invalid'); });
+    if (refocus) r.btn.focus();
+  }
+  function openRange(box, side) {
+    closeRange(false);
+    function q(s) { return box.querySelector(s); }
+    var values = [q('[data-value="0"]'), q('[data-value="1"]')];
+    var ends = values.map(function (i) { return fromIso(i.value); });
+    rp = { box: box, btn: q('.cgt-rangepick__btn'), pop: q('.cgt-rangepick__pop'), custom: q('.cgt-rangepick__custom'),
+           cal: q('.cgt-rangepick__cal'), error: q('.cgt-date__error'), range: q('[data-value="range"]'), values: values,
+           texts: Array.prototype.slice.call(box.querySelectorAll('.cgt-rangepick__text')),
+           ends: ends, side: side || 0, view: dayView(ends[side || 0] || ends[0] || ends[1] || today()), note: '' };
+    rp.pop.classList.add('show');
+    rp.btn.setAttribute('aria-expanded', 'true');
+    drawRange();
+    rangeMode(rp.range.value);
+    if (side !== null) focusEnd(side);
+  }
+  function rangeMode(name) {  // which segment is lit; only Custom has the calendar
+    rp.pop.querySelectorAll('[data-range]').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.getAttribute('data-range') === name ? 'true' : 'false');
+    });
+    rp.custom.hidden = name !== 'custom';
+    placeRange();
+  }
+  function placeRange() {  // right edges lined up, kept on screen
+    if (!rp) return;
+    if (!document.body.contains(rp.box)) { rp = null; return; }  // swapped away
+    var r = rp.btn.getBoundingClientRect(), h = rp.pop.offsetHeight, w = rp.pop.offsetWidth;
+    var top = r.bottom + 4;
+    if (top + h > window.innerHeight - 8 && r.top - h - 4 >= 8) top = r.top - h - 4;
+    rp.pop.style.top = top + 'px';
+    rp.pop.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+  }
+  function backwards() { return !!rp.ends[0] && !!rp.ends[1] && rp.ends[0] > rp.ends[1]; }
+  function isBad(k) { return rp.texts[k].classList.contains('is-invalid'); }
+  function drawCal(focusGrid) {
+    rp.cal.innerHTML = calHtml(rp.view, rp.ends);
+    if (focusGrid) focusCell(rp.cal);
+  }
+  function drawRange(focusGrid) {
+    drawBar();
+    drawCal(focusGrid);
+  }
+  function drawBar() {
+    rp.texts.forEach(function (t, k) {
+      if (!isBad(k)) t.value = rp.ends[k] ? show(rp.ends[k]) : '';  // a bad one stays as typed
+      t.closest('.cgt-rangepick__end').classList.toggle('is-active', rp.side === k);
+    });
+    var msg = isBad(0) || isBad(1) ? BAD : backwards() ? 'The start is after the end.' : rp.note;
+    rp.error.textContent = msg;
+    rp.error.hidden = !msg;
+  }
+  function commitEnd(k) {
+    var d = parse(rp.texts[k].value);
+    rp.texts[k].classList.toggle('is-invalid', d === false);
+    if (d !== false) rp.ends[k] = d;
+    return d !== false;
+  }
+  function focusEnd(k) { rp.texts[k].focus(); rp.texts[k].select(); }
+  // A day was clicked: it becomes the active end, and the other end is next.
+  // An end it has jumped past is cleared rather than left backwards.
+  function pickDay(d) {
+    var k = rp.side, other = 1 - k;
+    var typing = rp.texts.indexOf(document.activeElement) >= 0, grid = rp.cal.contains(document.activeElement);
+    rp.note = '';
+    rp.ends[k] = d;
+    rp.texts[k].classList.remove('is-invalid');
+    if (backwards()) rp.ends[other] = null;
+    rp.side = other;
+    setFocusDay(rp.view, d);
+    drawRange(grid);
+    if (typing) { rp.stay = true; focusEnd(other); }  // stay: keep the month on screen
+  }
+  function applyRange(name) {
+    if (name === 'custom') {
+      var ok = [0, 1].map(commitEnd), none = !rp.ends[0] && !rp.ends[1];
+      rp.note = none ? 'Pick a start or end date first.' : '';
+      if (!ok[0] || !ok[1] || none || backwards()) {
+        drawRange();
+        placeRange();
+        if (!ok[0] || !ok[1]) focusEnd(ok[0] ? 1 : 0);
+        return;
+      }
+    }
+    var r = rp;
+    r.range.value = name;
+    r.values.forEach(function (i, k) {
+      i.disabled = name !== 'custom';
+      if (name === 'custom') i.value = r.ends[k] ? toIso(r.ends[k]) : '';
+    });
+    function half(k, word) {
+      return '<span class="cgt-rangepick__half" data-end="' + k + '" title="Change the ' + word + ' date">' +
+        (r.ends[k] ? show(r.ends[k]) : 'Any') + '</span>';
+    }
+    r.box.querySelector('.cgt-rangepick__label').innerHTML = name === 'custom' ?
+      half(0, 'start') + ' <span aria-hidden="true">→</span> ' + half(1, 'end') :
+      r.pop.querySelector('[data-range="' + name + '"]').textContent;
+    closeRange(true);
+    r.range.dispatchEvent(new Event('change', { bubbles: true }));  // Remember filters
+    r.range.dispatchEvent(new CustomEvent('cgt-range', { bubbles: true }));  // refetch
+  }
+
+  document.addEventListener('mousedown', function (e) {
+    if (!rp) return;
+    if (!rp.box.contains(e.target)) closeRange(false);
+    else if (rp.pop.contains(e.target) && !e.target.closest('.cgt-rangepick__end')) e.preventDefault();  // keep focus in the box being typed in
+  }, true);
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('.cgt-rangepick__btn');
+    if (btn) {
+      var half = e.target.closest('[data-end]');
+      if (half) openRange(btn.parentNode, +half.getAttribute('data-end'));
+      else if (rp && rp.btn === btn) closeRange(true);
+      else openRange(btn.parentNode, null);
+      return;
+    }
+    if (!rp || !rp.pop.contains(e.target)) return;
+    if (rp.fresh && e.target === rp.fresh) { rp.fresh.select(); rp.fresh = null; return; }
+    var b = e.target.closest('button');
+    if (!b) return;
+    var v = rp.view, name = b.getAttribute('data-range'), a = b.getAttribute('data-cal') || b.getAttribute('data-rp');
+    var pick = b.getAttribute('data-pick'), grid = rp.cal.contains(document.activeElement);
+    if (name === 'custom') { rangeMode(name); focusEnd(0); }
+    else if (name) applyRange(name);
+    else if (a === 'prev' || a === 'next') { page(v, a === 'prev' ? -1 : 1); drawCal(grid); }
+    else if (a === 'up') { zoomOut(v); drawCal(grid); }
+    else if (a === 'apply') applyRange('custom');
+    else if (a === 'clear') {
+      rp.ends = [null, null];
+      rp.texts.forEach(function (t) { t.classList.remove('is-invalid'); });
+      rp.side = 0;
+      rp.note = '';
+      drawRange();
+      focusEnd(0);
+    }
+    else if (pick !== null && v.mode === 'days') pickDay(fromIso(pick));
+    else if (pick !== null) { zoomIn(v, +pick); drawCal(grid); }
+  });
+  document.addEventListener('focusin', function (e) {
+    var k = rp ? rp.texts.indexOf(e.target) : -1;
+    if (k < 0) return;
+    rp.side = k;
+    if (rp.ends[k] && !rp.stay) rp.view = dayView(rp.ends[k]);
+    rp.stay = false;
+    drawRange();
+    e.target.select();
+    rp.fresh = e.target;  // a mouse click drops that selection on mouseup; the click puts it back
+  });
+  document.addEventListener('focusout', function (e) {
+    if (!rp) return;
+    var k = rp.texts.indexOf(e.target);
+    // Only redraw the calendar if the date moved: focus may be going into it
+    // (ArrowDown), and a redraw would remove the day being focused.
+    if (k >= 0) {
+      var was = rp.ends[k];
+      commitEnd(k);
+      if (sameDay(rp.ends[k], was) || (!rp.ends[k] && !was)) drawBar();
+      else drawRange(rp.cal.contains(e.relatedTarget));
+    }
+    if (e.relatedTarget && !rp.box.contains(e.relatedTarget)) closeRange(false);
+  });
+  document.addEventListener('input', function (e) {
+    var k = rp ? rp.texts.indexOf(e.target) : -1;
+    if (k < 0) return;
+    rp.fresh = null;
+    rp.note = '';
+    e.target.classList.remove('is-invalid');
+    rp.error.hidden = true;
+    var d = parse(e.target.value);
+    if (d) { rp.view = dayView(d); drawCal(false); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (!rp || !rp.box.contains(e.target)) return;
+    var k = rp.texts.indexOf(e.target);
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeRange(true); }
+    else if (k >= 0 && e.key === 'ArrowDown') {  // into the grid, on the typed date if there is one
+      e.preventDefault();
+      if (commitEnd(k) && rp.ends[k]) setFocusDay(rp.view, rp.ends[k]);
+      drawRange(true);
+    }
+    else if (k >= 0 && e.key === 'Enter') {  // From, then To, then Apply; never submits the form
+      e.preventDefault();
+      if (!commitEnd(k)) drawRange();
+      else if (k === 0) focusEnd(1);
+      else rp.pop.querySelector('[data-rp="apply"]').focus();
+    }
+    else if (rp.cal.contains(e.target) && gridKey(rp.view, e)) drawCal(true);
+  }, true);
+  window.addEventListener('resize', placeRange);
+  document.addEventListener('scroll', placeRange, true);
 
   window.cgtDate = {
     // Fill a field from script by its id (the hidden input's), e.g. when the

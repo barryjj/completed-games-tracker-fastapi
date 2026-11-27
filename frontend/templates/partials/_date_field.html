@@ -6,17 +6,15 @@
    app.js (cgtDate) drives every field by delegation, so fields in swapped-in
    HTML need no init. Set one from script with cgtDate.set(id, "2026-11-18").
 
-   id        goes on the hidden input (the value scripts read and htmx
-             triggers watch); the text box gets id + "-text" for a <label>.
-   inline    a fixed-width field for toolbars; otherwise it fills its column.
-   disabled  disables the hidden input, so a form leaves the value out. #}
-{% macro date_field(name, value="", id=None, small=False, inline=False, required=False, disabled=False, label=None, placeholder="Nov 18, 2026") %}
-<span class="cgt-date{% if inline %} cgt-date--inline{% endif %}">
+   id  goes on the hidden input (the value scripts read and htmx triggers
+       watch); the text box gets id + "-text" for a <label>. #}
+{% macro date_field(name, value="", id=None, small=False, required=False, label=None, placeholder="Nov 18, 2026") %}
+<span class="cgt-date">
   <input type="text" class="form-control{% if small %} form-control-sm{% endif %} cgt-date__text"
          {% if id %}id="{{ id }}-text" {% endif %}value="{{ value | short_date }}" placeholder="{{ placeholder }}"
          autocomplete="off" spellcheck="false" aria-haspopup="dialog"
          {% if label %}aria-label="{{ label }}" title="{{ label }}" {% endif %}{% if required %}required{% endif %}>
-  <input type="hidden" class="cgt-date__value" name="{{ name }}"{% if id %} id="{{ id }}"{% endif %} value="{{ value }}"{% if disabled %} disabled{% endif %}>
+  <input type="hidden" class="cgt-date__value" name="{{ name }}"{% if id %} id="{{ id }}"{% endif %} value="{{ value }}">
   <span class="cgt-date__error" role="alert" hidden></span>
 </span>
 {% endmacro %}

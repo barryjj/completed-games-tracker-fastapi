@@ -349,7 +349,8 @@ function resetCompletionForm() {
   hx-target="#completions-content"
   hx-select="#completions-content"
   hx-push-url="true"
-  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, change from:#comp-from, change from:#comp-to, cgt-range, change from:#comp-sort"
+  hx-trigger="input changed delay:300ms from:#comp-q, change from:#comp-platform, cgt-range, change from:#comp-sort"
+  hx-select-oob="#comp-count"
 >
   <input type="hidden" name="view_mode" id="comp-view-mode" value="{{ view_mode }}">
   <input type="text" class="form-control form-control-sm"
@@ -362,40 +363,7 @@ function resetCompletionForm() {
     <option value="{{ p }}" {% if p == platform %}selected{% endif %}>{{ p }}</option>
     {% endfor %}
   </select>
-  {# Date range (#231). "This year" is the default and is applied on the
-     server, never written into the date fields: they only show for Custom.
-     Outside Custom their hidden values are disabled, so the request leaves
-     them out. Picking a preset refetches straight away (the cgt-range event
-     above); picking Custom just opens the fields, and refetches only if they
-     already hold a date. #}
-  <select class="form-select form-select-sm w-auto" id="comp-range" name="range" title="Date range"
-          onchange="cgtCompRange(this)">
-    <option value="year"      {% if date_range == 'year'      %}selected{% endif %}>This year</option>
-    <option value="last_year" {% if date_range == 'last_year' %}selected{% endif %}>Last year</option>
-    <option value="all"       {% if date_range == 'all'       %}selected{% endif %}>All time</option>
-    <option value="custom"    {% if date_range == 'custom'    %}selected{% endif %}>Custom…</option>
-  </select>
-  <span class="cgt-date-range" id="comp-custom-range" {% if date_range != 'custom' %}hidden{% endif %}>
-    {{ date_field("completed_from", completed_from, id="comp-from", small=True, inline=True, disabled=(date_range != 'custom'), label="From date", placeholder="From") }}
-    <span class="text-secondary" aria-hidden="true">–</span>
-    {{ date_field("completed_to", completed_to, id="comp-to", small=True, inline=True, disabled=(date_range != 'custom'), label="To date", placeholder="To") }}
-  </span>
-  <script>
-  function cgtCompRange(select) {
-    var custom = select.value === 'custom';
-    var from = document.getElementById('comp-from'), to = document.getElementById('comp-to');
-    document.getElementById('comp-custom-range').hidden = !custom;
-    from.disabled = to.disabled = !custom;
-    if (custom) document.getElementById('comp-from-text').focus();
-    if (!custom || from.value || to.value) htmx.trigger('#comp-filters-form', 'cgt-range');
-  }
-  </script>
-  <select class="form-select form-select-sm w-auto" id="comp-sort" name="sort">
-    <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
-    <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>
-    <option value="title_asc"  {% if sort == 'title_asc'  %}selected{% endif %}>Title (A – Z)</option>
-    <option value="title_desc" {% if sort == 'title_desc' %}selected{% endif %}>Title (Z – A)</option>
-  </select>
+  {% include "partials/_completions_range.html" %}
   {# Not a filter — a preference. Outside the hx-trigger list so ticking it
      never refetches the list. #}
   <div class="form-check mb-0 ms-2">
@@ -403,6 +371,41 @@ function resetCompletionForm() {
     <label class="form-check-label text-secondary" for="comp-remember-filters"><small>Remember filters</small></label>
   </div>
 </form>
+
+<div id="comp-view-drawer" class="d-flex align-items-center gap-2 flex-wrap mb-3">
+  <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+    <button type="button" class="btn btn-surface {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
+    <button type="button" class="btn btn-surface {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
+    <button type="button" class="btn btn-surface {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
+  </div>
+  <div class="cgt-grid-controls d-flex align-items-center gap-2 flex-wrap"
+       {% if view_mode == 'list' %}hidden{% endif %}>
+    <label class="text-secondary mb-0" for="comp-grid-size"><small>Size</small></label>
+    <input type="range" id="comp-grid-size" min="100" max="320" step="10" value="170"
+           class="cgt-range" title="Card size">
+    <label class="text-secondary mb-0" for="comp-grid-gap"><small>Gap</small></label>
+    <input type="range" id="comp-grid-gap" min="0" max="32" step="2" value="16"
+           class="cgt-range" title="Card spacing">
+    <div class="form-check mb-0">
+      <input class="form-check-input" type="checkbox" id="comp-grid-borderless">
+      <label class="form-check-label text-secondary" for="comp-grid-borderless"><small>Borderless</small></label>
+    </div>
+  </div>
+</div>
+</div>{# /.mb-3 toolbar wrapper #}
+
+{# Count and sort, outside the swapped area on purpose: the form's hx-trigger
+   and the remember script bind to #comp-sort once, at load, so a swap would
+   leave a dead copy. The count is refreshed by hx-select-oob on the form. #}
+<div class="d-flex align-items-baseline justify-content-between gap-2 mb-2">
+  <small class="text-secondary" id="comp-count">{{ completions | length }} completion{{ 's' if completions | length != 1 }}</small>
+  <select class="form-select form-select-sm cgt-sort-quiet" id="comp-sort" name="sort" form="comp-filters-form" aria-label="Sort">
+    <option value="date_desc"  {% if sort == 'date_desc'  %}selected{% endif %}>Date (newest)</option>
+    <option value="date_asc"   {% if sort == 'date_asc'   %}selected{% endif %}>Date (oldest)</option>
+    <option value="title_asc"  {% if sort == 'title_asc'  %}selected{% endif %}>Title (A – Z)</option>
+    <option value="title_desc" {% if sort == 'title_desc' %}selected{% endif %}>Title (Z – A)</option>
+  </select>
+</div>
 {# ── Remember filters (#189) ──────────────────────────────────────────────
    COOKIES, not localStorage: the server reads these to bind the filters into
    the FIRST render, so the list paints already filtered. localStorage was tried
@@ -459,31 +462,7 @@ function resetCompletionForm() {
 })();
 </script>
 
-
-<div id="comp-view-drawer" class="d-flex align-items-center gap-2 flex-wrap mb-3">
-  <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
-    <button type="button" class="btn btn-surface {% if view_mode == 'list'   %}active{% endif %}" data-view-mode="list"   title="List view">≡</button>
-    <button type="button" class="btn btn-surface {% if view_mode == 'grid_v' %}active{% endif %}" data-view-mode="grid_v" title="Grid (vertical covers)">▦</button>
-    <button type="button" class="btn btn-surface {% if view_mode == 'grid_h' %}active{% endif %}" data-view-mode="grid_h" title="Grid (horizontal covers)">▭</button>
-  </div>
-  <div class="cgt-grid-controls d-flex align-items-center gap-2 flex-wrap"
-       {% if view_mode == 'list' %}hidden{% endif %}>
-    <label class="text-secondary mb-0" for="comp-grid-size"><small>Size</small></label>
-    <input type="range" id="comp-grid-size" min="100" max="320" step="10" value="170"
-           class="cgt-range" title="Card size">
-    <label class="text-secondary mb-0" for="comp-grid-gap"><small>Gap</small></label>
-    <input type="range" id="comp-grid-gap" min="0" max="32" step="2" value="16"
-           class="cgt-range" title="Card spacing">
-    <div class="form-check mb-0">
-      <input class="form-check-input" type="checkbox" id="comp-grid-borderless">
-      <label class="form-check-label text-secondary" for="comp-grid-borderless"><small>Borderless</small></label>
-    </div>
-  </div>
-</div>
-</div>{# /.mb-3 toolbar wrapper #}
-
 <div id="completions-content">
-  <p class="text-secondary mb-2"><small>{{ completions | length }} completion{{ 's' if completions | length != 1 }}</small></p>
   {% if view_mode == 'list' %}
   <table class="table table-striped table-borderless">
     <thead>

@@ -1,4 +1,5 @@
 import datetime
+import re
 
 from backend import models
 
@@ -204,16 +205,21 @@ def _shown(r):
     return {t for t in ("Game This Year", "Game Last Year", "Game From 2015") if t.encode() in r.content}
 
 
+def _range_label(r):
+    inner = r.text.split('id="comp-range-label">', 1)[1].split("</button>", 1)[0]
+    return " ".join(re.sub(r"<[^>]+>", "", inner).split())
+
+
 def test_completions_range_default_is_this_year_and_never_fills_the_fields(client, db_session):
     """The this-year default is applied on the server. It used to be written
     back into the From box, so it looked like something the user had typed."""
     _three_years(client, db_session)
     r = client.get("/completions")
     assert _shown(r) == {"Game This Year"}
-    assert b'<option value="year"      selected>This year</option>' in r.content
-    assert b'id="comp-from" value="" disabled' in r.content
-    assert b'id="comp-to" value="" disabled' in r.content
-    assert b'id="comp-custom-range" hidden' in r.content
+    assert b'id="comp-range" name="range" value="year"' in r.content
+    assert _range_label(r) == "This year"
+    assert b'name="completed_from" value="" disabled' in r.content
+    assert b'name="completed_to" value="" disabled' in r.content
 
 
 def test_completions_range_presets(client, db_session):
@@ -226,10 +232,31 @@ def test_completions_range_custom_uses_the_dates_and_shows_them(client, db_sessi
     _three_years(client, db_session)
     r = client.get("/completions?range=custom&completed_from=2015-01-01&completed_to=2015-12-31")
     assert _shown(r) == {"Game From 2015"}
-    # The fields show the readable form; only the hidden value is ISO.
-    assert b'value="Jan 1, 2015"' in r.content
-    assert b'id="comp-from" value="2015-01-01">' in r.content
-    assert b'id="comp-custom-range" hidden' not in r.content
+    # The button shows the readable form; only the hidden value is ISO.
+    assert _range_label(r) == "Jan 1, 2015 → Dec 31, 2015"
+    assert b'name="completed_from" value="2015-01-01">' in r.content
+
+
+def test_completions_range_custom_can_be_open_ended(client, db_session):
+    _three_years(client, db_session)
+    r = client.get("/completions?range=custom&completed_from=&completed_to=2015-12-31")
+    assert _shown(r) == {"Game From 2015"}
+    assert _range_label(r) == "Any → Dec 31, 2015"
+
+
+def test_completions_sort_stays_outside_the_swapped_area(client, db_session):
+    """htmx binds #comp-sort's trigger once, at load. Inside the swap target the
+    select would be replaced by a copy nothing listens to. The count sits
+    beside it, so the form has to refresh that out of band."""
+    _three_years(client, db_session)
+    html = client.get("/completions?range=all&sort=title_asc").text
+    swapped = html.index('id="completions-content"')
+    assert html.index('id="comp-count"') < html.index('id="comp-sort"') < swapped
+    assert 'name="sort" form="comp-filters-form"' in html
+    assert 'hx-select-oob="#comp-count"' in html
+    # The remember script looks the select up as it runs, so it comes after it.
+    assert html.index('id="comp-sort"') < html.index("{name:'sort',el:'comp-sort'}")
+    assert "3 completions" in html
 
 
 def test_completions_range_dates_without_a_range_count_as_custom(client, db_session):
@@ -237,7 +264,7 @@ def test_completions_range_dates_without_a_range_count_as_custom(client, db_sess
     _three_years(client, db_session)
     r = client.get("/completions?completed_from=2015-01-01&completed_to=2015-12-31")
     assert _shown(r) == {"Game From 2015"}
-    assert b'<option value="custom"    selected>' in r.content
+    assert b'id="comp-range" name="range" value="custom"' in r.content
 
 
 def test_completions_range_ignores_dates_outside_custom(client, db_session):

@@ -1,0 +1,48 @@
+{# Completions' date range (#231): one button, one popover. The button reads
+   as the applied range ("This year", or "Nov 18, 2025 → Nov 18, 2026" where
+   either half is clickable and opens on that end). app.js (cgtDate, "Range
+   picker") drives it by delegation.
+
+   Only the three hidden inputs are ever sent. Nothing changes them, and
+   nothing refetches, until a preset is clicked or Apply is; then they're
+   updated together and one cgt-range event fires for the form's hx-trigger.
+   Outside Custom the two dates are disabled, so the request leaves them out. #}
+{% set _range_labels = [("year", "This year"), ("last_year", "Last year"), ("all", "All time"), ("custom", "Custom")] %}
+<span class="cgt-rangepick" id="comp-rangepick">
+  <input type="hidden" data-value="range" id="comp-range" name="range" value="{{ date_range }}">
+  <input type="hidden" data-value="0" id="comp-from" name="completed_from" value="{{ completed_from }}"{% if date_range != 'custom' %} disabled{% endif %}>
+  <input type="hidden" data-value="1" id="comp-to" name="completed_to" value="{{ completed_to }}"{% if date_range != 'custom' %} disabled{% endif %}>
+  <button type="button" class="form-select form-select-sm w-auto cgt-rangepick__btn"
+          aria-haspopup="dialog" aria-expanded="false" aria-label="Date range" aria-describedby="comp-range-label">
+    <span class="cgt-rangepick__label" id="comp-range-label">
+      {%- if date_range == 'custom' -%}
+      <span class="cgt-rangepick__half" data-end="0" title="Change the start date">{{ completed_from | short_date or "Any" }}</span> <span aria-hidden="true">→</span> <span class="cgt-rangepick__half" data-end="1" title="Change the end date">{{ completed_to | short_date or "Any" }}</span>
+      {%- else -%}
+      {{ (_range_labels | selectattr(0, 'equalto', date_range) | first)[1] }}
+      {%- endif -%}
+    </span>
+  </button>
+  <div class="dropdown-menu cgt-cal cgt-rangepick__pop" role="dialog" aria-label="Date range">
+    <div class="cgt-rangepick__seg">
+      {% for key, label in _range_labels %}
+      <button type="button" data-range="{{ key }}" aria-pressed="{{ 'true' if key == date_range else 'false' }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="cgt-rangepick__custom" hidden>
+      <div class="cgt-rangepick__bar">
+        {% for label in ("From", "To") %}
+        <label class="cgt-rangepick__end" data-side="{{ loop.index0 }}">
+          <span>{{ label }}</span>
+          <input type="text" class="cgt-rangepick__text" placeholder="Any date" autocomplete="off" spellcheck="false">
+        </label>
+        {% endfor %}
+      </div>
+      <span class="cgt-date__error" role="alert" hidden></span>
+      <div class="cgt-rangepick__cal"></div>
+      <div class="cgt-rangepick__foot">
+        <button type="button" class="btn btn-sm btn-surface" data-rp="clear">Clear</button>
+        <button type="button" class="btn btn-sm btn-primary" data-rp="apply">Apply</button>
+      </div>
+    </div>
+  </div>
+</span>

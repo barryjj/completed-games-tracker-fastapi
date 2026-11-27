@@ -365,10 +365,30 @@ the same format from JS after that).
   closes (without closing a modal under it).
 - Fill one from script with `cgtDate.set(id, "2026-11-18")`; `id` is the hidden
   input's, and change fires on it when the value moves.
-- Completions' range dropdown (This year / Last year / All time / Custom…)
-  shows the two fields only for Custom. The this-year default is applied on
-  the server and never written into a field. The range is remembered with the
-  other filters, but never Custom.
+
+### Date range (#231)
+`partials/_completions_range.html`, driven by the "Range picker" part of
+`cgtDate`. One button that reads as the applied range, and one popover lined up
+with its right edge: presets on top (they apply on click), and under Custom a
+**From | To** bar over a calendar.
+
+- The bar is the input. Each half is a real text box with its box hidden:
+  click and type over it, or click days. The lit half (mauve wash, 2px mauve
+  underline) is the one the next day sets. Same date formats as the field.
+- Ends are the tinted primary fill; the days between are mauve at
+  `--cgt-range-wash` over the popover (Mocha 16%, Nord 18%, Latte 9%).
+- Either end may be blank. Nothing refetches until Apply, which is blocked by
+  a bad date, a start after the end, or two blanks. Esc or clicking away drops
+  the draft.
+- Applied custom ranges show in the button as two clickable halves.
+- The this-year default is applied on the server and never written into a
+  date. The range is remembered with the other filters, but never Custom.
+
+### Quiet sort
+A list's sort sits opposite its count (`.cgt-sort-quiet`): text and a caret, no
+box until keyboard focus. Keep it **outside** the swapped area, tied to the
+filter form with `form=`: triggers bind to it once, at load. The count is then
+refreshed with `hx-select-oob`. Completions only so far.
 
 ---
 
