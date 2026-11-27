@@ -155,6 +155,11 @@ def completions_page(
             models.Completion.id.desc(),
         )
     completions = completions_q.all()
+    # An empty list is either a brand-new account or filters that match nothing
+    # (the this-year default included); the page says which.
+    has_completions = bool(completions) or (
+        db.query(models.Completion.id).filter(models.Completion.user_id == current_user.id).first() is not None
+    )
     # Reuse the library fallback helper — it expects a list of UserLibraryEntry
     # objects, so pass each completion's library_entry. Dedupe on entry.id so
     # entries with multiple completions don't get processed twice.
@@ -175,6 +180,7 @@ def completions_page(
         context={
             "current_user": current_user,
             "completions": completions,
+            "has_completions": has_completions,
             "today": datetime.date.today().isoformat(),
             "q": q,
             "platform": platform,

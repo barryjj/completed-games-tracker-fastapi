@@ -494,7 +494,7 @@ function resetCompletionForm() {
   </div>
   {% endif %}
   {% if not completions %}
-  <p class="text-secondary"><em>No completions logged yet.</em></p>
+  <p class="text-secondary"><em>{{ "Nothing matches these filters." if has_completions else "No completions logged yet." }}</em></p>
   {% endif %}
 </div>
 

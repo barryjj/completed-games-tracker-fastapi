@@ -259,6 +259,18 @@ def test_completions_sort_stays_outside_the_swapped_area(client, db_session):
     assert "3 completions" in html
 
 
+def test_completions_empty_message_tells_filters_from_a_new_account(client, db_session):
+    """An empty range used to say "No completions logged yet." as if there
+    were none at all."""
+    _signup_and_login(client)
+    assert b"No completions logged yet." in client.get("/completions").content
+    client.cookies.clear()
+    _three_years(client, db_session)
+    r = client.get("/completions?range=custom&completed_from=2001-01-01&completed_to=2001-12-31")
+    assert b"Nothing matches these filters." in r.content
+    assert b"No completions logged yet." not in r.content
+
+
 def test_completions_range_dates_without_a_range_count_as_custom(client, db_session):
     """An old link (dates, no range) still filters by its dates."""
     _three_years(client, db_session)
