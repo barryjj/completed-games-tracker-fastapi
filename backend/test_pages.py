@@ -292,17 +292,28 @@ def test_completions_range_bad_dates_are_ignored_not_a_500(client, db_session):
     assert _shown(r) == {"Game This Year", "Game Last Year", "Game From 2015"}
 
 
-def test_completions_range_is_remembered_but_never_custom(client, db_session):
-    """A remembered Custom would be a silent all-time view (the dates aren't
-    stored), defeating the this-year default."""
+def test_completions_range_is_remembered_with_its_dates(client, db_session):
+    """A remembered Custom range comes back with its dates. It used to be
+    stored blank (the dates weren't kept), so it reverted to This year."""
     _three_years(client, db_session)
     client.cookies.set("cgt-completions-remember", "1")
     client.cookies.set("cgt-completions-range", "last_year")
     assert _shown(client.get("/completions")) == {"Game Last Year"}
     client.cookies.set("cgt-completions-range", "custom")
+    client.cookies.set("cgt-completions-completed_from", "2015-01-01")
+    client.cookies.set("cgt-completions-completed_to", "2015-12-31")
+    r = client.get("/completions")
+    assert _shown(r) == {"Game From 2015"}
+    assert _range_label(r) == "Jan 1, 2015 → Dec 31, 2015"
+    # Any of the three in the request wins over all three cookies: a preset...
+    assert _shown(client.get("/completions?range=all")) == {"Game This Year", "Game Last Year", "Game From 2015"}
+    # ...or an old link carrying only a date.
+    assert _shown(client.get("/completions?completed_from=2026-01-01")) == _shown(
+        client.get("/completions?range=custom&completed_from=2026-01-01&completed_to=")
+    )
+    # Remember off: nothing comes back.
+    client.cookies.set("cgt-completions-remember", "")
     assert _shown(client.get("/completions")) == {"Game This Year"}
-    # Picking Custom right now is still honoured.
-    assert _shown(client.get("/completions?range=custom&completed_from=2015-01-01&completed_to=2015-12-31")) == {"Game From 2015"}
 
 
 def test_no_native_date_controls_left(client, db_session):

@@ -81,13 +81,16 @@ def completions_page(
 
     # Opt-in sticky filters (#189). `q` excluded for the same reason as the
     # library: a remembered search string is surprising, a remembered platform
-    # or sort is not. The range choice is remembered, but never "Custom": the
-    # dates themselves aren't stored, so a remembered Custom would be a silent
-    # all-time view that defeats the this-year default.
-    _f = remembered_filters(request, "completions", {"platform": platform, "sort": sort, "range": date_range})
-    platform, sort, date_range = _f["platform"], _f["sort"], _f["range"]
-    if date_range == "custom" and "range" not in request.query_params:
-        date_range = ""
+    # or sort is not. The range and its two dates are one setting: a Custom
+    # range is remembered with its dates, and if the request carries any of the
+    # three (a click, or an old link with only dates), none come from cookies.
+    _dates = {"range": date_range, "completed_from": completed_from, "completed_to": completed_to}
+    _remember = {"platform": platform, "sort": sort}
+    if not any(k in request.query_params for k in _dates):
+        _remember.update(_dates)
+    _f = {**_dates, **remembered_filters(request, "completions", _remember)}
+    platform, sort = _f["platform"], _f["sort"]
+    date_range, completed_from, completed_to = _f["range"], _f["completed_from"], _f["completed_to"]
     date_range, date_from, date_to = _completions_range(date_range, completed_from, completed_to)
     if date_range != "custom":
         completed_from = completed_to = ""

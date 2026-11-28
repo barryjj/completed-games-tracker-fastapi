@@ -382,7 +382,9 @@ with its right edge: presets on top (they apply on click), and under Custom a
   the draft.
 - Applied custom ranges show in the button as two clickable halves.
 - The this-year default is applied on the server and never written into a
-  date. The range is remembered with the other filters, but never Custom.
+  date. Remember filters stores the range and its two dates as one setting
+  (`cgt-completions-range` / `-completed_from` / `-completed_to`); a request
+  carrying any of the three ignores all three cookies.
 
 ### Quiet sort
 A list's sort sits opposite its count (`.cgt-sort-quiet`): text and a caret, no

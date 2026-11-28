@@ -418,10 +418,11 @@ function resetCompletionForm() {
 <script>
 (function () {
   var PREFIX = 'completions';
-  // range is remembered, but never Custom (the dates aren't stored; see
-  // completions_page). Custom is stored blank, which the server reads as
-  // the this-year default.
-  var FIELDS = [{name:'platform',el:'comp-platform'},{name:'sort',el:'comp-sort'},{name:'range',el:'comp-range'}];
+  // The range and its two dates are stored together (see completions_page);
+  // the picker fires change on #comp-range after setting all three. Outside
+  // Custom the dates are stored blank.
+  var FIELDS = [{name:'platform',el:'comp-platform'},{name:'sort',el:'comp-sort'},{name:'range',el:'comp-range'},
+                {name:'completed_from',el:'comp-from'},{name:'completed_to',el:'comp-to'}];
   var box = document.getElementById('comp-remember-filters');
   if (!box) return;
 
@@ -442,7 +443,7 @@ function resetCompletionForm() {
     FIELDS.forEach(function (f) {
       var v = currentValue(f.el);
       if (v === null) return;
-      if (f.name === 'range' && v === 'custom') v = '';
+      if (f.name.indexOf('completed_') === 0 && currentValue('comp-range') !== 'custom') v = '';
       put(f.name, keep ? v : '', keep);
     });
   }
